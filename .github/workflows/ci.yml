@@ -138,6 +138,23 @@ jobs:
             printf 'FAIL: direct executeAgentPrompt/runAgentTurn import outside the worker — enqueue via getAgentPromptQueue() instead:\n%s\n' "$violations"
             exit 1
           fi
+      - name: Forbid raw async route handlers without asyncHandler() wrap (HEL-184)
+        run: |
+          # HEL-184: every async Express route handler must be wrapped in
+          # `asyncHandler()` from src/middleware/asyncHandler.ts. The wrapper
+          # forwards rejected promises to `next(err)` so the global typed-error
+          # middleware (src/app.ts) can render `Tier1ConnectorError` subclasses
+          # — unhandled rejections in Express 4 silently hang the response.
+          # The asyncHandler primitive is a no-op after the Express 4 → 5
+          # migration, but the call-site shape stays stable.
+          violations=$(git grep -nE '^\s*(app|router)\.(get|post|put|patch|delete|use)\s*\([^,]+,(\s*\w+\s*,)*\s*async\s*\(' -- 'src/*.ts' 'src/**/*.ts' \
+            | grep -v 'asyncHandler' \
+            | grep -v '\.test\.ts$' \
+            || true)
+          if [ -n "$violations" ]; then
+            printf 'FAIL: async route handler without asyncHandler() wrap detected:\n%s\n' "$violations"
+            exit 1
+          fi
 
   test-backend:
     name: Test Backend

@@ -18,6 +18,7 @@ import { observabilityStore } from "../observability/store";
 import { getAgentPromptQueue } from "../queue/queues";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import * as Sentry from "@sentry/node";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 // HEL-177: agent execution is the worker's job exclusively. Routes only
 // enqueue. The legacy inline `resolveExecuteAgentPrompt()` fallback was
@@ -392,7 +393,7 @@ function validateAssignees(assignees: TicketAssignee[]): string | null {
   return null;
 }
 
-router.post("/", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(createTicketSchema, req, res);
   if (!parsed) {
     return;
@@ -472,9 +473,9 @@ router.post("/", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   });
 
   res.status(201).json(aggregate);
-});
+}));
 
-router.get("/", async (req: WorkspaceAwareRequest, res) => {
+router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
   const actorType = typeof req.query.actorType === "string" ? req.query.actorType : undefined;
@@ -497,9 +498,9 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
   }, context);
 
   res.json({ tickets, total: tickets.length });
-});
+}));
 
-router.get("/sla/policies", async (req: WorkspaceAwareRequest, res) => {
+router.get("/sla/policies", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
   const context = resolveWorkspaceContext(req, res, workspaceId);
   if (!context) {
@@ -507,9 +508,9 @@ router.get("/sla/policies", async (req: WorkspaceAwareRequest, res) => {
   }
   const policies = await ticketStore.listPolicies(context.workspaceId, context);
   res.json({ policies, total: policies.length });
-});
+}));
 
-router.get("/sla/settings", async (req: WorkspaceAwareRequest, res) => {
+router.get("/sla/settings", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
   const context = resolveWorkspaceContext(req, res, workspaceId);
   if (!context) {
@@ -517,9 +518,9 @@ router.get("/sla/settings", async (req: WorkspaceAwareRequest, res) => {
   }
 
   res.json(await buildSlaSettingsPayload(context));
-});
+}));
 
-router.get("/sla/dashboard", async (req: WorkspaceAwareRequest, res) => {
+router.get("/sla/dashboard", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : undefined;
   const context = resolveWorkspaceContext(req, res, workspaceId);
   if (!context) {
@@ -707,9 +708,9 @@ router.get("/sla/dashboard", async (req: WorkspaceAwareRequest, res) => {
       .sort((left, right) => right.activeCount - left.activeCount || left.actor.id.localeCompare(right.actor.id)),
     priorityBreakdown,
   });
-});
+}));
 
-router.put("/sla/policies/:priority", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.put("/sla/policies/:priority", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const priorityResult = ticketPrioritySchema.safeParse(req.params.priority);
   if (!priorityResult.success) {
     res.status(400).json({ error: "priority must be one of low, medium, high, urgent" });
@@ -740,9 +741,9 @@ router.put("/sla/policies/:priority", requireRunId, async (req: WorkspaceAwareRe
     context,
   });
   res.json({ policy });
-});
+}));
 
-router.patch("/sla/policies", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.patch("/sla/policies", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(bulkPolicyPatchSchema, req, res);
   if (!parsed) {
     return;
@@ -763,9 +764,9 @@ router.patch("/sla/policies", requireRunId, async (req: WorkspaceAwareRequest, r
   }
 
   res.json(await buildSlaSettingsPayload(context));
-});
+}));
 
-router.patch("/sla/settings", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.patch("/sla/settings", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(slaSettingsSchema, req, res);
   if (!parsed) {
     return;
@@ -801,9 +802,9 @@ router.patch("/sla/settings", requireRunId, async (req: WorkspaceAwareRequest, r
   }
 
   res.json(await buildSlaSettingsPayload(context));
-});
+}));
 
-router.post("/sla/evaluate", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/sla/evaluate", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(evaluateSlaSchema, req, res);
   if (!parsed) {
     return;
@@ -819,9 +820,9 @@ router.post("/sla/evaluate", requireRunId, async (req: WorkspaceAwareRequest, re
     context,
   });
   res.json(summary);
-});
+}));
 
-router.get("/notifications", async (req: AuthenticatedRequest, res) => {
+router.get("/notifications", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const channel = typeof req.query.channel === "string" ? req.query.channel : undefined;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   const actorType = typeof req.query.actorType === "string" ? req.query.actorType : "user";
@@ -843,9 +844,9 @@ router.get("/notifications", async (req: AuthenticatedRequest, res) => {
       : undefined,
   });
   res.json({ notifications, total: notifications.length });
-});
+}));
 
-router.get("/queue/:actorType/:actorId", async (req: WorkspaceAwareRequest, res) => {
+router.get("/queue/:actorType/:actorId", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const actorTypeResult = actorTypeSchema.safeParse(req.params.actorType);
   if (!actorTypeResult.success) {
     res.status(400).json({ error: "actorType must be agent or user" });
@@ -876,9 +877,9 @@ router.get("/queue/:actorType/:actorId", async (req: WorkspaceAwareRequest, res)
     tickets,
     total: tickets.length,
   });
-});
+}));
 
-router.get("/:id/activity", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/activity", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -890,9 +891,9 @@ router.get("/:id/activity", async (req: WorkspaceAwareRequest, res) => {
   }
 
   res.json({ updates: activity, total: activity.length });
-});
+}));
 
-router.get("/:id/children", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/children", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -905,9 +906,9 @@ router.get("/:id/children", async (req: WorkspaceAwareRequest, res) => {
 
   const tickets = await ticketStore.listChildren(req.params.id, context);
   res.json({ tickets, total: tickets.length });
-});
+}));
 
-router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -919,9 +920,9 @@ router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
   }
 
   res.json(aggregate);
-});
+}));
 
-router.patch("/:id", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.patch("/:id", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(updateTicketSchema, req, res);
   if (!parsed) {
     return;
@@ -988,9 +989,9 @@ router.patch("/:id", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   });
 
   res.json(aggregate);
-});
+}));
 
-router.post("/:id/updates", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/:id/updates", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(createUpdateSchema, req, res);
   if (!parsed) {
     return;
@@ -1073,14 +1074,14 @@ router.post("/:id/updates", requireRunId, async (req: WorkspaceAwareRequest, res
   }
 
   res.status(201).json({ update });
-});
+}));
 
 /**
  * HEL-174: manual "Run agent" CTA on a ticket. Re-fires the agent
  * against the current state of the ticket. The ticket's latest comment
  * (or its description when no comments) is the prompt.
  */
-router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/:id/run-agent", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -1112,7 +1113,7 @@ router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, r
     prompt,
   });
   res.status(202).json({ status: "queued", ticketId: aggregate.ticket.id });
-});
+}));
 
 /**
  * HEL-175: cancel the in-flight agent run for this ticket.
@@ -1127,7 +1128,7 @@ router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, r
  *   - 404 when no active run exists for this ticket (idempotent UX:
  *     dashboard's Cancel button can be clicked without checking first)
  */
-router.delete("/:id/cancel-active-run", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.delete("/:id/cancel-active-run", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -1159,9 +1160,9 @@ router.delete("/:id/cancel-active-run", requireRunId, async (req: WorkspaceAware
     [runId],
   );
   res.status(202).json({ status: "cancelling", runId, ticketId: req.params.id });
-});
+}));
 
-router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/:id/transitions", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = parseBody(transitionSchema, req, res);
   if (!parsed) {
     return;
@@ -1237,6 +1238,6 @@ router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest,
     relevantMemories: result.relevantMemories ?? [],
     ...(result.closeContract ? { closeContract: result.closeContract } : {}),
   });
-});
+}));
 
 export default router;

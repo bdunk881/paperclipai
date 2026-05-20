@@ -33,6 +33,7 @@ import { setAgentPresence } from "./agentPresence";
 import { observabilityStore } from "../observability/store";
 import { runAgentSelfCheckIn } from "./agentCheckIn";
 import { classifyHandoffPriority } from "./priorityClassifier";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -87,7 +88,7 @@ async function loadAgent(
 export function createAgentActionsRoutes(pool: Pool): Router {
   const router = Router();
 
-  router.post("/:agentId/check-in", async (req: AuthenticatedRequest, res) => {
+  router.post("/:agentId/check-in", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -204,9 +205,9 @@ export function createAgentActionsRoutes(pool: Pool): Router {
       );
       res.status(500).json({ error: "Failed to start check-in" });
     }
-  });
+  }));
 
-  router.post("/:agentId/handoff", async (req: AuthenticatedRequest, res) => {
+  router.post("/:agentId/handoff", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -301,7 +302,7 @@ export function createAgentActionsRoutes(pool: Pool): Router {
       );
       res.status(500).json({ error: "Failed to hand off task" });
     }
-  });
+  }));
 
   /**
    * DASH-15: lite-tier LLM auto-classifies a proposed hand-off into
@@ -314,7 +315,7 @@ export function createAgentActionsRoutes(pool: Pool): Router {
    * the modal silently keeps the user's default. Never blocks the
    * hand-off itself.
    */
-  router.post("/priority-classify", async (req: AuthenticatedRequest, res) => {
+  router.post("/priority-classify", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -360,7 +361,7 @@ export function createAgentActionsRoutes(pool: Pool): Router {
       // owner's manual default.
       res.status(204).end();
     }
-  });
+  }));
 
   return router;
 }

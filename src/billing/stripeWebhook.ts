@@ -16,6 +16,7 @@ import {
 import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
 import { entitlementStore } from "./entitlements";
 import { hasNewerEventForResource, recordEventOnce } from "./stripeWebhookEventLog";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -86,7 +87,7 @@ async function notifyCSM(params: {
 // Webhook endpoint — receives raw body for signature verification
 // ---------------------------------------------------------------------------
 
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", asyncHandler<Request>(async (req, res: Response) => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.error("[stripe/webhook] STRIPE_WEBHOOK_SECRET not set");
@@ -172,7 +173,7 @@ router.post("/", async (req: Request, res: Response) => {
   }
 
   res.json({ received: true });
-});
+}));
 
 /**
  * Pulls the primary resource id off a Stripe event payload so the

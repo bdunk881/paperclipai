@@ -5,6 +5,7 @@ import { hubSpotConnectorService } from "./service";
 import { logHubSpot } from "./logger";
 import { ConnectorError } from "./types";
 import { verifyHubSpotWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -35,15 +36,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = hubSpotConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = hubSpotConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -52,15 +49,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await hubSpotConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await hubSpotConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -74,15 +67,11 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await hubSpotConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await hubSpotConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -91,24 +80,20 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await hubSpotConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await hubSpotConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await hubSpotConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -117,9 +102,9 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await hubSpotConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -133,24 +118,20 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
-router.get("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/contacts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const contacts = await hubSpotConnectorService.listContacts(userId);
-    res.json({ contacts, total: contacts.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const contacts = await hubSpotConnectorService.listContacts(userId);
+  res.json({ contacts, total: contacts.length });
+}));
 
-router.post("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/contacts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -170,22 +151,18 @@ router.post("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => 
     return;
   }
 
-  try {
-    const contact = await hubSpotConnectorService.createContact(userId, {
-      email: email?.trim(),
-      firstname: firstname?.trim(),
-      lastname: lastname?.trim(),
-      company: company?.trim(),
-      phone: phone?.trim(),
-    });
+  const contact = await hubSpotConnectorService.createContact(userId, {
+    email: email?.trim(),
+    firstname: firstname?.trim(),
+    lastname: lastname?.trim(),
+    company: company?.trim(),
+    phone: phone?.trim(),
+  });
 
-    res.status(201).json({ contact });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ contact });
+}));
 
-router.patch("/contacts/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/contacts/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -211,36 +188,28 @@ router.patch("/contacts/:id", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const contact = await hubSpotConnectorService.updateContact(userId, contactId, {
-      email: email?.trim(),
-      firstname: firstname?.trim(),
-      lastname: lastname?.trim(),
-      company: company?.trim(),
-      phone: phone?.trim(),
-    });
-    res.json({ contact });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const contact = await hubSpotConnectorService.updateContact(userId, contactId, {
+    email: email?.trim(),
+    firstname: firstname?.trim(),
+    lastname: lastname?.trim(),
+    company: company?.trim(),
+    phone: phone?.trim(),
+  });
+  res.json({ contact });
+}));
 
-router.get("/companies", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/companies", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const companies = await hubSpotConnectorService.listCompanies(userId);
-    res.json({ companies, total: companies.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const companies = await hubSpotConnectorService.listCompanies(userId);
+  res.json({ companies, total: companies.length });
+}));
 
-router.post("/companies", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/companies", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -261,23 +230,19 @@ router.post("/companies", requireAuth, async (req: AuthenticatedRequest, res) =>
     return;
   }
 
-  try {
-    const company = await hubSpotConnectorService.createCompany(userId, {
-      name: name?.trim(),
-      domain: domain?.trim(),
-      industry: industry?.trim(),
-      phone: phone?.trim(),
-      city: city?.trim(),
-      country: country?.trim(),
-    });
+  const company = await hubSpotConnectorService.createCompany(userId, {
+    name: name?.trim(),
+    domain: domain?.trim(),
+    industry: industry?.trim(),
+    phone: phone?.trim(),
+    city: city?.trim(),
+    country: country?.trim(),
+  });
 
-    res.status(201).json({ company });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ company });
+}));
 
-router.patch("/companies/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/companies/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -304,37 +269,29 @@ router.patch("/companies/:id", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
-  try {
-    const company = await hubSpotConnectorService.updateCompany(userId, companyId, {
-      name: name?.trim(),
-      domain: domain?.trim(),
-      industry: industry?.trim(),
-      phone: phone?.trim(),
-      city: city?.trim(),
-      country: country?.trim(),
-    });
-    res.json({ company });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const company = await hubSpotConnectorService.updateCompany(userId, companyId, {
+    name: name?.trim(),
+    domain: domain?.trim(),
+    industry: industry?.trim(),
+    phone: phone?.trim(),
+    city: city?.trim(),
+    country: country?.trim(),
+  });
+  res.json({ company });
+}));
 
-router.get("/deals", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/deals", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const deals = await hubSpotConnectorService.listDeals(userId);
-    res.json({ deals, total: deals.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const deals = await hubSpotConnectorService.listDeals(userId);
+  res.json({ deals, total: deals.length });
+}));
 
-router.post("/deals", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/deals", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -354,22 +311,18 @@ router.post("/deals", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const deal = await hubSpotConnectorService.createDeal(userId, {
-      dealname: dealname.trim(),
-      amount: amount?.trim(),
-      dealstage: dealstage?.trim(),
-      pipeline: pipeline?.trim(),
-      closedate: closedate?.trim(),
-    });
+  const deal = await hubSpotConnectorService.createDeal(userId, {
+    dealname: dealname.trim(),
+    amount: amount?.trim(),
+    dealstage: dealstage?.trim(),
+    pipeline: pipeline?.trim(),
+    closedate: closedate?.trim(),
+  });
 
-    res.status(201).json({ deal });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ deal });
+}));
 
-router.patch("/deals/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/deals/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -395,58 +348,50 @@ router.patch("/deals/:id", requireAuth, async (req: AuthenticatedRequest, res) =
     return;
   }
 
-  try {
-    const deal = await hubSpotConnectorService.updateDeal(userId, dealId, {
-      dealname: dealname?.trim(),
-      amount: amount?.trim(),
-      dealstage: dealstage?.trim(),
-      pipeline: pipeline?.trim(),
-      closedate: closedate?.trim(),
-    });
-    res.json({ deal });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const deal = await hubSpotConnectorService.updateDeal(userId, dealId, {
+    dealname: dealname?.trim(),
+    amount: amount?.trim(),
+    dealstage: dealstage?.trim(),
+    pipeline: pipeline?.trim(),
+    closedate: closedate?.trim(),
+  });
+  res.json({ deal });
+}));
 
 export const hubSpotWebhookRouter = express.Router();
 
 hubSpotWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const clientSecret = process.env.HUBSPOT_CLIENT_SECRET;
-    if (!clientSecret) {
-      throw new ConnectorError("auth", "HUBSPOT_CLIENT_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    verifyHubSpotWebhook({
-      method: req.method,
-      requestUri: `${req.protocol}://${req.get("host")}${req.originalUrl}`,
-      rawBody,
-      signatureHeader: req.header("x-hubspot-signature-v3"),
-      timestampHeader: req.header("x-hubspot-request-timestamp"),
-      eventIdHeader: req.header("x-hubspot-event-id"),
-      clientSecret,
-    });
-
-    const payload = JSON.parse(rawBody.toString("utf8"));
-    const events = Array.isArray(payload) ? payload : [payload];
-
-    logHubSpot({
-      event: "webhook",
-      level: "info",
-      connector: "hubspot",
-      message: "HubSpot webhook received",
-      metadata: {
-        events: events.length,
-        subscriptionType: events[0]?.subscriptionType,
-      },
-    });
-
-    res.status(200).json({ ok: true });
-  } catch (error) {
-    handleError(res, error);
+  const clientSecret = process.env.HUBSPOT_CLIENT_SECRET;
+  if (!clientSecret) {
+    throw new ConnectorError("auth", "HUBSPOT_CLIENT_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  verifyHubSpotWebhook({
+    method: req.method,
+    requestUri: `${req.protocol}://${req.get("host")}${req.originalUrl}`,
+    rawBody,
+    signatureHeader: req.header("x-hubspot-signature-v3"),
+    timestampHeader: req.header("x-hubspot-request-timestamp"),
+    eventIdHeader: req.header("x-hubspot-event-id"),
+    clientSecret,
+  });
+
+  const payload = JSON.parse(rawBody.toString("utf8"));
+  const events = Array.isArray(payload) ? payload : [payload];
+
+  logHubSpot({
+    event: "webhook",
+    level: "info",
+    connector: "hubspot",
+    message: "HubSpot webhook received",
+    metadata: {
+      events: events.length,
+      subscriptionType: events[0]?.subscriptionType,
+    },
+  });
+
+  res.status(200).json({ ok: true });
 });
 
 export default router;

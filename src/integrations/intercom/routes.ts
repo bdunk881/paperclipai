@@ -4,6 +4,7 @@ import { logIntercom } from "./logger";
 import { intercomConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { verifyIntercomWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -34,15 +35,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = intercomConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = intercomConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -51,15 +48,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await intercomConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await intercomConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -72,13 +65,9 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await intercomConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await intercomConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
 router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -91,22 +80,18 @@ router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ connections, total: connections.length });
 });
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await intercomConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await intercomConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -116,7 +101,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   const health = await intercomConnectorService.health(userId);
   const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
   res.status(statusCode).json(health);
-});
+}));
 
 router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -134,22 +119,18 @@ router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) 
   res.status(204).send();
 });
 
-router.get("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/contacts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const contacts = await intercomConnectorService.listContacts(userId);
-    res.json({ contacts, total: contacts.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const contacts = await intercomConnectorService.listContacts(userId);
+  res.json({ contacts, total: contacts.length });
+}));
 
-router.post("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/contacts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -168,21 +149,17 @@ router.post("/contacts", requireAuth, async (req: AuthenticatedRequest, res) => 
     return;
   }
 
-  try {
-    const contact = await intercomConnectorService.createContact(userId, {
-      email: email?.trim(),
-      name: name?.trim() || undefined,
-      role,
-      externalId: externalId?.trim(),
-    });
+  const contact = await intercomConnectorService.createContact(userId, {
+    email: email?.trim(),
+    name: name?.trim() || undefined,
+    role,
+    externalId: externalId?.trim(),
+  });
 
-    res.status(201).json({ contact });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ contact });
+}));
 
-router.patch("/contacts/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/contacts/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -206,35 +183,27 @@ router.patch("/contacts/:id", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const contact = await intercomConnectorService.updateContact(userId, contactId, {
-      email: email?.trim(),
-      name: name?.trim() || undefined,
-      role,
-    });
+  const contact = await intercomConnectorService.updateContact(userId, contactId, {
+    email: email?.trim(),
+    name: name?.trim() || undefined,
+    role,
+  });
 
-    res.json({ contact });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.json({ contact });
+}));
 
-router.get("/conversations", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/conversations", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const conversations = await intercomConnectorService.listConversations(userId);
-    res.json({ conversations, total: conversations.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const conversations = await intercomConnectorService.listConversations(userId);
+  res.json({ conversations, total: conversations.length });
+}));
 
-router.post("/conversations", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/conversations", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -258,21 +227,17 @@ router.post("/conversations", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const conversation = await intercomConnectorService.createConversation(userId, {
-      fromContactId: fromContactId.trim(),
-      body: body.trim(),
-      messageType,
-      assigneeId: assigneeId?.trim() || undefined,
-    });
+  const conversation = await intercomConnectorService.createConversation(userId, {
+    fromContactId: fromContactId.trim(),
+    body: body.trim(),
+    messageType,
+    assigneeId: assigneeId?.trim() || undefined,
+  });
 
-    res.status(201).json({ conversation });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ conversation });
+}));
 
-router.post("/conversations/:id/reply", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/conversations/:id/reply", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -301,54 +266,46 @@ router.post("/conversations/:id/reply", requireAuth, async (req: AuthenticatedRe
     return;
   }
 
-  try {
-    const conversation = await intercomConnectorService.replyToConversation(userId, conversationId, {
-      adminId: adminId.trim(),
-      body: body.trim(),
-      messageType,
-    });
+  const conversation = await intercomConnectorService.replyToConversation(userId, conversationId, {
+    adminId: adminId.trim(),
+    body: body.trim(),
+    messageType,
+  });
 
-    res.status(201).json({ conversation });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ conversation });
+}));
 
 export const intercomWebhookRouter = express.Router();
 
 intercomWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const signingSecret = process.env.INTERCOM_WEBHOOK_SECRET;
-    if (!signingSecret) {
-      throw new ConnectorError("auth", "INTERCOM_WEBHOOK_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    verifyIntercomWebhook({
-      rawBody,
-      signatureHeader: req.header("x-hub-signature-256") ?? req.header("x-hub-signature"),
-      deliveryIdHeader: req.header("x-intercom-webhook-id") ?? req.header("x-request-id"),
-      signingSecret,
-    });
-
-    const payload = JSON.parse(rawBody.toString("utf8"));
-
-    logIntercom({
-      event: "webhook",
-      level: "info",
-      connector: "intercom",
-      message: "Intercom webhook received",
-      metadata: {
-        topic: payload?.topic,
-        type: payload?.type,
-        id: req.header("x-intercom-webhook-id") ?? req.header("x-request-id"),
-      },
-    });
-
-    res.status(202).json({ received: true });
-  } catch (error) {
-    handleError(res, error);
+  const signingSecret = process.env.INTERCOM_WEBHOOK_SECRET;
+  if (!signingSecret) {
+    throw new ConnectorError("auth", "INTERCOM_WEBHOOK_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  verifyIntercomWebhook({
+    rawBody,
+    signatureHeader: req.header("x-hub-signature-256") ?? req.header("x-hub-signature"),
+    deliveryIdHeader: req.header("x-intercom-webhook-id") ?? req.header("x-request-id"),
+    signingSecret,
+  });
+
+  const payload = JSON.parse(rawBody.toString("utf8"));
+
+  logIntercom({
+    event: "webhook",
+    level: "info",
+    connector: "intercom",
+    message: "Intercom webhook received",
+    metadata: {
+      topic: payload?.topic,
+      type: payload?.type,
+      id: req.header("x-intercom-webhook-id") ?? req.header("x-request-id"),
+    },
+  });
+
+  res.status(202).json({ received: true });
 });
 
 export default router;

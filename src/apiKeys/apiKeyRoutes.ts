@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
+import { asyncHandler } from "../middleware/asyncHandler";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { ApiKeyStoreError, apiKeyStore, validateApiKeyName } from "./apiKeyStore";
 
@@ -32,63 +33,75 @@ function sendRouteError(res: Response, error: unknown): void {
 export function createApiKeyRoutes(store = apiKeyStore) {
   const router = Router();
 
-  router.get("/", async (req: ApiKeyRequest, res) => {
-    const ctx = getContext(req, res);
-    if (!ctx) return;
-    try {
-      const keys = await store.list(ctx);
-      res.json({ keys, total: keys.length });
-    } catch (error) {
-      sendRouteError(res, error);
-    }
-  });
+  router.get(
+    "/",
+    asyncHandler<ApiKeyRequest>(async (req, res) => {
+      const ctx = getContext(req, res);
+      if (!ctx) return;
+      try {
+        const keys = await store.list(ctx);
+        res.json({ keys, total: keys.length });
+      } catch (error) {
+        sendRouteError(res, error);
+      }
+    }),
+  );
 
-  router.post("/", async (req: ApiKeyRequest, res) => {
-    const ctx = getContext(req, res);
-    if (!ctx) return;
-    const name = validateApiKeyName((req.body as Record<string, unknown>)?.name);
-    if (!name) {
-      res.status(400).json({ error: "name must be a non-empty string up to 80 characters." });
-      return;
-    }
-
-    try {
-      const result = await store.create(ctx, name);
-      res.status(201).json(result);
-    } catch (error) {
-      sendRouteError(res, error);
-    }
-  });
-
-  router.post("/:id/rotate", async (req: ApiKeyRequest, res) => {
-    const ctx = getContext(req, res);
-    if (!ctx) return;
-    try {
-      const result = await store.rotate(ctx, req.params.id);
-      if (!result) {
-        res.status(404).json({ error: "API key not found." });
+  router.post(
+    "/",
+    asyncHandler<ApiKeyRequest>(async (req, res) => {
+      const ctx = getContext(req, res);
+      if (!ctx) return;
+      const name = validateApiKeyName((req.body as Record<string, unknown>)?.name);
+      if (!name) {
+        res.status(400).json({ error: "name must be a non-empty string up to 80 characters." });
         return;
       }
-      res.json(result);
-    } catch (error) {
-      sendRouteError(res, error);
-    }
-  });
 
-  router.delete("/:id", async (req: ApiKeyRequest, res) => {
-    const ctx = getContext(req, res);
-    if (!ctx) return;
-    try {
-      const revoked = await store.revoke(ctx, req.params.id);
-      if (!revoked) {
-        res.status(404).json({ error: "API key not found." });
-        return;
+      try {
+        const result = await store.create(ctx, name);
+        res.status(201).json(result);
+      } catch (error) {
+        sendRouteError(res, error);
       }
-      res.status(204).send();
-    } catch (error) {
-      sendRouteError(res, error);
-    }
-  });
+    }),
+  );
+
+  router.post(
+    "/:id/rotate",
+    asyncHandler<ApiKeyRequest>(async (req, res) => {
+      const ctx = getContext(req, res);
+      if (!ctx) return;
+      try {
+        const result = await store.rotate(ctx, req.params.id);
+        if (!result) {
+          res.status(404).json({ error: "API key not found." });
+          return;
+        }
+        res.json(result);
+      } catch (error) {
+        sendRouteError(res, error);
+      }
+    }),
+  );
+
+  router.delete(
+    "/:id",
+    asyncHandler<ApiKeyRequest>(async (req, res) => {
+      const ctx = getContext(req, res);
+      if (!ctx) return;
+      try {
+        const revoked = await store.revoke(ctx, req.params.id);
+        if (!revoked) {
+          res.status(404).json({ error: "API key not found." });
+          return;
+        }
+        res.status(204).send();
+      } catch (error) {
+        sendRouteError(res, error);
+      }
+    }),
+  );
 
   return router;
 }

@@ -15,6 +15,7 @@
 import { Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { memoryStore } from "../engine/memoryStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -31,7 +32,7 @@ function resolveUserId(req: AuthenticatedRequest): string | null {
 // POST /api/memory — write entry
 // ---------------------------------------------------------------------------
 
-router.post("/", async (req: AuthenticatedRequest, res) => {
+router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -71,26 +72,26 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json(entry);
-});
+}));
 
 // ---------------------------------------------------------------------------
 // GET /api/memory/stats — usage stats (must precede /:id route)
 // ---------------------------------------------------------------------------
 
-router.get("/stats", async (req: AuthenticatedRequest, res) => {
+router.get("/stats", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
   res.json(await memoryStore.stats(userId));
-});
+}));
 
 // ---------------------------------------------------------------------------
 // GET /api/memory/search — keyword/semantic search
 // ---------------------------------------------------------------------------
 
-router.get("/search", async (req: AuthenticatedRequest, res) => {
+router.get("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -104,13 +105,13 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
 
   const results = await memoryStore.search(query, userId, agentFilter, limitNum);
   res.json({ results, total: results.length });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // GET /api/memory — list all entries
 // ---------------------------------------------------------------------------
 
-router.get("/", async (req: AuthenticatedRequest, res) => {
+router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -123,13 +124,13 @@ router.get("/", async (req: AuthenticatedRequest, res) => {
     typeof workflowId === "string" ? workflowId : undefined
   );
   res.json({ entries, total: entries.length });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 
-router.delete("/:id", async (req: AuthenticatedRequest, res) => {
+router.delete("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -143,6 +144,6 @@ router.delete("/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.status(204).end();
-});
+}));
 
 export default router;

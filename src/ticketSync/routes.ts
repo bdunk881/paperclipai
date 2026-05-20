@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { ticketSyncService } from "./service";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -132,7 +133,7 @@ const ticketLinkParamsSchema = z.object({
   ticketId: z.string().uuid(),
 });
 
-router.get("/connections", async (req: WorkspaceAwareRequest, res) => {
+router.get("/connections", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -140,9 +141,9 @@ router.get("/connections", async (req: WorkspaceAwareRequest, res) => {
 
   const connections = await ticketSyncService.listConnections(context.workspaceId, context.userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/connections", async (req: WorkspaceAwareRequest, res) => {
+router.post("/connections", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = createConnectionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -172,9 +173,9 @@ router.post("/connections", async (req: WorkspaceAwareRequest, res) => {
   });
 
   res.status(201).json(connection);
-});
+}));
 
-router.post("/connections/bootstrap", async (req: WorkspaceAwareRequest, res) => {
+router.post("/connections/bootstrap", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = bootstrapConnectionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -208,9 +209,9 @@ router.post("/connections/bootstrap", async (req: WorkspaceAwareRequest, res) =>
       : 400;
     res.status(statusCode).json({ error: message });
   }
-});
+}));
 
-router.get("/connections/:id", async (req, res) => {
+router.get("/connections/:id", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -224,9 +225,9 @@ router.get("/connections/:id", async (req, res) => {
   }
 
   res.json(connection);
-});
+}));
 
-router.patch("/connections/:id", async (req: AuthenticatedRequest, res) => {
+router.patch("/connections/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const parsed = updateConnectionSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid request body" });
@@ -259,9 +260,9 @@ router.patch("/connections/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.json(connection);
-});
+}));
 
-router.delete("/connections/:id", async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = req.auth?.sub?.trim();
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -275,9 +276,9 @@ router.delete("/connections/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.status(204).end();
-});
+}));
 
-router.post("/connections/:id/test", async (req, res) => {
+router.post("/connections/:id/test", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth?.sub?.trim();
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -291,9 +292,9 @@ router.post("/connections/:id/test", async (req, res) => {
   }
 
   res.json(connection);
-});
+}));
 
-router.get("/health", async (req: WorkspaceAwareRequest, res) => {
+router.get("/health", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = typeof req.query.workspaceId === "string" ? req.query.workspaceId : "";
   const context = resolveWorkspaceContext(req, res, workspaceId);
   if (!context) {
@@ -302,9 +303,9 @@ router.get("/health", async (req: WorkspaceAwareRequest, res) => {
 
   const connections = await ticketSyncService.listConnections(context.workspaceId, context.userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.get("/tickets/:ticketId/links", async (req: WorkspaceAwareRequest, res) => {
+router.get("/tickets/:ticketId/links", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const parsed = ticketLinkParamsSchema.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({ error: "ticketId must be a valid UUID" });
@@ -317,6 +318,6 @@ router.get("/tickets/:ticketId/links", async (req: WorkspaceAwareRequest, res) =
   }
   const links = await ticketSyncService.listLinks(parsed.data.ticketId, context);
   res.json({ links, total: links.length });
-});
+}));
 
 export default router;

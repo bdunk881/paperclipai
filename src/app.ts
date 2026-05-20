@@ -131,6 +131,7 @@ import { getRunQueue } from "./queue/queues";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
+import { asyncHandler } from "./middleware/asyncHandler";
 
 requirePersistence();
 
@@ -856,7 +857,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", requireAuth, async (req, res) => {
+app.post("/api/templates", requireAuth, asyncHandler(async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -908,7 +909,7 @@ app.post("/api/templates", requireAuth, async (req, res) => {
 
   await saveImportedTemplate(template);
   res.status(importedTemplate ? 200 : 201).json(template);
-});
+}));
 
 /** Returns the current portable workflow schema contract */
 app.get("/api/workflows/schema", (_req, res) => {
@@ -936,7 +937,7 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
-app.post("/api/templates/import", requireAuth, async (req, res) => {
+app.post("/api/templates/import", requireAuth, asyncHandler(async (req, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -960,7 +961,7 @@ app.post("/api/templates/import", requireAuth, async (req, res) => {
     template: bundle.template,
     schemaVersion: bundle.schemaVersion,
   });
-});
+}));
 
 /** Get sample data for a template (for dashboard preview) */
 app.get("/api/templates/:id/sample", (req, res) => {
@@ -1070,7 +1071,7 @@ app.post(
 });
 
 /** List all runs, optionally filtered by templateId or status */
-app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { templateId, status } = req.query;
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
@@ -1078,10 +1079,10 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, async (req: Works
     typeof status === "string" ? status : undefined
   );
   res.json({ runs, total: runs.length });
-});
+}));
 
 /** Get a single run by ID */
-app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const run = await runStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
@@ -1089,7 +1090,7 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
     return;
   }
   res.json(run);
-});
+}));
 
 /**
  * Cancel a run.
@@ -1108,7 +1109,7 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
  * Status that allows cancellation: queued | pending | running.
  * Anything else (completed, failed, canceled, etc.) returns 409.
  */
-app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1157,14 +1158,14 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
     completedAt: new Date().toISOString(),
   });
   res.json(canceled);
-});
+}));
 
 /**
  * Re-enqueue a failed run from the DLQ.
  * Resets status to "queued" and re-adds the job to the main runs queue.
  * Returns 409 if the run is not in the "failed" state.
  */
-app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1220,14 +1221,14 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
     error: undefined,
   });
   res.json(updated);
-});
+}));
 
 /**
  * Re-run a finished run using the CURRENT (latest) workflow version.
  * Creates a fresh run record and enqueues it. Use /retry to replay with the
  * original version instead.
  */
-app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1311,9 +1312,9 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
   }
 
   res.status(202).json(newRun);
-});
+}));
 
-app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/observability", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -1338,7 +1339,7 @@ app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res
   }
 
   res.json(response);
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Routing analytics API — recent classifier decisions for dashboarding
@@ -1541,7 +1542,7 @@ app.use("/api/workflows", requireAuth, workspaceResolver, requireRole("admin", "
 // POST /api/goals/team-assembly
 // ---------------------------------------------------------------------------
 
-app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
@@ -1590,7 +1591,7 @@ app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async 
     const msg = err instanceof Error ? err.message : String(err);
     res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Webhook trigger — activates a workflow from an external event
@@ -1601,7 +1602,7 @@ app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async 
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  */
-app.post("/api/webhooks/:templateId", async (req, res) => {
+app.post("/api/webhooks/:templateId", asyncHandler(async (req, res) => {
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -1626,7 +1627,7 @@ app.post("/api/webhooks/:templateId", async (req, res) => {
     typeof webhookUserId === "string" ? webhookUserId : undefined
   );
   res.status(202).json({ runId: run.id, status: run.status });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Approvals API — HITL pause-and-wait approval requests
@@ -1637,7 +1638,7 @@ app.post("/api/webhooks/:templateId", async (req, res) => {
  * Query params: status=pending|approved|rejected|timed_out
  * Returns all approval requests, optionally filtered by status.
  */
-app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/approvals", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = req.auth?.sub;
   const { status } = req.query;
   const validStatuses = ["pending", "approved", "rejected", "request_changes", "timed_out"];
@@ -1647,13 +1648,13 @@ app.get("/api/approvals", requireAuth, async (req: AuthenticatedRequest, res) =>
       : undefined;
   const approvals = (await approvalStore.list(filter)).filter((approval) => approval.assignee === userId);
   res.json({ approvals, total: approvals.length });
-});
+}));
 
 /**
  * GET /api/approvals/notifications
  * Returns in-app approval notifications for the authenticated approver.
  */
-app.get("/api/approvals/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/approvals/notifications", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   // DASH-43: list() is now async + Postgres-aware. Without the await,
   // persisted notifications never reached this endpoint and the inbox
   // looked empty.
@@ -1668,13 +1669,13 @@ app.get("/api/approvals/notifications", requireAuth, async (req: AuthenticatedRe
       assignee: notification.recipient,
     }));
   res.json({ notifications, total: notifications.length });
-});
+}));
 
 /**
  * GET /api/approvals/:id
  * Returns a single approval request by ID.
  */
-app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/approvals/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const approval = await approvalStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
@@ -1686,13 +1687,13 @@ app.get("/api/approvals/:id", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
   res.json(approval);
-});
+}));
 
 /**
  * GET /api/approvals/:id/notifications
  * Returns the durable notification outbox rows created for an approval request.
  */
-app.get("/api/approvals/:id/notifications", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.get("/api/approvals/:id/notifications", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const approval = await approvalStore.get(req.params.id);
   const userId = req.auth?.sub;
   if (!approval || (approval.userId !== undefined && approval.userId !== userId)) {
@@ -1702,14 +1703,14 @@ app.get("/api/approvals/:id/notifications", requireAuth, async (req: Authenticat
 
   const notifications = await approvalNotificationStore.listByApprovalRequest(req.params.id);
   res.json({ notifications, total: notifications.length });
-});
+}));
 
 /**
  * POST /api/approvals/:id/resolve
  * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
@@ -1734,13 +1735,13 @@ app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedReq
     return;
   }
   res.json({ success: true });
-});
+}));
 
 /**
  * GET /api/executions/:id/state
  * Returns the persisted paused execution state for an awaiting-approval run.
  */
-app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
+app.get("/api/executions/:id/state", requireAuth, asyncHandler(async (req, res) => {
   const run = await runStore.get(req.params.id);
   const userId = getAuthenticatedUserId(req);
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
@@ -1766,14 +1767,14 @@ app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
     pausedAtStepName: approval.stepName,
     runtimeState: run.runtimeState ?? null,
   });
-});
+}));
 
 /**
  * POST /api/executions/:id/resume
  * Manually resumes a paused execution after its approval decision has already
  * been persisted and the original live worker is gone.
  */
-app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/executions/:id/resume", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const run = await runStore.get(req.params.id);
   if (!run || (run.userId !== undefined && run.userId !== req.auth?.sub)) {
     res.status(404).json({ error: `Execution not found: ${req.params.id}` });
@@ -1805,12 +1806,12 @@ app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedReq
   } catch (error) {
     res.status(409).json({ error: String(error) });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Health check
 // ---------------------------------------------------------------------------
-app.get("/health", async (_req, res) => {
+app.get("/health", asyncHandler(async (_req, res) => {
   const { checkPostgresConnection, isPostgresConfigured: isPgConfigured } = await import("./db/postgres");
   const pgConfigured = isPgConfigured();
   const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
@@ -1840,9 +1841,9 @@ app.get("/health", async (_req, res) => {
       connected: pgConnected,
     },
   });
-});
+}));
 
-app.get("/api/connectors/health", requireAuthOrQaBypass, async (req: AuthenticatedRequest, res) => {
+app.get("/api/connectors/health", requireAuthOrQaBypass, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = req.auth?.sub?.trim();
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -1854,7 +1855,7 @@ app.get("/api/connectors/health", requireAuthOrQaBypass, async (req: Authenticat
     connectors,
     summary: getConnectorHealthSummary(connectors),
   });
-});
+}));
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESUME_SWEEPER !== "false") {
   startApprovalResumeCoordinator();

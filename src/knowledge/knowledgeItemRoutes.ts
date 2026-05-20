@@ -17,6 +17,7 @@ import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_KINDS = new Set(["document", "connector_pull", "synthesized", "verified"]);
@@ -99,7 +100,7 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
   const router = Router();
 
   // GET /api/knowledge-items?kind=&mission_id=&trust_min=&include_superseded=true
-  router.get("/", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     if (!workspaceId || !userId) return res.status(401).json({ error: "Authentication required" });
@@ -131,10 +132,10 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
       console.error("[knowledge-items] list failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to list knowledge items" });
     }
-  });
+  }));
 
   // GET /api/knowledge-items/:id
-  router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -155,11 +156,11 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
       console.error("[knowledge-items] get failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to fetch knowledge item" });
     }
-  });
+  }));
 
   // POST /api/knowledge-items
   // body: { title, content, kind, source_type, source_ref?, mission_id?, tags?, metadata? }
-  router.post("/", async (req: WorkspaceAwareRequest, res) => {
+  router.post("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     if (!workspaceId || !userId) return res.status(401).json({ error: "Authentication required" });
@@ -221,11 +222,11 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
       console.error("[knowledge-items] create failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to create knowledge item" });
     }
-  });
+  }));
 
   // POST /api/knowledge-items/:id/supersede
   // body: { superseded_by: <new item id> }
-  router.post("/:id/supersede", async (req: WorkspaceAwareRequest, res) => {
+  router.post("/:id/supersede", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -253,10 +254,10 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
       console.error("[knowledge-items] supersede failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to supersede" });
     }
-  });
+  }));
 
   // DELETE /api/knowledge-items/:id (soft-delete)
-  router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.delete("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -277,7 +278,7 @@ export function createKnowledgeItemRoutes(pool: Pool): Router {
       console.error("[knowledge-items] delete failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to delete" });
     }
-  });
+  }));
 
   return router;
 }

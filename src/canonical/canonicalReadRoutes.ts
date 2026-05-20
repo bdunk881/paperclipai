@@ -24,6 +24,7 @@ import type { Pool } from "pg";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 500;
@@ -82,7 +83,7 @@ export interface OrgGraphResponse {
 
 export function createOrgGraphRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     try {
@@ -142,7 +143,7 @@ export function createOrgGraphRoutes(pool: Pool): Router {
       console.error(`[org-graph] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load org graph" });
     }
-  });
+  }));
   return router;
 }
 
@@ -171,7 +172,7 @@ export interface StepResultRow {
  */
 export function createStepResultsRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/:runId", async (req: AuthenticatedRequest, res) => {
+  router.get("/:runId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     const runId = req.params.runId;
@@ -227,7 +228,7 @@ export function createStepResultsRoutes(pool: Pool): Router {
       console.error(`[step-results] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load step results" });
     }
-  });
+  }));
   return router;
 }
 
@@ -248,7 +249,7 @@ export interface BudgetRow {
 
 export function createBudgetsRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     const limit = parseLimit(req.query.limit);
@@ -289,7 +290,7 @@ export function createBudgetsRoutes(pool: Pool): Router {
       console.error(`[budgets] list failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load budgets" });
     }
-  });
+  }));
   return router;
 }
 
@@ -311,7 +312,7 @@ export interface EntitlementResponse {
 
 export function createEntitlementsRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     try {
@@ -371,7 +372,7 @@ export function createEntitlementsRoutes(pool: Pool): Router {
       console.error(`[entitlements] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load entitlements" });
     }
-  });
+  }));
   return router;
 }
 
@@ -394,7 +395,7 @@ export interface WakeEventRow {
 
 export function createWakeEventsRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     const limit = parseLimit(req.query.limit);
@@ -439,7 +440,7 @@ export function createWakeEventsRoutes(pool: Pool): Router {
       console.error(`[wake-events] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load wake events" });
     }
-  });
+  }));
   return router;
 }
 
@@ -459,7 +460,7 @@ export interface ConnectorConnectionRow {
 
 export function createConnectorConnectionsRoutes(pool: Pool): Router {
   const router = Router();
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;
     const limit = parseLimit(req.query.limit);
@@ -497,6 +498,6 @@ export function createConnectorConnectionsRoutes(pool: Pool): Router {
       console.error(`[connector-connections] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load connector connections" });
     }
-  });
+  }));
   return router;
 }

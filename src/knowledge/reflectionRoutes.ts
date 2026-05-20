@@ -8,6 +8,7 @@
 
 import { Router } from "express";
 import type { Pool } from "pg";
+import { asyncHandler } from "../middleware/asyncHandler";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { runReflection, type ReflectionPromptOutput } from "./reflectionJob";
 import { embedTextForWorkspace, llmReflectForWorkspace } from "./reflectionWiring";
@@ -38,51 +39,54 @@ export function createReflectionRoutes(pool: Pool, deps: ReflectionRouteDeps = {
 
   // POST /api/knowledge/reflect
   // body: { lookback_days?: number, workspace_context?: string }
-  router.post("/", async (req: WorkspaceAwareRequest, res) => {
-    const workspaceId = req.workspace?.id;
-    const userId = req.auth?.sub;
-    if (!workspaceId || !userId) {
-      return res.status(401).json({ error: "Authentication required" });
-    }
+  router.post(
+    "/",
+    asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+      const workspaceId = req.workspace?.id;
+      const userId = req.auth?.sub;
+      if (!workspaceId || !userId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
 
-    const body = req.body ?? {};
-    const lookbackDays =
-      typeof body.lookback_days === "number" && body.lookback_days > 0 && body.lookback_days <= 90
-        ? Math.floor(body.lookback_days)
-        : 14;
-    const workspaceContext =
-      typeof body.workspace_context === "string" ? body.workspace_context.slice(0, 2000) : "";
+      const body = req.body ?? {};
+      const lookbackDays =
+        typeof body.lookback_days === "number" && body.lookback_days > 0 && body.lookback_days <= 90
+          ? Math.floor(body.lookback_days)
+          : 14;
+      const workspaceContext =
+        typeof body.workspace_context === "string" ? body.workspace_context.slice(0, 2000) : "";
 
-    try {
-      const result = await runReflection(
-        {
-          pool,
-          llmReflect:
-            deps.llmReflect ??
-            ((input) => llmReflectForWorkspace({ workspaceId, userId }, input)),
-          embedFn:
-            deps.embedFn ??
-            ((text) => embedTextForWorkspace({ workspaceId, userId }, text)),
-        },
-        {
-          workspaceId,
-          userId,
-          lookbackDays,
-          workspaceContext,
-        },
-      );
+      try {
+        const result = await runReflection(
+          {
+            pool,
+            llmReflect:
+              deps.llmReflect ??
+              ((input) => llmReflectForWorkspace({ workspaceId, userId }, input)),
+            embedFn:
+              deps.embedFn ??
+              ((text) => embedTextForWorkspace({ workspaceId, userId }, text)),
+          },
+          {
+            workspaceId,
+            userId,
+            lookbackDays,
+            workspaceContext,
+          },
+        );
 
-      return res.json({
-        clustersFound: result.clustersFound,
-        itemsCreated: result.itemsCreated,
-        episodesProcessed: result.episodesProcessed,
-        insertedItemIds: result.insertedItemIds,
-      });
-    } catch (err) {
-      console.error("[reflection] run failed:", (err as Error).message);
-      return res.status(500).json({ error: "Reflection run failed" });
-    }
-  });
+        return res.json({
+          clustersFound: result.clustersFound,
+          itemsCreated: result.itemsCreated,
+          episodesProcessed: result.episodesProcessed,
+          insertedItemIds: result.insertedItemIds,
+        });
+      } catch (err) {
+        console.error("[reflection] run failed:", (err as Error).message);
+        return res.status(500).json({ error: "Reflection run failed" });
+      }
+    }),
+  );
 
   return router;
 }

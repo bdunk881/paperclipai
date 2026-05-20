@@ -6,6 +6,7 @@
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { asyncHandler } from "../middleware/asyncHandler";
 import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 
 const router = Router();
@@ -26,83 +27,86 @@ function resolveAppBaseUrl(req: Request): string {
  * Body: { tier: "flow"|"automate"|"scale", email?, firstName?, companyName?, workspaceId? }
  * Returns: { url: string } — Stripe hosted checkout URL
  */
-router.post("/", async (req: AuthenticatedRequest, res: Response) => {
-  const { tier, email, firstName, companyName } = req.body as {
-    tier?: string;
-    email?: string;
-    firstName?: string;
-    companyName?: string;
-  };
-  // SECURITY: route is requireAuth-mounted (src/app.ts). Trust ONLY the
-  // JWT-resolved identity for both userId and workspaceId. Body / header
-  // fallbacks would let any caller knowing a victim's workspace UUID overwrite
-  // that tenant's entitlement row at webhook time
-  // (handleCheckoutSessionCompleted writes by workspace_id with ON CONFLICT).
-  const resolvedUserId = req.auth?.sub;
-  const resolvedWorkspaceId = req.auth?.workspaceId;
-
-  if (!tier || !(tier in PRICING_TIERS)) {
-    res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
-    return;
-  }
-
-  const tierConfig = PRICING_TIERS[tier as TierKey];
-
-  if (tier === "explore") {
-    res.status(400).json({ error: "Explore is a free tier — no checkout required" });
-    return;
-  }
-
-  if (!tierConfig.priceId) {
-    res.status(503).json({ error: "Stripe pricing not configured for this tier" });
-    return;
-  }
-
-  try {
-    const stripe = getStripe();
-    const appBaseUrl = resolveAppBaseUrl(req);
-
-    const metadata = {
-      tier,
-      ...(email ? { email } : {}),
-      ...(firstName ? { firstName } : {}),
-      ...(companyName ? { companyName } : {}),
-      ...(resolvedUserId ? { userId: resolvedUserId } : {}),
-      ...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+router.post(
+  "/",
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const { tier, email, firstName, companyName } = req.body as {
+      tier?: string;
+      email?: string;
+      firstName?: string;
+      companyName?: string;
     };
+    // SECURITY: route is requireAuth-mounted (src/app.ts). Trust ONLY the
+    // JWT-resolved identity for both userId and workspaceId. Body / header
+    // fallbacks would let any caller knowing a victim's workspace UUID overwrite
+    // that tenant's entitlement row at webhook time
+    // (handleCheckoutSessionCompleted writes by workspace_id with ON CONFLICT).
+    const resolvedUserId = req.auth?.sub;
+    const resolvedWorkspaceId = req.auth?.workspaceId;
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
-      mode: "subscription",
-      payment_method_types: ["card"],
-      line_items: [{ price: tierConfig.priceId, quantity: 1 }],
-      success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appBaseUrl}/pricing`,
-      allow_promotion_codes: true,
-      metadata,
-    };
+    if (!tier || !(tier in PRICING_TIERS)) {
+      res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
+      return;
+    }
 
-    // Add trial period for eligible tiers
-    if (tierConfig.trialDays > 0) {
-      sessionParams.subscription_data = {
-        trial_period_days: tierConfig.trialDays,
+    const tierConfig = PRICING_TIERS[tier as TierKey];
+
+    if (tier === "explore") {
+      res.status(400).json({ error: "Explore is a free tier — no checkout required" });
+      return;
+    }
+
+    if (!tierConfig.priceId) {
+      res.status(503).json({ error: "Stripe pricing not configured for this tier" });
+      return;
+    }
+
+    try {
+      const stripe = getStripe();
+      const appBaseUrl = resolveAppBaseUrl(req);
+
+      const metadata = {
+        tier,
+        ...(email ? { email } : {}),
+        ...(firstName ? { firstName } : {}),
+        ...(companyName ? { companyName } : {}),
+        ...(resolvedUserId ? { userId: resolvedUserId } : {}),
+        ...(resolvedWorkspaceId ? { workspaceId: resolvedWorkspaceId } : {}),
+      };
+
+      const sessionParams: Stripe.Checkout.SessionCreateParams = {
+        mode: "subscription",
+        payment_method_types: ["card"],
+        line_items: [{ price: tierConfig.priceId, quantity: 1 }],
+        success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${appBaseUrl}/pricing`,
+        allow_promotion_codes: true,
         metadata,
       };
-    } else {
-      sessionParams.subscription_data = { metadata };
-    }
 
-    // Pre-fill email if provided
-    if (email) {
-      sessionParams.customer_email = email;
-    }
+      // Add trial period for eligible tiers
+      if (tierConfig.trialDays > 0) {
+        sessionParams.subscription_data = {
+          trial_period_days: tierConfig.trialDays,
+          metadata,
+        };
+      } else {
+        sessionParams.subscription_data = { metadata };
+      }
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
-    res.json({ url: session.url });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[stripe/checkout] Error creating session: ${msg}`);
-    res.status(500).json({ error: "Failed to create checkout session" });
-  }
-});
+      // Pre-fill email if provided
+      if (email) {
+        sessionParams.customer_email = email;
+      }
+
+      const session = await stripe.checkout.sessions.create(sessionParams);
+      res.json({ url: session.url });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[stripe/checkout] Error creating session: ${msg}`);
+      res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  }),
+);
 
 export default router;

@@ -5,6 +5,7 @@ import { gmailConnectorService } from "./service";
 import { logGmail } from "./logger";
 import { ConnectorError } from "./types";
 import { verifyGooglePubSubPush } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -57,15 +58,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = gmailConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = gmailConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -74,15 +71,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await gmailConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await gmailConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -96,18 +89,14 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await gmailConnectorService.connectApiKey({
-      userId,
-      apiKey: apiKey.trim(),
-    });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await gmailConnectorService.connectApiKey({
+    userId,
+    apiKey: apiKey.trim(),
+  });
+  res.status(201).json({ connection });
+}));
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -116,24 +105,20 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await gmailConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await gmailConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await gmailConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -142,9 +127,9 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await gmailConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -158,43 +143,35 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
-router.get("/messages", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/messages", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const messages = await gmailConnectorService.listMessages(userId, {
-      query: typeof req.query.q === "string" ? req.query.q.trim() : undefined,
-      labelIds: parseCsvParam(req.query.labelIds),
-      maxResults: parseLimit(req.query.maxResults),
-    });
-    res.json({ messages, total: messages.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const messages = await gmailConnectorService.listMessages(userId, {
+    query: typeof req.query.q === "string" ? req.query.q.trim() : undefined,
+    labelIds: parseCsvParam(req.query.labelIds),
+    maxResults: parseLimit(req.query.maxResults),
+  });
+  res.json({ messages, total: messages.length });
+}));
 
-router.get("/messages/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/messages/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const message = await gmailConnectorService.getMessage(userId, req.params.id);
-    res.json({ message });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const message = await gmailConnectorService.getMessage(userId, req.params.id);
+  res.json({ message });
+}));
 
-router.post("/messages/send", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/messages/send", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -216,38 +193,30 @@ router.post("/messages/send", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const message = await gmailConnectorService.sendMessage(userId, {
-      to: to.trim(),
-      subject: subject.trim(),
-      text: text.trim(),
-      html: html?.trim(),
-      cc: Array.isArray(cc) ? cc.map((value) => String(value).trim()).filter(Boolean) : undefined,
-      bcc: Array.isArray(bcc) ? bcc.map((value) => String(value).trim()).filter(Boolean) : undefined,
-      threadId: threadId?.trim(),
-    });
-    res.status(201).json({ message });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const message = await gmailConnectorService.sendMessage(userId, {
+    to: to.trim(),
+    subject: subject.trim(),
+    text: text.trim(),
+    html: html?.trim(),
+    cc: Array.isArray(cc) ? cc.map((value) => String(value).trim()).filter(Boolean) : undefined,
+    bcc: Array.isArray(bcc) ? bcc.map((value) => String(value).trim()).filter(Boolean) : undefined,
+    threadId: threadId?.trim(),
+  });
+  res.status(201).json({ message });
+}));
 
-router.get("/labels", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/labels", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const labels = await gmailConnectorService.listLabels(userId);
-    res.json({ labels, total: labels.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const labels = await gmailConnectorService.listLabels(userId);
+  res.json({ labels, total: labels.length });
+}));
 
-router.post("/labels", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/labels", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -269,20 +238,16 @@ router.post("/labels", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const label = await gmailConnectorService.createLabel(userId, {
-      name: name.trim(),
-      messageListVisibility,
-      labelListVisibility,
-      color,
-    });
-    res.status(201).json({ label });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const label = await gmailConnectorService.createLabel(userId, {
+    name: name.trim(),
+    messageListVisibility,
+    labelListVisibility,
+    color,
+  });
+  res.status(201).json({ label });
+}));
 
-router.patch("/labels/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/labels/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -304,20 +269,16 @@ router.patch("/labels/:id", requireAuth, async (req: AuthenticatedRequest, res) 
     return;
   }
 
-  try {
-    const label = await gmailConnectorService.updateLabel(userId, req.params.id, {
-      name: name?.trim(),
-      messageListVisibility,
-      labelListVisibility,
-      color,
-    });
-    res.json({ label });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const label = await gmailConnectorService.updateLabel(userId, req.params.id, {
+    name: name?.trim(),
+    messageListVisibility,
+    labelListVisibility,
+    color,
+  });
+  res.json({ label });
+}));
 
-router.post("/watch", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/watch", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -336,17 +297,13 @@ router.post("/watch", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const watch = await gmailConnectorService.watchMailbox(userId, {
-      topicName: effectiveTopicName,
-      labelIds: Array.isArray(labelIds) ? labelIds.map((value) => String(value).trim()).filter(Boolean) : undefined,
-      labelFilterAction,
-    });
-    res.status(201).json({ watch });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const watch = await gmailConnectorService.watchMailbox(userId, {
+    topicName: effectiveTopicName,
+    labelIds: Array.isArray(labelIds) ? labelIds.map((value) => String(value).trim()).filter(Boolean) : undefined,
+    labelFilterAction,
+  });
+  res.status(201).json({ watch });
+}));
 
 export const gmailWebhookRouter = express.Router();
 
@@ -354,30 +311,26 @@ gmailWebhookRouter.post(
   "/pubsub",
   express.json({ type: ["application/json", "application/*+json"] }),
   async (req, res) => {
-    try {
-      const notification = await verifyGooglePubSubPush({
-        authorizationHeader: req.header("authorization"),
-        body: req.body,
-      });
+    const notification = await verifyGooglePubSubPush({
+      authorizationHeader: req.header("authorization"),
+      body: req.body,
+    });
 
-      logGmail({
-        event: "webhook",
-        level: "info",
-        connector: "gmail",
-        emailAddress: notification.emailAddress,
-        message: "Gmail Pub/Sub notification received",
-        metadata: {
-          messageId: notification.messageId,
-          historyId: notification.historyId,
-          publishTime: notification.publishTime,
-          subscription: notification.subscription,
-        },
-      });
+    logGmail({
+      event: "webhook",
+      level: "info",
+      connector: "gmail",
+      emailAddress: notification.emailAddress,
+      message: "Gmail Pub/Sub notification received",
+      metadata: {
+        messageId: notification.messageId,
+        historyId: notification.historyId,
+        publishTime: notification.publishTime,
+        subscription: notification.subscription,
+      },
+    });
 
-      res.status(200).json({ ok: true });
-    } catch (error) {
-      handleError(res, error);
-    }
+    res.status(200).json({ ok: true });
   }
 );
 

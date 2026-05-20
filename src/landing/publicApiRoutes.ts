@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
 import { getStripe, PRICING_TIERS, TierKey } from "../billing/stripeClient";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -97,7 +98,7 @@ async function createCheckoutSession(
   return session.url;
 }
 
-router.post("/checkout", async (req: Request, res: Response) => {
+router.post("/checkout", asyncHandler<Request>(async (req, res: Response) => {
   try {
     const url = await createCheckoutSession(req, req.body as {
       tier?: string;
@@ -124,9 +125,9 @@ router.post("/checkout", async (req: Request, res: Response) => {
     console.error(`[landing/public/checkout] ${message}`);
     res.status(500).json({ error: "Failed to create checkout session" });
   }
-});
+}));
 
-router.post("/subscribe", async (req: Request, res: Response) => {
+router.post("/subscribe", asyncHandler<Request>(async (req, res: Response) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
   if (!email || !EMAIL_RE.test(email)) {
     res.status(400).json({ error: "Invalid email" });
@@ -146,9 +147,9 @@ router.post("/subscribe", async (req: Request, res: Response) => {
     console.error("[landing/public/subscribe]", error);
     res.status(500).json({ error: "Failed to subscribe" });
   }
-});
+}));
 
-router.post("/beta-signup", async (req: Request, res: Response) => {
+router.post("/beta-signup", asyncHandler<Request>(async (req, res: Response) => {
   const body = req.body as {
     name?: string;
     email?: string;
@@ -196,9 +197,9 @@ router.post("/beta-signup", async (req: Request, res: Response) => {
     console.error("[landing/public/beta-signup]", error);
     res.status(500).json({ error: "Failed to submit application" });
   }
-});
+}));
 
-router.post("/waitlist-signup", async (req: Request, res: Response) => {
+router.post("/waitlist-signup", asyncHandler<Request>(async (req, res: Response) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
   if (!email || !EMAIL_RE.test(email)) {
     res.status(400).json({ error: "Valid email required" });
@@ -223,6 +224,6 @@ router.post("/waitlist-signup", async (req: Request, res: Response) => {
     console.error("[landing/public/waitlist-signup]", error);
     res.status(500).json({ error: "Unable to join the waitlist right now." });
   }
-});
+}));
 
 export default router;

@@ -5,6 +5,7 @@ import { inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { CompanyProvisioningAgentInput } from "../controlPlane/types";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 const COMPANY_PROVISIONING_CONTRACT_VERSION = "2026-04-28";
@@ -77,7 +78,7 @@ router.get("/role-templates", (_req, res) => {
   });
 });
 
-router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -298,6 +299,6 @@ router.post("/", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) 
     }
     res.status(500).json({ error: "Unexpected company provisioning failure" });
   }
-});
+}));
 
 export default router;

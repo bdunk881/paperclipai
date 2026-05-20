@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from "../../auth/authMiddleware";
 import { getTier1HealthHttpStatus } from "../shared/tier1Contract";
 import { apolloConnectorService } from "./service";
 import { ConnectorError } from "./types";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -33,15 +34,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = apolloConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = apolloConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -50,15 +47,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await apolloConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await apolloConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -71,15 +64,11 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await apolloConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await apolloConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -88,24 +77,20 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await apolloConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await apolloConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await apolloConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -114,9 +99,9 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await apolloConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -130,6 +115,6 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
 export default router;

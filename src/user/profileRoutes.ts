@@ -1,6 +1,7 @@
 import { Response, Router } from "express";
 import { z } from "zod";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { asyncHandler } from "../middleware/asyncHandler";
 import { getUserProfile, upsertUserProfile } from "./profileStore";
 
 const router = Router();
@@ -22,21 +23,24 @@ function getAuthenticatedUser(req: AuthenticatedRequest): { id: string; name: st
   };
 }
 
-router.get("/profile", async (req: AuthenticatedRequest, res) => {
-  const user = getAuthenticatedUser(req);
-  if (!user) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
+router.get(
+  "/profile",
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
 
-  const profile = await getUserProfile(user.id);
-  res.json({
-    profile: {
-      displayName: profile?.displayName ?? user.name,
-      timezone: profile?.timezone ?? "UTC",
-    },
-  });
-});
+    const profile = await getUserProfile(user.id);
+    res.json({
+      profile: {
+        displayName: profile?.displayName ?? user.name,
+        timezone: profile?.timezone ?? "UTC",
+      },
+    });
+  }),
+);
 
 async function handleUpsertProfile(req: AuthenticatedRequest, res: Response) {
   const user = getAuthenticatedUser(req);
@@ -65,7 +69,7 @@ async function handleUpsertProfile(req: AuthenticatedRequest, res: Response) {
   });
 }
 
-router.patch("/profile", handleUpsertProfile);
-router.put("/profile", handleUpsertProfile);
+router.patch("/profile", asyncHandler<AuthenticatedRequest>(handleUpsertProfile));
+router.put("/profile", asyncHandler<AuthenticatedRequest>(handleUpsertProfile));
 
 export default router;

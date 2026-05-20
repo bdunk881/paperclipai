@@ -26,6 +26,7 @@ import { posthogCredentialStore } from "./posthog/credentialStore";
 import { intercomCredentialStore } from "./intercom/credentialStore";
 import { stripeCredentialStore } from "./stripe/credentialStore";
 import { composioCredentialStore } from "./composio/credentialStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 type UnifiedProvider =
   | "slack"
@@ -225,7 +226,7 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
   }
 });
 
-router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/status", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -284,9 +285,9 @@ router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
     const message = errorMessage(error);
     res.status(errorStatusCode(error)).json({ error: message });
   }
-});
+}));
 
-router.get("/callback", async (req, res) => {
+router.get("/callback", asyncHandler(async (req, res) => {
   const provider = parseProvider(typeof req.query.provider === "string" ? req.query.provider : undefined);
   const providerName = typeof req.query.provider === "string" && req.query.provider.trim()
     ? req.query.provider
@@ -369,9 +370,9 @@ router.get("/callback", async (req, res) => {
       dashboardRedirect({ provider, status: "error", message: errorMessage(error) })
     );
   }
-});
+}));
 
-router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/:provider/disconnect", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const provider = parseProvider(req.params.provider);
   if (!provider) {
     res.status(400).json({ error: "Unsupported provider" });
@@ -495,6 +496,6 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
     const message = errorMessage(error);
     res.status(errorStatusCode(error)).json({ error: message });
   }
-});
+}));
 
 export default router;

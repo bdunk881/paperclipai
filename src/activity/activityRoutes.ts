@@ -19,6 +19,7 @@
 import { Router } from "express";
 import type { Pool } from "pg";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { asyncHandler } from "../middleware/asyncHandler";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 
@@ -52,49 +53,52 @@ function parseLimit(raw: unknown): number {
 export function createActivityRoutes(pool: Pool) {
   const router = Router();
 
-  router.get("/", async (req: AuthenticatedRequest, res) => {
-    const userId = req.auth?.sub;
-    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
-    if (!userId || !workspaceId) {
-      res.status(401).json({ error: "Authenticated user + workspace required" });
-      return;
-    }
+  router.get(
+    "/",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
 
-    const limit = parseLimit(req.query.limit);
+      const limit = parseLimit(req.query.limit);
 
-    try {
-      const result = await withWorkspaceContext(
-        pool,
-        { workspaceId, userId },
-        async (client) =>
-          client.query<DbRow>(
-            `SELECT id, kind, actor, subject, payload, occurred_at
-               FROM activity_events
-              WHERE workspace_id = $1
-              ORDER BY occurred_at DESC, id DESC
-              LIMIT $2`,
-            [workspaceId, limit],
-          ),
-      );
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) =>
+            client.query<DbRow>(
+              `SELECT id, kind, actor, subject, payload, occurred_at
+                 FROM activity_events
+                WHERE workspace_id = $1
+                ORDER BY occurred_at DESC, id DESC
+                LIMIT $2`,
+              [workspaceId, limit],
+            ),
+        );
 
-      const events: ActivityEventRow[] = result.rows.map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        actor: row.actor ?? {},
-        subject: row.subject ?? {},
-        payload: row.payload ?? {},
-        occurredAt:
-          row.occurred_at instanceof Date
-            ? row.occurred_at.toISOString()
-            : String(row.occurred_at),
-      }));
+        const events: ActivityEventRow[] = result.rows.map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          actor: row.actor ?? {},
+          subject: row.subject ?? {},
+          payload: row.payload ?? {},
+          occurredAt:
+            row.occurred_at instanceof Date
+              ? row.occurred_at.toISOString()
+              : String(row.occurred_at),
+        }));
 
-      res.json({ events, limit, total: events.length });
-    } catch (err) {
-      console.error(`[activity] list failed: ${(err as Error).message}`);
-      res.status(500).json({ error: "Failed to load activity feed" });
-    }
-  });
+        res.json({ events, limit, total: events.length });
+      } catch (err) {
+        console.error(`[activity] list failed: ${(err as Error).message}`);
+        res.status(500).json({ error: "Failed to load activity feed" });
+      }
+    }),
+  );
 
   return router;
 }

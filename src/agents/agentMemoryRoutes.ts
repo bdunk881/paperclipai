@@ -9,6 +9,7 @@ import {
   AgentMemoryScope,
   AgentMemoryTier,
 } from "./agentMemoryStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router({ mergeParams: true });
 const GIGABYTE = 1024 * 1024 * 1024;
@@ -198,7 +199,7 @@ export function seedAgentMemorySearchQuotaForTests(userId: string, count: number
   semanticSearchUsage.set(`${userId}:${date}`, count);
 }
 
-router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -281,9 +282,9 @@ router.post("/", requireRunId, async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json({ tier, entry });
-});
+}));
 
-router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/ticket-close", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -422,9 +423,9 @@ router.post("/ticket-close", requireRunId, async (req: AuthenticatedRequest, res
   });
 
   res.status(201).json({ tier, entry });
-});
+}));
 
-router.get("/search", async (req: AuthenticatedRequest, res) => {
+router.get("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -481,9 +482,9 @@ router.get("/search", async (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ tier, results, total: results.length });
-});
+}));
 
-router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/kg", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -568,9 +569,9 @@ router.post("/kg", requireRunId, async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json({ tier, fact });
-});
+}));
 
-router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
+router.get("/kg/query", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -610,9 +611,9 @@ router.get("/kg/query", async (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ tier, facts, total: facts.length });
-});
+}));
 
-router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/heartbeat-log", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -669,9 +670,9 @@ router.post("/heartbeat-log", requireRunId, async (req: AuthenticatedRequest, re
   });
 
   res.status(201).json({ tier, log });
-});
+}));
 
-router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
+router.get("/heartbeat-log", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -701,9 +702,9 @@ router.get("/heartbeat-log", async (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ tier, logs, total: logs.length });
-});
+}));
 
-router.get("/state", async (req: AuthenticatedRequest, res) => {
+router.get("/state", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -726,9 +727,9 @@ router.get("/state", async (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ tier, state });
-});
+}));
 
-router.post("/archive", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/archive", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   const agentId = resolveAgentId(req);
   if (!userId || !agentId) {
@@ -756,6 +757,6 @@ router.post("/archive", requireRunId, async (req: AuthenticatedRequest, res) => 
   });
 
   res.status(200).json({ tier, archived });
-});
+}));
 
 export default router;

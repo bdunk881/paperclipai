@@ -15,6 +15,7 @@ import type {
 } from "./types";
 import { WorkflowTemplate } from "../types/workflow";
 import { controlPlaneStore } from "./controlPlaneStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -301,7 +302,7 @@ function requirePaperclipRunId(
   next();
 }
 
-router.get("/teams", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -315,9 +316,9 @@ router.get("/teams", async (req: WorkspaceAwareRequest, res) => {
     console.warn(`[controlPlaneRoutes] /teams failed: ${(err as Error).message}`);
     res.status(500).json({ error: "teams_unavailable" });
   }
-});
+}));
 
-router.get("/company/lifecycle", async (req: AuthenticatedRequest, res) => {
+router.get("/company/lifecycle", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -326,9 +327,9 @@ router.get("/company/lifecycle", async (req: AuthenticatedRequest, res) => {
 
   const state = await controlPlaneStore.getCompanyLifecycle(userId);
   res.json(state);
-});
+}));
 
-router.get("/company/lifecycle/audit", async (req: AuthenticatedRequest, res) => {
+router.get("/company/lifecycle/audit", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -337,9 +338,9 @@ router.get("/company/lifecycle/audit", async (req: AuthenticatedRequest, res) =>
 
   const auditTrail = await controlPlaneStore.listCompanyLifecycleAudit(userId);
   res.json({ auditTrail, total: auditTrail.length });
-});
+}));
 
-router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/company/lifecycle", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -381,14 +382,14 @@ router.post("/company/lifecycle", requirePaperclipRunId, async (req: WorkspaceAw
     },
   });
   res.json(result);
-});
+}));
 
 router.get("/skills", (_req, res) => {
   const skills = controlPlaneStore.listSkills();
   res.json({ skills, total: skills.length });
 });
 
-router.post("/teams", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/teams", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -454,7 +455,7 @@ router.post("/teams", requirePaperclipRunId, async (req: WorkspaceAwareRequest, 
   });
 
   res.status(201).json(team);
-});
+}));
 
 router.post(
   "/deployments/workflow",
@@ -566,7 +567,7 @@ router.post(
   }
 });
 
-router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -632,9 +633,9 @@ router.get("/teams/:id", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(404).json({ error: "Team not found" });
   }
-});
+}));
 
-router.get("/teams/:id/spend", async (req: WorkspaceAwareRequest, res) => {
+router.get("/teams/:id/spend", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   // DASH-64.3: getTeamSpendSnapshot is now async (repository-backed).
   // Wrap in try/catch per Codex iter-3 lesson — Express 4 doesn't
   // auto-translate async rejections to 500s.
@@ -661,9 +662,9 @@ router.get("/teams/:id/spend", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to load team spend snapshot" });
   }
-});
+}));
 
-router.post("/teams/:id/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/teams/:id/lifecycle", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -704,9 +705,9 @@ router.post("/teams/:id/lifecycle", requirePaperclipRunId, async (req: Workspace
     }
     res.status(500).json({ error: "Unexpected control-plane lifecycle failure" });
   }
-});
+}));
 
-router.post("/agents/:id/skills", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/agents/:id/skills", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -757,9 +758,9 @@ router.post("/agents/:id/skills", requirePaperclipRunId, async (req: WorkspaceAw
     }
     res.status(500).json({ error: "Unexpected control-plane skill mutation failure" });
   }
-});
+}));
 
-router.post("/tasks", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/tasks", requirePaperclipRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -813,9 +814,9 @@ router.post("/tasks", requirePaperclipRunId, async (req: AuthenticatedRequest, r
     }
     res.status(500).json({ error: "Unexpected control-plane task creation failure" });
   }
-});
+}));
 
-router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
+router.get("/tasks", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -824,7 +825,7 @@ router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
   // DASH-64.1: listTasks is now async (repository-backed).
   const tasks = await controlPlaneStore.listTasks(context.userId, teamId, context.workspaceId);
   res.json({ tasks, total: tasks.length });
-});
+}));
 
 /**
  * HEL-143: surface budget_alerts so the dashboard can show
@@ -842,7 +843,7 @@ router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
  *
  * Alerts are ordered DESC by recordedAt (newest first) by the repository.
  */
-router.get("/budget-alerts", async (req: WorkspaceAwareRequest, res) => {
+router.get("/budget-alerts", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -866,9 +867,9 @@ router.get("/budget-alerts", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to load budget alerts" });
   }
-});
+}));
 
-router.get("/executions", async (req: WorkspaceAwareRequest, res) => {
+router.get("/executions", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -886,9 +887,9 @@ router.get("/executions", async (req: WorkspaceAwareRequest, res) => {
     console.warn(`[controlPlaneRoutes] /executions failed: ${(err as Error).message}`);
     res.status(500).json({ error: "executions_unavailable" });
   }
-});
+}));
 
-router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/executions/:id/lifecycle", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -931,9 +932,9 @@ router.post("/executions/:id/lifecycle", requirePaperclipRunId, async (req: Work
     }
     res.status(500).json({ error: "Unexpected control-plane execution lifecycle failure" });
   }
-});
+}));
 
-router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.post("/tasks/:id/checkout", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   // DASH-64.1: now workspace-aware. Workspace context required for
   // the repository-backed task lookup. resolveWorkspaceContext on a
   // mutating verb always returns a defined workspaceId (either from
@@ -967,9 +968,9 @@ router.post("/tasks/:id/checkout", requirePaperclipRunId, async (req: WorkspaceA
     }
     res.status(500).json({ error: "Unexpected control-plane checkout failure" });
   }
-});
+}));
 
-router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: WorkspaceAwareRequest, res) => {
+router.patch("/tasks/:id/status", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   // DASH-64.1: now workspace-aware + async (was sync because the Map
   // lookup didn't await; repository read is async).
   const context = resolveWorkspaceContext(req, res);
@@ -1003,9 +1004,9 @@ router.patch("/tasks/:id/status", requirePaperclipRunId, async (req: WorkspaceAw
     }
     res.status(500).json({ error: "Unexpected control-plane task update failure" });
   }
-});
+}));
 
-router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/heartbeats", requirePaperclipRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req as WorkspaceAwareRequest, res);
   if (!context) {
     return;
@@ -1090,9 +1091,9 @@ router.post("/heartbeats", requirePaperclipRunId, async (req: AuthenticatedReque
     }
     res.status(500).json({ error: "Unexpected control-plane heartbeat failure" });
   }
-});
+}));
 
-router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/spend-events", requirePaperclipRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -1172,9 +1173,9 @@ router.post("/spend-events", requirePaperclipRunId, async (req: AuthenticatedReq
     }
     res.status(500).json({ error: "Unexpected control-plane spend event failure" });
   }
-});
+}));
 
-router.get("/heartbeats", async (req: WorkspaceAwareRequest, res) => {
+router.get("/heartbeats", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   // DASH-64.2 + Codex review on #902: must resolve workspace context
   // before calling the async store. Without it, listHeartbeats falls
   // back to `workspaceId ?? userId`, which mismatches the real
@@ -1204,6 +1205,6 @@ router.get("/heartbeats", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to load heartbeats" });
   }
-});
+}));
 
 export default router;

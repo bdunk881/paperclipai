@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 type SearchEntityType = "mission" | "agent" | "routine" | "approval";
 
@@ -66,7 +67,7 @@ function mapSearchRow(row: SearchRow): GlobalSearchResult {
 export function createGlobalSearchRoutes(pool: Pool) {
   const router = Router();
 
-  router.get("/", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = req.workspace?.id ?? req.workspaceId;
     if (!userId) {
@@ -228,7 +229,7 @@ export function createGlobalSearchRoutes(pool: Pool) {
       console.error(`[search] failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to search workspace entities." });
     }
-  });
+  }));
 
   return router;
 }

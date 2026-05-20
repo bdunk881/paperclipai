@@ -47,6 +47,7 @@ import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../bi
 import type { SubscriptionTier } from "../billing/subscriptionStore";
 import { addRepeatableJob } from "../queue/scheduler";
 import type { RunJobPayload } from "../queue/queues";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -583,7 +584,7 @@ export function createHiringPlanRoutes(
   // in one call. Returns the draft TeamAssemblyResult under `plan`, plus the
   // mission statement / acceptance state so the review page can show
   // "already confirmed" without a second roundtrip.
-  router.get("/:hiringPlanId", async (req: AuthenticatedRequest, res) => {
+  router.get("/:hiringPlanId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -671,9 +672,9 @@ export function createHiringPlanRoutes(
       console.error(`[hiring-plans] get failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load hiring plan" });
     }
-  });
+  }));
 
-  router.post("/:hiringPlanId/confirm", async (req: AuthenticatedRequest, res) => {
+  router.post("/:hiringPlanId/confirm", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -1135,11 +1136,11 @@ export function createHiringPlanRoutes(
     }
 
     res.status(200).json(response);
-  });
+  }));
 
   // HEL-138: append one or more pre-built library roles to an existing (unconfirmed)
   // hiring plan draft. Zero LLM calls — library → JSON merge → UPDATE.
-  router.post("/:hiringPlanId/add-library-roles", async (req: AuthenticatedRequest, res) => {
+  router.post("/:hiringPlanId/add-library-roles", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -1269,7 +1270,7 @@ export function createHiringPlanRoutes(
       console.error(`[hiring-plans] add-library-roles failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to add library roles" });
     }
-  });
+  }));
 
   return router;
 }

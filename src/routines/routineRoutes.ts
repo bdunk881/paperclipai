@@ -16,6 +16,7 @@ import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import type { RunJobPayload } from "../queue/queues";
 import { addRepeatableJob, removeRepeatableJob } from "../queue/scheduler";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -69,7 +70,7 @@ export function createRoutineRoutes(
   // -------------------------------------------------------------------------
   // GET /api/routines — list routines in the active workspace
   // -------------------------------------------------------------------------
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!workspaceId) {
       res.status(401).json({ error: "Workspace required" });
@@ -92,12 +93,12 @@ export function createRoutineRoutes(
       console.error("[routines] list failed:", (err as Error).message);
       res.status(500).json({ error: "Failed to list routines" });
     }
-  });
+  }));
 
   // -------------------------------------------------------------------------
   // POST /api/routines — create a standing task for an agent + workflow.
   // -------------------------------------------------------------------------
-  router.post("/", async (req: AuthenticatedRequest, res) => {
+  router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -242,7 +243,7 @@ export function createRoutineRoutes(
       console.error("[routines] create failed:", (err as Error).message);
       res.status(500).json({ error: "Failed to create routine" });
     }
-  });
+  }));
 
   // -------------------------------------------------------------------------
   // PATCH /api/routines/:id — update enabled flag and/or schedule_cron.
@@ -253,7 +254,7 @@ export function createRoutineRoutes(
   // Side-effect: when `enabled` changes or `scheduleCron` is updated, the
   // BullMQ job scheduler is added or removed accordingly.
   // -------------------------------------------------------------------------
-  router.patch("/:id", async (req: AuthenticatedRequest, res) => {
+  router.patch("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -339,7 +340,7 @@ export function createRoutineRoutes(
       console.error("[routines] patch failed:", (err as Error).message);
       res.status(500).json({ error: "Failed to update routine" });
     }
-  });
+  }));
 
   return router;
 }

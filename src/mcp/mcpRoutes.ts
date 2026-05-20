@@ -13,6 +13,7 @@ import { Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { mcpStore } from "./mcpStore";
 import { assertSafeMcpUrl } from "./mcpUrlSecurity";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -86,17 +87,17 @@ async function callMcpRpc(
 // ---------------------------------------------------------------------------
 
 /** GET /api/mcp/servers */
-router.get("/", async (req: AuthenticatedRequest, res) => {
+router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
   res.json({ servers: await mcpStore.list(userId) });
-});
+}));
 
 /** POST /api/mcp/servers */
-router.post("/", async (req: AuthenticatedRequest, res) => {
+router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -136,10 +137,10 @@ router.post("/", async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json(server);
-});
+}));
 
 /** DELETE /api/mcp/servers/:id */
-router.delete("/:id", async (req: AuthenticatedRequest, res) => {
+router.delete("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -153,10 +154,10 @@ router.delete("/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.status(204).end();
-});
+}));
 
 /** GET /api/mcp/servers/:id/tools — discover available tools */
-router.get("/:id/tools", async (req: AuthenticatedRequest, res) => {
+router.get("/:id/tools", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -185,10 +186,10 @@ router.get("/:id/tools", async (req: AuthenticatedRequest, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `Could not reach MCP server: ${msg}` });
   }
-});
+}));
 
 /** POST /api/mcp/servers/:id/test — connectivity check */
-router.post("/:id/test", async (req: AuthenticatedRequest, res) => {
+router.post("/:id/test", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -215,6 +216,6 @@ router.post("/:id/test", async (req: AuthenticatedRequest, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ ok: false, message: `Connection failed: ${msg}` });
   }
-});
+}));
 
 export default router;

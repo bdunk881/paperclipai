@@ -8,6 +8,7 @@ import {
   type SecurityContext,
   type SecurityService,
 } from "./securityService";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 type SecurityRequest = AuthenticatedRequest & WorkspaceAwareRequest;
 
@@ -73,7 +74,7 @@ function sendSecurityError(res: Response, error: unknown): void {
 export function createSecurityRoutes(service: SecurityService = securityService) {
   const router = Router();
 
-  router.get("/sessions", async (req: SecurityRequest, res) => {
+  router.get("/sessions", asyncHandler<SecurityRequest>(async (req, res) => {
     const ctx = getSecurityContext(req, res);
     if (!ctx) return;
 
@@ -82,9 +83,9 @@ export function createSecurityRoutes(service: SecurityService = securityService)
     } catch (error) {
       sendSecurityError(res, error);
     }
-  });
+  }));
 
-  router.post("/password", async (req: SecurityRequest, res) => {
+  router.post("/password", asyncHandler<SecurityRequest>(async (req, res) => {
     const ctx = getSecurityContext(req, res);
     if (!ctx) return;
 
@@ -100,9 +101,9 @@ export function createSecurityRoutes(service: SecurityService = securityService)
     } catch (error) {
       sendSecurityError(res, error);
     }
-  });
+  }));
 
-  router.post("/sessions/revoke-others", async (req: SecurityRequest, res) => {
+  router.post("/sessions/revoke-others", asyncHandler<SecurityRequest>(async (req, res) => {
     const ctx = getSecurityContext(req, res);
     if (!ctx) return;
 
@@ -112,9 +113,9 @@ export function createSecurityRoutes(service: SecurityService = securityService)
     } catch (error) {
       sendSecurityError(res, error);
     }
-  });
+  }));
 
-  router.delete("/sessions/:id", async (req: SecurityRequest, res) => {
+  router.delete("/sessions/:id", asyncHandler<SecurityRequest>(async (req, res) => {
     const ctx = getSecurityContext(req, res);
     if (!ctx) return;
 
@@ -124,7 +125,7 @@ export function createSecurityRoutes(service: SecurityService = securityService)
     } catch (error) {
       sendSecurityError(res, error);
     }
-  });
+  }));
 
   return router;
 }

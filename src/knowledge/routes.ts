@@ -4,6 +4,7 @@ import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { parseFile } from "../engine/fileParser";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { knowledgeStore } from "./knowledgeStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 const upload = multer({
@@ -23,7 +24,7 @@ async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
   return process.env.OPENAI_API_KEY;
 }
 
-router.post("/bases", async (req: AuthenticatedRequest, res) => {
+router.post("/bases", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -56,9 +57,9 @@ router.post("/bases", async (req: AuthenticatedRequest, res) => {
   });
 
   res.status(201).json(base);
-});
+}));
 
-router.get("/bases", async (req: AuthenticatedRequest, res) => {
+router.get("/bases", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -67,9 +68,9 @@ router.get("/bases", async (req: AuthenticatedRequest, res) => {
 
   const bases = await knowledgeStore.listKnowledgeBases(userId);
   res.json({ bases, total: bases.length });
-});
+}));
 
-router.get("/bases/:id", async (req: AuthenticatedRequest, res) => {
+router.get("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -83,9 +84,9 @@ router.get("/bases/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.json(base);
-});
+}));
 
-router.patch("/bases/:id", async (req: AuthenticatedRequest, res) => {
+router.patch("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -99,7 +100,7 @@ router.patch("/bases/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.json(base);
-});
+}));
 
 router.post("/bases/:id/documents", upload.single("file"), async (req: AuthenticatedRequest, res) => {
   const userId = resolveUserId(req);
@@ -178,7 +179,7 @@ router.post("/bases/:id/documents", upload.single("file"), async (req: Authentic
   res.status(201).json(result);
 });
 
-router.get("/bases/:id/documents", async (req: AuthenticatedRequest, res) => {
+router.get("/bases/:id/documents", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -187,9 +188,9 @@ router.get("/bases/:id/documents", async (req: AuthenticatedRequest, res) => {
 
   const documents = await knowledgeStore.listDocuments(req.params.id, userId);
   res.json({ documents, total: documents.length });
-});
+}));
 
-router.get("/documents/:id", async (req: AuthenticatedRequest, res) => {
+router.get("/documents/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -203,9 +204,9 @@ router.get("/documents/:id", async (req: AuthenticatedRequest, res) => {
   }
 
   res.json(document);
-});
+}));
 
-router.get("/documents/:id/chunks", async (req: AuthenticatedRequest, res) => {
+router.get("/documents/:id/chunks", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -214,9 +215,9 @@ router.get("/documents/:id/chunks", async (req: AuthenticatedRequest, res) => {
 
   const chunks = await knowledgeStore.listChunks(req.params.id, userId);
   res.json({ chunks, total: chunks.length });
-});
+}));
 
-router.patch("/chunks/:id", async (req: AuthenticatedRequest, res) => {
+router.patch("/chunks/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -235,9 +236,9 @@ router.patch("/chunks/:id", async (req: AuthenticatedRequest, res) => {
     return;
   }
   res.json(chunk);
-});
+}));
 
-router.post("/chunks/:id/split", async (req: AuthenticatedRequest, res) => {
+router.post("/chunks/:id/split", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -266,9 +267,9 @@ router.post("/chunks/:id/split", async (req: AuthenticatedRequest, res) => {
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
-});
+}));
 
-router.post("/chunks/merge", async (req: AuthenticatedRequest, res) => {
+router.post("/chunks/merge", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -294,9 +295,9 @@ router.post("/chunks/merge", async (req: AuthenticatedRequest, res) => {
   }
 
   res.json(chunk);
-});
+}));
 
-router.post("/search", async (req: AuthenticatedRequest, res) => {
+router.post("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -327,6 +328,6 @@ router.post("/search", async (req: AuthenticatedRequest, res) => {
   });
 
   res.json({ results, total: results.length });
-});
+}));
 
 export default router;

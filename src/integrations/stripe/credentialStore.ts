@@ -27,7 +27,10 @@ function maskToken(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
-function upsertByUserAndAccount(credential: StripeCredential): void {
+async function upsertByUserAndAccount(credential: StripeCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE looking for the existing record —
+  // see slack/credentialStore.ts (post-#926) for the canonical pattern.
+  await registry.listStoredByUserAsync(credential.userId);
   const existing = registry.findLatest(
     (record) =>
       record.userId === credential.userId &&
@@ -43,7 +46,7 @@ function upsertByUserAndAccount(credential: StripeCredential): void {
 }
 
 export const stripeCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -53,7 +56,7 @@ export const stripeCredentialStore = {
     accountEmail?: string;
     livemode: boolean;
     metadata?: Record<string, string>;
-  }): StripeCredentialPublic {
+  }): Promise<StripeCredentialPublic> {
     const credential: StripeCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -72,11 +75,11 @@ export const stripeCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
@@ -85,7 +88,7 @@ export const stripeCredentialStore = {
     accountEmail?: string;
     livemode: boolean;
     metadata?: Record<string, string>;
-  }): StripeCredentialPublic {
+  }): Promise<StripeCredentialPublic> {
     const credential: StripeCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -101,7 +104,7 @@ export const stripeCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 

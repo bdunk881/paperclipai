@@ -25,7 +25,12 @@ function maskToken(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
-function upsertByUserAndAccount(credential: ApolloCredential): void {
+async function upsertByUserAndAccount(credential: ApolloCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE looking for the existing record —
+  // findLatest only inspects the local in-process bucket, so after a Fly
+  // restart it returns null and we end up with duplicate active rows.
+  // Same pattern as slack/credentialStore.ts (post-#926).
+  await registry.listStoredByUserAsync(credential.userId);
   const existing = registry.findLatest(
     (record) =>
       record.userId === credential.userId &&
@@ -41,7 +46,7 @@ function upsertByUserAndAccount(credential: ApolloCredential): void {
 }
 
 export const apolloCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -49,7 +54,7 @@ export const apolloCredentialStore = {
     accountId: string;
     accountLabel?: string;
     metadata?: Record<string, string>;
-  }): ApolloCredentialPublic {
+  }): Promise<ApolloCredentialPublic> {
     const credential: ApolloCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -66,18 +71,18 @@ export const apolloCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
     accountId: string;
     accountLabel?: string;
     metadata?: Record<string, string>;
-  }): ApolloCredentialPublic {
+  }): Promise<ApolloCredentialPublic> {
     const credential: ApolloCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -91,7 +96,7 @@ export const apolloCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 

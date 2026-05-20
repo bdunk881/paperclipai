@@ -21,7 +21,12 @@ const registry = new CredentialRegistry<HubSpotCredential, HubSpotCredentialPubl
   toPublic,
 });
 
-function upsertByUserAndHub(credential: HubSpotCredential): void {
+async function upsertByUserAndHub(credential: HubSpotCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE purging so we catch credentials
+  // that exist only in the durable store after a restart. `registry.purge()`
+  // itself deletes hydrated rows from Postgres for any IDs it finds in the
+  // (now-populated) local bucket. Mirrors the Slack fix from PR #926.
+  await registry.listStoredByUserAsync(credential.userId);
   registry.purge((existing) =>
     existing.userId === credential.userId &&
     existing.hubId === credential.hubId &&
@@ -31,7 +36,7 @@ function upsertByUserAndHub(credential: HubSpotCredential): void {
 }
 
 export const hubSpotCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -39,7 +44,7 @@ export const hubSpotCredentialStore = {
     hubId: string;
     hubDomain?: string;
     metadata?: Record<string, string>;
-  }): HubSpotCredentialPublic {
+  }): Promise<HubSpotCredentialPublic> {
     const credential: HubSpotCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -54,18 +59,18 @@ export const hubSpotCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndHub(credential);
+    await upsertByUserAndHub(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
     hubId: string;
     hubDomain?: string;
     metadata?: Record<string, string>;
-  }): HubSpotCredentialPublic {
+  }): Promise<HubSpotCredentialPublic> {
     const credential: HubSpotCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -79,7 +84,7 @@ export const hubSpotCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndHub(credential);
+    await upsertByUserAndHub(credential);
     return toPublic(credential);
   },
 

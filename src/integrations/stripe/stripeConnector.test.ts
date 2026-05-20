@@ -246,4 +246,33 @@ describe("Stripe connector", () => {
       })
     ).toThrow(/replay/i);
   });
+
+  it("upsert dedupes prior (user, account) active credentials before saving (HEL-182)", async () => {
+    // Two OAuth saves for the same (userId, accountId) should leave exactly
+    // one active row — the second one.
+    const first = await stripeCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "stripe-first",
+      scopes: ["read_only"],
+      accountId: "acct_dedup",
+      livemode: false,
+    });
+
+    const second = await stripeCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "stripe-second",
+      scopes: ["read_write"],
+      accountId: "acct_dedup",
+      livemode: false,
+    });
+
+    const active = stripeCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.accountId === "acct_dedup" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("read_write");
+  });
 });

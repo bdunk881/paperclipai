@@ -20,7 +20,9 @@ const registry = new CredentialRegistry<GmailCredential, GmailCredentialPublic>(
   toPublic,
 });
 
-function upsertByUserAndEmail(credential: GmailCredential): void {
+async function upsertByUserAndEmail(credential: GmailCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE purging — see slack/credentialStore.ts.
+  await registry.listStoredByUserAsync(credential.userId);
   registry.purge((existing) =>
     existing.userId === credential.userId &&
     existing.emailAddress === credential.emailAddress &&
@@ -30,14 +32,14 @@ function upsertByUserAndEmail(credential: GmailCredential): void {
 }
 
 export const gmailCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
     scopes: string[];
     emailAddress: string;
     metadata?: Record<string, string>;
-  }): GmailCredentialPublic {
+  }): Promise<GmailCredentialPublic> {
     const credential: GmailCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -53,17 +55,17 @@ export const gmailCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndEmail(credential);
+    await upsertByUserAndEmail(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
     emailAddress: string;
     metadata?: Record<string, string>;
-  }): GmailCredentialPublic {
+  }): Promise<GmailCredentialPublic> {
     const credential: GmailCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -76,7 +78,7 @@ export const gmailCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndEmail(credential);
+    await upsertByUserAndEmail(credential);
     return toPublic(credential);
   },
 

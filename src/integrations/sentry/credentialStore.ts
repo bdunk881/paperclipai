@@ -18,7 +18,9 @@ const registry = new CredentialRegistry<SentryCredential, SentryCredentialPublic
   }),
 });
 
-function upsertByUserAndOrganization(credential: SentryCredential): void {
+async function upsertByUserAndOrganization(credential: SentryCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE purging — see slack/credentialStore.ts.
+  await registry.listStoredByUserAsync(credential.userId);
   registry.purge((existing) =>
     existing.userId === credential.userId &&
     existing.organizationSlug === credential.organizationSlug &&
@@ -28,7 +30,7 @@ function upsertByUserAndOrganization(credential: SentryCredential): void {
 }
 
 export const sentryCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -37,7 +39,7 @@ export const sentryCredentialStore = {
     organizationSlug: string;
     organizationName?: string;
     metadata?: Record<string, string>;
-  }): SentryCredentialPublic {
+  }): Promise<SentryCredentialPublic> {
     const credential: SentryCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -55,11 +57,11 @@ export const sentryCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndOrganization(credential);
+    await upsertByUserAndOrganization(credential);
     return registry.toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
@@ -67,7 +69,7 @@ export const sentryCredentialStore = {
     organizationSlug: string;
     organizationName?: string;
     metadata?: Record<string, string>;
-  }): SentryCredentialPublic {
+  }): Promise<SentryCredentialPublic> {
     const credential: SentryCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -82,7 +84,7 @@ export const sentryCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndOrganization(credential);
+    await upsertByUserAndOrganization(credential);
     return registry.toPublic(credential);
   },
 

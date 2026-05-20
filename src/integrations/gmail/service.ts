@@ -56,7 +56,7 @@ export class GmailConnectorService {
       codeVerifier: state.verifier,
     });
 
-    const credential = gmailCredentialStore.saveOAuth({
+    const credential = await gmailCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -88,7 +88,7 @@ export class GmailConnectorService {
     const client = new GmailClient(params.apiKey);
     const profile = await client.getProfile();
 
-    const credential = gmailCredentialStore.saveApiKey({
+    const credential = await gmailCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       emailAddress: profile.emailAddress,

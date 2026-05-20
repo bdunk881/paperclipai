@@ -250,4 +250,32 @@ describe("HubSpot connector", () => {
       clientSecret: "hubspot_secret_123",
     })).toThrow(/replay/i);
   });
+
+  it("upsert dedupes prior (user, hub) active credentials before saving (HEL-182)", async () => {
+    // Two consecutive OAuth saves for the same (userId, hubId) should leave
+    // exactly one active row — the second one. Mirrors the Slack regression
+    // for the same upsert-no-hydrate class of bug fixed in PR #926.
+    const first = await hubSpotCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "hubspot-first",
+      scopes: ["crm.objects.contacts.read"],
+      hubId: "hub-dedup",
+    });
+
+    const second = await hubSpotCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "hubspot-second",
+      scopes: ["crm.objects.contacts.read", "crm.objects.contacts.write"],
+      hubId: "hub-dedup",
+    });
+
+    const active = hubSpotCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.hubId === "hub-dedup" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("crm.objects.contacts.write");
+  });
 });

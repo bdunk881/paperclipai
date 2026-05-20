@@ -168,4 +168,31 @@ describe("Apollo connector", () => {
     expect(viewer.accountId).toBe("apollo-api-key");
     expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
   });
+
+  it("upsert dedupes prior (user, account) active credentials before saving (HEL-182)", async () => {
+    // Two OAuth saves for the same (userId, accountId) should leave exactly
+    // one active row — the second one.
+    const first = await apolloCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "apollo-first",
+      scopes: ["leads:read"],
+      accountId: "acct-dedup",
+    });
+
+    const second = await apolloCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "apollo-second",
+      scopes: ["leads:read", "leads:write"],
+      accountId: "acct-dedup",
+    });
+
+    const active = apolloCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.accountId === "acct-dedup" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("leads:write");
+  });
 });

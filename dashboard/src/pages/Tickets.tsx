@@ -368,8 +368,8 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             Mission assignments
           </h1>
           <div className="af2-page-head-meta">
-            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} in
-            the queue · {counts.urgent} urgent · {counts.blocked} blocked.
+            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} on
+            the team's plate · {counts.urgent} urgent · {counts.blocked} stuck.
           </div>
         </div>
         <div className="af2-page-actions">
@@ -400,9 +400,9 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       </div>
 
       <div className="af2-stats" style={{ marginBottom: 22 }}>
-        <Stat label="Queue" value={String(counts.total)} hint="Open scope across the workspace." />
-        <Stat label="Executing" value={String(counts.active)} hint="In flight right now." />
-        <Stat label="Blocked" value={String(counts.blocked)} hint="Needs external action." />
+        <Stat label="On the plate" value={String(counts.total)} hint="Open scope across the workspace." />
+        <Stat label="In flight" value={String(counts.active)} hint="Agents working right now." />
+        <Stat label="Stuck" value={String(counts.blocked)} hint="Needs a human or external action." />
         <Stat label="Urgent" value={String(counts.urgent)} hint="Priority assignments at risk." />
       </div>
 
@@ -517,7 +517,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             style={{ fontSize: 15, color: "var(--af2-ink-2)", margin: 0 }}
           >
             {tickets.length === 0
-              ? "No assignments yet. Hand off work to an agent to start the queue."
+              ? "No assignments yet. Hand off work to an agent to get the team started."
               : "No assignments match those filters."}
           </p>
           <button
@@ -794,8 +794,8 @@ function NewAssignmentModal({
               Hand off work to an agent
             </h2>
             <p className="af2-muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Scope to a mission, pick the agent, set priority. The ticket
-              shows up in their queue immediately.
+              Scope to a mission, pick the agent, set priority. The
+              assignment lands on their plate immediately.
             </p>
           </div>
           <button

@@ -28,20 +28,21 @@ function maskToken(value: string): string {
 }
 
 async function upsertByUserAndAccount(credential: StripeCredential): Promise<void> {
-  // HEL-182: hydrate from Postgres BEFORE looking for the existing record —
-  // see slack/credentialStore.ts (post-#926) for the canonical pattern.
+  // HEL-182: hydrate from Postgres BEFORE purging — see
+  // slack/credentialStore.ts (post-#926) for the canonical pattern.
+  //
+  // HEL-182 Codex P1 #2: purge by the full predicate, NOT findLatest+id.
+  // The hydrated bucket can already contain multiple active rows for
+  // the same (userId, accountId); the old findLatest+purge-by-id only
+  // deleted ONE, so N duplicates stayed N after each save. The
+  // predicate purge covers all matches.
   await registry.listStoredByUserAsync(credential.userId);
-  const existing = registry.findLatest(
+  registry.purge(
     (record) =>
       record.userId === credential.userId &&
       record.accountId === credential.accountId &&
-      !record.revokedAt
+      !record.revokedAt,
   );
-
-  if (existing) {
-    registry.purge((record) => record.id === existing.id);
-  }
-
   registry.save(credential);
 }
 

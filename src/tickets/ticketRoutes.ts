@@ -247,13 +247,19 @@ async function dispatchAgentPromptForTicket(input: {
     // operator notices the queue is misconfigured. Better to surface
     // the configuration gap than to mask it with in-process execution
     // that won't survive an API restart.
-    const msg = `[tickets] agent prompt queue unavailable — dispatch skipped for ticket=${payload.sourceTicketId} agent=${payload.agentId}`;
-    console.warn(msg);
-    Sentry.captureMessage(msg, {
+    //
+    // Codex P2: keep the Sentry message constant so all dispatches
+    // during a queue outage group into ONE issue. Per-dispatch IDs go
+    // in tags + contexts where they don't fragment alert grouping.
+    console.warn(
+      `[tickets] agent prompt queue unavailable — dispatch skipped for ticket=${payload.sourceTicketId} agent=${payload.agentId}`,
+    );
+    Sentry.captureMessage("agent_prompt_queue_unavailable", {
       level: "warning",
       tags: {
         component: "tickets",
         reason: "agent_prompt_queue_unavailable",
+        triggerKind: payload.triggerKind,
       },
       contexts: {
         dispatch: {

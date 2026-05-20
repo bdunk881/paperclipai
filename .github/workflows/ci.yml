@@ -117,7 +117,11 @@ jobs:
           # the primitive's own module + tests) re-introduces in-process
           # execution which defeats durable-execution guarantees and gets
           # rolled back on API restart.
-          violations=$(git grep -lnE 'from "[^"]*(agentPromptExecution|runAgentTurn)"|from '"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'' -- 'src/**/*.ts' \
+          #
+          # Codex P2: pathspec covers BOTH top-level src/*.ts and nested
+          # src/**/*.ts — a future inline import in src/app.ts or
+          # src/bootstrap.ts must still fail this guard.
+          violations=$(git grep -lnE 'from "[^"]*(agentPromptExecution|runAgentTurn)"|from '"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'' -- 'src/*.ts' 'src/**/*.ts' \
             | grep -v '^src/worker\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \

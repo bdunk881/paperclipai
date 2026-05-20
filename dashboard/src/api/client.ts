@@ -1152,6 +1152,34 @@ export async function startRun(
   );
 }
 
+/**
+ * POST /api/runs/:runId/replay-from-step (HEL-176)
+ *
+ * Resumes execution from `stepIndex`, cloning the outputs of steps
+ * 0..stepIndex-1 so already-successful work is not redone. The original
+ * run stays intact; the new run is returned with status `pending`.
+ */
+export async function replayRunFromStep(
+  runId: string,
+  stepIndex: number,
+  accessToken?: string,
+): Promise<WorkflowRun> {
+  const res = await trackedFetch(
+    `${BASE}/runs/${encodeURIComponent(runId)}/replay-from-step`,
+    {
+      method: "POST",
+      headers: buildJsonHeaders(accessToken),
+      body: JSON.stringify({ stepIndex }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to replay run from step: ${res.status}`);
+  }
+  const body = (await res.json()) as { run: WorkflowRun };
+  return body.run;
+}
+
 /** POST /api/workflows/generate — NL description → workflow steps */
 export async function generateWorkflow(
   description: string,

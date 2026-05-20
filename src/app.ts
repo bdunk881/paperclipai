@@ -59,6 +59,7 @@ import {
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
+import { asyncHandler } from "./middleware/asyncHandler";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -1312,6 +1313,96 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
 
   res.status(202).json(newRun);
 });
+
+/**
+ * POST /api/runs/:runId/replay-from-step (HEL-176)
+ *
+ * Body: { stepIndex: number }
+ *
+ * Creates a new run that resumes execution from `stepIndex`, cloning the
+ * outputs of steps 0..stepIndex-1 so already-successful work (LLM calls,
+ * side effects) isn't redone. The original run is left intact.
+ *
+ * Returns 200 with the new run on success, 400 on validation failure,
+ * 404 when the run is unknown / cross-workspace, 503 if Postgres isn't
+ * configured (matches the rest of the runs API).
+ *
+ * Emits a `run.replayed_from_step` activity event so the operator
+ * dashboard can show the lineage.
+ */
+app.post(
+  "/api/runs/:runId/replay-from-step",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const runId = req.params["runId"];
+    const userId = req.auth?.sub;
+    const { stepIndex } = (req.body ?? {}) as { stepIndex?: unknown };
+
+    if (typeof stepIndex !== "number" || !Number.isFinite(stepIndex)) {
+      res.status(400).json({ error: "stepIndex (number) is required" });
+      return;
+    }
+
+    const run = await runStore.get(runId);
+    if (!run || (run.userId !== undefined && run.userId !== userId)) {
+      res.status(404).json({ error: `Run not found: ${runId}` });
+      return;
+    }
+
+    // Cross-workspace guard: if a workspace is bound to the request,
+    // it must match the original run's workspace. Mirrors the
+    // workspace-resolver pattern used by the other run routes.
+    if (
+      req.workspaceId &&
+      run.workspaceId &&
+      req.workspaceId !== run.workspaceId
+    ) {
+      res.status(404).json({ error: `Run not found: ${runId}` });
+      return;
+    }
+
+    let newRun;
+    try {
+      newRun = await workflowEngine.replayFromStep(runId, stepIndex, userId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/not found/i.test(message)) {
+        res.status(404).json({ error: message });
+        return;
+      }
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    // HEL-176: best-effort activity event so the operator dashboard
+    // shows the replay lineage. Mirrors the worker.ts pattern of
+    // fire-and-forget activity inserts that never block the response.
+    if (isPostgresPersistenceEnabled() && newRun.workspaceId) {
+      const pool = getPostgresPool();
+      pool
+        .query(
+          `INSERT INTO activity_events (workspace_id, kind, actor, subject, payload, occurred_at)
+           VALUES ($1::uuid, 'run.replayed_from_step', $2::jsonb, $3::jsonb, $4::jsonb, now())`,
+          [
+            newRun.workspaceId,
+            JSON.stringify({ type: "user", id: userId ?? "unknown" }),
+            JSON.stringify({ type: "execution", id: newRun.id, label: newRun.templateName }),
+            JSON.stringify({
+              originalRunId: runId,
+              newRunId: newRun.id,
+              fromStepIndex: stepIndex,
+            }),
+          ],
+        )
+        .catch((dbErr: Error) => {
+          console.error("[runs] replay-from-step activity_events insert failed:", dbErr.message);
+        });
+    }
+
+    res.status(200).json({ run: newRun });
+  }),
+);
 
 app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.auth?.sub;

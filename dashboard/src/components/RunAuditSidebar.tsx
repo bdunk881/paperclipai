@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import "./RunAuditSidebar.css";
 import {
@@ -10,6 +11,7 @@ import {
   ChevronUp,
   Clock3,
   Loader2,
+  RotateCcw,
   SkipForward,
   Workflow,
   X,
@@ -19,6 +21,8 @@ import {
 import { StatusBadge } from "./StatusBadge";
 import type { StepResult, WorkflowRun } from "../types/workflow";
 import { buildWorkflowBuilderRoute } from "../utils/workflowBuilderRoute";
+import { replayRunFromStep } from "../api/client";
+import { getSupabaseStoredSession } from "../auth/supabaseAuth";
 
 type StepStatus = StepResult["status"];
 
@@ -239,17 +243,21 @@ function JsonPanel({
 function AuditStepCard({
   step,
   index,
+  totalSteps,
   active,
   isLast,
   expanded,
   onToggle,
+  onReplayFromHere,
 }: {
   step: StepResult;
   index: number;
+  totalSteps: number;
   active: boolean;
   isLast: boolean;
   expanded: boolean;
   onToggle: () => void;
+  onReplayFromHere?: (stepIndex: number) => void;
 }) {
   const statusMeta = STEP_STATUS_META[step.status];
   const StatusIcon = statusMeta.icon;
@@ -353,6 +361,26 @@ function AuditStepCard({
           </div>
         )}
 
+        {/*
+         * HEL-176: "Replay from here" CTA on failed steps. Only renders
+         * when (a) the step is `failure`, (b) the caller wired a
+         * replay handler, (c) the step index is > 0 — replaying from
+         * step 0 is a full restart, which is `startRun`'s job. We also
+         * guard against single-step templates where there is nothing
+         * to reuse.
+         */}
+        {step.status === "failure" && onReplayFromHere && index > 0 && totalSteps > 1 && (
+          <button
+            type="button"
+            onClick={() => onReplayFromHere(index)}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-af2-clay/30 bg-af2-paper-3 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-af2-ink transition hover:border-af2-clay-2/60 hover:bg-af2-paper-2"
+            aria-label={`Replay run from step ${index + 1}`}
+          >
+            <RotateCcw size={12} />
+            Replay from here
+          </button>
+        )}
+
         <div
           className={clsx(
             "overflow-hidden transition-all duration-200 ease-out",
@@ -409,6 +437,14 @@ export function RunAuditSidebar({
   onClose: () => void;
 }) {
   const [expandedIndex, setExpandedIndex] = useState(0);
+  // HEL-176: step-level replay state.
+  // `replayConfirmIndex` doubles as both the modal's visibility flag
+  // (non-null = open) and the step the user picked. `replayError` and
+  // `isReplaying` drive the modal's button states.
+  const [replayConfirmIndex, setReplayConfirmIndex] = useState<number | null>(null);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [replayError, setReplayError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!open || !run) return;
@@ -423,6 +459,16 @@ export function RunAuditSidebar({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open, onClose, run]);
 
+  // Reset the replay modal when the sidebar closes so the next open
+  // starts fresh.
+  useEffect(() => {
+    if (!open) {
+      setReplayConfirmIndex(null);
+      setReplayError(null);
+      setIsReplaying(false);
+    }
+  }, [open]);
+
   if (!run) return null;
 
   const completedSteps = run.stepResults.filter((step) => step.status === "success").length;
@@ -431,6 +477,29 @@ export function RunAuditSidebar({
     mode: "readonly",
     from: "/history",
   });
+
+  async function handleConfirmReplay() {
+    if (!run || replayConfirmIndex === null) return;
+    setIsReplaying(true);
+    setReplayError(null);
+    try {
+      const session = await getSupabaseStoredSession().catch(() => null);
+      const newRun = await replayRunFromStep(
+        run.id,
+        replayConfirmIndex,
+        session?.accessToken,
+      );
+      setReplayConfirmIndex(null);
+      onClose();
+      // Surface the new run in the dashboard. Activity is where failed
+      // and replayed runs land today (router.tsx maps /history → here).
+      navigate(`/agents/activity?runId=${encodeURIComponent(newRun.id)}`);
+    } catch (err) {
+      setReplayError(err instanceof Error ? err.message : "Failed to replay run");
+    } finally {
+      setIsReplaying(false);
+    }
+  }
 
   return (
     <div
@@ -529,15 +598,83 @@ export function RunAuditSidebar({
                 key={step.stepId}
                 step={step}
                 index={index}
+                totalSteps={run.stepResults.length}
                 active={step.status === "running" || expandedIndex === index}
                 isLast={index === run.stepResults.length - 1}
                 expanded={expandedIndex === index}
                 onToggle={() => setExpandedIndex((current) => (current === index ? -1 : index))}
+                onReplayFromHere={(stepIndex) => {
+                  setReplayError(null);
+                  setReplayConfirmIndex(stepIndex);
+                }}
               />
             ))}
           </div>
         </div>
       </aside>
+
+      {/*
+       * HEL-176: Replay confirmation modal. Rendered at the sidebar's
+       * root so the backdrop sits above the audit aside. State lives
+       * in the parent so the user can cancel without losing place.
+       */}
+      {replayConfirmIndex !== null && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="replay-from-step-title"
+          className="pointer-events-auto fixed inset-0 z-[60] flex items-center justify-center bg-af2-paper-3/70 p-6 backdrop-blur-[3px]"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-af2-line bg-af2-paper-2 p-6 shadow-[0_24px_64px_rgba(2,6,23,0.5)]">
+            <h3
+              id="replay-from-step-title"
+              className="text-base font-semibold text-af2-ink"
+            >
+              Replay from step {replayConfirmIndex + 1}?
+            </h3>
+            <p className="mt-3 text-sm leading-6 text-af2-ink-2">
+              This will create a new run, reusing the outputs of steps 1
+              {replayConfirmIndex > 1 ? `–${replayConfirmIndex}` : ""}. Steps
+              {replayConfirmIndex + 1 === run.stepResults.length
+                ? ` ${replayConfirmIndex + 1}`
+                : ` ${replayConfirmIndex + 1} onwards`}{" "}
+              will re-execute. The original run stays intact.
+            </p>
+
+            {replayError && (
+              <div
+                role="alert"
+                className="mt-4 rounded-xl border border-af2-clay/30 bg-af2-clay/10 px-3 py-2 text-xs text-af2-clay"
+              >
+                {replayError}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isReplaying) return;
+                  setReplayConfirmIndex(null);
+                  setReplayError(null);
+                }}
+                disabled={isReplaying}
+                className="rounded-full border border-af2-line bg-af2-paper-3 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink-2 transition hover:border-af2-line-2 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmReplay()}
+                disabled={isReplaying}
+                className="rounded-full border border-af2-clay/40 bg-af2-clay/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-af2-ink transition hover:bg-af2-clay/30 disabled:opacity-50"
+              >
+                {isReplaying ? "Replaying…" : "Replay run"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

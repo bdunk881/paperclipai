@@ -7,6 +7,7 @@ import {
 } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -59,7 +60,7 @@ function toDashboardRunStatus(
   return status;
 }
 
-router.get("/", async (req: WorkspaceAwareRequest, res) => {
+router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -141,7 +142,7 @@ router.get("/", async (req: WorkspaceAwareRequest, res) => {
   }
 
   res.json({ agents: merged, total: merged.length });
-});
+}));
 
 /**
  * Loads agents directly from the canonical `agents` Postgres table for
@@ -255,7 +256,7 @@ async function loadCanonicalAgents(
   );
 }
 
-router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/heartbeat", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -305,9 +306,9 @@ router.get("/:id/heartbeat", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to load agent heartbeat" });
   }
-});
+}));
 
-router.get("/:id/runs", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/runs", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -347,9 +348,9 @@ router.get("/:id/runs", async (req: WorkspaceAwareRequest, res) => {
     console.warn(`[agentRoutes] /:id/runs failed: ${(err as Error).message}`);
     res.status(500).json({ error: "agent_runs_unavailable" });
   }
-});
+}));
 
-router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/budget", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -400,9 +401,9 @@ router.get("/:id/budget", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to load agent budget" });
   }
-});
+}));
 
-router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
+router.get("/:id/token-usage", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -468,7 +469,7 @@ router.get("/:id/token-usage", async (req: WorkspaceAwareRequest, res) => {
     totalCostUsd: Number(daily.reduce((sum, entry) => sum + entry.costUsd, 0).toFixed(2)),
     daily,
   });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // PATCH /api/agents/:id (HEL-190 — edit agent)

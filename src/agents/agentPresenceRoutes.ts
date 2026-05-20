@@ -33,6 +33,7 @@ import {
   type AgentTokenPreviewEvent,
 } from "./agentPresence";
 import { getRedisClient } from "../queue/redisClient";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 /**
  * Heartbeat interval for the SSE stream. Reverse proxies (Cloudflare,
@@ -75,7 +76,7 @@ export function createAgentPresenceRoutes(): Router {
   //     (it'll be empty), the stream stays open with heartbeats, and a
   //     polling client gets the same data via GET /api/agents/presence.
   // -------------------------------------------------------------------------
-  router.get("/presence/stream", async (req: AuthenticatedRequest, res) => {
+  router.get("/presence/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -161,9 +162,9 @@ export function createAgentPresenceRoutes(): Router {
 
     req.on("close", cleanup);
     req.on("aborted", cleanup);
-  });
+  }));
 
-  router.get("/presence", async (req: AuthenticatedRequest, res) => {
+  router.get("/presence", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -180,9 +181,9 @@ export function createAgentPresenceRoutes(): Router {
       );
       res.status(500).json({ error: "Failed to load agent presence" });
     }
-  });
+  }));
 
-  router.get("/:agentId/presence", async (req: AuthenticatedRequest, res) => {
+  router.get("/:agentId/presence", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -210,9 +211,9 @@ export function createAgentPresenceRoutes(): Router {
       );
       res.status(500).json({ error: "Failed to load agent presence" });
     }
-  });
+  }));
 
-  router.post("/:agentId/presence", async (req: AuthenticatedRequest, res) => {
+  router.post("/:agentId/presence", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -249,7 +250,7 @@ export function createAgentPresenceRoutes(): Router {
       );
       res.status(500).json({ error: "Failed to update agent presence" });
     }
-  });
+  }));
 
   return router;
 }

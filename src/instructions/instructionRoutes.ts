@@ -15,6 +15,7 @@ import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_TITLE = 200;
@@ -70,7 +71,7 @@ export function createInstructionRoutes(pool: Pool): Router {
 
   // GET /api/instructions
   // Optional query: ?kind=instruction|triage_policy, ?mission_id=<uuid>, ?agent_id=<uuid>
-  router.get("/", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     if (!workspaceId || !userId) {
@@ -103,10 +104,10 @@ export function createInstructionRoutes(pool: Pool): Router {
       console.error("[instructions] list failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to list instructions" });
     }
-  });
+  }));
 
   // GET /api/instructions/:id
-  router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -127,11 +128,11 @@ export function createInstructionRoutes(pool: Pool): Router {
       console.error("[instructions] get failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to fetch instruction" });
     }
-  });
+  }));
 
   // POST /api/instructions
   // body: { title, body, kind?: "instruction" | "triage_policy", mission_id?, agent_id? }
-  router.post("/", async (req: WorkspaceAwareRequest, res) => {
+  router.post("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     if (!workspaceId || !userId) return res.status(401).json({ error: "Authentication required" });
@@ -180,12 +181,12 @@ export function createInstructionRoutes(pool: Pool): Router {
       console.error("[instructions] create failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to create instruction" });
     }
-  });
+  }));
 
   // PATCH /api/instructions/:id
   // Creates a NEW version row keyed to the same logical id but version+1, leaving
   // the prior version retrievable via the versions endpoint.
-  router.patch("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.patch("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -230,10 +231,10 @@ export function createInstructionRoutes(pool: Pool): Router {
       console.error("[instructions] update failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to update instruction" });
     }
-  });
+  }));
 
   // DELETE /api/instructions/:id — soft-delete
-  router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.delete("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -254,7 +255,7 @@ export function createInstructionRoutes(pool: Pool): Router {
       console.error("[instructions] delete failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to delete instruction" });
     }
-  });
+  }));
 
   return router;
 }

@@ -13,6 +13,7 @@ import {
 } from "../engine/llmProviders/types";
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
 import { requireEntitlement } from "../middleware/requireEntitlement";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const VALID_PROVIDERS: LLMProvider[] = [...PROVIDER_NAMES];
 const API_KEY_PROVIDERS = new Set<LLMProvider>([
@@ -231,7 +232,7 @@ router.post("/", requireEntitlement("byokAllowed"), (req: AuthenticatedRequest, 
   res.status(201).json(config);
 });
 
-router.get("/", async (req: AuthenticatedRequest, res: Response) => {
+router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -248,7 +249,7 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
   }
 
   res.json({ configs, total: configs.length });
-});
+}));
 
 router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);

@@ -34,6 +34,7 @@ import { randomUUID } from "node:crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NAME_LENGTH = 200;
@@ -96,7 +97,7 @@ export function createWorkflowRoutes(pool: Pool) {
   // ---------------------------------------------------------------------
   // POST /api/workflows — create a workflow + v1 version
   // ---------------------------------------------------------------------
-  router.post("/", async (req: AuthenticatedRequest, res) => {
+  router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -159,14 +160,14 @@ export function createWorkflowRoutes(pool: Pool) {
       console.error(`[workflows] create failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to create workflow" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // POST /api/workflows/:workflowId/versions — create a new immutable
   // workflow_version. Acceptance: "Versions are immutable; edits create
   // a new version."
   // ---------------------------------------------------------------------
-  router.post("/:workflowId/versions", async (req: AuthenticatedRequest, res) => {
+  router.post("/:workflowId/versions", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -241,12 +242,12 @@ export function createWorkflowRoutes(pool: Pool) {
       console.error(`[workflows] new version failed: ${msg}`);
       res.status(500).json({ error: "Failed to create workflow version" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // GET /api/workflows/:workflowId — single workflow lookup
   // ---------------------------------------------------------------------
-  router.get("/:workflowId", async (req: AuthenticatedRequest, res) => {
+  router.get("/:workflowId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -324,7 +325,7 @@ export function createWorkflowRoutes(pool: Pool) {
       console.error(`[workflows] get failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load workflow" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // GET /api/workflows/:workflowId/versions/:versionId — single version
@@ -334,7 +335,7 @@ export function createWorkflowRoutes(pool: Pool) {
   // ---------------------------------------------------------------------
   router.get(
     "/:workflowId/versions/:versionId",
-    async (req: AuthenticatedRequest, res) => {
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
       const userId = req.auth?.sub;
       const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
       if (!userId || !workspaceId) {
@@ -398,14 +399,14 @@ export function createWorkflowRoutes(pool: Pool) {
         );
         res.status(500).json({ error: "Failed to load workflow version" });
       }
-    },
+    }),
   );
 
   // ---------------------------------------------------------------------
   // GET /api/workflows/:workflowId/versions — list immutable versions
   // newest first (LIMIT 50). Powers the v2 Studio Versions panel.
   // ---------------------------------------------------------------------
-  router.get("/:workflowId/versions", async (req: AuthenticatedRequest, res) => {
+  router.get("/:workflowId/versions", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -459,7 +460,7 @@ export function createWorkflowRoutes(pool: Pool) {
       console.error(`[workflows] versions list failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to list workflow versions" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // GET /api/workflows — list newest first (LIMIT 100). Optional
@@ -468,7 +469,7 @@ export function createWorkflowRoutes(pool: Pool) {
   // Versions panel can surface for templates that haven't been
   // re-saved since canonicalization.
   // ---------------------------------------------------------------------
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -525,7 +526,7 @@ export function createWorkflowRoutes(pool: Pool) {
       console.error(`[workflows] list failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to list workflows" });
     }
-  });
+  }));
 
   return router;
 }

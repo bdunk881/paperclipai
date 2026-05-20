@@ -4,6 +4,7 @@ import { shopifyConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { verifyShopifyWebhook } from "./webhook";
 import { logShopify } from "./logger";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -40,18 +41,14 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = shopifyConnectorService.beginOAuth({
-      userId,
-      shopDomain: shopDomain.trim(),
-    });
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = shopifyConnectorService.beginOAuth({
+    userId,
+    shopDomain: shopDomain.trim(),
+  });
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
   const shop = typeof req.query.shop === "string" ? req.query.shop : "";
@@ -61,15 +58,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await shopifyConnectorService.completeOAuth({ code, state, shop });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await shopifyConnectorService.completeOAuth({ code, state, shop });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -90,17 +83,13 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await shopifyConnectorService.connectApiKey({
-      userId,
-      shopDomain: shopDomain.trim(),
-      adminApiToken: adminApiToken.trim(),
-    });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await shopifyConnectorService.connectApiKey({
+    userId,
+    shopDomain: shopDomain.trim(),
+    adminApiToken: adminApiToken.trim(),
+  });
+  res.status(201).json({ connection });
+}));
 
 router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -113,22 +102,18 @@ router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ connections, total: connections.length });
 });
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await shopifyConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await shopifyConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -138,7 +123,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   const health = await shopifyConnectorService.health(userId);
   const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
   res.status(statusCode).json(health);
-});
+}));
 
 router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -156,22 +141,18 @@ router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) 
   res.status(204).send();
 });
 
-router.get("/products", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/products", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const products = await shopifyConnectorService.listProducts(userId);
-    res.json({ products, total: products.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const products = await shopifyConnectorService.listProducts(userId);
+  res.json({ products, total: products.length });
+}));
 
-router.post("/products", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/products", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -190,65 +171,49 @@ router.post("/products", requireAuth, async (req: AuthenticatedRequest, res) => 
     return;
   }
 
-  try {
-    const product = await shopifyConnectorService.createProduct(userId, {
-      title: title.trim(),
-      body_html,
-      vendor,
-      product_type,
-    });
-    res.status(201).json({ product });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const product = await shopifyConnectorService.createProduct(userId, {
+    title: title.trim(),
+    body_html,
+    vendor,
+    product_type,
+  });
+  res.status(201).json({ product });
+}));
 
-router.patch("/products/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/products/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const product = await shopifyConnectorService.updateProduct(userId, req.params.id, req.body as Record<string, unknown>);
-    res.json({ product });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const product = await shopifyConnectorService.updateProduct(userId, req.params.id, req.body as Record<string, unknown>);
+  res.json({ product });
+}));
 
-router.get("/orders", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/orders", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const orders = await shopifyConnectorService.listOrders(userId);
-    res.json({ orders, total: orders.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const orders = await shopifyConnectorService.listOrders(userId);
+  res.json({ orders, total: orders.length });
+}));
 
-router.get("/customers", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/customers", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const customers = await shopifyConnectorService.listCustomers(userId);
-    res.json({ customers, total: customers.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const customers = await shopifyConnectorService.listCustomers(userId);
+  res.json({ customers, total: customers.length });
+}));
 
-router.post("/webhooks/subscribe", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/webhooks/subscribe", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -270,56 +235,48 @@ router.post("/webhooks/subscribe", requireAuth, async (req: AuthenticatedRequest
     return;
   }
 
-  try {
-    const webhook = await shopifyConnectorService.subscribeWebhook(userId, {
-      topic: topic.trim(),
-      address: address.trim(),
-      format,
-    });
-    res.status(201).json({ webhook });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const webhook = await shopifyConnectorService.subscribeWebhook(userId, {
+    topic: topic.trim(),
+    address: address.trim(),
+    format,
+  });
+  res.status(201).json({ webhook });
+}));
 
 export const shopifyWebhookRouter = express.Router();
 
 shopifyWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const signingSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
-    if (!signingSecret) {
-      throw new ConnectorError("auth", "SHOPIFY_WEBHOOK_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    verifyShopifyWebhook({
-      rawBody,
-      hmacHeader: req.header("x-shopify-hmac-sha256"),
-      webhookIdHeader: req.header("x-shopify-event-id"),
-      signingSecret,
-    });
-
-    const payload = JSON.parse(rawBody.toString("utf8"));
-    const topic = req.header("x-shopify-topic") ?? "unknown";
-    const shopDomain = req.header("x-shopify-shop-domain") ?? "unknown";
-
-    logShopify({
-      event: "webhook",
-      level: "info",
-      connector: "shopify",
-      shopDomain,
-      message: "Shopify webhook received",
-      metadata: {
-        topic,
-        webhookId: req.header("x-shopify-event-id"),
-        payloadKeys: payload && typeof payload === "object" ? Object.keys(payload as Record<string, unknown>).slice(0, 10) : [],
-      },
-    });
-
-    res.status(200).json({ ok: true });
-  } catch (error) {
-    handleError(res, error);
+  const signingSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+  if (!signingSecret) {
+    throw new ConnectorError("auth", "SHOPIFY_WEBHOOK_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  verifyShopifyWebhook({
+    rawBody,
+    hmacHeader: req.header("x-shopify-hmac-sha256"),
+    webhookIdHeader: req.header("x-shopify-event-id"),
+    signingSecret,
+  });
+
+  const payload = JSON.parse(rawBody.toString("utf8"));
+  const topic = req.header("x-shopify-topic") ?? "unknown";
+  const shopDomain = req.header("x-shopify-shop-domain") ?? "unknown";
+
+  logShopify({
+    event: "webhook",
+    level: "info",
+    connector: "shopify",
+    shopDomain,
+    message: "Shopify webhook received",
+    metadata: {
+      topic,
+      webhookId: req.header("x-shopify-event-id"),
+      payloadKeys: payload && typeof payload === "object" ? Object.keys(payload as Record<string, unknown>).slice(0, 10) : [],
+    },
+  });
+
+  res.status(200).json({ ok: true });
 });
 
 export default router;

@@ -1,4 +1,5 @@
 import express from "express";
+import { asyncHandler } from "../middleware/asyncHandler";
 import { requireEntitlement } from "../middleware/requireEntitlement";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { approvalPolicyStore } from "./policyStore";
@@ -28,20 +29,23 @@ function requireWorkspaceId(req: WorkspaceAwareRequest, res: express.Response): 
   return workspaceId;
 }
 
-router.get("/", async (req: WorkspaceAwareRequest, res) => {
-  const workspaceId = requireWorkspaceId(req, res);
-  if (!workspaceId) {
-    return;
-  }
+router.get(
+  "/",
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!workspaceId) {
+      return;
+    }
 
-  const policies = await approvalPolicyStore.ensureDefaults(workspaceId);
-  res.json({
-    actionTypes: APPROVAL_TIER_ACTION_TYPES,
-    modes: APPROVAL_TIER_MODES,
-    policies,
-    total: policies.length,
-  });
-});
+    const policies = await approvalPolicyStore.ensureDefaults(workspaceId);
+    res.json({
+      actionTypes: APPROVAL_TIER_ACTION_TYPES,
+      modes: APPROVAL_TIER_MODES,
+      policies,
+      total: policies.length,
+    });
+  }),
+);
 
 router.put(
   "/:actionType",
@@ -52,51 +56,52 @@ router.put(
     getCurrent: (req) => APPROVAL_MODE_TIER[(req.body as { mode?: string }).mode ?? "auto_approve"] ?? 0,
     delta: 0,
   }),
-  async (req: WorkspaceAwareRequest, res) => {
-  const workspaceId = requireWorkspaceId(req, res);
-  if (!workspaceId) {
-    return;
-  }
-
-  const actionType = req.params.actionType;
-  if (!isApprovalTierActionType(actionType)) {
-    res.status(400).json({ error: "Unknown approval tier actionType" });
-    return;
-  }
-
-  const { mode, spendThresholdCents } = req.body as {
-    mode?: unknown;
-    spendThresholdCents?: unknown;
-  };
-
-  if (!isApprovalTierMode(mode)) {
-    res.status(400).json({ error: "mode must be one of auto_approve, notify_only, require_approval" });
-    return;
-  }
-
-  if (actionType === "spend_above_threshold") {
-    if (
-      spendThresholdCents !== undefined &&
-      (typeof spendThresholdCents !== "number" ||
-        !Number.isInteger(spendThresholdCents) ||
-        spendThresholdCents < 0)
-    ) {
-      res.status(400).json({ error: "spendThresholdCents must be a non-negative integer" });
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!workspaceId) {
       return;
     }
-  }
 
-  const policy = await approvalPolicyStore.upsert({
-    workspaceId,
-    actionType,
-    mode,
-    spendThresholdCents:
-      actionType === "spend_above_threshold" && typeof spendThresholdCents === "number"
-        ? spendThresholdCents
-        : undefined,
-  });
+    const actionType = req.params.actionType;
+    if (!isApprovalTierActionType(actionType)) {
+      res.status(400).json({ error: "Unknown approval tier actionType" });
+      return;
+    }
 
-  res.json({ policy });
-});
+    const { mode, spendThresholdCents } = req.body as {
+      mode?: unknown;
+      spendThresholdCents?: unknown;
+    };
+
+    if (!isApprovalTierMode(mode)) {
+      res.status(400).json({ error: "mode must be one of auto_approve, notify_only, require_approval" });
+      return;
+    }
+
+    if (actionType === "spend_above_threshold") {
+      if (
+        spendThresholdCents !== undefined &&
+        (typeof spendThresholdCents !== "number" ||
+          !Number.isInteger(spendThresholdCents) ||
+          spendThresholdCents < 0)
+      ) {
+        res.status(400).json({ error: "spendThresholdCents must be a non-negative integer" });
+        return;
+      }
+    }
+
+    const policy = await approvalPolicyStore.upsert({
+      workspaceId,
+      actionType,
+      mode,
+      spendThresholdCents:
+        actionType === "spend_above_threshold" && typeof spendThresholdCents === "number"
+          ? spendThresholdCents
+          : undefined,
+    });
+
+    res.json({ policy });
+  }),
+);
 
 export default router;

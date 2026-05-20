@@ -139,6 +139,68 @@ jobs:
             printf 'FAIL: direct executeAgentPrompt/runAgentTurn import outside the worker — enqueue via getAgentPromptQueue() instead:\n%s\n' "$violations"
             exit 1
           fi
+      - name: Forbid raw async route handlers without asyncHandler() wrap (HEL-184)
+        run: |
+          # HEL-184: every async Express route handler must be wrapped in
+          # `asyncHandler()` from src/middleware/asyncHandler.ts. The wrapper
+          # forwards rejected promises to `next(err)` so the global typed-error
+          # middleware (src/app.ts) can render `Tier1ConnectorError` subclasses
+          # — unhandled rejections in Express 4 silently hang the response.
+          # The asyncHandler primitive is a no-op after the Express 4 → 5
+          # migration, but the call-site shape stays stable.
+          #
+          # Iteration history (Codex on PR #943):
+          #   round 1: `\([^,]+,(\s*\w+\s*,)*\s*async\s*\(` missed
+          #            call-expression middleware (`upload.single("file")`).
+          #   round 2: `.*async\s*\(` is line-oriented — misses routes that
+          #            split `router.post(...,\n  async (...) => {...})`
+          #            across lines, and the test-file filter `\.test\.ts$`
+          #            never matches because `-n` output ends in `:content`.
+          # This iteration uses awk over a window of the next 5 lines after
+          # each `router.<verb>(` opener, accepts asyncHandler anywhere in
+          # the window as success, and excludes tests via git pathspec.
+          violations=$(
+            for f in $(git ls-files 'src/*.ts' 'src/**/*.ts' ':!**/*.test.ts' ':!**/__mocks__/**'); do
+              awk -v file="$f" '
+                # Two-pass per route: scan a 20-line window starting at the
+                # opener. If we see `asyncHandler` anywhere in the window
+                # the route is wrapped. We only emit a violation if no
+                # `asyncHandler` mention appears AND we did see an
+                # `async (` (route handler shape) somewhere in the window.
+                # This avoids false positives from middleware that itself
+                # uses async arrow fns (e.g. `getCurrent: async (req) => ...`
+                # in requireEntitlement options) preceding the real wrap.
+                /^\s*(app|router)\.(get|post|put|patch|delete|use)\s*\(/ {
+                  if (open_ln && saw_async && !saw_wrap) {
+                    print file ":" open_ln ":" open_text
+                  }
+                  open_ln = NR; open_text = $0
+                  saw_async = ($0 ~ /async\s*\(/)
+                  saw_wrap  = ($0 ~ /asyncHandler/)
+                  next
+                }
+                open_ln && (NR - open_ln) < 20 {
+                  if ($0 ~ /asyncHandler/) saw_wrap = 1
+                  if ($0 ~ /async\s*\(/)   saw_async = 1
+                }
+                open_ln && (NR - open_ln) == 20 {
+                  if (saw_async && !saw_wrap) {
+                    print file ":" open_ln ":" open_text
+                  }
+                  open_ln = 0; saw_async = 0; saw_wrap = 0
+                }
+                END {
+                  if (open_ln && saw_async && !saw_wrap) {
+                    print file ":" open_ln ":" open_text
+                  }
+                }
+              ' "$f"
+            done
+          )
+          if [ -n "$violations" ]; then
+            printf 'FAIL: async route handler without asyncHandler() wrap detected:\n%s\n' "$violations"
+            exit 1
+          fi
 
   test-backend:
     name: Test Backend

@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import type { Pool, PoolClient } from "pg";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { provisionDefaultWorkspace } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 type WorkspaceRow = {
   id: string;
@@ -24,7 +25,7 @@ function slugifyWorkspaceName(value: string, fallbackId: string): string {
 export function createWorkspaceRoutes(pool: Pool) {
   const router = Router();
 
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub?.trim();
     if (!userId) {
       res.status(401).json({ error: "Authenticated user required" });
@@ -65,9 +66,9 @@ export function createWorkspaceRoutes(pool: Pool) {
     }));
 
     res.json(workspaces);
-  });
+  }));
 
-  router.post("/", async (req: AuthenticatedRequest, res) => {
+  router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub?.trim();
     if (!userId) {
       res.status(401).json({ error: "Authenticated user required" });
@@ -123,7 +124,7 @@ export function createWorkspaceRoutes(pool: Pool) {
     } finally {
       client?.release();
     }
-  });
+  }));
 
   // -------------------------------------------------------------------
   // PATCH /api/workspaces/:id — rename a workspace (HEL-192)

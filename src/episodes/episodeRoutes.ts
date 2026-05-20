@@ -16,6 +16,7 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_TYPES = new Set(["observation", "action_result", "reflection", "escalation"]);
@@ -78,7 +79,7 @@ export function createEpisodeRoutes(pool: Pool): Router {
 
   // GET /api/episodes
   // Query: ?agent_id=&mission_id=&run_id=&episode_type=&since=<iso>&unreflected_only=true
-  router.get("/", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     if (!workspaceId || !userId) return res.status(401).json({ error: "Authentication required" });
@@ -119,10 +120,10 @@ export function createEpisodeRoutes(pool: Pool): Router {
       console.error("[episodes] list failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to list episodes" });
     }
-  });
+  }));
 
   // GET /api/episodes/:id
-  router.get("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.get("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -143,10 +144,10 @@ export function createEpisodeRoutes(pool: Pool): Router {
       console.error("[episodes] get failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to fetch episode" });
     }
-  });
+  }));
 
   // DELETE /api/episodes/:id — rare; TTL handles the common case.
-  router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
+  router.delete("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = req.workspace?.id;
     const userId = req.auth?.sub;
     const id = req.params.id;
@@ -164,7 +165,7 @@ export function createEpisodeRoutes(pool: Pool): Router {
       console.error("[episodes] delete failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to delete episode" });
     }
-  });
+  }));
 
   return router;
 }

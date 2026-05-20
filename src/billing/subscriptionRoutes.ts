@@ -10,6 +10,7 @@ import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
 import { subscriptionStore, resolveTier } from "./subscriptionStore";
 import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
 import { entitlementStore } from "./entitlements";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -64,7 +65,7 @@ async function syncSubscriptionWorkspaceState(req: Request, subId: string): Prom
  * GET /api/billing/subscription
  * Returns the user's current subscription status.
  */
-router.get("/", async (req: AuthenticatedRequest, res: Response) => {
+router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -89,14 +90,14 @@ router.get("/", async (req: AuthenticatedRequest, res: Response) => {
     },
     accessLevel: sub.accessLevel,
   });
-});
+}));
 
 /**
  * POST /api/billing/subscription/change-tier
  * Body: { newTier: "flow"|"automate"|"scale" }
  * Upgrades or downgrades the subscription by swapping the Stripe price.
  */
-router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => {
+router.post("/change-tier", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = req.auth?.sub;
   const { newTier } = req.body as { newTier?: string };
 
@@ -174,14 +175,14 @@ router.post("/change-tier", async (req: AuthenticatedRequest, res: Response) => 
     console.error(`[stripe/subscription] Tier change failed: ${msg}`);
     res.status(500).json({ error: "Failed to change subscription tier" });
   }
-});
+}));
 
 /**
  * POST /api/billing/subscription/cancel
  * Body: {}
  * Cancels the subscription at end of current billing period.
  */
-router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
+router.post("/cancel", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -226,14 +227,14 @@ router.post("/cancel", async (req: AuthenticatedRequest, res: Response) => {
     console.error(`[stripe/subscription] Cancellation failed: ${msg}`);
     res.status(500).json({ error: "Failed to cancel subscription" });
   }
-});
+}));
 
 /**
  * POST /api/billing/subscription/reactivate
  * Body: {}
  * Reactivates a subscription that was scheduled for cancellation.
  */
-router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
+router.post("/reactivate", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = req.auth?.sub;
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -274,6 +275,6 @@ router.post("/reactivate", async (req: AuthenticatedRequest, res: Response) => {
     console.error(`[stripe/subscription] Reactivation failed: ${msg}`);
     res.status(500).json({ error: "Failed to reactivate subscription" });
   }
-});
+}));
 
 export default router;

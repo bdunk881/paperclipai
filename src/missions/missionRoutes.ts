@@ -47,6 +47,7 @@ import {
   getDefaultHostedFreeProvider,
   resolveHostedFreeApiKey,
 } from "../hostedFreeModels/providers";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 interface MissionRow {
   id: string;
@@ -237,7 +238,7 @@ export function createMissionRoutes(
   // ---------------------------------------------------------------------
   // POST /api/missions — create a mission (HEL-23)
   // ---------------------------------------------------------------------
-  router.post("/", async (req: AuthenticatedRequest, res) => {
+  router.post("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -316,12 +317,12 @@ export function createMissionRoutes(
       companyName: company.name,
       latestHiringPlanId: null,
     } satisfies MissionListItem);
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // GET /api/missions — list this workspace's missions (HEL-23)
   // ---------------------------------------------------------------------
-  router.get("/", async (req: AuthenticatedRequest, res) => {
+  router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -385,12 +386,12 @@ export function createMissionRoutes(
       });
       res.status(500).json({ error: "Failed to list missions" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // GET /api/missions/:missionId — single mission lookup (HEL-23)
   // ---------------------------------------------------------------------
-  router.get("/:missionId", async (req: AuthenticatedRequest, res) => {
+  router.get("/:missionId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -462,7 +463,7 @@ export function createMissionRoutes(
       });
       res.status(500).json({ error: "Failed to load mission" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // PATCH /api/missions/:missionId — edit a draft mission's brief (HEL-192)
@@ -648,7 +649,7 @@ export function createMissionRoutes(
   //   - Returns 204 on success (no body) so the dashboard just refreshes
   //     the list.
   // ---------------------------------------------------------------------
-  router.delete("/:missionId", async (req: AuthenticatedRequest, res) => {
+  router.delete("/:missionId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -722,12 +723,12 @@ export function createMissionRoutes(
       });
       res.status(500).json({ error: "Failed to delete mission" });
     }
-  });
+  }));
 
   const generatePlanMiddleware: import("express").RequestHandler[] = llmRouteLimiter
     ? [llmRouteLimiter]
     : [];
-  router.post("/:missionId/generate-plan", ...generatePlanMiddleware, async (req: AuthenticatedRequest, res) => {
+  router.post("/:missionId/generate-plan", ...generatePlanMiddleware, asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as AuthenticatedRequest & { workspace?: { id: string } }).workspace?.id;
     if (!userId || !workspaceId) {
@@ -939,7 +940,7 @@ export function createMissionRoutes(
       plan,
       costCents: costResult.costCents,
     });
-  });
+  }));
 
   return router;
 }

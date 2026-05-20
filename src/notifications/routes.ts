@@ -3,6 +3,7 @@ import { requireAuth, AuthenticatedRequest } from "../auth/authMiddleware";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { notificationService } from "./service";
 import { NotificationCadence, NotificationChannel, NotificationKind } from "./types";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -30,7 +31,7 @@ function requireWorkspaceId(req: WorkspaceAwareRequest, res: express.Response): 
   return workspaceId;
 }
 
-router.get("/preferences", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.get("/preferences", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -38,9 +39,9 @@ router.get("/preferences", requireAuth, async (req: WorkspaceAwareRequest, res) 
 
   const preferences = await notificationService.listPreferences(workspaceId);
   res.json({ preferences, total: preferences.length });
-});
+}));
 
-router.put("/preferences", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.put("/preferences", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -76,9 +77,9 @@ router.put("/preferences", requireAuth, async (req: WorkspaceAwareRequest, res) 
     mutedUntil: mutedUntil ?? undefined,
   });
   res.json({ preference });
-});
+}));
 
-router.get("/transports", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.get("/transports", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -86,9 +87,9 @@ router.get("/transports", requireAuth, async (req: WorkspaceAwareRequest, res) =
 
   const transports = await notificationService.listTransportConfigs(workspaceId);
   res.json({ transports, total: transports.length });
-});
+}));
 
-router.put("/transports/:channel", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.put("/transports/:channel", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -130,9 +131,9 @@ router.put("/transports/:channel", requireAuth, async (req: WorkspaceAwareReques
   });
 
   res.json({ transport });
-});
+}));
 
-router.post("/events", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.post("/events", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -166,9 +167,9 @@ router.post("/events", requireAuth, async (req: WorkspaceAwareRequest, res) => {
     metadata,
   });
   res.status(201).json({ event });
-});
+}));
 
-router.post("/test-send", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.post("/test-send", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -187,9 +188,9 @@ router.post("/test-send", requireAuth, async (req: WorkspaceAwareRequest, res) =
     summary: typeof req.body.summary === "string" ? req.body.summary : undefined,
   });
   res.status(202).json({ event, accepted: true });
-});
+}));
 
-router.post("/sweep", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.post("/sweep", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -197,9 +198,9 @@ router.post("/sweep", requireAuth, async (req: WorkspaceAwareRequest, res) => {
 
   const result = await notificationService.runSweepForWorkspace(workspaceId);
   res.json(result);
-});
+}));
 
-router.get("/health", requireAuth, async (req: WorkspaceAwareRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
     return;
@@ -208,6 +209,6 @@ router.get("/health", requireAuth, async (req: WorkspaceAwareRequest, res) => {
   const health = await notificationService.health(workspaceId);
   const ok = health.channels.every((item) => !item.enabled || item.configured);
   res.status(ok ? 200 : 206).json(health);
-});
+}));
 
 export default router;

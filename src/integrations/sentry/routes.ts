@@ -5,6 +5,7 @@ import { logSentry } from "./logger";
 import { sentryConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { verifySentryWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -35,15 +36,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = sentryConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = sentryConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -52,15 +49,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await sentryConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await sentryConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -73,15 +66,11 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await sentryConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await sentryConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -90,24 +79,20 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await sentryConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await sentryConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await sentryConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -116,9 +101,9 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await sentryConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -132,24 +117,20 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
-router.get("/projects", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/projects", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const projects = await sentryConnectorService.listProjects(userId);
-    res.json({ projects, total: projects.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const projects = await sentryConnectorService.listProjects(userId);
+  res.json({ projects, total: projects.length });
+}));
 
-router.get("/issues", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/issues", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -165,56 +146,48 @@ router.get("/issues", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const issues = await sentryConnectorService.listIssues(userId, {
-      projectSlug: projectSlug || undefined,
-      query: query || undefined,
-      limit: limit ? Math.floor(limit) : undefined,
-    });
-    res.json({ issues, total: issues.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const issues = await sentryConnectorService.listIssues(userId, {
+    projectSlug: projectSlug || undefined,
+    query: query || undefined,
+    limit: limit ? Math.floor(limit) : undefined,
+  });
+  res.json({ issues, total: issues.length });
+}));
 
 export const sentryWebhookRouter = express.Router();
 
 sentryWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const sentryClientSecret = process.env.SENTRY_CLIENT_SECRET;
-    if (!sentryClientSecret) {
-      throw new ConnectorError("auth", "SENTRY_CLIENT_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    verifySentryWebhook({
-      rawBody,
-      signatureHeader: req.header("sentry-hook-signature") ?? undefined,
-      hookIdHeader: req.header("sentry-hook-id") ?? undefined,
-      resourceHeader: req.header("sentry-hook-resource") ?? undefined,
-      eventIdHeader: req.header("sentry-hook-event") ?? req.header("sentry-hook-event-id") ?? undefined,
-      sentryClientSecret,
-    });
-
-    const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
-
-    logSentry({
-      event: "webhook",
-      level: "info",
-      connector: "sentry",
-      message: "Sentry webhook received",
-      metadata: {
-        resource: req.header("sentry-hook-resource") ?? undefined,
-        action: req.header("sentry-hook-action") ?? undefined,
-        installation: req.header("sentry-hook-id") ?? undefined,
-        payloadKeys: Object.keys(payload),
-      },
-    });
-
-    res.status(202).json({ received: true });
-  } catch (error) {
-    handleError(res, error);
+  const sentryClientSecret = process.env.SENTRY_CLIENT_SECRET;
+  if (!sentryClientSecret) {
+    throw new ConnectorError("auth", "SENTRY_CLIENT_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  verifySentryWebhook({
+    rawBody,
+    signatureHeader: req.header("sentry-hook-signature") ?? undefined,
+    hookIdHeader: req.header("sentry-hook-id") ?? undefined,
+    resourceHeader: req.header("sentry-hook-resource") ?? undefined,
+    eventIdHeader: req.header("sentry-hook-event") ?? req.header("sentry-hook-event-id") ?? undefined,
+    sentryClientSecret,
+  });
+
+  const payload = JSON.parse(rawBody.toString("utf8")) as Record<string, unknown>;
+
+  logSentry({
+    event: "webhook",
+    level: "info",
+    connector: "sentry",
+    message: "Sentry webhook received",
+    metadata: {
+      resource: req.header("sentry-hook-resource") ?? undefined,
+      action: req.header("sentry-hook-action") ?? undefined,
+      installation: req.header("sentry-hook-id") ?? undefined,
+      payloadKeys: Object.keys(payload),
+    },
+  });
+
+  res.status(202).json({ received: true });
 });
 
 export default router;

@@ -4,6 +4,7 @@ import { logPostHog } from "./logger";
 import { posthogConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { verifyPostHogWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -34,15 +35,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = posthogConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = posthogConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -51,15 +48,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await posthogConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await posthogConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -72,13 +65,9 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await posthogConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await posthogConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
 router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -91,22 +80,18 @@ router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ connections, total: connections.length });
 });
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await posthogConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await posthogConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -116,7 +101,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   const health = await posthogConnectorService.health(userId);
   const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
   res.status(statusCode).json(health);
-});
+}));
 
 router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -134,22 +119,18 @@ router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) 
   res.status(204).send();
 });
 
-router.get("/projects", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/projects", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const projects = await posthogConnectorService.listProjects(userId);
-    res.json({ projects, total: projects.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const projects = await posthogConnectorService.listProjects(userId);
+  res.json({ projects, total: projects.length });
+}));
 
-router.get("/feature-flags", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/feature-flags", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -158,15 +139,11 @@ router.get("/feature-flags", requireAuth, async (req: AuthenticatedRequest, res)
 
   const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
 
-  try {
-    const flags = await posthogConnectorService.listFeatureFlags(userId, projectId);
-    res.json({ flags, total: flags.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const flags = await posthogConnectorService.listFeatureFlags(userId, projectId);
+  res.json({ flags, total: flags.length });
+}));
 
-router.post("/events", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/events", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -191,20 +168,16 @@ router.post("/events", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const capture = await posthogConnectorService.captureEvent(userId, {
-      event: event.trim(),
-      distinctId: distinctId.trim(),
-      properties,
-      projectApiKey: projectApiKey?.trim() || undefined,
-      timestamp,
-    });
+  const capture = await posthogConnectorService.captureEvent(userId, {
+    event: event.trim(),
+    distinctId: distinctId.trim(),
+    properties,
+    projectApiKey: projectApiKey?.trim() || undefined,
+    timestamp,
+  });
 
-    res.status(201).json({ capture });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ capture });
+}));
 
 export const posthogWebhookRouter = express.Router();
 

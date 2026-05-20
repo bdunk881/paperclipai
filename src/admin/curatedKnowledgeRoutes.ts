@@ -23,6 +23,7 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import { requireStaff } from "./staffAuth";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_KINDS = new Set(["document", "synthesized", "verified"]); // no connector_pull for curated
@@ -69,7 +70,7 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
   router.use(requireStaff);
 
   // GET /api/admin/curated-knowledge
-  router.get("/", async (req, res) => {
+  router.get("/", asyncHandler(async (req, res) => {
     try {
       const result = await pool.query<CuratedRow>(
         `SELECT id, scope, kind, title, content, tags, metadata, source_type, source_ref,
@@ -84,10 +85,10 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
       console.error("[admin/curated-knowledge] list failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to list curated items" });
     }
-  });
+  }));
 
   // GET /api/admin/curated-knowledge/:id
-  router.get("/:id", async (req, res) => {
+  router.get("/:id", asyncHandler(async (req, res) => {
     const id = req.params.id;
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "invalid id" });
 
@@ -102,10 +103,10 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
       console.error("[admin/curated-knowledge] get failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to fetch curated item" });
     }
-  });
+  }));
 
   // POST /api/admin/curated-knowledge
-  router.post("/", async (req, res) => {
+  router.post("/", asyncHandler(async (req, res) => {
     const { title, content, kind = "document", source_type = "curated", source_ref, tags, metadata, trust_score } =
       req.body ?? {};
 
@@ -139,10 +140,10 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
       console.error("[admin/curated-knowledge] create failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to create curated item" });
     }
-  });
+  }));
 
   // PATCH /api/admin/curated-knowledge/:id
-  router.patch("/:id", async (req, res) => {
+  router.patch("/:id", asyncHandler(async (req, res) => {
     const id = req.params.id;
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "invalid id" });
 
@@ -185,10 +186,10 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
       console.error("[admin/curated-knowledge] update failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to update curated item" });
     }
-  });
+  }));
 
   // DELETE /api/admin/curated-knowledge/:id (soft-delete)
-  router.delete("/:id", async (req, res) => {
+  router.delete("/:id", asyncHandler(async (req, res) => {
     const id = req.params.id;
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "invalid id" });
 
@@ -203,7 +204,7 @@ export function createCuratedKnowledgeRoutes(pool: Pool): Router {
       console.error("[admin/curated-knowledge] delete failed:", (err as Error).message);
       return res.status(500).json({ error: "Failed to delete curated item" });
     }
-  });
+  }));
 
   return router;
 }

@@ -2,6 +2,7 @@ import express from "express";
 import { AuthenticatedRequest, requireAuth } from "../../auth/authMiddleware";
 import { agentCatalogConnectorService } from "./service";
 import { AGENT_CATALOG_PROVIDERS, AgentCatalogConnectorError, AgentCatalogProvider } from "./types";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -53,15 +54,11 @@ router.post("/:provider/oauth/start", requireAuth, (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const flow = agentCatalogConnectorService.beginOAuth(userId, provider);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = agentCatalogConnectorService.beginOAuth(userId, provider);
+  res.status(201).json(flow);
 });
 
-router.get("/:provider/oauth/callback", async (req, res) => {
+router.get("/:provider/oauth/callback", asyncHandler(async (req, res) => {
   const provider = providerFromParam(req.params.provider);
   if (!provider) {
     res.status(400).json({ error: "Unsupported provider" });
@@ -104,7 +101,7 @@ router.get("/:provider/oauth/callback", async (req, res) => {
       dashboardCallbackUrl({ provider, status: "error", message: "OAuth callback failed" })
     );
   }
-});
+}));
 
 router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -117,7 +114,7 @@ router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
   res.json({ connections, total: connections.length });
 });
 
-router.post("/:provider/test", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/:provider/test", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const provider = providerFromParam(req.params.provider);
   if (!provider) {
     res.status(400).json({ error: "Unsupported provider" });
@@ -130,13 +127,9 @@ router.post("/:provider/test", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
-  try {
-    const identity = await agentCatalogConnectorService.testConnection(userId, provider);
-    res.json({ success: true, accountLabel: identity.accountLabel });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const identity = await agentCatalogConnectorService.testConnection(userId, provider);
+  res.json({ success: true, accountLabel: identity.accountLabel });
+}));
 
 router.delete("/:provider/connection", requireAuth, (req: AuthenticatedRequest, res) => {
   const provider = providerFromParam(req.params.provider);

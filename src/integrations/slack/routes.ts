@@ -36,15 +36,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = slackConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = slackConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -53,15 +49,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await slackConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await slackConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -74,13 +66,9 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await slackConnectorService.connectApiKey({ userId, botToken: botToken.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await slackConnectorService.connectApiKey({ userId, botToken: botToken.trim() });
+  res.status(201).json({ connection });
+}));
 
 router.get(
   "/connections",
@@ -101,22 +89,18 @@ router.get(
   }),
 );
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await slackConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await slackConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -125,7 +109,7 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await slackConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
 router.delete(
   "/connections/:id",
@@ -148,80 +132,68 @@ router.delete(
   }),
 );
 
-router.get("/channels", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/channels", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const channels = await slackConnectorService.listChannels(userId);
-    res.json({ channels, total: channels.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const channels = await slackConnectorService.listChannels(userId);
+  res.json({ channels, total: channels.length });
+}));
 
-router.get("/channels/:channel/messages", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/channels/:channel/messages", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const messages = await slackConnectorService.listChannelMessages(userId, req.params.channel);
-    res.json({ messages, total: messages.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const messages = await slackConnectorService.listChannelMessages(userId, req.params.channel);
+  res.json({ messages, total: messages.length });
+}));
 
 export const slackWebhookRouter = express.Router();
 
 slackWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const signingSecret = process.env.SLACK_SIGNING_SECRET;
-    if (!signingSecret) {
-      throw new ConnectorError("auth", "SLACK_SIGNING_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    try {
-      verifySlackSignature({
-        rawBody,
-        signatureHeader: req.header("x-slack-signature"),
-        timestampHeader: req.header("x-slack-request-timestamp"),
-        signingSecret,
-      });
-    } catch (verifyErr) {
-      console.error("[webhook.signature_rejected]", { provider: "slack", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
-      throw verifyErr;
-    }
-
-    const payload = JSON.parse(rawBody.toString("utf8"));
-
-    if (payload.type === "url_verification" && payload.challenge) {
-      res.status(200).json({ challenge: payload.challenge });
-      return;
-    }
-
-    logSlack({
-      event: "webhook",
-      level: "info",
-      connector: "slack",
-      message: "Slack event received",
-      metadata: {
-        eventType: payload.event?.type,
-        teamId: payload.team_id,
-      },
-    });
-
-    res.status(200).json({ ok: true });
-  } catch (error) {
-    handleError(res, error);
+  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+  if (!signingSecret) {
+    throw new ConnectorError("auth", "SLACK_SIGNING_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  try {
+    verifySlackSignature({
+      rawBody,
+      signatureHeader: req.header("x-slack-signature"),
+      timestampHeader: req.header("x-slack-request-timestamp"),
+      signingSecret,
+    });
+  } catch (verifyErr) {
+    console.error("[webhook.signature_rejected]", { provider: "slack", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
+    throw verifyErr;
+  }
+
+  const payload = JSON.parse(rawBody.toString("utf8"));
+
+  if (payload.type === "url_verification" && payload.challenge) {
+    res.status(200).json({ challenge: payload.challenge });
+    return;
+  }
+
+  logSlack({
+    event: "webhook",
+    level: "info",
+    connector: "slack",
+    message: "Slack event received",
+    metadata: {
+      eventType: payload.event?.type,
+      teamId: payload.team_id,
+    },
+  });
+
+  res.status(200).json({ ok: true });
 });
 
 export default router;

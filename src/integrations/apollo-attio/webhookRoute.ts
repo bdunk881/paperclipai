@@ -11,6 +11,7 @@
 import { Router, Request, Response } from "express";
 import { AttioClient } from "./attio-client";
 import { ENTITY_CONFIGS, type EntityKey } from "./config";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = Router();
 
@@ -48,7 +49,7 @@ interface ApolloWebhookPayload {
 // Webhook endpoint
 // ---------------------------------------------------------------------------
 
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", asyncHandler<Request>(async (req, res: Response) => {
   // --- Validate shared secret ---
   const webhookSecret = process.env.APOLLO_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -167,7 +168,7 @@ router.post("/", async (req: Request, res: Response) => {
     console.error(`[apollo/webhook] Attio sync failed for ${contact.email}: ${msg}`);
     res.status(502).json({ error: `Attio sync failed: ${msg}` });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers

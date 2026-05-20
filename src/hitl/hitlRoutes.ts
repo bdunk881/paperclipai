@@ -9,6 +9,7 @@ import {
   HitlRecipientType,
   hitlStore,
 } from "./hitlStore";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
@@ -167,27 +168,27 @@ function readCompanyId(req: AuthenticatedRequest, res: Response): string | null 
 
 // DASH-45: every handler is async because hitlStore went Postgres-backed.
 
-router.get("/companies/:companyId/checkpoint-schedule", async (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/checkpoint-schedule", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) return;
   res.json({ schedule: await hitlStore.getSchedule(userId, companyId) });
-});
+}));
 
 router.put(
   "/companies/:companyId/checkpoint-schedule",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
     const parsed = parseBody(scheduleUpdateSchema, req, res);
     if (!parsed) return;
     res.json({ schedule: await hitlStore.upsertSchedule(userId, companyId, parsed) });
-  }
+  })
 );
 
-router.get("/companies/:companyId/checkpoints", async (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/checkpoints", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) return;
@@ -199,12 +200,12 @@ router.get("/companies/:companyId/checkpoints", async (req: AuthenticatedRequest
       checkpointStatusSchema.safeParse(status).success ? (status as HitlCheckpointStatus) : undefined
     ),
   });
-});
+}));
 
 router.post(
   "/companies/:companyId/checkpoints",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -224,13 +225,13 @@ router.post(
       recipientId: parsed.recipientId,
     });
     res.status(201).json({ checkpoint });
-  }
+  })
 );
 
 router.post(
   "/companies/:companyId/checkpoints/evaluate-trigger",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -245,10 +246,10 @@ router.post(
       event: parsed.event,
     });
     res.json(evaluation);
-  }
+  })
 );
 
-router.get("/companies/:companyId/artifact-comments", async (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/artifact-comments", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) return;
@@ -259,12 +260,12 @@ router.get("/companies/:companyId/artifact-comments", async (req: AuthenticatedR
     commentStatusSchema.safeParse(status).success ? comment.status === (status as HitlCommentStatus) : true
   );
   res.json({ comments, total: comments.length });
-});
+}));
 
 router.post(
   "/companies/:companyId/artifact-comments",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -279,13 +280,13 @@ router.post(
       routing: parsed.routing,
     });
     res.status(201).json({ comment });
-  }
+  })
 );
 
 router.post(
   "/companies/:companyId/ask-ceo/requests",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -298,12 +299,12 @@ router.post(
       context: parsed.context as AskCeoRequest["context"] | undefined,
     });
     res.status(201).json({ request: requestRecord });
-  }
+  })
 );
 
 router.get(
   "/companies/:companyId/ask-ceo/requests/:requestId",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -313,17 +314,17 @@ router.get(
       return;
     }
     res.json({ request: requestRecord });
-  }
+  })
 );
 
-router.get("/companies/:companyId/state", async (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/state", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) return;
   res.json(await hitlStore.getCompanyState(userId, companyId));
-});
+}));
 
-router.get("/companies/:companyId/notifications", async (req: AuthenticatedRequest, res) => {
+router.get("/companies/:companyId/notifications", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
   if (!userId || !companyId) return;
@@ -343,6 +344,6 @@ router.get("/companies/:companyId/notifications", async (req: AuthenticatedReque
         : undefined,
   });
   res.json({ notifications, total: notifications.length });
-});
+}));
 
 export default router;

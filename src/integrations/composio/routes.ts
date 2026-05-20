@@ -4,6 +4,7 @@ import { logComposio } from "./logger";
 import { composioConnectorService } from "./service";
 import { ComposioWebhookEvent, ConnectorError } from "./types";
 import { verifyComposioWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ function handleError(res: express.Response, error: unknown): void {
 }
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -41,19 +42,15 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await composioConnectorService.connectApiKey({
-      userId,
-      apiKey: apiKey.trim(),
-    });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await composioConnectorService.connectApiKey({
+    userId,
+    apiKey: apiKey.trim(),
+  });
+  res.status(201).json({ connection });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -62,26 +59,22 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await composioConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await composioConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await composioConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -91,10 +84,10 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   const health = await composioConnectorService.health(userId);
   const statusCode = health.status === "ok" ? 200 : health.status === "degraded" ? 206 : 503;
   res.status(statusCode).json(health);
-});
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -108,26 +101,22 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.get("/tools/enum", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/tools/enum", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const tools = await composioConnectorService.listToolEnums(userId);
-    res.json({ tools, total: tools.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const tools = await composioConnectorService.listToolEnums(userId);
+  res.json({ tools, total: tools.length });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/tools/execute", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/tools/execute", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -146,22 +135,18 @@ router.post("/tools/execute", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const result = await composioConnectorService.executeTool(userId, {
-      toolSlug: toolSlug.trim(),
-      arguments: toolArgs,
-      connectedAccountId: connectedAccountId?.trim() || undefined,
-      version: version?.trim() || undefined,
-    });
+  const result = await composioConnectorService.executeTool(userId, {
+    toolSlug: toolSlug.trim(),
+    arguments: toolArgs,
+    connectedAccountId: connectedAccountId?.trim() || undefined,
+    version: version?.trim() || undefined,
+  });
 
-    res.status(result.successful ? 200 : 502).json(result);
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(result.successful ? 200 : 502).json(result);
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.get("/connected-accounts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connected-accounts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -175,27 +160,23 @@ router.get("/connected-accounts", requireAuth, async (req: AuthenticatedRequest,
 
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
 
-  try {
-    const result = await composioConnectorService.listConnectedAccounts(userId, {
-      toolkitSlugs: parseCsv(req.query.toolkitSlugs),
-      statuses: parseCsv(req.query.statuses),
-      targetUserIds: parseCsv(req.query.targetUserIds),
-      limit: Number.isFinite(limit) ? limit : undefined,
-      cursor: typeof req.query.cursor === "string" ? req.query.cursor : undefined,
-    });
+  const result = await composioConnectorService.listConnectedAccounts(userId, {
+    toolkitSlugs: parseCsv(req.query.toolkitSlugs),
+    statuses: parseCsv(req.query.statuses),
+    targetUserIds: parseCsv(req.query.targetUserIds),
+    limit: Number.isFinite(limit) ? limit : undefined,
+    cursor: typeof req.query.cursor === "string" ? req.query.cursor : undefined,
+  });
 
-    res.json({
-      connectedAccounts: result.items,
-      total: result.items.length,
-      nextCursor: result.nextCursor,
-    });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.json({
+    connectedAccounts: result.items,
+    total: result.items.length,
+    nextCursor: result.nextCursor,
+  });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/connected-accounts", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connected-accounts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -219,49 +200,41 @@ router.post("/connected-accounts", requireAuth, async (req: AuthenticatedRequest
     return;
   }
 
-  try {
-    const connectedAccount = await composioConnectorService.createConnectedAccount(userId, {
-      authConfigId: authConfigId.trim(),
-      externalUserId: externalUserId.trim(),
-      connection,
-      validateCredentials,
-    });
+  const connectedAccount = await composioConnectorService.createConnectedAccount(userId, {
+    authConfigId: authConfigId.trim(),
+    externalUserId: externalUserId.trim(),
+    connection,
+    validateCredentials,
+  });
 
-    res.status(201).json({ connectedAccount });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ connectedAccount });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/connected-accounts/:id/refresh", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connected-accounts/:id/refresh", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const refreshed = await composioConnectorService.refreshConnectedAccount(userId, {
-      connectedAccountId: req.params.id,
-      redirectUrl:
-        typeof (req.body as { redirectUrl?: unknown }).redirectUrl === "string"
-          ? ((req.body as { redirectUrl: string }).redirectUrl.trim() || undefined)
-          : undefined,
-      validateCredentials:
-        typeof (req.body as { validateCredentials?: unknown }).validateCredentials === "boolean"
-          ? (req.body as { validateCredentials: boolean }).validateCredentials
-          : undefined,
-    });
+  const refreshed = await composioConnectorService.refreshConnectedAccount(userId, {
+    connectedAccountId: req.params.id,
+    redirectUrl:
+      typeof (req.body as { redirectUrl?: unknown }).redirectUrl === "string"
+        ? ((req.body as { redirectUrl: string }).redirectUrl.trim() || undefined)
+        : undefined,
+    validateCredentials:
+      typeof (req.body as { validateCredentials?: unknown }).validateCredentials === "boolean"
+        ? (req.body as { validateCredentials: boolean }).validateCredentials
+        : undefined,
+  });
 
-    res.json({ refreshed });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.json({ refreshed });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.get("/triggers/active", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/triggers/active", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -274,21 +247,17 @@ router.get("/triggers/active", requireAuth, async (req: AuthenticatedRequest, re
       : undefined;
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
 
-  try {
-    const triggers = await composioConnectorService.listActiveTriggers(userId, {
-      connectedAccountIds: parseCsv(req.query.connectedAccountIds),
-      triggerNames: parseCsv(req.query.triggerNames),
-      limit: Number.isFinite(limit) ? limit : undefined,
-    });
+  const triggers = await composioConnectorService.listActiveTriggers(userId, {
+    connectedAccountIds: parseCsv(req.query.connectedAccountIds),
+    triggerNames: parseCsv(req.query.triggerNames),
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
 
-    res.json({ triggers, total: triggers.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.json({ triggers, total: triggers.length });
+}));
 
 // lgtm[js/missing-rate-limiting] -- src/app.ts mounts /api behind generalApiRateLimiter.
-router.post("/triggers/:slug/upsert", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/triggers/:slug/upsert", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -306,19 +275,15 @@ router.post("/triggers/:slug/upsert", requireAuth, async (req: AuthenticatedRequ
     return;
   }
 
-  try {
-    const trigger = await composioConnectorService.upsertTrigger(userId, {
-      slug: req.params.slug,
-      connectedAccountId: connectedAccountId.trim(),
-      triggerConfig,
-      toolkitVersions,
-    });
+  const trigger = await composioConnectorService.upsertTrigger(userId, {
+    slug: req.params.slug,
+    connectedAccountId: connectedAccountId.trim(),
+    triggerConfig,
+    toolkitVersions,
+  });
 
-    res.status(201).json({ trigger });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  res.status(201).json({ trigger });
+}));
 
 export const composioWebhookRouter = express.Router();
 

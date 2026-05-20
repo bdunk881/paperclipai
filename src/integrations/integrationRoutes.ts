@@ -58,6 +58,7 @@ import {
   invokeIntegrationMcpTool,
   discoverAllUserMcpTools,
 } from "./integrationMcpAdapter";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const VALID_SIGNATURE_SCHEMES: WebhookSignatureScheme[] = [
   "stripe",
@@ -132,7 +133,7 @@ export const oauthCallbackRouter = Router();
  * Exchanges the authorization code for tokens and stores the connection.
  * Returns the new IntegrationConnectionPublic record.
  */
-oauthCallbackRouter.get("/:slug/callback", async (req, res) => {
+oauthCallbackRouter.get("/:slug/callback", asyncHandler(async (req, res) => {
   const userId = resolveUserIdFromHeader(req);
   if (!userId) { res.status(401).json({ error: "X-User-Id header is required" }); return; }
 
@@ -167,7 +168,7 @@ oauthCallbackRouter.get("/:slug/callback", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: msg });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Main protected router — auth is applied at mount in app.ts.
@@ -181,7 +182,7 @@ const router = Router();
 // ---------------------------------------------------------------------------
 
 /** GET /api/integrations/connections */
-router.get("/connections", async (req, res) => {
+router.get("/connections", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integration } = req.query;
@@ -190,7 +191,7 @@ router.get("/connections", async (req, res) => {
     typeof integration === "string" ? integration : undefined
   );
   res.json({ connections, total: connections.length });
-});
+}));
 
 /** POST /api/integrations/connections — store a static credential */
 router.post(
@@ -200,7 +201,7 @@ router.post(
       (await integrationCredentialStore.list((req as AuthenticatedRequest).auth!.sub)).length,
     delta: 1,
   }),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integrationSlug, label, credentials } = req.body as {
@@ -232,19 +233,19 @@ router.post(
   });
 
   res.status(201).json(conn);
-});
+}));
 
 /** GET /api/integrations/connections/:id */
-router.get("/connections/:id", async (req, res) => {
+router.get("/connections/:id", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const conn = await integrationCredentialStore.get(req.params.id, userId);
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
-});
+}));
 
 /** PATCH /api/integrations/connections/:id */
-router.patch("/connections/:id", async (req, res) => {
+router.patch("/connections/:id", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { label } = req.body as { label?: unknown };
@@ -255,28 +256,28 @@ router.patch("/connections/:id", async (req, res) => {
   const conn = await integrationCredentialStore.update(req.params.id, userId, { label });
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
-});
+}));
 
 /** DELETE /api/integrations/connections/:id */
-router.delete("/connections/:id", async (req, res) => {
+router.delete("/connections/:id", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const deleted = await integrationCredentialStore.delete(req.params.id, userId);
   if (!deleted) { res.status(404).json({ error: "Connection not found" }); return; }
   res.status(204).end();
-});
+}));
 
 /** POST /api/integrations/connections/:id/default */
-router.post("/connections/:id/default", async (req, res) => {
+router.post("/connections/:id/default", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const conn = await integrationCredentialStore.setDefault(req.params.id, userId);
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
   res.json(conn);
-});
+}));
 
 /** POST /api/integrations/connections/:id/test */
-router.post("/connections/:id/test", async (req, res) => {
+router.post("/connections/:id/test", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const conn = await integrationCredentialStore.get(req.params.id, userId);
@@ -292,7 +293,7 @@ router.post("/connections/:id/test", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ ok: false, message: `Test failed: ${msg}` });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // OAuth2 flows — authorize and client-credentials (auth required)
@@ -336,7 +337,7 @@ router.get("/oauth2/:slug/authorize", (req, res) => {
  * Body: { clientId, clientSecret, instanceDomain?, label? }
  * Fetches a client-credentials token and stores the connection.
  */
-router.post("/oauth2/:slug/client-credentials", async (req, res) => {
+router.post("/oauth2/:slug/client-credentials", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const manifest = getIntegrationBySlug(req.params.slug);
@@ -379,7 +380,7 @@ router.post("/oauth2/:slug/client-credentials", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: msg });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Action execution — sandbox testing
@@ -390,7 +391,7 @@ router.post("/oauth2/:slug/client-credentials", async (req, res) => {
  * Body: { input: Record<string, unknown>, connectionId?: string, sandbox?: boolean }
  * Executes an integration action using the caller's stored credentials.
  */
-router.post("/actions/:slug/:actionId", async (req, res) => {
+router.post("/actions/:slug/:actionId", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const manifest = getIntegrationBySlug(req.params.slug);
@@ -426,14 +427,14 @@ router.post("/actions/:slug/:actionId", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: msg });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Trigger subscriptions
 // ---------------------------------------------------------------------------
 
 /** GET /api/integrations/triggers/subscriptions */
-router.get("/triggers/subscriptions", async (req, res) => {
+router.get("/triggers/subscriptions", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integration } = req.query;
@@ -442,10 +443,10 @@ router.get("/triggers/subscriptions", async (req, res) => {
     typeof integration === "string" ? integration : undefined
   );
   res.json({ subscriptions: subs, total: subs.length });
-});
+}));
 
 /** POST /api/integrations/triggers/subscriptions */
-router.post("/triggers/subscriptions", async (req, res) => {
+router.post("/triggers/subscriptions", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const {
@@ -516,19 +517,19 @@ router.post("/triggers/subscriptions", async (req, res) => {
     subscription: subPublic,
     relayUrl: `/api/webhooks/relay/${sub.id}`,
   });
-});
+}));
 
 /** DELETE /api/integrations/triggers/subscriptions/:id */
-router.delete("/triggers/subscriptions/:id", async (req, res) => {
+router.delete("/triggers/subscriptions/:id", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const deleted = await webhookRelay.deleteSubscription(req.params.id, userId);
   if (!deleted) { res.status(404).json({ error: "Subscription not found" }); return; }
   res.status(204).end();
-});
+}));
 
 /** GET /api/integrations/triggers/subscriptions/:id/events */
-router.get("/triggers/subscriptions/:id/events", async (req, res) => {
+router.get("/triggers/subscriptions/:id/events", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { limit, unconsumedOnly } = req.query;
@@ -538,7 +539,7 @@ router.get("/triggers/subscriptions/:id/events", async (req, res) => {
   });
 
   res.json({ events: eventsList, total: eventsList.length });
-});
+}));
 
 // ---------------------------------------------------------------------------
 // MCP Adapter — integration-scoped MCP tool discovery and invocation
@@ -553,7 +554,7 @@ router.get("/mcp", (_req, res) => {
  * GET /api/integrations/mcp/discover
  * Discovers MCP tools across all of the user's MCP-backed connections.
  */
-router.get("/mcp/discover", async (req, res) => {
+router.get("/mcp/discover", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   try {
@@ -563,14 +564,14 @@ router.get("/mcp/discover", async (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: msg });
   }
-});
+}));
 
 /**
  * GET /api/integrations/mcp/:slug/tools
  * Query params: connectionId (optional)
  * Discovers available MCP tools for one connected integration.
  */
-router.get("/mcp/:slug/tools", async (req, res) => {
+router.get("/mcp/:slug/tools", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { connectionId } = req.query as Record<string, string>;
@@ -589,14 +590,14 @@ router.get("/mcp/:slug/tools", async (req, res) => {
       : 502;
     res.status(status).json({ error: msg });
   }
-});
+}));
 
 /**
  * POST /api/integrations/mcp/:slug/invoke
  * Body: { toolName: string, args: Record<string, unknown>, connectionId?: string }
  * Invokes an MCP tool on a connected integration.
  */
-router.post("/mcp/:slug/invoke", async (req, res) => {
+router.post("/mcp/:slug/invoke", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { toolName, args, connectionId } = req.body as {
@@ -628,7 +629,7 @@ router.post("/mcp/:slug/invoke", async (req, res) => {
       : 502;
     res.status(status).json({ error: msg });
   }
-});
+}));
 
 export default router;
 
@@ -644,7 +645,7 @@ export const webhookRelayRouter = Router();
  * Inbound webhook from a third-party service.
  * Responds 200 immediately (acknowledge receipt).
  */
-webhookRelayRouter.post("/:subscriptionId", async (req, res) => {
+webhookRelayRouter.post("/:subscriptionId", asyncHandler(async (req, res) => {
   const payload = req.body as Record<string, unknown>;
 
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -673,4 +674,4 @@ webhookRelayRouter.post("/:subscriptionId", async (req, res) => {
   }
 
   res.json({ received: true, matched: true, eventId: event.id });
-});
+}));

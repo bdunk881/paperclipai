@@ -2,6 +2,7 @@ import { Request, Response, Router } from "express";
 import { googleWorkspaceCredentialsStore } from "./credentialsStore";
 import { GoogleWorkspaceClient, GoogleWorkspaceConnectorError } from "./googleWorkspaceClient";
 import { logGoogleWorkspaceEvent } from "./logging";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 function getUserId(req: Request): string | null {
   const userId = req.headers["x-user-id"];
@@ -196,7 +197,7 @@ router.get("/credentials", (req: Request, res: Response) => {
   res.json({ credentials, total: credentials.length });
 });
 
-router.post("/credentials/:id/test-connection", async (req: Request, res: Response) => {
+router.post("/credentials/:id/test-connection", asyncHandler<Request>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -245,9 +246,9 @@ router.post("/credentials/:id/test-connection", async (req: Request, res: Respon
 
     res.status(500).json({ error: "Unknown connector test failure", category: "network" });
   }
-});
+}));
 
-router.get("/drive/files", async (req: Request, res: Response) => {
+router.get("/drive/files", asyncHandler<Request>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -291,9 +292,9 @@ router.get("/drive/files", async (req: Request, res: Response) => {
     }
     res.status(500).json({ error: "Unknown drive sync failure", category: "network" });
   }
-});
+}));
 
-router.get("/calendar/events", async (req: Request, res: Response) => {
+router.get("/calendar/events", asyncHandler<Request>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -341,9 +342,9 @@ router.get("/calendar/events", async (req: Request, res: Response) => {
     }
     res.status(500).json({ error: "Unknown calendar sync failure", category: "network" });
   }
-});
+}));
 
-router.get("/gmail/messages", async (req: Request, res: Response) => {
+router.get("/gmail/messages", asyncHandler<Request>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -391,7 +392,7 @@ router.get("/gmail/messages", async (req: Request, res: Response) => {
     }
     res.status(500).json({ error: "Unknown Gmail sync failure", category: "network" });
   }
-});
+}));
 
 router.delete("/credentials/:id", (req: Request, res: Response) => {
   const userId = getUserId(req);

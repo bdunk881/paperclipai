@@ -5,6 +5,7 @@ import { logStripe } from "./logger";
 import { stripeConnectorService } from "./service";
 import { ConnectorError } from "./types";
 import { verifyStripeWebhook } from "./webhook";
+import { asyncHandler } from "../../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -44,15 +45,11 @@ router.post("/oauth/start", requireAuth, (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  try {
-    const flow = stripeConnectorService.beginOAuth(userId);
-    res.status(201).json(flow);
-  } catch (error) {
-    handleError(res, error);
-  }
+  const flow = stripeConnectorService.beginOAuth(userId);
+  res.status(201).json(flow);
 });
 
-router.get("/oauth/callback", async (req, res) => {
+router.get("/oauth/callback", asyncHandler(async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : "";
   const state = typeof req.query.state === "string" ? req.query.state : "";
 
@@ -61,15 +58,11 @@ router.get("/oauth/callback", async (req, res) => {
     return;
   }
 
-  try {
-    const credential = await stripeConnectorService.completeOAuth({ code, state });
-    res.status(201).json({ connection: credential });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const credential = await stripeConnectorService.completeOAuth({ code, state });
+  res.status(201).json({ connection: credential });
+}));
 
-router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -82,15 +75,11 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const connection = await stripeConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
-    res.status(201).json({ connection });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const connection = await stripeConnectorService.connectApiKey({ userId, apiKey: apiKey.trim() });
+  res.status(201).json({ connection });
+}));
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -99,24 +88,20 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
 
   const connections = await stripeConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
-router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const result = await stripeConnectorService.testConnection(userId);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const result = await stripeConnectorService.testConnection(userId);
+  res.json({ success: true, ...result });
+}));
 
-router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -125,9 +110,9 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
 
   const health = await stripeConnectorService.health(userId);
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
-});
+}));
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -141,24 +126,20 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 
   res.status(204).send();
-});
+}));
 
-router.get("/customers", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/customers", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const customers = await stripeConnectorService.listCustomers(userId, parseLimit(req.query.limit));
-    res.json({ customers, total: customers.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const customers = await stripeConnectorService.listCustomers(userId, parseLimit(req.query.limit));
+  res.json({ customers, total: customers.length });
+}));
 
-router.post("/customers", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/customers", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -178,21 +159,17 @@ router.post("/customers", requireAuth, async (req: AuthenticatedRequest, res) =>
     return;
   }
 
-  try {
-    const customer = await stripeConnectorService.createCustomer(userId, {
-      email: email?.trim(),
-      name: name?.trim(),
-      phone: phone?.trim(),
-      description: description?.trim(),
-      metadata,
-    });
-    res.status(201).json({ customer });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const customer = await stripeConnectorService.createCustomer(userId, {
+    email: email?.trim(),
+    name: name?.trim(),
+    phone: phone?.trim(),
+    description: description?.trim(),
+    metadata,
+  });
+  res.status(201).json({ customer });
+}));
 
-router.patch("/customers/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/customers/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -212,40 +189,32 @@ router.patch("/customers/:id", requireAuth, async (req: AuthenticatedRequest, re
     return;
   }
 
-  try {
-    const customer = await stripeConnectorService.updateCustomer(userId, req.params.id, {
-      email: email?.trim(),
-      name: name?.trim(),
-      phone: phone?.trim(),
-      description: description?.trim(),
-      metadata,
-    });
-    res.json({ customer });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const customer = await stripeConnectorService.updateCustomer(userId, req.params.id, {
+    email: email?.trim(),
+    name: name?.trim(),
+    phone: phone?.trim(),
+    description: description?.trim(),
+    metadata,
+  });
+  res.json({ customer });
+}));
 
-router.get("/subscriptions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/subscriptions", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const subscriptions = await stripeConnectorService.listSubscriptions(userId, {
-      customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
-      status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
-      limit: parseLimit(req.query.limit),
-    });
-    res.json({ subscriptions, total: subscriptions.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const subscriptions = await stripeConnectorService.listSubscriptions(userId, {
+    customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
+    status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
+    limit: parseLimit(req.query.limit),
+  });
+  res.json({ subscriptions, total: subscriptions.length });
+}));
 
-router.post("/subscriptions", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/subscriptions", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -265,21 +234,17 @@ router.post("/subscriptions", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const subscription = await stripeConnectorService.createSubscription(userId, {
-      customerId: customerId.trim(),
-      priceId: priceId.trim(),
-      quantity,
-      trialPeriodDays,
-      metadata,
-    });
-    res.status(201).json({ subscription });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const subscription = await stripeConnectorService.createSubscription(userId, {
+    customerId: customerId.trim(),
+    priceId: priceId.trim(),
+    quantity,
+    trialPeriodDays,
+    metadata,
+  });
+  res.status(201).json({ subscription });
+}));
 
-router.patch("/subscriptions/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/subscriptions/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -298,39 +263,31 @@ router.patch("/subscriptions/:id", requireAuth, async (req: AuthenticatedRequest
     return;
   }
 
-  try {
-    const subscription = await stripeConnectorService.updateSubscription(userId, req.params.id, {
-      priceId: priceId?.trim(),
-      quantity,
-      cancelAtPeriodEnd,
-      metadata,
-    });
-    res.json({ subscription });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const subscription = await stripeConnectorService.updateSubscription(userId, req.params.id, {
+    priceId: priceId?.trim(),
+    quantity,
+    cancelAtPeriodEnd,
+    metadata,
+  });
+  res.json({ subscription });
+}));
 
-router.get("/invoices", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/invoices", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const invoices = await stripeConnectorService.listInvoices(userId, {
-      customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
-      status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
-      limit: parseLimit(req.query.limit),
-    });
-    res.json({ invoices, total: invoices.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const invoices = await stripeConnectorService.listInvoices(userId, {
+    customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
+    status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
+    limit: parseLimit(req.query.limit),
+  });
+  res.json({ invoices, total: invoices.length });
+}));
 
-router.post("/invoices", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/invoices", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -350,21 +307,17 @@ router.post("/invoices", requireAuth, async (req: AuthenticatedRequest, res) => 
     return;
   }
 
-  try {
-    const invoice = await stripeConnectorService.createInvoice(userId, {
-      customerId: customerId.trim(),
-      autoAdvance,
-      collectionMethod: collectionMethod?.trim(),
-      daysUntilDue,
-      metadata,
-    });
-    res.status(201).json({ invoice });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const invoice = await stripeConnectorService.createInvoice(userId, {
+    customerId: customerId.trim(),
+    autoAdvance,
+    collectionMethod: collectionMethod?.trim(),
+    daysUntilDue,
+    metadata,
+  });
+  res.status(201).json({ invoice });
+}));
 
-router.patch("/invoices/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/invoices/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -383,54 +336,42 @@ router.patch("/invoices/:id", requireAuth, async (req: AuthenticatedRequest, res
     return;
   }
 
-  try {
-    const invoice = await stripeConnectorService.updateInvoice(userId, req.params.id, {
-      autoAdvance,
-      collectionMethod: collectionMethod?.trim(),
-      daysUntilDue,
-      metadata,
-    });
-    res.json({ invoice });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const invoice = await stripeConnectorService.updateInvoice(userId, req.params.id, {
+    autoAdvance,
+    collectionMethod: collectionMethod?.trim(),
+    daysUntilDue,
+    metadata,
+  });
+  res.json({ invoice });
+}));
 
-router.delete("/invoices/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete("/invoices/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const deleted = await stripeConnectorService.deleteInvoice(userId, req.params.id);
-    res.json({ deleted });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const deleted = await stripeConnectorService.deleteInvoice(userId, req.params.id);
+  res.json({ deleted });
+}));
 
-router.get("/payment-intents", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get("/payment-intents", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const paymentIntents = await stripeConnectorService.listPaymentIntents(userId, {
-      customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
-      status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
-      limit: parseLimit(req.query.limit),
-    });
-    res.json({ paymentIntents, total: paymentIntents.length });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const paymentIntents = await stripeConnectorService.listPaymentIntents(userId, {
+    customerId: typeof req.query.customerId === "string" ? req.query.customerId.trim() : undefined,
+    status: typeof req.query.status === "string" ? req.query.status.trim() : undefined,
+    limit: parseLimit(req.query.limit),
+  });
+  res.json({ paymentIntents, total: paymentIntents.length });
+}));
 
-router.post("/payment-intents", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/payment-intents", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -452,23 +393,19 @@ router.post("/payment-intents", requireAuth, async (req: AuthenticatedRequest, r
     return;
   }
 
-  try {
-    const paymentIntent = await stripeConnectorService.createPaymentIntent(userId, {
-      amount: Number(amount),
-      currency: currency.trim(),
-      customerId: customerId?.trim(),
-      description: description?.trim(),
-      confirm,
-      paymentMethodId: paymentMethodId?.trim(),
-      metadata,
-    });
-    res.status(201).json({ paymentIntent });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const paymentIntent = await stripeConnectorService.createPaymentIntent(userId, {
+    amount: Number(amount),
+    currency: currency.trim(),
+    customerId: customerId?.trim(),
+    description: description?.trim(),
+    confirm,
+    paymentMethodId: paymentMethodId?.trim(),
+    metadata,
+  });
+  res.status(201).json({ paymentIntent });
+}));
 
-router.patch("/payment-intents/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch("/payment-intents/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -486,67 +423,55 @@ router.patch("/payment-intents/:id", requireAuth, async (req: AuthenticatedReque
     return;
   }
 
-  try {
-    const paymentIntent = await stripeConnectorService.updatePaymentIntent(userId, req.params.id, {
-      amount,
-      description: description?.trim(),
-      metadata,
-    });
-    res.json({ paymentIntent });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const paymentIntent = await stripeConnectorService.updatePaymentIntent(userId, req.params.id, {
+    amount,
+    description: description?.trim(),
+    metadata,
+  });
+  res.json({ paymentIntent });
+}));
 
-router.post("/payment-intents/:id/cancel", requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/payment-intents/:id/cancel", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  try {
-    const paymentIntent = await stripeConnectorService.cancelPaymentIntent(userId, req.params.id);
-    res.json({ paymentIntent });
-  } catch (error) {
-    handleError(res, error);
-  }
-});
+  const paymentIntent = await stripeConnectorService.cancelPaymentIntent(userId, req.params.id);
+  res.json({ paymentIntent });
+}));
 
 export const stripeConnectorWebhookRouter = express.Router();
 
 stripeConnectorWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  try {
-    const signingSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
-    if (!signingSecret) {
-      throw new ConnectorError("auth", "STRIPE_CONNECT_WEBHOOK_SECRET is not configured", 503);
-    }
-
-    const rawBody = req.body as Buffer;
-    const event = verifyStripeWebhook({
-      rawBody,
-      signatureHeader: req.header("stripe-signature") ?? undefined,
-      signingSecret,
-    });
-
-    logStripe({
-      event: "webhook",
-      level: "info",
-      connector: "stripe",
-      accountId: event.account,
-      message: "Stripe webhook received",
-      metadata: {
-        eventId: event.id,
-        eventType: event.type,
-        createdAt: event.createdAt,
-        livemode: event.livemode,
-      },
-    });
-
-    res.status(202).json({ received: true, event });
-  } catch (error) {
-    handleError(res, error);
+  const signingSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+  if (!signingSecret) {
+    throw new ConnectorError("auth", "STRIPE_CONNECT_WEBHOOK_SECRET is not configured", 503);
   }
+
+  const rawBody = req.body as Buffer;
+  const event = verifyStripeWebhook({
+    rawBody,
+    signatureHeader: req.header("stripe-signature") ?? undefined,
+    signingSecret,
+  });
+
+  logStripe({
+    event: "webhook",
+    level: "info",
+    connector: "stripe",
+    accountId: event.account,
+    message: "Stripe webhook received",
+    metadata: {
+      eventId: event.id,
+      eventType: event.type,
+      createdAt: event.createdAt,
+      livemode: event.livemode,
+    },
+  });
+
+  res.status(202).json({ received: true, event });
 });
 
 export default router;

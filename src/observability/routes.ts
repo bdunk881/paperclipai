@@ -5,6 +5,7 @@ import { entitlementStore } from "../billing/entitlements";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { observabilityStore } from "./store";
 import { ObservabilityEventCategory } from "./types";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 const categorySchema = z.enum(["issue", "run", "heartbeat", "budget", "alert"]);
@@ -52,7 +53,7 @@ function getWorkspaceId(req: WorkspaceAwareRequest): string | undefined {
   return typeof req.workspaceId === "string" && req.workspaceId.trim() ? req.workspaceId.trim() : undefined;
 }
 
-router.get("/events", async (req: WorkspaceAwareRequest, res) => {
+router.get("/events", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -81,9 +82,9 @@ router.get("/events", async (req: WorkspaceAwareRequest, res) => {
   });
 
   res.json(page);
-});
+}));
 
-router.get("/events/stream", async (req: WorkspaceAwareRequest, res) => {
+router.get("/events/stream", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -145,9 +146,9 @@ router.get("/events/stream", async (req: WorkspaceAwareRequest, res) => {
     unsubscribe();
     res.end();
   });
-});
+}));
 
-router.get("/throughput", async (req: WorkspaceAwareRequest, res) => {
+router.get("/throughput", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -159,6 +160,6 @@ router.get("/throughput", async (req: WorkspaceAwareRequest, res) => {
     parseWindowHours(req.query.windowHours)
   );
   res.json(snapshot);
-});
+}));
 
 export default router;

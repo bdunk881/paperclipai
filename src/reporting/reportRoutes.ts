@@ -11,6 +11,7 @@ import {
   resolveWindow,
 } from "./reportService";
 import { ReportKind, ReportTemplateConfig } from "./types";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -48,7 +49,7 @@ function parseTemplate(value: unknown): ReportTemplateConfig | undefined {
   };
 }
 
-router.get("/", async (req: AuthenticatedRequest, res) => {
+router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -59,9 +60,9 @@ router.get("/", async (req: AuthenticatedRequest, res) => {
   const teamId = typeof req.query.teamId === "string" && req.query.teamId.trim() ? req.query.teamId.trim() : undefined;
   const reports = await reportStore.listByUser(userId, { kind: kind ?? undefined, teamId });
   res.json({ reports, total: reports.length });
-});
+}));
 
-router.get("/:id", async (req: AuthenticatedRequest, res) => {
+router.get("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -74,9 +75,9 @@ router.get("/:id", async (req: AuthenticatedRequest, res) => {
     return;
   }
   res.json({ report });
-});
+}));
 
-router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) => {
+router.post("/generate", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -186,6 +187,6 @@ router.post("/generate", requireRunId, async (req: AuthenticatedRequest, res) =>
     const message = error instanceof Error ? error.message : "Unexpected report generation failure";
     res.status(500).json({ error: message });
   }
-});
+}));
 
 export default router;

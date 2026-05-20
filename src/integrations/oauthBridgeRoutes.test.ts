@@ -175,6 +175,9 @@ jest.mock("./composio/service", () => ({
 jest.mock("./slack/credentialStore", () => ({
   slackCredentialStore: {
     getActiveByUser: (...args: unknown[]) => slackGetActiveByUser(...args),
+    // HEL-180: the /status route now hydrates Slack via the async getter.
+    // Mock both so the test's mockReturnValue setup keeps working.
+    getActiveByUserAsync: async (...args: unknown[]) => slackGetActiveByUser(...args),
   },
 }));
 

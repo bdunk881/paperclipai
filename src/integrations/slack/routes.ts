@@ -88,9 +88,16 @@ router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) =
     return;
   }
 
-  // HEL-180: listConnections is now async (Postgres-hydrating).
-  const connections = await slackConnectorService.listConnections(userId);
-  res.json({ connections, total: connections.length });
+  // HEL-180 / Codex P1 on #926: try/catch the async listConnections so
+  // Postgres failures route through handleError instead of becoming an
+  // unhandled promise rejection (Express 4 doesn't auto-catch async
+  // handler rejections).
+  try {
+    const connections = await slackConnectorService.listConnections(userId);
+    res.json({ connections, total: connections.length });
+  } catch (error) {
+    handleError(res, error);
+  }
 });
 
 router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
@@ -126,14 +133,21 @@ router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest,
     return;
   }
 
-  // HEL-180: disconnect is now async (Postgres-hydrating revoke).
-  const deleted = await slackConnectorService.disconnect(userId, req.params.id);
-  if (!deleted) {
-    res.status(404).json({ error: "Slack connection not found" });
-    return;
-  }
+  // HEL-180 / Codex P1 on #926: try/catch the async disconnect so
+  // Postgres failures route through handleError instead of becoming an
+  // unhandled promise rejection (Express 4 doesn't auto-catch async
+  // handler rejections).
+  try {
+    const deleted = await slackConnectorService.disconnect(userId, req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Slack connection not found" });
+      return;
+    }
 
-  res.status(204).send();
+    res.status(204).send();
+  } catch (error) {
+    handleError(res, error);
+  }
 });
 
 router.get("/channels", requireAuth, async (req: AuthenticatedRequest, res) => {

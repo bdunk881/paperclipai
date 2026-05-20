@@ -225,14 +225,20 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
   }
 });
 
-router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
+router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const slackCredential = slackCredentialStore.getActiveByUser(userId);
+  // HEL-180 / Codex P1 on #926: hydrate Slack from Postgres before reading
+  // the status. Otherwise persisted Slack connections show as disconnected
+  // immediately after deploy/restart, which regresses HEL-180's persistence
+  // objective. Other connector stores still use sync getters for now —
+  // they'll surface stale "disconnected" reads after a restart until their
+  // own migrations land (see HEL-182).
+  const slackCredential = await slackCredentialStore.getActiveByUserAsync(userId);
   const linearCredential = linearCredentialStore.getActiveByUser(userId);
   const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
   const gmailCredential = gmailCredentialStore.getActiveByUser(userId);

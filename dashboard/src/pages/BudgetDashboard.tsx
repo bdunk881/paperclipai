@@ -31,6 +31,7 @@ import {
   type ControlPlaneBudgetAlert,
 } from "../api/controlPlane";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { Af2PageHead } from "../components/af2";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
@@ -171,24 +172,14 @@ export default function BudgetDashboard() {
 
   return (
     <div className="af2-page">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Workforce · Spend</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
-            Budget
-          </h1>
-          <div className="af2-page-head-meta">
-            {formatCurrency(totals.spent)} of {formatCurrency(totals.cap)} cap used · {totals.pct}% · — days left in cycle.
-          </div>
-        </div>
-        {/* DASH-5: removed the dead "Forecast" + "Adjust caps" page
-            actions. Forecast was a duplicate — the same number lives
-            in the visible "Forecast · EoM" stat below. Adjust caps
-            had no PATCH endpoint; per-agent Edit buttons on each row
-            remain the cap-change surface until a workspace-wide
-            budgets-edit modal ships. */}
-        <div className="af2-page-actions" />
-      </div>
+      <Af2PageHead
+        eyebrow="Workforce · Spend"
+        title="Budget"
+        subtitle={`${formatCurrency(totals.spent)} of ${formatCurrency(totals.cap)} cap used · ${totals.pct}% · — days left in cycle.`}
+      />
+      {/* DASH-5: "Forecast" + "Adjust caps" page actions removed. Per-agent
+          Edit buttons on each row stay the cap-change surface until a
+          workspace-wide budgets-edit modal ships. */}
 
       <div className="af2-stats" style={{ marginBottom: 22 }}>
         <div className="af2-stat">

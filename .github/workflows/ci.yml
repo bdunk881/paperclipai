@@ -118,10 +118,15 @@ jobs:
           # execution which defeats durable-execution guarantees and gets
           # rolled back on API restart.
           #
-          # Codex P2: pathspec covers BOTH top-level src/*.ts and nested
+          # Codex P2 #1: pathspec covers BOTH top-level src/*.ts and nested
           # src/**/*.ts — a future inline import in src/app.ts or
           # src/bootstrap.ts must still fail this guard.
-          violations=$(git grep -lnE 'from "[^"]*(agentPromptExecution|runAgentTurn)"|from '"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'' -- 'src/*.ts' 'src/**/*.ts' \
+          # Codex P2 #2: match BOTH static (`from "..."`) and dynamic
+          # (`import("...")` / `import('...')`) imports. The previous
+          # implementation used dynamic import as the lazy-load mechanism,
+          # so leaving that pattern uncovered would let the exact regression
+          # the guard exists to prevent slip through.
+          violations=$(git grep -lnE '(from\s+"[^"]*(agentPromptExecution|runAgentTurn)"|from\s+'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'|import\s*\(\s*"[^"]*(agentPromptExecution|runAgentTurn)"|import\s*\(\s*'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"')' -- 'src/*.ts' 'src/**/*.ts' \
             | grep -v '^src/worker\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \

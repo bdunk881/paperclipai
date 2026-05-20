@@ -13,10 +13,16 @@ const {
   listMissionsMock,
   requireAccessTokenMock,
   trackedFetchMock,
+  getCompanyLifecycleMock,
+  updateCompanyLifecycleMock,
+  getWorkspaceSubscriptionMock,
 } = vi.hoisted(() => ({
   listMissionsMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
   trackedFetchMock: vi.fn(),
+  getCompanyLifecycleMock: vi.fn(),
+  updateCompanyLifecycleMock: vi.fn(),
+  getWorkspaceSubscriptionMock: vi.fn(),
 }));
 
 vi.mock("../api/missionsApi", () => ({
@@ -49,6 +55,17 @@ vi.mock("../context/useWorkspace", () => ({
   }),
 }));
 
+vi.mock("../api/controlPlane", () => ({
+  getCompanyLifecycle: getCompanyLifecycleMock,
+  updateCompanyLifecycle: updateCompanyLifecycleMock,
+}));
+
+vi.mock("../api/billingApi", () => ({
+  getWorkspaceSubscription: getWorkspaceSubscriptionMock,
+  formatSubscriptionTierLabel: (tier: string) =>
+    tier.charAt(0).toUpperCase() + tier.slice(1),
+}));
+
 import Settings from "./Settings";
 
 describe("Settings (v2 tabbed surface)", () => {
@@ -67,6 +84,16 @@ describe("Settings (v2 tabbed surface)", () => {
         latestHiringPlanId: null,
       },
     ]);
+    getCompanyLifecycleMock.mockResolvedValue({
+      userId: "user-1",
+      status: "active",
+      updatedAt: "2026-04-01T00:00:00.000Z",
+      updatedByRunId: "dashboard-ui-test",
+    });
+    getWorkspaceSubscriptionMock.mockResolvedValue({
+      subscription: null,
+      accessLevel: "none",
+    });
     trackedFetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -182,11 +209,7 @@ describe("Settings (v2 tabbed surface)", () => {
     // Danger zone
     expect(screen.getByText("Danger zone")).toBeInTheDocument();
     expect(screen.getByText("Pause all agents")).toBeInTheDocument();
-    // DASH-16: "Pause all" button stays in the DOM but is disabled
-    // ("Coming soon") until the bulk-pause backend lands.
-    expect(
-      screen.getByRole("button", { name: "Pause all" })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pause all" })).toBeEnabled();
   });
 
   it("renders the workspace meta strap with the active workspace name", async () => {
@@ -201,6 +224,31 @@ describe("Settings (v2 tabbed surface)", () => {
     const meta = container.querySelector(".af2-page-head-meta");
     expect(meta).not.toBeNull();
     expect(meta?.textContent).toContain("Acme Robotics");
+  });
+
+  it("renders the billing tab with subscription summary", async () => {
+    getWorkspaceSubscriptionMock.mockResolvedValue({
+      subscription: {
+        id: "sub-1",
+        tier: "flow",
+        status: "active",
+        accessLevel: "full",
+        currentPeriodEnd: "2026-06-01T00:00:00.000Z",
+        cancelAtPeriodEnd: false,
+      },
+      accessLevel: "full",
+    });
+
+    render(
+      <MemoryRouter>
+        <Settings />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText("Workspace");
+    fireEvent.click(screen.getByRole("button", { name: "Billing" }));
+    expect(await screen.findByText("Flow")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Change plan" })).toHaveAttribute("href", "/pricing");
   });
 
   it("switches to a hub tab when API is clicked", async () => {

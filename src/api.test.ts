@@ -2570,6 +2570,33 @@ describe("GET /api/observability/throughput", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/webhooks/:templateId", () => {
+  // HEL-186: webhook triggers are feature-gated by WEBHOOK_TRIGGERS_ENABLED
+  // until per-template signing-secret support lands. Enable for these tests
+  // so the existing happy-path coverage continues to assert behaviour.
+  const originalWebhookFlag = process.env.WEBHOOK_TRIGGERS_ENABLED;
+  beforeAll(() => { process.env.WEBHOOK_TRIGGERS_ENABLED = "true"; });
+  afterAll(() => {
+    if (originalWebhookFlag === undefined) {
+      delete process.env.WEBHOOK_TRIGGERS_ENABLED;
+    } else {
+      process.env.WEBHOOK_TRIGGERS_ENABLED = originalWebhookFlag;
+    }
+  });
+
+  it("returns 503 when WEBHOOK_TRIGGERS_ENABLED is not set", async () => {
+    const prev = process.env.WEBHOOK_TRIGGERS_ENABLED;
+    delete process.env.WEBHOOK_TRIGGERS_ENABLED;
+    try {
+      const res = await request(app)
+        .post("/api/webhooks/tpl-support-bot")
+        .send({ ticketId: "WH-GATED" });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/disabled/i);
+    } finally {
+      process.env.WEBHOOK_TRIGGERS_ENABLED = prev;
+    }
+  });
+
   it("returns 202 with runId and status for a valid templateId", async () => {
     const res = await request(app)
       .post("/api/webhooks/tpl-support-bot")

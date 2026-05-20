@@ -262,10 +262,18 @@ describe("Slack connector", () => {
   });
 
   it("reports healthy when all required scopes are granted (HEL-181)", async () => {
+    // Default required-scopes set (post-Codex P2 expansion) includes the
+    // groups:* pair for private-channel support — see service.ts comment.
     await slackCredentialStore.saveOAuth({
       userId: "user-fullscopes",
       accessToken: "xoxb-full-grant",
-      scopes: ["channels:read", "chat:write", "channels:history"],
+      scopes: [
+        "channels:read",
+        "chat:write",
+        "groups:read",
+        "channels:history",
+        "groups:history",
+      ],
       teamId: "T-full",
       teamName: "Full Workspace",
     });

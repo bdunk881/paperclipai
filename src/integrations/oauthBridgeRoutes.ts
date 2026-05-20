@@ -232,49 +232,58 @@ router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
     return;
   }
 
-  // HEL-180 / Codex P1 on #926: hydrate Slack from Postgres before reading
-  // the status. Otherwise persisted Slack connections show as disconnected
-  // immediately after deploy/restart, which regresses HEL-180's persistence
-  // objective. Other connector stores still use sync getters for now —
-  // they'll surface stale "disconnected" reads after a restart until their
-  // own migrations land (see HEL-182).
-  const slackCredential = await slackCredentialStore.getActiveByUserAsync(userId);
-  const linearCredential = linearCredentialStore.getActiveByUser(userId);
-  const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
-  const gmailCredential = gmailCredentialStore.getActiveByUser(userId);
-  const hubspotCredential = hubSpotCredentialStore.getActiveByUser(userId);
-  const sentryCredential = sentryCredentialStore.getActiveByUser(userId);
-  const shopifyCredential = shopifyCredentialStore.getActiveByUser(userId);
-  const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
-  const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
-  const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
-  const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
-  const stripeCredential = stripeCredentialStore.getActiveByUser(userId);
-  const composioCredential = composioCredentialStore.getActiveByUser(userId);
+  // HEL-180 / Codex P1 on #926: try/catch around the async slack lookup
+  // so a Postgres failure routes through a structured error response
+  // instead of becoming an unhandled promise rejection (Express 4 doesn't
+  // auto-catch async handler rejections).
+  try {
+    // Hydrate Slack from Postgres before reading the status. Otherwise
+    // persisted Slack connections show as disconnected immediately after
+    // deploy/restart, which regresses HEL-180's persistence objective.
+    // Other connector stores still use sync getters for now — they'll
+    // surface stale "disconnected" reads after a restart until their own
+    // migrations land (see HEL-182).
+    const slackCredential = await slackCredentialStore.getActiveByUserAsync(userId);
+    const linearCredential = linearCredentialStore.getActiveByUser(userId);
+    const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
+    const gmailCredential = gmailCredentialStore.getActiveByUser(userId);
+    const hubspotCredential = hubSpotCredentialStore.getActiveByUser(userId);
+    const sentryCredential = sentryCredentialStore.getActiveByUser(userId);
+    const shopifyCredential = shopifyCredentialStore.getActiveByUser(userId);
+    const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
+    const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
+    const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
+    const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
+    const stripeCredential = stripeCredentialStore.getActiveByUser(userId);
+    const composioCredential = composioCredentialStore.getActiveByUser(userId);
 
-  const providers: Record<UnifiedProvider, ProviderStatus> = {
-    slack: connectionStatusForCredential(slackCredential),
-    linear: connectionStatusForCredential(linearCredential),
-    apollo: connectionStatusForCredential(apolloCredential),
-    gmail: connectionStatusForCredential(gmailCredential),
-    hubspot: connectionStatusForCredential(hubspotCredential),
-    sentry: connectionStatusForCredential(sentryCredential),
-    shopify: connectionStatusForCredential(shopifyCredential),
-    docusign: connectionStatusForCredential(docusignCredential),
-    teams: connectionStatusForCredential(teamsCredential),
-    posthog: connectionStatusForCredential(posthogCredential),
-    intercom: connectionStatusForCredential(intercomCredential),
-    stripe: connectionStatusForCredential(stripeCredential),
-    composio: connectionStatusForCredential(composioCredential),
-  };
+    const providers: Record<UnifiedProvider, ProviderStatus> = {
+      slack: connectionStatusForCredential(slackCredential),
+      linear: connectionStatusForCredential(linearCredential),
+      apollo: connectionStatusForCredential(apolloCredential),
+      gmail: connectionStatusForCredential(gmailCredential),
+      hubspot: connectionStatusForCredential(hubspotCredential),
+      sentry: connectionStatusForCredential(sentryCredential),
+      shopify: connectionStatusForCredential(shopifyCredential),
+      docusign: connectionStatusForCredential(docusignCredential),
+      teams: connectionStatusForCredential(teamsCredential),
+      posthog: connectionStatusForCredential(posthogCredential),
+      intercom: connectionStatusForCredential(intercomCredential),
+      stripe: connectionStatusForCredential(stripeCredential),
+      composio: connectionStatusForCredential(composioCredential),
+    };
 
-  for (const provider of STATUS_PROVIDERS) {
-    if (!providers[provider]) {
-      providers[provider] = { connected: false };
+    for (const provider of STATUS_PROVIDERS) {
+      if (!providers[provider]) {
+        providers[provider] = { connected: false };
+      }
     }
-  }
 
-  res.json({ providers });
+    res.json({ providers });
+  } catch (error) {
+    const message = errorMessage(error);
+    res.status(errorStatusCode(error)).json({ error: message });
+  }
 });
 
 router.get("/callback", async (req, res) => {

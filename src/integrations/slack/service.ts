@@ -18,17 +18,22 @@ function parseScopes(scope?: string): string[] {
  *
  * `chat:write`         — sendMessage
  * `channels:read`      — listChannels public
+ * `groups:read`        — listChannels private (slackClient passes
+ *                        `types=public_channel,private_channel`)
  * `channels:history`   — listChannelMessages public
- * `groups:read`        — listChannels private
+ * `groups:history`     — listChannelMessages private
+ *
+ * Codex P2 on #926: the original default omitted the `groups:*` pair, so
+ * health() would report `healthy` while private-channel calls failed
+ * with `missing_scope`. Default now matches the full set in `oauth.ts:29`.
  *
  * Configurable via `SLACK_REQUIRED_SCOPES` (comma-separated) for ops who
- * deploy with a narrower bot integration. Default matches `SLACK_SCOPES`
- * in `oauth.ts:29` so out-of-the-box grants pass the check.
+ * deploy with a narrower bot integration.
  */
 function requiredScopes(): string[] {
   return (
     process.env.SLACK_REQUIRED_SCOPES ??
-    "channels:read,chat:write,channels:history"
+    "channels:read,chat:write,groups:read,channels:history,groups:history"
   )
     .split(",")
     .map((scope) => scope.trim())

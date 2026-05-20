@@ -25,9 +25,9 @@ import {
   collectKnownActors,
   createTicket,
   getTicketActorProfile,
+  hydrateTicketActorProfiles,
   listTickets,
   normalizeTicketSlaState,
-  registerTicketActorProfile,
   type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
@@ -147,47 +147,13 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
         accessToken ? listMissions(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
 
+      hydrateTicketActorProfiles({ agents, user });
+
       const actorSeed: TicketActorRef[] = [];
       if (user) {
-        const initials =
-          user.name
-            .split(/\s+/)
-            .map((part) => part[0] ?? "")
-            .join("")
-            .slice(0, 3)
-            .toUpperCase() || "U";
-        registerTicketActorProfile(
-          { type: "user", id: user.id },
-          {
-            name: user.name,
-            initials,
-            title: "Workspace member",
-            tone: "slate",
-          },
-        );
         actorSeed.push({ type: "user", id: user.id });
       }
-
       for (const agent of agents) {
-        const initials =
-          agent.name
-            .split(/\s+/)
-            .map((part) => part[0] ?? "")
-            .join("")
-            .slice(0, 3)
-            .toUpperCase() || "AG";
-        registerTicketActorProfile(
-          { type: "agent", id: agent.id },
-          {
-            name: agent.name,
-            initials,
-            title:
-              typeof agent.metadata?.teamName === "string"
-                ? agent.metadata.teamName
-                : agent.roleKey ?? "Agent",
-            tone: "indigo",
-          },
-        );
         actorSeed.push({ type: "agent", id: agent.id });
       }
 
@@ -206,20 +172,31 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     if (!initialData) {
       void loadTickets();
     } else {
-      // initialData seeds tickets+actors; we still want the mission
-      // list for the create modal picker.
+      // Loader supplies tickets but not actor display names — hydrate from agents roster.
       void (async () => {
         const accessToken = (await getAccessToken()) ?? undefined;
         if (!accessToken) return;
         try {
-          const m = await listMissions(accessToken);
+          const [agents, m] = await Promise.all([
+            listAgents(accessToken).catch(() => []),
+            listMissions(accessToken).catch(() => []),
+          ]);
+          hydrateTicketActorProfiles({ agents, user });
+          const actorSeed: TicketActorRef[] = [];
+          if (user) {
+            actorSeed.push({ type: "user", id: user.id });
+          }
+          for (const agent of agents) {
+            actorSeed.push({ type: "agent", id: agent.id });
+          }
+          setAvailableActors(collectKnownActors(initialData.tickets, actorSeed));
           setMissions(m);
         } catch {
           // Soft-fail — mission picker stays empty rather than breaking the page.
         }
       })();
     }
-  }, [getAccessToken, initialData, loadTickets]);
+  }, [getAccessToken, initialData, loadTickets, user]);
 
   useEffect(() => {
     const actionData = routeAction?.data;

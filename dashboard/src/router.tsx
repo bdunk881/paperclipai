@@ -9,12 +9,15 @@ import {
   type ActionFunctionArgs,
   type RouteObject,
 } from "react-router-dom";
+import { listAgents } from "./api/agentApi";
 import {
   createTicket,
   getTicket,
+  hydrateTicketActorProfiles,
   listTickets,
   type TicketPriority,
 } from "./api/tickets";
+import { readStoredAuthUser } from "./auth/authStorage";
 import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
@@ -82,9 +85,25 @@ async function readCurrentAccessSession() {
   }
 }
 
+async function hydrateActorsFromAccessToken(accessToken?: string): Promise<void> {
+  if (!accessToken) return;
+
+  const storedUser = readStoredAuthUser();
+  const agents = await listAgents(accessToken).catch(() => []);
+  hydrateTicketActorProfiles({
+    agents,
+    user: storedUser ? { id: storedUser.id, name: storedUser.name } : null,
+  });
+}
+
 async function ticketsLoader(): Promise<TicketsRouteData> {
   const session = await readCurrentAccessSession();
-  return listTickets({}, session?.accessToken);
+  const accessToken = session?.accessToken;
+  const [result] = await Promise.all([
+    listTickets({}, accessToken),
+    hydrateActorsFromAccessToken(accessToken),
+  ]);
+  return result;
 }
 
 async function ticketDetailLoader({
@@ -97,7 +116,12 @@ async function ticketDetailLoader({
   }
 
   const session = await readCurrentAccessSession();
-  return getTicket(params.ticketId, session?.accessToken);
+  const accessToken = session?.accessToken;
+  const [aggregate] = await Promise.all([
+    getTicket(params.ticketId, accessToken),
+    hydrateActorsFromAccessToken(accessToken),
+  ]);
+  return aggregate;
 }
 
 async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTicketRouteActionData> {

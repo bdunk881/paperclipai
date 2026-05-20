@@ -81,14 +81,14 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const connections = slackConnectorService.listConnections(userId);
+  const connections = await slackConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
 });
 
@@ -118,14 +118,14 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
 });
 
-router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const deleted = slackConnectorService.disconnect(userId, req.params.id);
+  const deleted = await slackConnectorService.disconnect(userId, req.params.id);
   if (!deleted) {
     res.status(404).json({ error: "Slack connection not found" });
     return;

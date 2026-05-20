@@ -105,8 +105,8 @@ export class SlackConnectorService {
     return credential;
   }
 
-  listConnections(userId: string): SlackCredentialPublic[] {
-    return slackCredentialStore.getPublicByUser(userId);
+  async listConnections(userId: string): Promise<SlackCredentialPublic[]> {
+    return slackCredentialStore.getPublicByUserAsync(userId);
   }
 
   async testConnection(userId: string): Promise<{ teamId: string; teamName?: string }> {
@@ -129,7 +129,7 @@ export class SlackConnectorService {
 
   async health(userId: string): Promise<SlackConnectionHealth> {
     const checkedAt = new Date().toISOString();
-    const credential = slackCredentialStore.getActiveByUser(userId);
+    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
       return buildTier1ConnectionHealth({
@@ -217,8 +217,8 @@ export class SlackConnectorService {
     }
   }
 
-  disconnect(userId: string, credentialId: string): boolean {
-    const revoked = slackCredentialStore.revoke(credentialId, userId);
+  async disconnect(userId: string, credentialId: string): Promise<boolean> {
+    const revoked = await slackCredentialStore.revoke(credentialId, userId);
 
     if (revoked) {
       logSlack({
@@ -250,7 +250,7 @@ export class SlackConnectorService {
   }
 
   private async ensureValidCredential(userId: string) {
-    const credential = slackCredentialStore.getActiveByUser(userId);
+    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
     if (!credential) {
       throw new ConnectorError("auth", "Slack connector is not configured", 404);
     }

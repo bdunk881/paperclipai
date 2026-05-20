@@ -13,7 +13,7 @@ function requireConnection<T>(value: T | undefined | null, message: string): T {
 
 async function sendSlack(config: NotificationTransportConfig, text: string): Promise<void> {
   const connectionId = requireConnection(config.connectionId, "Slack connection is not configured");
-  const credential = slackCredentialStore.getById(connectionId, config.ownerUserId);
+  const credential = await slackCredentialStore.getByIdAsync(connectionId, config.ownerUserId);
   if (!credential) {
     throw new Error("Slack connection is missing or revoked");
   }

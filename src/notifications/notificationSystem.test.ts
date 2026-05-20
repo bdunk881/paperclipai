@@ -34,7 +34,7 @@ describe("notification system", () => {
       teamName: "AutoFlow",
     });
 
-    const [slackConnection] = slackCredentialStore.getPublicByUser("user-1");
+    const [slackConnection] = await slackCredentialStore.getPublicByUserAsync("user-1");
     await notificationService.upsertTransportConfig({
       workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       channel: "slack",

@@ -225,14 +225,14 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
   }
 });
 
-router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
+router.get("/status", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const slackCredential = slackCredentialStore.getActiveByUser(userId);
+  const slackCredential = await slackCredentialStore.getActiveByUserAsync(userId);
   const linearCredential = linearCredentialStore.getActiveByUser(userId);
   const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
   const gmailCredential = gmailCredentialStore.getActiveByUser(userId);
@@ -392,9 +392,9 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       break;
     }
     case "slack": {
-      const current = slackCredentialStore.getActiveByUser(userId);
+      const current = await slackCredentialStore.getActiveByUserAsync(userId);
       if (current) {
-        slackConnectorService.disconnect(userId, current.id);
+        await slackConnectorService.disconnect(userId, current.id);
       }
       break;
     }

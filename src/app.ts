@@ -173,7 +173,7 @@ const workspaceRoutes = isPostgresPersistenceEnabled()
 // Requires Postgres for the agents + org_edges + activity_events writes;
 // in-memory mode returns 501 since the canonical persistence is required.
 const hiringPlanRoutes = isPostgresPersistenceEnabled()
-  ? createHiringPlanRoutes(getPostgresPool())
+  ? createHiringPlanRoutes(getPostgresPool(), getRunQueue())
   : express.Router().post("/:hiringPlanId/confirm", (_req, res) => {
       res.status(501).json({ error: "Hiring plan confirmation requires PostgreSQL persistence." });
     });

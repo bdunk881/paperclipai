@@ -275,6 +275,12 @@ export default function HiringPlanReview() {
   const [pageState, setPageState] = useState<PageState>("loading");
   const [plan, setPlan] = useState<HiringPlanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // HEL-154: post-confirm payload — the backend seeds a starter routine per
+  // agent, we surface a "Default routines created — View routines" CTA per
+  // agent that deep-links to /agents/:id/standing-tasks.
+  const [seededRoutines, setSeededRoutines] = useState<
+    Array<{ agentId: string; agentName: string; routineId: string; routineName: string }>
+  >([]);
 
   const load = useCallback(async () => {
     if (!planId) return;
@@ -284,6 +290,10 @@ export default function HiringPlanReview() {
       const token = await requireAccessToken();
       const data = await getHiringPlan(planId, token);
       setPlan(data);
+      // A fresh load (post-navigation) doesn't carry the seeded-routines
+      // payload — those only return on the confirm POST. Clear so we don't
+      // show a stale CTA list from a previous confirm.
+      if (!data.acceptedAt) setSeededRoutines([]);
       setPageState(data.acceptedAt ? "confirmed" : "ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load hiring plan");
@@ -301,11 +311,25 @@ export default function HiringPlanReview() {
     setError(null);
     try {
       const token = await requireAccessToken();
-      await confirmHiringPlan(planId, token);
+      const confirmed = await confirmHiringPlan(planId, token);
       setPageState("confirmed");
       // Refresh plan data so the confirmed state is reflected.
       const refreshed = await getHiringPlan(planId, token);
       setPlan(refreshed);
+      // HEL-154: zip seeded routines to their agents for the post-confirm CTA list.
+      if (confirmed.seededRoutines && confirmed.seededRoutines.length > 0) {
+        const agentNameById = new Map(confirmed.agents.map((a) => [a.id, a.name]));
+        setSeededRoutines(
+          confirmed.seededRoutines.map((r) => ({
+            agentId: r.agentId,
+            agentName: agentNameById.get(r.agentId) ?? "Agent",
+            routineId: r.id,
+            routineName: r.name,
+          })),
+        );
+      } else {
+        setSeededRoutines([]);
+      }
       const agentCount = refreshed.plan.provisioningPlan.agents.length;
       toast.success(
         `Team confirmed — ${agentCount} agent${
@@ -550,7 +574,7 @@ export default function HiringPlanReview() {
               }}
             >
               <CheckCircle2 size={20} style={{ color: "var(--af2-sage)", flexShrink: 0 }} />
-              <div>
+              <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 600, fontSize: 14 }}>Plan confirmed</p>
                 <p className="af2-muted" style={{ marginTop: 2, fontSize: 13 }}>
                   {agents.length} agent{agents.length !== 1 ? "s" : ""} provisioned. The org chart
@@ -560,6 +584,9 @@ export default function HiringPlanReview() {
                   </Link>{" "}
                   will reflect the new graph.
                 </p>
+                {seededRoutines.length > 0 ? (
+                  <SeededRoutinesCallout seededRoutines={seededRoutines} />
+                ) : null}
               </div>
             </div>
           ) : (
@@ -737,6 +764,66 @@ function PreviewBlock({ preview }: { preview: StarterJobDescription }) {
       >
         {preview.body}
       </pre>
+    </div>
+  );
+}
+
+/**
+ * HEL-154: post-confirm callout listing the prompt-backed routines the
+ * backend seeded for each provisioned agent. Each row deep-links to
+ * `/agents/:id/standing-tasks` where the owner can refine the prompt,
+ * change the cron, or upgrade to a DAG routine in Studio.
+ */
+function SeededRoutinesCallout({
+  seededRoutines,
+}: {
+  seededRoutines: Array<{
+    agentId: string;
+    agentName: string;
+    routineId: string;
+    routineName: string;
+  }>;
+}) {
+  return (
+    <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+      <div className="af2-eyebrow">Default routines created</div>
+      <p
+        className="af2-muted"
+        style={{ marginTop: -4, marginBottom: 4, fontSize: 12.5 }}
+      >
+        Every agent has a weekday morning check-in. Refine the prompt or change
+        the schedule on each agent's standing tasks.
+      </p>
+      {seededRoutines.map((row) => (
+        <div
+          key={row.routineId}
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid rgba(74,107,74,0.18)",
+            background: "rgba(255,255,255,0.55)",
+          }}
+        >
+          <span
+            style={{ flex: "1 1 220px", fontSize: 12.5, color: "var(--af2-ink-2)" }}
+          >
+            <strong style={{ color: "var(--af2-ink)" }}>{row.agentName}</strong>
+            {" — "}
+            {row.routineName}
+          </span>
+          <Link
+            to={`/agents/${encodeURIComponent(row.agentId)}/standing-tasks`}
+            className="af2-btn af2-btn-sm af2-btn-clay"
+            style={{ textDecoration: "none" }}
+          >
+            View routines
+          </Link>
+        </div>
+      ))}
     </div>
   );
 }

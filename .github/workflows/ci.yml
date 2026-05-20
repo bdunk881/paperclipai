@@ -109,6 +109,26 @@ jobs:
             printf '\nIf this is a customer-data store, migrate it to Postgres (see docs/audit/2026-05-18-postgres-migration-plan.md).\nIf this is genuinely process-local (OAuth state, replay cache, runtime registry), add a `// allowlist: <reason>` comment on the same or previous line.\n'
             exit 1
           fi
+      - name: Forbid direct executeAgentPrompt/runAgentTurn imports outside the worker (HEL-177)
+        run: |
+          # HEL-177: every agent run must go through the BullMQ queue. Routes
+          # may only enqueue; the worker is the sole consumer. Importing the
+          # primitives directly anywhere in src/ outside `src/worker.ts` (or
+          # the primitive's own module + tests) re-introduces in-process
+          # execution which defeats durable-execution guarantees and gets
+          # rolled back on API restart.
+          violations=$(git grep -lnE 'from "[^"]*(agentPromptExecution|runAgentTurn)"|from '"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'' -- 'src/**/*.ts' \
+            | grep -v '^src/worker\.ts$' \
+            | grep -v '^src/agents/agentPromptExecution\.ts$' \
+            | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \
+            | grep -v '^src/agents/runAgentTurn\.ts$' \
+            | grep -v '^src/agents/runAgentTurn\.test\.ts$' \
+            | grep -v '\.test\.ts$' \
+            || true)
+          if [ -n "$violations" ]; then
+            printf 'FAIL: direct executeAgentPrompt/runAgentTurn import outside the worker — enqueue via getAgentPromptQueue() instead:\n%s\n' "$violations"
+            exit 1
+          fi
 
   test-backend:
     name: Test Backend

@@ -80,7 +80,7 @@ describe("Layout", () => {
       screen.getByRole("button", { name: /Switch workspace/i })
     ).toHaveTextContent("Acme Robotics");
     expect(
-      screen.getByRole("searchbox", { name: /search agents, missions, assignments, runs/i })
+      screen.getByRole("button", { name: /search agents, missions, assignments, runs/i })
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /new mission/i })).toHaveAttribute(
       "href",

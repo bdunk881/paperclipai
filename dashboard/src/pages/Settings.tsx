@@ -18,7 +18,7 @@
  * yet, so we render sensible fallbacks (`Free plan · — seats · created —`)
  * and TODO them in. Mission statement reads from `listMissions(token)`
  * (latest mission's statement; read-only — no workspace-mission PATCH route
- * exists). Pause all is a no-op handler with a TODO.
+ * Company-wide pause/resume uses POST /api/control-plane/company/lifecycle.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -37,6 +37,17 @@ import {
   type ProviderKey,
   type ProviderStatus,
 } from "../integrations/liveConnectorCatalog";
+import {
+  formatSubscriptionTierLabel,
+  getWorkspaceSubscription,
+  type WorkspaceSubscription,
+} from "../api/billingApi";
+import {
+  getCompanyLifecycle,
+  updateCompanyLifecycle,
+  type CompanyLifecycleStatus,
+} from "../api/controlPlane";
+import { Af2Button } from "../components/af2";
 
 type TabKey =
   | "general"
@@ -248,6 +259,7 @@ export default function Settings() {
   const [editingPolicy, setEditingPolicy] = useState<ApprovalPolicy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<WorkspaceSubscription | null>(null);
 
   const workspaceName = activeWorkspace?.name ?? "Workspace";
 
@@ -260,8 +272,12 @@ export default function Settings() {
     setError(null);
     try {
       const token = await requireAccessToken();
-      const [missionsList, policiesRes] = await Promise.all([
+      const [missionsList, subscriptionRes, policiesRes] = await Promise.all([
         listMissions(token).catch(() => [] as Mission[]),
+        getWorkspaceSubscription(token).catch(() => ({
+          subscription: null,
+          accessLevel: "none" as const,
+        })),
         trackedFetch(`${getApiBasePath()}/approval-policies`, {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -272,6 +288,7 @@ export default function Settings() {
           .catch(() => null),
       ]);
       setMissions(missionsList);
+      setSubscription(subscriptionRes.subscription);
       setPolicies(policiesRes?.policies ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load settings");
@@ -297,8 +314,10 @@ export default function Settings() {
   // DASH-16: drop placeholder seats/createdAt from the meta line until
   // the workspace API surfaces them. Showing "— seats · created —" was
   // worse than skipping the line entirely.
-  const planTier: string | null = null;
-  const metaSegments = [workspaceName, `${planTier ?? "Free"} plan`].filter(
+  const planLabel = subscription
+    ? `${formatSubscriptionTierLabel(subscription.tier)} plan`
+    : "Free plan";
+  const metaSegments = [workspaceName, planLabel].filter(
     (s) => s.length > 0,
   );
   const metaLine = `${metaSegments.join(" · ")}.`;
@@ -346,6 +365,12 @@ export default function Settings() {
         />
       ) : activeTab === "credentials" ? (
         <CredentialsTab requireAccessToken={requireAccessToken} />
+      ) : activeTab === "billing" ? (
+        <BillingTab
+          subscription={subscription}
+          requireAccessToken={requireAccessToken}
+          onSubscriptionChange={setSubscription}
+        />
       ) : (
         <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
       )}
@@ -383,6 +408,11 @@ function GeneralTab({
   requireAccessToken,
 }: GeneralTabProps) {
   const toast = useToast();
+  const [lifecycleStatus, setLifecycleStatus] =
+    useState<CompanyLifecycleStatus>("active");
+  const [lifecycleLoading, setLifecycleLoading] = useState(true);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const browserTimezone =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Los_Angeles";
 
@@ -401,6 +431,60 @@ function GeneralTab({
   const [profileLoading, setProfileLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const loadLifecycle = useCallback(async () => {
+    setLifecycleLoading(true);
+    setLifecycleError(null);
+    try {
+      const token = await requireAccessToken();
+      const state = await getCompanyLifecycle(token);
+      setLifecycleStatus(state.status);
+    } catch (err) {
+      setLifecycleError(
+        err instanceof Error ? err.message : "Failed to load workspace lifecycle",
+      );
+    } finally {
+      setLifecycleLoading(false);
+    }
+  }, [requireAccessToken]);
+
+  useEffect(() => {
+    void loadLifecycle();
+  }, [loadLifecycle]);
+
+  async function handleLifecycleToggle() {
+    const pausing = lifecycleStatus === "active";
+    const confirmed = window.confirm(
+      pausing
+        ? "Pause every agent and routine in this workspace? In-flight work may finish, but new runs will be blocked until you resume."
+        : "Resume every agent and routine that was paused by the workspace-wide pause?",
+    );
+    if (!confirmed) return;
+
+    setLifecycleBusy(true);
+    setLifecycleError(null);
+    try {
+      const token = await requireAccessToken();
+      const result = await updateCompanyLifecycle(
+        token,
+        pausing ? "pause" : "resume",
+        pausing ? "Paused from Settings" : "Resumed from Settings",
+      );
+      setLifecycleStatus(result.state.status);
+      toast.success(
+        pausing
+          ? `Workspace paused (${result.affectedAgentIds.length} agent(s), ${result.affectedTeamIds.length} team(s)).`
+          : "Workspace resumed — agents and routines can run again.",
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to update workspace lifecycle";
+      setLifecycleError(message);
+      toast.error(message);
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -701,29 +785,152 @@ function GeneralTab({
               className="af2-muted"
               style={{ fontSize: 12, marginTop: 2 }}
             >
-              Stops every agent and routine in this workspace immediately.
-              {" "}
-              <span className="af2-muted-2">Backend endpoint lands in a follow-up.</span>
+              {lifecycleStatus === "paused"
+                ? "Workspace-wide pause is active. New agent runs and heartbeats are blocked until you resume."
+                : "Stops every agent and routine in this workspace. In-flight executions may finish."}
             </div>
+            {lifecycleError ? (
+              <div style={{ fontSize: 12, color: "var(--af2-clay)", marginTop: 6 }}>
+                {lifecycleError}
+              </div>
+            ) : null}
           </div>
           <span className="af2-spacer" />
-          {/* DASH-16: button stays in place so the layout doesn't shift
-              when the bulk-pause backend ships, but it's disabled with
-              a tooltip so a click can't silently no-op. */}
-          <button
-            type="button"
-            className="af2-btn af2-btn-sm"
-            disabled
-            title="Coming soon — pause individual agents from the Team page in the meantime."
-            style={{
-              color: "var(--af2-muted)",
-              borderColor: "var(--af2-line)",
-              cursor: "not-allowed",
-              opacity: 0.6,
-            }}
+          <Af2Button
+            small
+            variant={lifecycleStatus === "paused" ? "primary" : "danger"}
+            disabled={lifecycleLoading || lifecycleBusy}
+            onClick={() => void handleLifecycleToggle()}
           >
-            Pause all
-          </button>
+            {lifecycleBusy
+              ? "Working…"
+              : lifecycleStatus === "paused"
+                ? "Resume all"
+                : "Pause all"}
+          </Af2Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BillingTab({
+  subscription,
+  requireAccessToken,
+  onSubscriptionChange,
+}: {
+  subscription: WorkspaceSubscription | null;
+  requireAccessToken: () => Promise<string>;
+  onSubscriptionChange: (sub: WorkspaceSubscription | null) => void;
+}) {
+  const [loading, setLoading] = useState(!subscription);
+  const [error, setError] = useState<string | null>(null);
+  const [localSub, setLocalSub] = useState<WorkspaceSubscription | null>(subscription);
+
+  useEffect(() => {
+    setLocalSub(subscription);
+  }, [subscription]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await requireAccessToken();
+        const res = await getWorkspaceSubscription(token);
+        if (cancelled) return;
+        setLocalSub(res.subscription);
+        onSubscriptionChange(res.subscription);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load billing");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onSubscriptionChange, requireAccessToken]);
+
+  if (loading) {
+    return <LoadingState label="Loading subscription…" />;
+  }
+  if (error) {
+    return <ErrorState title="Billing unavailable" message={error} />;
+  }
+
+  const periodEnd = localSub?.currentPeriodEnd
+    ? new Date(localSub.currentPeriodEnd).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
+
+  return (
+    <div style={{ display: "grid", gap: 20 }}>
+      <p className="af2-muted" style={{ fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+        Your workspace subscription and renewal window. Upgrade or change tier from the
+        pricing page; Stripe manages payment details.
+      </p>
+      <div className="af2-card" style={{ padding: 20 }}>
+        {localSub ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <div className="af2-row">
+              <div>
+                <div className="af2-eyebrow">Current plan</div>
+                <div style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>
+                  {formatSubscriptionTierLabel(localSub.tier)}
+                </div>
+              </div>
+              <span
+                className="af2-pill"
+                style={{
+                  textTransform: "capitalize",
+                  ...(localSub.status === "active"
+                    ? { background: "rgba(74,107,74,0.12)", color: "var(--af2-sage)" }
+                    : {}),
+                }}
+              >
+                {localSub.status.replace(/_/g, " ")}
+              </span>
+            </div>
+            {periodEnd ? (
+              <div className="af2-muted" style={{ fontSize: 13 }}>
+                {localSub.cancelAtPeriodEnd
+                  ? `Cancels at period end (${periodEnd}).`
+                  : `Renews on ${periodEnd}.`}
+              </div>
+            ) : null}
+            {localSub.trialEnd ? (
+              <div className="af2-muted" style={{ fontSize: 13 }}>
+                Trial ends{" "}
+                {new Date(localSub.trialEnd).toLocaleDateString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+                .
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div>
+            <div className="af2-eyebrow">Current plan</div>
+            <div style={{ fontSize: 15, fontWeight: 600, marginTop: 6 }}>Free</div>
+            <p className="af2-muted" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}>
+              No paid subscription on this account yet. Pick a tier to unlock hosted models,
+              higher agent caps, and production integrations.
+            </p>
+          </div>
+        )}
+        <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link to="/pricing" className="af2-btn af2-btn-clay" style={{ textDecoration: "none" }}>
+            {localSub ? "Change plan" : "View pricing"}
+          </Link>
         </div>
       </div>
     </div>

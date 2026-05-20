@@ -138,6 +138,7 @@ export interface AuthenticatedRequest extends Request {
     provider?: string;
     issuer?: string;
     workspaceId?: string;
+    sessionId?: string;
   };
 }
 
@@ -260,6 +261,7 @@ function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void
     provider: firstString(appMetadata?.provider) ?? "supabase",
     issuer: firstString(claims.iss),
     workspaceId: resolveWorkspaceClaim(claims),
+    sessionId: firstString(claims.session_id),
   };
 }
 

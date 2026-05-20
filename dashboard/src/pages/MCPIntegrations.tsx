@@ -352,13 +352,9 @@ export default function IntegrationsHub() {
     if (!entry.liveProviderKey) return;
     setBusyId(entry.id);
     try {
-      const response = await authorizedFetch("/integrations/connections", {
+      const response = await authorizedFetch(`/integrations/${entry.liveProviderKey}/connect-api-key`, {
         method: "POST",
-        body: JSON.stringify({
-          slug: entry.liveProviderKey,
-          authType: "api_key",
-          credentials: { apiKey },
-        }),
+        body: JSON.stringify({ apiKey }),
       });
       if (!response.ok) {
         const errBody = await response.text();

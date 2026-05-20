@@ -160,6 +160,59 @@ export async function getControlPlaneSnapshot(accessToken: string): Promise<Cont
   return Promise.all(teams.map((team) => getControlPlaneTeamDetail(team.id, accessToken)));
 }
 
+export type CompanyLifecycleStatus = "active" | "paused";
+
+export interface CompanyLifecycleState {
+  userId: string;
+  status: CompanyLifecycleStatus;
+  pauseReason?: string;
+  pausedAt?: string;
+  updatedAt: string;
+  updatedByRunId: string;
+}
+
+export interface CompanyLifecycleMutationResult {
+  state: CompanyLifecycleState;
+  affectedTeamIds: string[];
+  affectedAgentIds: string[];
+}
+
+export async function getCompanyLifecycle(
+  accessToken: string,
+): Promise<CompanyLifecycleState> {
+  const res = await fetch(`${BASE}/control-plane/company/lifecycle`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(err?.error ?? `Failed to load company lifecycle: ${res.status}`);
+  }
+  return res.json() as Promise<CompanyLifecycleState>;
+}
+
+export async function updateCompanyLifecycle(
+  accessToken: string,
+  action: "pause" | "resume",
+  reason?: string,
+): Promise<CompanyLifecycleMutationResult> {
+  const res = await fetch(`${BASE}/control-plane/company/lifecycle`, {
+    method: "POST",
+    headers: authHeaders(accessToken, {
+      "Content-Type": "application/json",
+      "X-Paperclip-Run-Id": getMutationRunId(),
+    }),
+    body: JSON.stringify({
+      action,
+      ...(reason !== undefined ? { reason } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(err?.error ?? `Failed to update company lifecycle: ${res.status}`);
+  }
+  return res.json() as Promise<CompanyLifecycleMutationResult>;
+}
+
 export async function deployWorkflowAsTeam(
   input: DeployWorkflowTeamInput,
   accessToken: string

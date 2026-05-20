@@ -12,6 +12,7 @@ import { teamsConnectorService } from "./teams/service";
 import { posthogConnectorService } from "./posthog/service";
 import { intercomConnectorService } from "./intercom/service";
 import { stripeConnectorService } from "./stripe/service";
+import { composioConnectorService } from "./composio/service";
 import { slackCredentialStore } from "./slack/credentialStore";
 import { linearCredentialStore } from "./linear/credentialStore";
 import { apolloCredentialStore } from "./apollo/credentialStore";
@@ -24,6 +25,7 @@ import { teamsCredentialStore } from "./teams/credentialStore";
 import { posthogCredentialStore } from "./posthog/credentialStore";
 import { intercomCredentialStore } from "./intercom/credentialStore";
 import { stripeCredentialStore } from "./stripe/credentialStore";
+import { composioCredentialStore } from "./composio/credentialStore";
 
 type UnifiedProvider =
   | "slack"
@@ -37,10 +39,7 @@ type UnifiedProvider =
   | "teams"
   | "posthog"
   | "intercom"
-  | "stripe";
-
-type StatusProvider =
-  | UnifiedProvider
+  | "stripe"
   | "composio";
 
 type ProviderStatus = {
@@ -62,9 +61,10 @@ const PROVIDERS: Set<UnifiedProvider> = new Set([
   "posthog",
   "intercom",
   "stripe",
+  "composio",
 ]);
 
-const STATUS_PROVIDERS: StatusProvider[] = [
+const STATUS_PROVIDERS: UnifiedProvider[] = [
   "slack",
   "linear",
   "apollo",
@@ -80,7 +80,7 @@ const STATUS_PROVIDERS: StatusProvider[] = [
   "composio",
 ];
 
-function isConnected(connectedAt: string | undefined, scopes: string[] | undefined) {
+function isConnected(connectedAt: string | undefined, scopes?: string[]) {
   if (!connectedAt) {
     return { connected: false as const };
   }
@@ -91,7 +91,9 @@ function isConnected(connectedAt: string | undefined, scopes: string[] | undefin
   };
 }
 
-function connectionStatusForCredential(credential: { createdAt: string; scopes: string[] } | null | undefined): ProviderStatus {
+function connectionStatusForCredential(
+  credential: { createdAt: string; scopes?: string[] } | null | undefined
+): ProviderStatus {
   return isConnected(credential?.createdAt, credential?.scopes);
 }
 
@@ -171,6 +173,13 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
     return;
   }
 
+  if (provider === "composio") {
+    res.status(400).json({
+      error: "Composio uses API-key connection. Call /api/integrations/composio/connect-api-key.",
+    });
+    return;
+  }
+
   try {
     const flow = (() => {
       switch (provider) {
@@ -235,8 +244,9 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
   const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
   const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
   const stripeCredential = stripeCredentialStore.getActiveByUser(userId);
+  const composioCredential = composioCredentialStore.getActiveByUser(userId);
 
-  const providers: Record<StatusProvider, ProviderStatus> = {
+  const providers: Record<UnifiedProvider, ProviderStatus> = {
     slack: connectionStatusForCredential(slackCredential),
     linear: connectionStatusForCredential(linearCredential),
     apollo: connectionStatusForCredential(apolloCredential),
@@ -249,7 +259,7 @@ router.get("/status", requireAuth, (req: AuthenticatedRequest, res) => {
     posthog: connectionStatusForCredential(posthogCredential),
     intercom: connectionStatusForCredential(intercomCredential),
     stripe: connectionStatusForCredential(stripeCredential),
-    composio: { connected: false },
+    composio: connectionStatusForCredential(composioCredential),
   };
 
   for (const provider of STATUS_PROVIDERS) {
@@ -441,6 +451,13 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       const current = stripeCredentialStore.getActiveByUser(userId);
       if (current) {
         stripeConnectorService.disconnect(userId, current.id);
+      }
+      break;
+    }
+    case "composio": {
+      const current = composioCredentialStore.getActiveByUser(userId);
+      if (current) {
+        await composioConnectorService.disconnect(userId, current.id);
       }
       break;
     }

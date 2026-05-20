@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
@@ -520,10 +520,38 @@ export default function WorkflowBuilder() {
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
   const [canonicalWorkflowId, setCanonicalWorkflowId] = useState<string | null>(null);
+  const studioHeaderRef = useRef<HTMLDivElement | null>(null);
+  const [studioHeaderHeight, setStudioHeaderHeight] = useState(0);
+  const workflowStudioStyle = useMemo(
+    () =>
+      ({
+        "--workflow-studio-header-height": `${studioHeaderHeight}px`,
+      }) as CSSProperties,
+    [studioHeaderHeight]
+  );
 
   const hasFileTrigger = template.steps.some((s) => s.kind === "file_trigger");
   const fileTriggerStep = template.steps.find((s) => s.kind === "file_trigger");
   const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
+
+  useLayoutEffect(() => {
+    const header = studioHeaderRef.current;
+    if (!header) return;
+
+    const updateHeaderHeight = () => {
+      setStudioHeaderHeight(Math.ceil(header.getBoundingClientRect().height));
+    };
+
+    updateHeaderHeight();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeaderHeight);
+      return () => window.removeEventListener("resize", updateHeaderHeight);
+    }
+
+    const observer = new ResizeObserver(updateHeaderHeight);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, [loading, proMode]);
 
   useEffect(() => {
     listTemplates()
@@ -1209,7 +1237,13 @@ export default function WorkflowBuilder() {
   }
 
   return (
-    <div className="relative flex h-full">
+    <div
+      className="workflow-studio-shell relative flex h-full min-w-0 overflow-hidden"
+      data-testid="workflow-studio-shell"
+      data-copilot-open={showCopilot ? "true" : "false"}
+      data-inspector-open={selectedStep ? "true" : "false"}
+      style={workflowStudioStyle}
+    >
       {/* HEL-100 v2: left palette rail — Triggers / Tools / Logic
           sections, mirrors docs/design/v2/studio.jsx::AF2_Studio. Clicking
           an item adds that step kind via the same `addStep` handler the
@@ -1218,7 +1252,7 @@ export default function WorkflowBuilder() {
       {!isBuilderPopout && <StudioPalette onAdd={addStep} />}
 
       {/* Left panel — canvas */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {runError && (
           <div className="px-6 py-2 bg-af2-clay-soft/30 border-b border-af2-clay/30 text-sm text-af2-clay">
             {runError}
@@ -1264,16 +1298,17 @@ export default function WorkflowBuilder() {
             for the v2 visual language. Deep restyles (palette, inspector,
             modals, copilot panel) tracked separately as HEL-100b/c. */}
         <div
-          className="flex items-center justify-between px-6 py-3"
+          ref={studioHeaderRef}
+          className="flex flex-col gap-3 px-4 py-3 md:px-6 xl:flex-row xl:items-center xl:justify-between"
           style={{
             background: "var(--af2-paper)",
             borderBottom: "1px solid var(--af2-line)",
           }}
         >
-          <div className="flex items-center gap-3">
-            <div>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="min-w-0">
               <div className="af2-eyebrow">Build · Studio</div>
-              <div className="flex items-center gap-2" style={{ marginTop: 4 }}>
+              <div className="flex min-w-0 flex-wrap items-center gap-2" style={{ marginTop: 4 }}>
                 <input
                   className="af2-serif"
                   value={template.name}
@@ -1288,7 +1323,8 @@ export default function WorkflowBuilder() {
                     outline: "none",
                     padding: "2px 4px",
                     margin: "0 -4px",
-                    minWidth: 240,
+                    minWidth: 0,
+                    width: "min(100%, 22rem)",
                   }}
                   aria-label="Workflow name"
                 />
@@ -1313,7 +1349,7 @@ export default function WorkflowBuilder() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 xl:w-auto xl:justify-end">
             {/* HEL-27: Pro mode toggle. Reveals env panel + advanced
                 inspector when on. State only — sub-panels read `proMode`
                 to decide whether to render. v2 pill styling (HEL-100)
@@ -1504,14 +1540,15 @@ export default function WorkflowBuilder() {
                   showInteractive={false}
                   className="workflow-controls-pill"
                 />
-                {/* HEL-100 v2: mini-map (top-right per AF2_Studio).
+                {/* HEL-170: keep the mini-map away from the right-side
+                    node stack and inspector/Copilot sheets at laptop widths.
                     @xyflow/react ships <MiniMap />; the import is
                     type-augmented via src/xyflow-react.d.ts to work
                     around the package's wildcard re-export drop. Tints
                     via af2 tokens so it sits inside the v2 paper
                     aesthetic. */}
                 <MiniMap
-                  position="top-right"
+                  position="top-left"
                   pannable
                   zoomable
                   ariaLabel="Workflow mini-map"
@@ -1532,7 +1569,7 @@ export default function WorkflowBuilder() {
                   runs to show (skipped for unsaved drafts + workflows
                   with zero runs). */}
               {runHistory.length > 0 && (
-                <div className="pointer-events-none absolute bottom-4 left-4 z-10 w-[min(420px,calc(100%-260px))]">
+                <div className="pointer-events-none absolute bottom-4 left-4 right-4 z-10 max-w-[420px] md:right-auto md:w-[min(420px,calc(100%-260px))]">
                   <div className="pointer-events-auto">
                     <RunHistoryStrip runs={runHistory} />
                   </div>
@@ -1563,10 +1600,8 @@ export default function WorkflowBuilder() {
       {/* Right panel — step detail */}
       {selectedStep && (
         <div
-          className={clsx(
-            "animate-slide-up absolute top-0 z-20 h-full w-[360px] overflow-y-auto border-l border-af2-line bg-af2-card shadow-xl transition-transform duration-200",
-            showCopilot ? "right-[360px]" : "right-0"
-          )}
+          data-testid="workflow-inspector-panel"
+          className="workflow-studio-panel workflow-studio-inspector animate-slide-up absolute z-20 overflow-y-auto border-l border-af2-line bg-af2-card shadow-xl transition-[right,transform] duration-200"
         >
           {/* HEL-100 v2 inspector header — mirrors AF2_Studio's
               InspectorBasic / InspectorPro: eyebrow ("Selected node" +
@@ -2409,7 +2444,8 @@ function WorkflowCopilotSidebar({
 
   return (
     <aside
-      className="absolute right-0 top-0 z-20 flex h-full w-[360px] animate-slide-in-right flex-col border-l border-af2-line bg-white shadow-xl"
+      data-testid="workflow-copilot-panel"
+      className="workflow-studio-panel absolute right-0 z-30 flex animate-slide-in-right flex-col border-l border-af2-line bg-white shadow-xl xl:z-20"
       role="dialog"
       aria-modal="false"
       aria-label="AutoFlow Copilot"

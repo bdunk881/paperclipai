@@ -327,7 +327,7 @@ export default function Dashboard() {
         <div className="af2-stat">
           <div className="af2-stat-label">Hours saved · 7d</div>
           <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Tracking lands with HEL-118</div>
+          <div className="af2-stat-delta">Coming soon</div>
         </div>
         <div className="af2-stat">
           <div className="af2-stat-label">Spend · month</div>
@@ -341,12 +341,12 @@ export default function Dashboard() {
         <div className="af2-stat">
           <div className="af2-stat-label">Approval p50</div>
           <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Median wired with approvals rollup</div>
+          <div className="af2-stat-delta">Coming soon</div>
         </div>
       </div>
 
       <div
-        style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 22 }}
+        className="grid gap-[22px] grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"
       >
         <section>
           <div className="af2-row" style={{ marginBottom: 10 }}>

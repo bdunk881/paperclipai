@@ -47,7 +47,7 @@ export class StripeConnectorService {
     }
 
     const tokenSet = await exchangeCodeForTokens({ code: params.code });
-    const credential = stripeCredentialStore.saveOAuth({
+    const credential = await stripeCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -76,7 +76,7 @@ export class StripeConnectorService {
     const client = new StripeConnectorClient(params.apiKey, "api_key");
     const viewer = await client.viewer();
 
-    const credential = stripeCredentialStore.saveApiKey({
+    const credential = await stripeCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       scopes: viewer.scopes,

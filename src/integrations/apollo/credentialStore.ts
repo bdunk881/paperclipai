@@ -25,23 +25,27 @@ function maskToken(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
-function upsertByUserAndAccount(credential: ApolloCredential): void {
-  const existing = registry.findLatest(
+async function upsertByUserAndAccount(credential: ApolloCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE purging — findLatest /
+  // bucket-only inspection misses persisted rows after a Fly restart.
+  //
+  // HEL-182 Codex P1 #2: purge by the full predicate, NOT findLatest+id.
+  // The hydrated bucket can already contain multiple active rows for
+  // the same (userId, accountId) from prior duplicate states; the old
+  // findLatest+purge-by-id only deleted ONE of them, so N duplicates
+  // stayed N after each save. The predicate purge covers all matches.
+  await registry.listStoredByUserAsync(credential.userId);
+  registry.purge(
     (record) =>
       record.userId === credential.userId &&
       record.accountId === credential.accountId &&
-      !record.revokedAt
+      !record.revokedAt,
   );
-
-  if (existing) {
-    registry.purge((record) => record.id === existing.id);
-  }
-
   registry.save(credential);
 }
 
 export const apolloCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -49,7 +53,7 @@ export const apolloCredentialStore = {
     accountId: string;
     accountLabel?: string;
     metadata?: Record<string, string>;
-  }): ApolloCredentialPublic {
+  }): Promise<ApolloCredentialPublic> {
     const credential: ApolloCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -66,18 +70,18 @@ export const apolloCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
     accountId: string;
     accountLabel?: string;
     metadata?: Record<string, string>;
-  }): ApolloCredentialPublic {
+  }): Promise<ApolloCredentialPublic> {
     const credential: ApolloCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -91,7 +95,7 @@ export const apolloCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 

@@ -17,18 +17,15 @@ import { ticketSyncService } from "../ticketSync/service";
 import { observabilityStore } from "../observability/store";
 import { getAgentPromptQueue } from "../queue/queues";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
+import * as Sentry from "@sentry/node";
 
-// HEL-174: lazy-import the agent execution primitive so ticketRoutes.ts
-// doesn't pull the entire LLM provider stack (including ESM-only
-// `@mistralai/mistralai`) into Jest's transform graph at import time.
-// The primitive is only resolved at dispatch time; in production
-// every dispatch falls through to the BullMQ queue path anyway.
-type ExecuteAgentPromptInput = import("../agents/agentPromptExecution").ExecuteAgentPromptInput;
-type ExecuteAgentPromptFn = (input: ExecuteAgentPromptInput) => Promise<unknown>;
-async function resolveExecuteAgentPrompt(): Promise<ExecuteAgentPromptFn> {
-  const mod = await import("../agents/agentPromptExecution");
-  return mod.executeAgentPrompt as unknown as ExecuteAgentPromptFn;
-}
+// HEL-177: agent execution is the worker's job exclusively. Routes only
+// enqueue. The legacy inline `resolveExecuteAgentPrompt()` fallback was
+// removed — silent in-process execution defeats the whole point of the
+// durable BullMQ pipeline (P3). When Redis is unavailable the dispatch
+// is now logged + Sentry-reported; the ticket persists, but no agent
+// run fires. A CI grep guard (see `.github/workflows/ci.yml`) prevents
+// any future route from re-importing `executeAgentPrompt` directly.
 
 const router = Router();
 
@@ -244,32 +241,38 @@ async function dispatchAgentPromptForTicket(input: {
     triggerKind: input.triggerKind,
     idempotencyKey,
   };
-  if (queue) {
-    await queue.add(input.triggerKind, payload, { jobId: idempotencyKey });
+  if (!queue) {
+    // HEL-177: no silent inline fallback. The agent run is dropped on
+    // the floor, the ticket persists, and we log + Sentry-report so an
+    // operator notices the queue is misconfigured. Better to surface
+    // the configuration gap than to mask it with in-process execution
+    // that won't survive an API restart.
+    //
+    // Codex P2: keep the Sentry message constant so all dispatches
+    // during a queue outage group into ONE issue. Per-dispatch IDs go
+    // in tags + contexts where they don't fragment alert grouping.
+    console.warn(
+      `[tickets] agent prompt queue unavailable — dispatch skipped for ticket=${payload.sourceTicketId} agent=${payload.agentId}`,
+    );
+    Sentry.captureMessage("agent_prompt_queue_unavailable", {
+      level: "warning",
+      tags: {
+        component: "tickets",
+        reason: "agent_prompt_queue_unavailable",
+        triggerKind: payload.triggerKind,
+      },
+      contexts: {
+        dispatch: {
+          ticketId: payload.sourceTicketId,
+          agentId: payload.agentId,
+          workspaceId: payload.workspaceId,
+          triggerKind: payload.triggerKind,
+        },
+      },
+    });
     return;
   }
-  // Redis unavailable — execute inline so dev still exercises the
-  // path. Failures here log but don't block the route response; ticket
-  // create/update must succeed even if the agent run flakes. Lazy-loads
-  // the primitive so test contexts that don't have @mistralai/mistralai
-  // transformed don't trip on the import chain.
-  void resolveExecuteAgentPrompt()
-    .then((executeAgentPrompt) =>
-      executeAgentPrompt({
-        pool: getPostgresPool(),
-        workspaceId: payload.workspaceId,
-        userId: payload.userId,
-        agentId: payload.agentId,
-        prompt: payload.prompt,
-        sourceTicketId: payload.sourceTicketId,
-        triggerKind: payload.triggerKind,
-      }),
-    )
-    .catch((err) => {
-      console.warn(
-        `[tickets] inline agent dispatch failed for ticket=${payload.sourceTicketId}: ${(err as Error).message}`,
-      );
-    });
+  await queue.add(input.triggerKind, payload, { jobId: idempotencyKey });
 }
 
 function targetToMinutes(target: { kind: "minutes" | "business_days"; value: number }): number {
@@ -1109,6 +1112,53 @@ router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, r
     prompt,
   });
   res.status(202).json({ status: "queued", ticketId: aggregate.ticket.id });
+});
+
+/**
+ * HEL-175: cancel the in-flight agent run for this ticket.
+ *
+ * Finds the most recent `runs` row where `source_ticket_id = :id` and
+ * `status = 'running'` and flips it to `'cancelling'`. The worker's
+ * cooperative cancel checkpoint in `executeAgentPrompt` reads the
+ * status and bails before the next external call.
+ *
+ * Returns:
+ *   - 202 with the cancelled run row when one was found
+ *   - 404 when no active run exists for this ticket (idempotent UX:
+ *     dashboard's Cancel button can be clicked without checking first)
+ */
+router.delete("/:id/cancel-active-run", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  if (!isPostgresConfigured()) {
+    res.status(503).json({ error: "Run cancellation requires PostgreSQL persistence." });
+    return;
+  }
+  const pool = getPostgresPool();
+  // Look up the active run for this ticket. Latest started_at wins so
+  // re-clicks of Run-agent followed by Cancel target the freshest one.
+  const activeResult = await pool.query<{ id: string }>(
+    `SELECT id::text
+       FROM runs
+      WHERE source_ticket_id = $1::uuid
+        AND status = 'running'
+        AND workspace_id = $2::uuid
+      ORDER BY started_at DESC
+      LIMIT 1`,
+    [req.params.id, context.workspaceId],
+  );
+  if (activeResult.rowCount === 0) {
+    res.status(404).json({ error: "No active agent run found for this ticket" });
+    return;
+  }
+  const runId = activeResult.rows[0]!.id;
+  await pool.query(
+    `UPDATE runs SET status = 'cancelling' WHERE id = $1::uuid AND status = 'running'`,
+    [runId],
+  );
+  res.status(202).json({ status: "cancelling", runId, ticketId: req.params.id });
 });
 
 router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest, res) => {

@@ -10,15 +10,15 @@ const {
   listAgentsMock,
   listMissionsMock,
   listBudgetsMock,
+  getOrgGraphMock,
   accessModeMock,
-  trackedFetchMock,
 } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
   listMissionsMock: vi.fn(),
   listBudgetsMock: vi.fn(),
+  getOrgGraphMock: vi.fn(),
   accessModeMock: vi.fn(),
-  trackedFetchMock: vi.fn(),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -34,15 +34,13 @@ vi.mock("../api/agentApi", () => ({
 
 vi.mock("../api/canonicalApi", () => ({
   listBudgets: listBudgetsMock,
+  getOrgGraph: getOrgGraphMock,
 }));
 
 vi.mock("../api/missionsApi", () => ({
   listMissions: listMissionsMock,
 }));
 
-vi.mock("../api/trackedFetch", () => ({
-  trackedFetch: trackedFetchMock,
-}));
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -75,12 +73,7 @@ function makeBudgetRow(agentId: string, monthlyUsd: number, spentUsd: number): B
 }
 
 function mockOrgGraphEmpty() {
-  trackedFetchMock.mockResolvedValue(
-    new Response(JSON.stringify({ workspaceId: "w1", agents: [], edges: [] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
-  );
+  getOrgGraphMock.mockResolvedValue({ workspaceId: "w1", agents: [], edges: [] });
 }
 
 describe("OrgStructure", () => {
@@ -90,7 +83,7 @@ describe("OrgStructure", () => {
     listMissionsMock.mockReset();
     listBudgetsMock.mockReset();
     accessModeMock.mockReset();
-    trackedFetchMock.mockReset();
+    getOrgGraphMock.mockReset();
     accessModeMock.mockReturnValue("authenticated");
     getAccessTokenMock.mockResolvedValue("token-123");
     listAgentsMock.mockResolvedValue([]);
@@ -209,18 +202,11 @@ describe("OrgStructure", () => {
     const ceo = makeAgent({ id: "ceo", name: "Chief Bot" });
     const ic = makeAgent({ id: "ic", name: "IC Bot" });
     listAgentsMock.mockResolvedValueOnce([ceo, ic]);
-    trackedFetchMock.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          workspaceId: "w1",
-          agents: [],
-          edges: [
-            { id: "e1", managerAgentId: "ceo", agentId: "ic", createdAt: "now" },
-          ],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    getOrgGraphMock.mockResolvedValueOnce({
+      workspaceId: "w1",
+      agents: [],
+      edges: [{ id: "e1", managerAgentId: "ceo", agentId: "ic", createdAt: "now" }],
+    });
     render(
       <MemoryRouter>
         <OrgStructure />
@@ -230,8 +216,10 @@ describe("OrgStructure", () => {
     expect(screen.getByText("IC Bot")).toBeInTheDocument();
   });
 
-  it("renders the active mission card at the top when one exists", async () => {
-    listAgentsMock.mockResolvedValueOnce([makeAgent({ id: "a1", name: "Lead Bot" })]);
+  it("renders the selected mission card when missionId is in the URL", async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      makeAgent({ id: "a1", name: "Lead Bot", metadata: { missionId: "m1" } }),
+    ]);
     listMissionsMock.mockResolvedValueOnce([
       {
         id: "m1",
@@ -245,7 +233,7 @@ describe("OrgStructure", () => {
       },
     ]);
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/workspace/org-structure?missionId=m1"]}>
         <OrgStructure />
       </MemoryRouter>,
     );
@@ -257,7 +245,7 @@ describe("OrgStructure", () => {
     expect(screen.getByText(/Acme · active/)).toBeInTheDocument();
   });
 
-  it('shows the "No mission yet" fallback when there are agents but no missions', async () => {
+  it("shows workspace scope when there are agents but no missions", async () => {
     listAgentsMock.mockResolvedValueOnce([makeAgent({ id: "a1", name: "Lead Bot" })]);
     listMissionsMock.mockResolvedValueOnce([]);
     render(
@@ -265,8 +253,8 @@ describe("OrgStructure", () => {
         <OrgStructure />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByText("Lead Bot")).toBeInTheDocument());
-    expect(screen.getByText(/no mission yet/i)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Lead Bot").length).toBeGreaterThan(0));
+    expect(screen.getByText(/all missions/i)).toBeInTheDocument();
   });
 
   it("renders the v2 page chrome (page, head, eyebrow, h1, card)", async () => {
@@ -294,18 +282,70 @@ describe("OrgStructure", () => {
     expect(screen.getByText("Workforce")).toBeInTheDocument();
   });
 
-  it("renders Org map / List view / Hire actions in the page head", async () => {
-    // Use a non-empty agent list so the page-head Hire link is the only
-    // hire link on the page (no EmptyState rendered).
+  it("renders enabled Org map / List view tabs and Hire link", async () => {
     listAgentsMock.mockResolvedValueOnce([makeAgent({ id: "a1", name: "Solo Bot" })]);
     render(
       <MemoryRouter>
         <OrgStructure />
       </MemoryRouter>,
     );
-    expect(await screen.findByRole("button", { name: /org map/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /list view/i })).toBeInTheDocument();
+    const orgMap = await screen.findByRole("button", { name: /org map/i });
+    const listView = screen.getByRole("button", { name: /list view/i });
+    expect(orgMap).not.toBeDisabled();
+    expect(listView).not.toBeDisabled();
+    expect(orgMap.className).toContain("active");
     expect(screen.getByRole("link", { name: /hire/i })).toHaveAttribute("href", "/hire");
+  });
+
+  it("switches to list view when ?view=list", async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      makeAgent({ id: "lead", name: "Lead Bot" }),
+      makeAgent({ id: "rep", name: "Report Bot", metadata: { reportingToAgentId: "lead" } }),
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/workspace/org-structure?view=list"]}>
+        <OrgStructure />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getAllByText("Lead Bot").length).toBeGreaterThan(0));
+    expect(screen.getByText("Reports to")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /list view/i }).className).toContain("active");
+  });
+
+  it("filters agents by missionId metadata when mission is selected", async () => {
+    listAgentsMock.mockResolvedValueOnce([
+      makeAgent({ id: "a1", name: "Mission One Bot", metadata: { missionId: "m1" } }),
+      makeAgent({ id: "a2", name: "Mission Two Bot", metadata: { missionId: "m2" } }),
+    ]);
+    listMissionsMock.mockResolvedValueOnce([
+      {
+        id: "m1",
+        statement: "First mission",
+        status: "active",
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        companyId: "c1",
+        companyName: "Acme",
+        latestHiringPlanId: null,
+      },
+      {
+        id: "m2",
+        statement: "Second mission",
+        status: "draft",
+        metadata: {},
+        createdAt: new Date().toISOString(),
+        companyId: "c1",
+        companyName: "Acme",
+        latestHiringPlanId: null,
+      },
+    ]);
+    render(
+      <MemoryRouter initialEntries={["/workspace/org-structure?missionId=m1"]}>
+        <OrgStructure />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText("Mission One Bot")).toBeInTheDocument());
+    expect(screen.queryByText("Mission Two Bot")).not.toBeInTheDocument();
   });
 
   it("shows real spend from /api/budgets when present", async () => {

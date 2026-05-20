@@ -174,7 +174,10 @@ jest.mock("./composio/service", () => ({
 
 jest.mock("./slack/credentialStore", () => ({
   slackCredentialStore: {
-    getActiveByUserAsync: (...args: unknown[]) => slackGetActiveByUser(...args),
+    getActiveByUser: (...args: unknown[]) => slackGetActiveByUser(...args),
+    // HEL-180: the /status route now hydrates Slack via the async getter.
+    // Mock both so the test's mockReturnValue setup keeps working.
+    getActiveByUserAsync: async (...args: unknown[]) => slackGetActiveByUser(...args),
   },
 }));
 
@@ -284,7 +287,7 @@ describe("unified oauth bridge routes", () => {
     posthogCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     intercomCompleteOAuth.mockResolvedValue({ id: "conn-1" });
     stripeCompleteOAuth.mockResolvedValue({ id: "conn-1" });
-    slackDisconnect.mockResolvedValue(true);
+    slackDisconnect.mockReturnValue(true);
     linearDisconnect.mockReturnValue(true);
     apolloDisconnect.mockReturnValue(true);
     gmailDisconnect.mockReturnValue(true);
@@ -297,7 +300,7 @@ describe("unified oauth bridge routes", () => {
     intercomDisconnect.mockReturnValue(true);
     stripeDisconnect.mockReturnValue(true);
     composioDisconnect.mockResolvedValue(true);
-    slackGetActiveByUser.mockResolvedValue(null);
+    slackGetActiveByUser.mockReturnValue(null);
     linearGetActiveByUser.mockReturnValue(null);
     apolloGetActiveByUser.mockReturnValue(null);
     gmailGetActiveByUser.mockReturnValue(null);
@@ -423,7 +426,7 @@ describe("unified oauth bridge routes", () => {
   });
 
   it("returns provider status for all registered integrations", async () => {
-    slackGetActiveByUser.mockResolvedValue({
+    slackGetActiveByUser.mockReturnValue({
       id: "slack-1",
       createdAt: "2026-04-18T10:00:00.000Z",
       scopes: ["channels:read", "chat:write"],

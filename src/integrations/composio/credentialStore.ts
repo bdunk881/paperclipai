@@ -19,11 +19,14 @@ const registry = new CredentialRegistry<ComposioCredential, ComposioCredentialPu
 });
 
 export const composioCredentialStore = {
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     metadata?: Record<string, string>;
-  }): ComposioCredentialPublic {
+  }): Promise<ComposioCredentialPublic> {
+    // HEL-182: hydrate from Postgres BEFORE purging — see
+    // slack/credentialStore.ts (post-#926) for the canonical pattern.
+    await registry.listStoredByUserAsync(params.userId);
     registry.purge((credential) => credential.userId === params.userId && !credential.revokedAt);
 
     const credential: ComposioCredential = {

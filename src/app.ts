@@ -59,6 +59,7 @@ import {
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
+import { asyncHandler } from "./middleware/asyncHandler";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
@@ -856,7 +857,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", requireAuth, async (req, res) => {
+app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -936,7 +937,7 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
-app.post("/api/templates/import", requireAuth, async (req, res) => {
+app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), async (req, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -988,6 +989,7 @@ app.post(
   "/api/runs",
   requireAuthOrQaBypass,
   workspaceResolver,
+  requireRole("admin", "developer", "operator"),
   llmEndpointRateLimiter,
   requireEntitlement("runsPerMonth", {
     getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
@@ -1092,11 +1094,23 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
 });
 
 /**
- * Cancel a queued (not yet running) run.
- * Removes the BullMQ job if it is still waiting, then marks the run canceled.
- * Returns 409 if the run has already started or finished.
+ * Cancel a run.
+ *
+ * HEL-108 originally only accepted 'queued'/'pending' runs (removed the
+ * BullMQ job and flipped status straight to 'canceled').
+ *
+ * HEL-175 extends this to 'running' runs as well, but rather than killing
+ * the worker mid-step it flips the status to 'cancelling'. The worker
+ * checks `runs.status` at the next safe checkpoint (e.g. before invoking
+ * `runAgentTurn()`) and transitions 'cancelling' → 'canceled' on the way
+ * out. The HTTP response is 202 Accepted for in-flight cancellations so
+ * the dashboard knows the cancel was registered but execution may take a
+ * moment to wind down.
+ *
+ * Status that allows cancellation: queued | pending | running.
+ * Anything else (completed, failed, canceled, etc.) returns 409.
  */
-app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1106,24 +1120,44 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
     return;
   }
 
-  if (run.status !== "queued" && run.status !== "pending") {
+  const cancellable = new Set(["queued", "pending", "running"]);
+  if (!cancellable.has(run.status)) {
     res.status(409).json({ error: `Run cannot be canceled: status is '${run.status}'` });
     return;
   }
+
+  const isInFlight = run.status === "running";
 
   const runQueue = getRunQueue();
   if (runQueue) {
     try {
       const job = await runQueue.getJob(runId);
       if (job) {
+        // If the job hasn't actually picked up yet, remove it outright —
+        // safer than letting it start and then race the cancellation flag.
+        // BullMQ's `getState()` would let us be more precise; `.remove()`
+        // on an in-flight job is a no-op so this is safe either way.
         await job.remove();
       }
     } catch {
-      // Job may already be gone; continue to update DB status.
+      // Job may already be gone or in-flight; continue to update DB status.
     }
   }
 
-  const canceled = await runStore.update(runId, { status: "canceled", completedAt: new Date().toISOString() });
+  if (isInFlight) {
+    // HEL-175: cooperative cancellation. The worker's checkpoint
+    // (executeAgentPrompt et al.) reads `runs.status` and bails before
+    // the next external call.
+    const updated = await runStore.update(runId, { status: "cancelling" });
+    res.status(202).json(updated);
+    return;
+  }
+
+  // Queued/pending: never started → flip straight to canceled.
+  const canceled = await runStore.update(runId, {
+    status: "canceled",
+    completedAt: new Date().toISOString(),
+  });
   res.json(canceled);
 });
 
@@ -1132,7 +1166,7 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
  * Resets status to "queued" and re-adds the job to the main runs queue.
  * Returns 409 if the run is not in the "failed" state.
  */
-app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1195,7 +1229,7 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
  * Creates a fresh run record and enqueues it. Use /retry to replay with the
  * original version instead.
  */
-app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1281,6 +1315,130 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
   res.status(202).json(newRun);
 });
 
+/**
+ * POST /api/runs/:runId/replay-from-step (HEL-176)
+ *
+ * Body: { stepIndex: number }
+ *
+ * Creates a new run that resumes execution from `stepIndex`, cloning the
+ * outputs of steps 0..stepIndex-1 so already-successful work (LLM calls,
+ * side effects) isn't redone. The original run is left intact.
+ *
+ * Returns 200 with the new run on success, 400 on validation failure,
+ * 404 when the run is unknown / cross-workspace, 503 if Postgres isn't
+ * configured (matches the rest of the runs API).
+ *
+ * Emits a `run.replayed_from_step` activity event so the operator
+ * dashboard can show the lineage.
+ */
+app.post(
+  "/api/runs/:runId/replay-from-step",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const runId = req.params["runId"];
+    const userId = req.auth?.sub;
+    const { stepIndex } = (req.body ?? {}) as { stepIndex?: unknown };
+
+    if (typeof stepIndex !== "number" || !Number.isFinite(stepIndex)) {
+      res.status(400).json({ error: "stepIndex (number) is required" });
+      return;
+    }
+
+    const run = await runStore.get(runId);
+    if (!run || (run.userId !== undefined && run.userId !== userId)) {
+      res.status(404).json({ error: `Run not found: ${runId}` });
+      return;
+    }
+
+    // Cross-workspace guard: if a workspace is bound to the request,
+    // it must match the original run's workspace. Mirrors the
+    // workspace-resolver pattern used by the other run routes.
+    if (
+      req.workspaceId &&
+      run.workspaceId &&
+      req.workspaceId !== run.workspaceId
+    ) {
+      res.status(404).json({ error: `Run not found: ${runId}` });
+      return;
+    }
+
+    // HEL-176 Codex P2: only allow replay for terminal failure states.
+    // Replaying a `running` / `queued` run can race with the original's
+    // remaining steps; replaying a `completed` run duplicates
+    // side-effecting work (the whole reason this feature exists is to
+    // recover from a failure, not fork from a successful run).
+    if (run.status !== "failed" && run.status !== "escalated") {
+      res.status(409).json({
+        error: `Cannot replay run in status '${run.status}'; only 'failed' or 'escalated' runs are replayable`,
+      });
+      return;
+    }
+
+    // HEL-176 Codex P1: route through the BullMQ queue when Redis is
+    // available so the replay benefits from worker retry/DLQ/cancellation
+    // and survives API restarts — mirrors the POST /api/runs path.
+    const runQueue = getRunQueue();
+    let newRun;
+    try {
+      newRun = await workflowEngine.replayFromStep(runId, stepIndex, userId, {
+        skipExecution: Boolean(runQueue),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/not found/i.test(message)) {
+        res.status(404).json({ error: message });
+        return;
+      }
+      res.status(400).json({ error: message });
+      return;
+    }
+
+    if (runQueue) {
+      const idempotencyKey = `${newRun.id}:${stepIndex}:replay-from-step`;
+      await runQueue.add(
+        "run",
+        {
+          runId: newRun.id,
+          templateId: newRun.templateId,
+          workflowVersionId: newRun.workflowVersionId,
+          workspaceId: newRun.workspaceId ?? "",
+          stepIndex,
+          idempotencyKey,
+        },
+        { jobId: newRun.id, removeOnComplete: 100 },
+      );
+    }
+
+    // HEL-176: best-effort activity event so the operator dashboard
+    // shows the replay lineage. Mirrors the worker.ts pattern of
+    // fire-and-forget activity inserts that never block the response.
+    if (isPostgresPersistenceEnabled() && newRun.workspaceId) {
+      const pool = getPostgresPool();
+      pool
+        .query(
+          `INSERT INTO activity_events (workspace_id, kind, actor, subject, payload, occurred_at)
+           VALUES ($1::uuid, 'run.replayed_from_step', $2::jsonb, $3::jsonb, $4::jsonb, now())`,
+          [
+            newRun.workspaceId,
+            JSON.stringify({ type: "user", id: userId ?? "unknown" }),
+            JSON.stringify({ type: "execution", id: newRun.id, label: newRun.templateName }),
+            JSON.stringify({
+              originalRunId: runId,
+              newRunId: newRun.id,
+              fromStepIndex: stepIndex,
+            }),
+          ],
+        )
+        .catch((dbErr: Error) => {
+          console.error("[runs] replay-from-step activity_events insert failed:", dbErr.message);
+        });
+    }
+
+    res.status(200).json({ run: newRun });
+  }),
+);
+
 app.get("/api/observability", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = req.auth?.sub;
   if (!userId) {
@@ -1334,7 +1492,7 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -1509,7 +1667,7 @@ app.use("/api/workflows", requireAuth, workspaceResolver, requireRole("admin", "
 // POST /api/goals/team-assembly
 // ---------------------------------------------------------------------------
 
-app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
@@ -1568,8 +1726,22 @@ app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async 
  * POST /api/webhooks/:templateId
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
+ *
+ * HEL-186: this endpoint previously trusted an arbitrary `x-user-id` header,
+ * allowing any caller with a templateId to enqueue a run in any user's
+ * scope. Gated behind `WEBHOOK_TRIGGERS_ENABLED=true` (default off) until a
+ * per-template signing-secret design lands. A follow-up ticket tracks the
+ * signed-payload + workspace-binding work.
  */
 app.post("/api/webhooks/:templateId", async (req, res) => {
+  if (process.env.WEBHOOK_TRIGGERS_ENABLED !== "true") {
+    res.status(503).json({
+      error:
+        "Webhook triggers are disabled in this environment pending signed-payload support",
+    });
+    return;
+  }
+
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -1677,7 +1849,7 @@ app.get("/api/approvals/:id/notifications", requireAuth, async (req: Authenticat
  * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), async (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
@@ -1741,7 +1913,7 @@ app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
  * Manually resumes a paused execution after its approval decision has already
  * been persisted and the original live worker is gone.
  */
-app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/executions/:id/resume", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: AuthenticatedRequest, res) => {
   const run = await runStore.get(req.params.id);
   if (!run || (run.userId !== undefined && run.userId !== req.auth?.sub)) {
     res.status(404).json({ error: `Execution not found: ${req.params.id}` });
@@ -1847,5 +2019,74 @@ app.use((err: Error, _req: express.Request, res: express.Response, next: express
   }
   next(err);
 });
+
+// HEL-183: global typed-error middleware for `Tier1ConnectorError` (and any
+// subclass, e.g. each connector's per-package `ConnectorError`). Lets
+// route handlers wrap with `asyncHandler(...)` and `throw new
+// ConnectorError(...)` directly — no per-route try/catch + `handleError`
+// boilerplate. The middleware preserves the original `statusCode` and
+// `type` fields on the response body.
+//
+// IMPORTANT: must run AFTER Sentry's error handler so Sentry still
+// captures the error (Sentry's handler calls next(err), so the chain
+// reaches here).
+app.use(
+  (
+    err: Error & { statusCode?: number; type?: string },
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    // Tier1ConnectorError + every per-connector subclass extends Error
+    // with `statusCode` + `type`. Check structurally rather than
+    // importing the class to avoid circular-import risk from src/app.ts.
+    const status = typeof err.statusCode === "number" ? err.statusCode : null;
+    const type = typeof err.type === "string" ? err.type : null;
+    if (status !== null && type !== null) {
+      res.status(status).json({ error: err.message, type });
+      return;
+    }
+    next(err);
+  },
+);
+
+// HEL-183 / Codex P1 on #927: final JSON 500 fallback for any error that
+// reaches the end of the chain WITHOUT typed `statusCode + type` fields.
+// Without this, an unhandled `Error("something")` from an asyncHandler-
+// wrapped route would fall through to Express's default error handler,
+// which returns an HTML response — a behavior regression vs the prior
+// `handleError(res, error)` pattern that always emitted JSON.
+//
+// Production-leak guard: only the error class name is exposed in the
+// response. The full message goes to Sentry (captured earlier in the
+// chain via setupExpressErrorHandler) and to stderr.
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    console.error(
+      "[app] Unhandled async error reached final middleware:",
+      err instanceof Error ? err.stack ?? err.message : err,
+    );
+    const safeMessage =
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    res.status(500).json({ error: safeMessage, type: "internal" });
+  },
+);
 
 export default app;

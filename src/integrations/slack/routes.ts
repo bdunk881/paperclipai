@@ -1,5 +1,6 @@
 import express from "express";
 import { requireAuth, AuthenticatedRequest } from "../../auth/authMiddleware";
+import { asyncHandler } from "../../middleware/asyncHandler";
 import { getTier1HealthHttpStatus } from "../shared/tier1Contract";
 import { slackConnectorService } from "./service";
 import { ConnectorError } from "./types";
@@ -81,16 +82,24 @@ router.post("/connect-api-key", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-router.get("/connections", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
-
-  const connections = await slackConnectorService.listConnections(userId);
-  res.json({ connections, total: connections.length });
-});
+router.get(
+  "/connections",
+  requireAuth,
+  // HEL-183: `asyncHandler` routes any rejection through the global
+  // typed-error middleware (`src/app.ts`), which renders
+  // `Tier1ConnectorError` subclasses with their `statusCode` + `type`.
+  // Replaces the manual try/catch + handleError pattern Codex flagged
+  // on #926.
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+    const connections = await slackConnectorService.listConnections(userId);
+    res.json({ connections, total: connections.length });
+  }),
+);
 
 router.post("/test-connection", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);
@@ -118,21 +127,26 @@ router.get("/health", requireAuth, async (req: AuthenticatedRequest, res) => {
   res.status(getTier1HealthHttpStatus(health.status)).json(health);
 });
 
-router.delete("/connections/:id", requireAuth, async (req: AuthenticatedRequest, res) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
-
-  const deleted = await slackConnectorService.disconnect(userId, req.params.id);
-  if (!deleted) {
-    res.status(404).json({ error: "Slack connection not found" });
-    return;
-  }
-
-  res.status(204).send();
-});
+router.delete(
+  "/connections/:id",
+  requireAuth,
+  // HEL-183: same pattern as `/connections` above — `asyncHandler` plus
+  // the global typed-error middleware (`src/app.ts`) replace the manual
+  // try/catch + handleError that Codex flagged on #926.
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+    const deleted = await slackConnectorService.disconnect(userId, req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: "Slack connection not found" });
+      return;
+    }
+    res.status(204).send();
+  }),
+);
 
 router.get("/channels", requireAuth, async (req: AuthenticatedRequest, res) => {
   const userId = getUserId(req);

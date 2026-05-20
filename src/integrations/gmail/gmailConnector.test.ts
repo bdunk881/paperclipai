@@ -255,4 +255,35 @@ describe("Gmail connector", () => {
       })
     ).rejects.toThrow(/replay/i);
   });
+
+  it("upsert dedupes prior (user, email) active credentials before saving (HEL-182)", async () => {
+    // Two consecutive OAuth saves for the same (userId, emailAddress) should
+    // leave exactly one active row — the second one. Mirrors the Slack
+    // regression for the same upsert-no-hydrate bug class.
+    const first = await gmailCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "gmail-first",
+      scopes: ["https://www.googleapis.com/auth/gmail.send"],
+      emailAddress: "dedup@example.com",
+    });
+
+    const second = await gmailCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "gmail-second",
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.readonly",
+      ],
+      emailAddress: "dedup@example.com",
+    });
+
+    const active = gmailCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.emailAddress === "dedup@example.com" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("https://www.googleapis.com/auth/gmail.readonly");
+  });
 });

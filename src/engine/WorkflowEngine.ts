@@ -129,6 +129,20 @@ function evalCondition(expression: string, context: Record<string, unknown>): bo
   }
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function stripMemory(context: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (key === "memory") continue;
+    if (typeof value === "function" || value === undefined) continue;
+    out[key] = value;
+  }
+  return cloneJson(out);
+}
+
 function makeRuntimeState(
   config: Record<string, unknown>,
   context: Record<string, unknown>,
@@ -307,6 +321,166 @@ export class WorkflowEngine {
     });
 
     return run;
+  }
+
+  /**
+   * HEL-176: step-level replay.
+   *
+   * Creates a new run that resumes execution from `stepIndex`, cloning the
+   * step_results for ordinals 0..stepIndex-1 so already-successful work
+   * (LLM calls, side-effects, etc.) is not redone. Step results' `output`
+   * is preserved verbatim, but each clone gets a fresh `idempotencyKey`
+   * since the unique index on (idempotency_key) would reject duplicates.
+   *
+   * Validates:
+   *   - `stepIndex` is in (0, template.steps.length)
+   *     (use {@link startRun} for a full re-run; index 0 is rejected).
+   *   - Every step_result with ordinal < stepIndex exists and is `success`.
+   *
+   * Fires-and-forgets the run loop (`_runSteps`) so the HTTP response
+   * returns the pending run immediately, mirroring `startRun`'s pattern.
+   */
+  async replayFromStep(
+    originalRunId: string,
+    stepIndex: number,
+    userId?: string,
+    options?: { skipExecution?: boolean }
+  ): Promise<WorkflowRun> {
+    const original = await runStore.get(originalRunId);
+    if (!original) {
+      throw new Error(`Run not found: ${originalRunId}`);
+    }
+
+    const template = this._resolveTemplate(original);
+
+    if (!Number.isInteger(stepIndex)) {
+      throw new Error(`stepIndex must be an integer (received ${stepIndex})`);
+    }
+    if (stepIndex <= 0) {
+      throw new Error(
+        `stepIndex must be > 0 (received ${stepIndex}); use startRun for a full replay`
+      );
+    }
+    if (stepIndex >= template.steps.length) {
+      throw new Error(
+        `stepIndex ${stepIndex} is beyond template length (${template.steps.length})`
+      );
+    }
+
+    // Validate that the prefix [0..stepIndex) is fully successful so the
+    // cloned outputs represent a coherent context for the resumed run.
+    const prefix = original.stepResults.slice(0, stepIndex);
+    if (prefix.length < stepIndex) {
+      throw new Error(
+        `Original run only has ${prefix.length} step result(s); cannot replay from ${stepIndex}`
+      );
+    }
+    for (let i = 0; i < prefix.length; i += 1) {
+      if (prefix[i].status !== "success") {
+        throw new Error(
+          `Step ordinal ${i} on original run is not 'success' (status='${prefix[i].status}'); cannot replay from ${stepIndex}`
+        );
+      }
+    }
+
+    // Clone the prefix step_results — preserve outputs but generate fresh
+    // idempotency keys so the unique index doesn't reject the inserts.
+    const newRunId = randomUUID();
+    const clonedStepResults: StepResult[] = prefix.map((sr, ordinal) => ({
+      stepId: sr.stepId,
+      stepName: sr.stepName,
+      status: "success" as const,
+      output: cloneJson(sr.output),
+      durationMs: sr.durationMs,
+      ...(sr.agentSlotResults ? { agentSlotResults: cloneJson(sr.agentSlotResults) } : {}),
+      ...(sr.costLog ? { costLog: cloneJson(sr.costLog) } : {}),
+      idempotencyKey: `${newRunId}:${ordinal}:replay-from-step:${Date.now()}`,
+    }));
+
+    // Reconstruct the runtime context the same way _executeRun does:
+    // start with config + input, then layer each cloned step's output.
+    const config = original.runtimeState?.config
+      ? cloneJson(original.runtimeState.config)
+      : this._buildDefaultConfig(template);
+    const context: Record<string, unknown> = {
+      ...config,
+      ...cloneJson(original.input),
+    };
+    for (const sr of clonedStepResults) {
+      Object.assign(context, sr.output);
+    }
+
+    // Attach a memory helper so LLM prompts in the resumed run can read
+    // memory entries (the snapshot-on-start pattern from _executeRun).
+    context["memory"] = await this._buildMemoryContext(template, userId);
+
+    const newRun = await runStore.create({
+      id: newRunId,
+      templateId: original.templateId,
+      templateName: original.templateName,
+      workspaceId: original.workspaceId,
+      routineId: original.routineId,
+      status: "pending",
+      startedAt: new Date().toISOString(),
+      input: cloneJson(original.input),
+      workflowDag: original.workflowDag ? cloneJson(original.workflowDag) : template,
+      stepResults: clonedStepResults.map((sr) => ({ ...sr, output: cloneJson(sr.output) })),
+      runtimeState: {
+        config: { ...config },
+        // Drop the memory helper from runtimeState snapshots — it isn't
+        // JSON-serialisable. makeRuntimeState scrubs it on the next
+        // update; here we set the JSON-safe baseline explicitly.
+        context: stripMemory(context),
+        currentStepIndex: stepIndex,
+      },
+      ...(userId !== undefined ? { userId } : {}),
+    });
+
+    // HEL-176 Codex P1: caller may opt out of inline execution so the
+    // endpoint can route through the BullMQ queue when Redis is
+    // available — matching the POST /api/runs enqueue path. When
+    // skipExecution is true we leave the new run in 'queued' so the
+    // worker is the sole executor.
+    if (options?.skipExecution) {
+      await runStore.update(newRun.id, { status: "queued" });
+      return { ...newRun, status: "queued" };
+    }
+
+    // Fire-and-forget the run loop so the HTTP response returns
+    // immediately. _runSteps owns transitioning pending → running →
+    // completed/failed and persisting per-step updates.
+    void runStore
+      .update(newRun.id, { status: "running" })
+      .then(() =>
+        this._runSteps(newRun.id, template, config, context, clonedStepResults, stepIndex, userId)
+      )
+      .catch((err) => {
+        void runStore.update(newRun.id, {
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error: String(err),
+        });
+      });
+
+    return newRun;
+  }
+
+  /**
+   * HEL-176 helper — pulls the {@link WorkflowTemplate} embedded in a run.
+   * Throws if the run has no usable DAG (defensive — runs created via
+   * the engine always persist `workflowDag`).
+   */
+  private _resolveTemplate(run: WorkflowRun): WorkflowTemplate {
+    const dag = run.workflowDag;
+    if (
+      dag &&
+      typeof dag === "object" &&
+      !Array.isArray(dag) &&
+      Array.isArray((dag as Partial<WorkflowTemplate>).steps)
+    ) {
+      return dag as WorkflowTemplate;
+    }
+    throw new Error(`Run ${run.id} has no workflow DAG; cannot replay`);
   }
 
   async resumeRun(

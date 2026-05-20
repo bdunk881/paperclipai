@@ -227,6 +227,8 @@ interface AgentInsertParams {
   userId: string;
   teamId: string;
   companyId: string;
+  missionId: string;
+  hiringPlanId: string;
   roleKey: string;
   name: string;
   modelTier: "lite" | "standard" | "power";
@@ -247,15 +249,20 @@ async function insertAgent(
   // LLM config (same path the runner already uses for unassigned agents).
   const model = defaultProvider ? resolveModelForTier(defaultProvider, params.modelTier) : null;
 
+  const metadata = JSON.stringify({
+    missionId: params.missionId,
+    hiringPlanId: params.hiringPlanId,
+  });
+
   await client.query(
     `INSERT INTO agents (
        id, workspace_id, user_id, team_id, company_id,
        name, role_key, model, instructions, budget_monthly_usd,
-       skills, schedule, status
+       skills, schedule, status, metadata
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10,
-       $11::jsonb, '{"type":"manual"}'::jsonb, 'active'
+       $11::jsonb, '{"type":"manual"}'::jsonb, 'active', $12::jsonb
      )`,
     [
       id,
@@ -269,6 +276,7 @@ async function insertAgent(
       params.mandate,
       params.budgetMonthlyUsd,
       JSON.stringify(params.skills),
+      metadata,
     ],
   );
   return { id, model };
@@ -821,6 +829,8 @@ export function createHiringPlanRoutes(
                   userId,
                   teamId,
                   companyId: lookup!.company_id,
+                  missionId: lookup!.mission_id,
+                  hiringPlanId,
                   roleKey: agent.roleKey,
                   name: agent.title,
                   modelTier: agent.modelTier,

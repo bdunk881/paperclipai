@@ -11,8 +11,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Loader2, RefreshCw } from "lucide-react";
+import { listAgents } from "../api/agentApi";
 import {
   getTicketActorProfile,
+  hydrateTicketActorProfiles,
   listTicketQueue,
   normalizeTicketSlaState,
   type TicketPriority,
@@ -40,7 +42,7 @@ export default function TicketActorView() {
     actorType: "agent" | "user";
     actorId: string;
   }>();
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +63,11 @@ export default function TicketActorView() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const response = await listTicketQueue(actor, accessToken);
+      const [response, agents] = await Promise.all([
+        listTicketQueue(actor, accessToken),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+      ]);
+      hydrateTicketActorProfiles({ agents, user });
       setTickets(response.tickets);
       setSource(response.source);
     } catch (loadError) {
@@ -71,7 +77,7 @@ export default function TicketActorView() {
     } finally {
       setLoading(false);
     }
-  }, [actor, getAccessToken]);
+  }, [actor, getAccessToken, user]);
 
   useEffect(() => {
     void load();

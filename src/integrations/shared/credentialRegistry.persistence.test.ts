@@ -161,8 +161,11 @@ describe("CredentialRegistry persistence", () => {
     );
     expect(records).toHaveLength(2);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
-      ["persist-list"]
+      // HEL-182 Codex P2: listStoredByUserAsync now filters at the SQL
+      // layer via the (service, user_id) index instead of pulling the
+      // whole service bucket.
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 AND user_id = $2 ORDER BY created_at DESC",
+      ["persist-list", "user-3"]
     );
   });
 });

@@ -15,7 +15,7 @@ export class ComposioConnectorService {
     const client = new ComposioClient(params.apiKey);
     const viewer = await client.viewer();
 
-    const credential = composioCredentialStore.saveApiKey({
+    const credential = await composioCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       metadata: { availableTools: String(viewer.availableTools) },

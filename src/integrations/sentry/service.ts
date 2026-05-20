@@ -68,7 +68,7 @@ export class SentryConnectorService {
       codeVerifier: state.verifier,
     });
 
-    const credential = sentryCredentialStore.saveOAuth({
+    const credential = await sentryCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -97,7 +97,7 @@ export class SentryConnectorService {
     const client = new SentryClient(params.apiKey, "api_key");
     const viewer = await client.viewer();
 
-    const credential = sentryCredentialStore.saveApiKey({
+    const credential = await sentryCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       organizationId: viewer.organizationId,

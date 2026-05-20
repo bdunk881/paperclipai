@@ -2274,6 +2274,221 @@ describe("POST /api/runs/:id/replay-with-latest", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/runs/:runId/replay-from-step (HEL-176)
+// ---------------------------------------------------------------------------
+
+describe("POST /api/runs/:runId/replay-from-step", () => {
+  /**
+   * Helper: create a run record with N step_results so the route's
+   * validation guards have something to chew on. Step outputs are
+   * deterministic strings so we can assert they survive the clone.
+   */
+  async function seedRun(
+    id: string,
+    {
+      userId = "hel-176-user",
+      workspaceId,
+      stepStatuses,
+      status,
+    }: {
+      userId?: string;
+      workspaceId?: string;
+      stepStatuses: Array<"success" | "failure">;
+      status?: "pending" | "queued" | "running" | "completed" | "failed" | "escalated" | "canceled" | "cancelling" | "awaiting_approval";
+    },
+  ) {
+    await runStore.create({
+      id,
+      templateId: "tpl-replay-route",
+      templateName: "Replay route template",
+      workspaceId,
+      status: status ?? (stepStatuses.includes("failure") ? "failed" : "completed"),
+      startedAt: new Date().toISOString(),
+      input: { seed: "value" },
+      stepResults: stepStatuses.map((status, ordinal) => ({
+        stepId: `step-${ordinal}`,
+        stepName: `Step ${ordinal}`,
+        status,
+        output: { [`out${ordinal}`]: `value-${ordinal}` },
+        durationMs: 5,
+      })),
+      workflowDag: {
+        id: "tpl-replay-route",
+        name: "Replay route template",
+        description: "",
+        category: "custom",
+        version: "1",
+        configFields: [],
+        steps: stepStatuses.map((_status, ordinal) => ({
+          id: `step-${ordinal}`,
+          name: `Step ${ordinal}`,
+          kind: "action" as const,
+          description: "",
+          inputKeys: [],
+          outputKeys: [`out${ordinal}`],
+          action: "noop",
+        })),
+        sampleInput: {},
+        expectedOutput: {},
+      },
+      userId,
+    });
+  }
+
+  it("returns 404 for an unknown run id", async () => {
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-missing/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it("returns 400 when stepIndex is missing or not a number", async () => {
+    await seedRun("run-replay-step-bad", {
+      stepStatuses: ["success", "success", "failure"],
+    });
+
+    const noBody = await request(app)
+      .post("/api/runs/run-replay-step-bad/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({});
+    expect(noBody.status).toBe(400);
+    expect(noBody.body.error).toMatch(/stepIndex/);
+
+    const stringIndex = await request(app)
+      .post("/api/runs/run-replay-step-bad/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: "1" });
+    expect(stringIndex.status).toBe(400);
+  });
+
+  it("returns 400 when stepIndex is out of range", async () => {
+    await seedRun("run-replay-step-oob", {
+      stepStatuses: ["success", "success", "failure"],
+    });
+
+    const tooLow = await request(app)
+      .post("/api/runs/run-replay-step-oob/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 0 });
+    expect(tooLow.status).toBe(400);
+    expect(tooLow.body.error).toMatch(/stepIndex/i);
+
+    const tooHigh = await request(app)
+      .post("/api/runs/run-replay-step-oob/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 99 });
+    expect(tooHigh.status).toBe(400);
+  });
+
+  it("returns 200 with a new run on the happy path", async () => {
+    await seedRun("run-replay-step-ok", {
+      stepStatuses: ["success", "success", "failure"],
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-ok/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 2 });
+    expect(res.status).toBe(200);
+    expect(res.body.run).toBeDefined();
+    expect(res.body.run.id).not.toBe("run-replay-step-ok");
+    expect(res.body.run.templateId).toBe("tpl-replay-route");
+    expect(res.body.run.stepResults).toHaveLength(2);
+    expect(res.body.run.stepResults[0].output).toEqual({ out0: "value-0" });
+    expect(res.body.run.stepResults[1].output).toEqual({ out1: "value-1" });
+
+    // The original run remains intact — replay does not mutate it.
+    const original = await runStore.get("run-replay-step-ok");
+    expect(original?.status).toBe("failed");
+    expect(original?.stepResults).toHaveLength(3);
+  });
+
+  it("returns 404 for a run owned by a different user", async () => {
+    await seedRun("run-replay-step-otheruser", {
+      userId: "someone-else",
+      stepStatuses: ["success", "failure"],
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-otheruser/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for a run owned by a different workspace", async () => {
+    // In production the workspaceResolver (Postgres-backed) binds
+    // req.workspaceId from the user's session. The test harness uses
+    // createExplicitWorkspaceHeaderResolver which reads x-workspace-id;
+    // setting that header simulates an authenticated request scoped to
+    // a workspace that does NOT own the run. The route's cross-workspace
+    // guard must reject this with 404.
+    await seedRun("run-replay-step-otherws", {
+      userId: "hel-176-user",
+      workspaceId: "foreign-workspace-id",
+      stepStatuses: ["success", "failure"],
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-otherws/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .set("x-workspace-id", "requesting-workspace-id")
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 401 when not authenticated", async () => {
+    const res = await request(app)
+      .post("/api/runs/run-irrelevant/replay-from-step")
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(401);
+  });
+
+  // HEL-176 Codex P2: only failed/escalated runs may be replayed.
+  it("returns 409 when replaying a non-failed run (running)", async () => {
+    await seedRun("run-replay-step-running", {
+      stepStatuses: ["success", "success"],
+      status: "running",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-running/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/only 'failed' or 'escalated' runs are replayable/);
+  });
+
+  it("returns 409 when replaying a completed run", async () => {
+    await seedRun("run-replay-step-completed", {
+      stepStatuses: ["success", "success"],
+      status: "completed",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-completed/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(409);
+  });
+
+  it("accepts an escalated run for replay", async () => {
+    await seedRun("run-replay-step-escalated", {
+      stepStatuses: ["success", "failure"],
+      status: "escalated",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-escalated/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/analytics/routing-decisions
 // ---------------------------------------------------------------------------
 
@@ -2570,6 +2785,33 @@ describe("GET /api/observability/throughput", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/webhooks/:templateId", () => {
+  // HEL-186: webhook triggers are feature-gated by WEBHOOK_TRIGGERS_ENABLED
+  // until per-template signing-secret support lands. Enable for these tests
+  // so the existing happy-path coverage continues to assert behaviour.
+  const originalWebhookFlag = process.env.WEBHOOK_TRIGGERS_ENABLED;
+  beforeAll(() => { process.env.WEBHOOK_TRIGGERS_ENABLED = "true"; });
+  afterAll(() => {
+    if (originalWebhookFlag === undefined) {
+      delete process.env.WEBHOOK_TRIGGERS_ENABLED;
+    } else {
+      process.env.WEBHOOK_TRIGGERS_ENABLED = originalWebhookFlag;
+    }
+  });
+
+  it("returns 503 when WEBHOOK_TRIGGERS_ENABLED is not set", async () => {
+    const prev = process.env.WEBHOOK_TRIGGERS_ENABLED;
+    delete process.env.WEBHOOK_TRIGGERS_ENABLED;
+    try {
+      const res = await request(app)
+        .post("/api/webhooks/tpl-support-bot")
+        .send({ ticketId: "WH-GATED" });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/disabled/i);
+    } finally {
+      process.env.WEBHOOK_TRIGGERS_ENABLED = prev;
+    }
+  });
+
   it("returns 202 with runId and status for a valid templateId", async () => {
     const res = await request(app)
       .post("/api/webhooks/tpl-support-bot")

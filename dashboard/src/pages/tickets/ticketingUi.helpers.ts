@@ -32,8 +32,25 @@ export function relativeTicketTime(value?: string): string {
   return `${days}d ago`;
 }
 
+// HEL-187: plain-language pill copy on the Assignments surface. AutoFlow's
+// mission is "hire AI agents like people"; "in_progress" / "blocked" /
+// "resolved" reads like a Jira queue. These labels read like a colleague's
+// week instead: "waiting on you" / "in flight" / "stuck" / "done".
 export function statusLabel(status: TicketStatus): string {
-  return status.replace("_", " ");
+  switch (status) {
+    case "open":
+      return "waiting on you";
+    case "in_progress":
+      return "in flight";
+    case "blocked":
+      return "stuck";
+    case "resolved":
+      return "done";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return String(status).replace("_", " ");
+  }
 }
 
 export function priorityLabel(priority: TicketPriority): string {

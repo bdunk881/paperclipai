@@ -180,7 +180,7 @@ const actorProfiles = new Map<
 
 export function registerTicketActorProfile(
   actor: TicketActorRef,
-  profile: { name: string; initials: string; title: string; tone: "indigo" | "teal" | "orange" | "slate" }
+  profile: TicketActorProfileInput
 ): void {
   actorProfiles.set(actorKey(actor), profile);
 }
@@ -279,6 +279,39 @@ function actorKey(actor: TicketActorRef): string {
   return `${actor.type}:${actor.id}`;
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type TicketActorProfileTone = "indigo" | "teal" | "orange" | "slate";
+
+export type TicketActorProfileInput = {
+  name: string;
+  initials: string;
+  title: string;
+  tone: TicketActorProfileTone;
+};
+
+export type HydrateTicketActorProfilesInput = {
+  agents: Array<{
+    id: string;
+    name: string;
+    roleKey?: string;
+    description?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  user?: { id: string; name: string } | null;
+};
+
+function initialsFromDisplayName(name: string, fallback = "AG"): string {
+  const initials = name
+    .split(/\s+/)
+    .map((part) => part[0] ?? "")
+    .join("")
+    .slice(0, 3)
+    .toUpperCase();
+  return initials || fallback;
+}
+
 function actorNameFromId(id: string): string {
   return id
     .split(/[:._-]/g)
@@ -287,26 +320,53 @@ function actorNameFromId(id: string): string {
     .join(" ");
 }
 
-export function getTicketActorProfile(actor: TicketActorRef): {
-  name: string;
-  initials: string;
-  title: string;
-  tone: "indigo" | "teal" | "orange" | "slate";
-} {
+function fallbackActorName(actor: TicketActorRef): string {
+  if (UUID_RE.test(actor.id)) {
+    const prefix = actor.type === "agent" ? "Agent" : "Teammate";
+    return `${prefix} · ${actor.id.slice(0, 8)}`;
+  }
+  return actorNameFromId(actor.id);
+}
+
+export function hydrateTicketActorProfiles(input: HydrateTicketActorProfilesInput): void {
+  if (input.user) {
+    registerTicketActorProfile(
+      { type: "user", id: input.user.id },
+      {
+        name: input.user.name,
+        initials: initialsFromDisplayName(input.user.name, "U"),
+        title: "Workspace member",
+        tone: "slate",
+      },
+    );
+  }
+
+  for (const agent of input.agents) {
+    registerTicketActorProfile(
+      { type: "agent", id: agent.id },
+      {
+        name: agent.name,
+        initials: initialsFromDisplayName(agent.name),
+        title:
+          typeof agent.metadata?.teamName === "string"
+            ? agent.metadata.teamName
+            : agent.roleKey ?? "Agent",
+        tone: "indigo",
+      },
+    );
+  }
+}
+
+export function getTicketActorProfile(actor: TicketActorRef): TicketActorProfileInput {
   const profile = actorProfiles.get(actorKey(actor));
   if (profile) return profile;
 
-  const name = actorNameFromId(actor.id);
-  const initials = name
-    .split(" ")
-    .map((part) => part[0] ?? "")
-    .join("")
-    .slice(0, 3)
-    .toUpperCase();
+  const name = fallbackActorName(actor);
+  const initials = initialsFromDisplayName(name, actor.id.slice(0, 2).toUpperCase());
 
   return {
     name,
-    initials: initials || actor.id.slice(0, 2).toUpperCase(),
+    initials,
     title: actor.type === "agent" ? "Agent" : "Human teammate",
     tone: actor.type === "agent" ? "indigo" : "slate",
   };
@@ -833,6 +893,42 @@ export async function runTicketAgent(
     throw new Error(message);
   }
   return res.json() as Promise<{ status: string; ticketId: string }>;
+}
+
+/**
+ * HEL-175: cancel the active agent run for this ticket. Backend looks
+ * up the latest `runs` row with status='running' for this ticket and
+ * flips it to 'cancelling'. The worker's cooperative cancel checkpoint
+ * picks up the new status and bails before the next external call.
+ *
+ * Returns 202 when an active run was found, 404 otherwise. The dashboard
+ * surfaces both as a toast (the 404 case maps to "No active run to cancel").
+ */
+export async function cancelTicketAgentRun(
+  ticketId: string,
+  accessToken?: string,
+): Promise<{ status: string; runId?: string; ticketId: string }> {
+  if (USE_MOCK_API) {
+    return { status: "cancelling", ticketId };
+  }
+  const res = await trackedFetch(
+    `${BASE}/tickets/${encodeURIComponent(ticketId)}/cancel-active-run`,
+    {
+      method: "DELETE",
+      headers: buildMutationHeaders(accessToken),
+    },
+  );
+  if (res.status === 404) {
+    // Idempotent UX: nothing to cancel is not an error from the caller's
+    // perspective; surface the status so the dashboard can show "No
+    // active run" rather than an error banner.
+    return { status: "no_active_run", ticketId };
+  }
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to cancel agent run");
+    throw new Error(message);
+  }
+  return res.json() as Promise<{ status: string; runId: string; ticketId: string }>;
 }
 
 export async function transitionTicket(

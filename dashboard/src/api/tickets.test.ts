@@ -100,3 +100,45 @@ describe("tickets api mock fallback", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+describe("ticket actor profiles", () => {
+  const AGENT_UUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+  it("hydrateTicketActorProfiles registers agent names by UUID", async () => {
+    const { hydrateTicketActorProfiles, getTicketActorProfile } = await import("./tickets");
+
+    hydrateTicketActorProfiles({
+      agents: [{ id: AGENT_UUID, name: "Ops Lead" }],
+    });
+
+    expect(getTicketActorProfile({ type: "agent", id: AGENT_UUID }).name).toBe("Ops Lead");
+  });
+
+  it("hydrateTicketActorProfiles registers the signed-in workspace member", async () => {
+    const { hydrateTicketActorProfiles, getTicketActorProfile } = await import("./tickets");
+
+    hydrateTicketActorProfiles({
+      agents: [],
+      user: { id: "user-42", name: "Alex Chen" },
+    });
+
+    expect(getTicketActorProfile({ type: "user", id: "user-42" }).name).toBe("Alex Chen");
+  });
+
+  it("uses a short UUID label when no profile exists for an agent assignee", async () => {
+    const { getTicketActorProfile } = await import("./tickets");
+
+    const profile = getTicketActorProfile({ type: "agent", id: AGENT_UUID });
+
+    expect(profile.name).toBe("Agent · a1b2c3d4");
+    expect(profile.name).not.toMatch(/E5f6/);
+  });
+
+  it("keeps slug-style fallback for legacy mock assignee ids", async () => {
+    const { getTicketActorProfile } = await import("./tickets");
+
+    expect(getTicketActorProfile({ type: "agent", id: "frontend-engineer" }).name).toBe(
+      "Frontend Engineer",
+    );
+  });
+});

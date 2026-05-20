@@ -23,7 +23,8 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { getTicketActorProfile } from "../api/tickets";
+import { listAgents } from "../api/agentApi";
+import { getTicketActorProfile, hydrateTicketActorProfiles } from "../api/tickets";
 import {
   getTicketSlaDashboard,
   type TicketSlaDashboard,
@@ -32,7 +33,7 @@ import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 
 export default function TicketSlaDashboard() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const [dashboard, setDashboard] = useState<TicketSlaDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +44,11 @@ export default function TicketSlaDashboard() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const nextDashboard = await getTicketSlaDashboard(accessToken);
+      const [nextDashboard, agents] = await Promise.all([
+        getTicketSlaDashboard(accessToken),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+      ]);
+      hydrateTicketActorProfiles({ agents, user });
       setDashboard(nextDashboard);
     } catch (loadError) {
       setError(
@@ -54,7 +59,7 @@ export default function TicketSlaDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [getAccessToken, user]);
 
   useEffect(() => {
     void loadDashboard();

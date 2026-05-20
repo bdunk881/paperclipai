@@ -241,4 +241,26 @@ describe("Composio connector", () => {
       })
     ).toThrow("Composio webhook replay detected");
   });
+
+  it("upsert dedupes prior active credentials for the same user before saving (HEL-182)", async () => {
+    // Composio scopes connections per user (no sub-account dimension). Two
+    // saves for the same userId should leave exactly one active row.
+    const first = await composioCredentialStore.saveApiKey({
+      userId: "user-dedup",
+      apiKey: "composio-first",
+    });
+
+    const second = await composioCredentialStore.saveApiKey({
+      userId: "user-dedup",
+      apiKey: "composio-second",
+    });
+
+    const active = composioCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+  });
 });

@@ -180,6 +180,72 @@ describe("GET /api/missions/:missionId (HEL-23 read)", () => {
   });
 });
 
+describe("PATCH /api/missions/:missionId (HEL-192 — edit draft brief)", () => {
+  it("returns 401 when no authenticated user is present", async () => {
+    const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
+    const res = await request(app)
+      .patch("/api/missions/22222222-2222-4222-8222-222222222222")
+      .send({ statement: "next" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 401 when no workspace context is present", async () => {
+    const app = buildApp({ sub: "user-1" });
+    const res = await request(app)
+      .patch("/api/missions/22222222-2222-4222-8222-222222222222")
+      .send({ statement: "next" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when the mission ID is malformed", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .patch("/api/missions/not-a-uuid")
+      .send({ statement: "next" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid mission ID/);
+  });
+
+  it("returns 400 when neither statement nor metadata is provided", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .patch("/api/missions/22222222-2222-4222-8222-222222222222")
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/At least one of/);
+  });
+
+  it("returns 400 when statement is not a string", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .patch("/api/missions/22222222-2222-4222-8222-222222222222")
+      .send({ statement: 42 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/string/);
+  });
+
+  it("returns 400 when statement is empty after trim", async () => {
+    const app = buildApp({
+      sub: "user-1",
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+    });
+    const res = await request(app)
+      .patch("/api/missions/22222222-2222-4222-8222-222222222222")
+      .send({ statement: "   " });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/required/);
+  });
+});
+
 describe("DELETE /api/missions/:missionId (Wave 1 — discard draft)", () => {
   it("returns 401 when no authenticated user is present", async () => {
     const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });

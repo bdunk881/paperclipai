@@ -13,6 +13,9 @@ function requireConnection<T>(value: T | undefined | null, message: string): T {
 
 async function sendSlack(config: NotificationTransportConfig, text: string): Promise<void> {
   const connectionId = requireConnection(config.connectionId, "Slack connection is not configured");
+  // HEL-180: async lookup so Slack credentials hydrate from Postgres after
+  // a Fly restart even if the notification fires before any other code path
+  // has touched this process's local bucket.
   const credential = await slackCredentialStore.getByIdAsync(connectionId, config.ownerUserId);
   if (!credential) {
     throw new Error("Slack connection is missing or revoked");

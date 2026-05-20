@@ -262,4 +262,33 @@ describe("Sentry connector", () => {
       sentryClientSecret: "sentry_secret_123",
     })).toThrow(/replay/i);
   });
+
+  it("upsert dedupes prior (user, organization) active credentials before saving (HEL-182)", async () => {
+    // Two OAuth saves for the same (userId, organizationSlug) should leave
+    // exactly one active row — the second one.
+    const first = await sentryCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "sentry-first",
+      scopes: ["event:read"],
+      organizationId: "org-dedup",
+      organizationSlug: "dedup-org",
+    });
+
+    const second = await sentryCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "sentry-second",
+      scopes: ["event:read", "event:write"],
+      organizationId: "org-dedup",
+      organizationSlug: "dedup-org",
+    });
+
+    const active = sentryCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.organizationSlug === "dedup-org" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("event:write");
+  });
 });

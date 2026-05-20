@@ -69,12 +69,19 @@ describe("executeAgentPrompt", () => {
       provider: "anthropic",
       model: "claude-sonnet",
     });
+    // HEL-175 changed the call sequence:
+    //   1. SELECT agent
+    //   2. INSERT runs (running)
+    //   3. SELECT runs (cancellation check #1)  [returns running]
+    //   4. SELECT runs (cancellation check #2)  [returns running]
+    //   5. UPDATE runs (finalize)
+    //   6. INSERT activity_events
     const pool = makePool([
-      // 1: load agent
       { rows: [AGENT_ROW], rowCount: 1 } as unknown as QueryResult,
-      // 2: insert run
       { rows: [], rowCount: 1 } as unknown as QueryResult,
-      // 3: insert activity event
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult,
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult,
+      { rows: [], rowCount: 1 } as unknown as QueryResult,
       { rows: [], rowCount: 1 } as unknown as QueryResult,
     ]);
 
@@ -90,23 +97,27 @@ describe("executeAgentPrompt", () => {
     });
 
     expect(result.needsHumanInput).toBe(false);
+    expect(result.cancelled).toBeUndefined();
     expect(runAgentTurn).toHaveBeenCalledTimes(1);
     const runArg = (runAgentTurn as jest.Mock).mock.calls[0]![0];
     expect(runArg.agentName).toBe("Marketing Agent");
     expect(runArg.systemPrompt).toContain("Marketing Agent");
     expect(runArg.systemPrompt).toContain("scheduled routine");
 
-    // Verify run-row INSERT used prompt mode (not workflow_version_id).
+    // INSERT runs (running) — call index 1.
     const runInsertCall = pool._recorder.calls[1]!;
     expect(runInsertCall.sql).toContain("INSERT INTO runs");
-    expect(runInsertCall.sql).toContain("workflow_version_id, status,");
-    // Params: id, workspaceId, routineId, status, startedAt, input,
-    // output, error, userId, prompt, sourceTicketId.
-    expect(runInsertCall.params[3]).toBe("completed");
-    expect(runInsertCall.params[9]).toBe("Generate this week's marketing summary.");
+    expect(runInsertCall.sql).toContain("'running'");
+    expect(runInsertCall.params[6]).toBe("Generate this week's marketing summary.");
 
-    // Verify activity event INSERT.
-    const activityCall = pool._recorder.calls[2]!;
+    // UPDATE runs (finalize) — call index 4.
+    const finalizeCall = pool._recorder.calls[4]!;
+    expect(finalizeCall.sql).toContain("UPDATE runs");
+    expect(finalizeCall.sql).toContain("SET status");
+    expect(finalizeCall.params[1]).toBe("completed");
+
+    // Activity event INSERT — call index 5.
+    const activityCall = pool._recorder.calls[5]!;
     expect(activityCall.sql).toContain("INSERT INTO activity_events");
   });
 
@@ -117,16 +128,23 @@ describe("executeAgentPrompt", () => {
       provider: "anthropic",
       model: "claude-sonnet",
     });
+    // HEL-175 call sequence with sourceTicketId:
+    //   1. SELECT agent
+    //   2. INSERT runs (running)
+    //   3. SELECT runs (cancel check #1)
+    //   4. SELECT runs (cancel check #2)
+    //   5. UPDATE runs (finalize)
+    //   6. INSERT ticket_updates (structured_update)
+    //   7. UPDATE tickets (in_progress)
+    //   8. INSERT activity_events
     const pool = makePool([
-      // 1: load agent
       { rows: [AGENT_ROW], rowCount: 1 } as unknown as QueryResult,
-      // 2: insert run
       { rows: [], rowCount: 1 } as unknown as QueryResult,
-      // 3: insert ticket_update
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult,
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult,
       { rows: [], rowCount: 1 } as unknown as QueryResult,
-      // 4: UPDATE tickets SET status='in_progress'
       { rows: [], rowCount: 1 } as unknown as QueryResult,
-      // 5: insert activity event
+      { rows: [], rowCount: 1 } as unknown as QueryResult,
       { rows: [], rowCount: 1 } as unknown as QueryResult,
     ]);
 
@@ -142,13 +160,15 @@ describe("executeAgentPrompt", () => {
 
     expect(result.needsHumanInput).toBe(false);
 
-    const updateInsertCall = pool._recorder.calls[2]!;
+    // ticket_updates INSERT — call index 5 (was 2 pre-HEL-175).
+    const updateInsertCall = pool._recorder.calls[5]!;
     expect(updateInsertCall.sql).toContain("INSERT INTO ticket_updates");
     expect(updateInsertCall.sql).toContain("'structured_update'");
     expect(updateInsertCall.params[0]).toBe(TICKET_ID);
     expect(updateInsertCall.params[1]).toBe(AGENT_ID);
 
-    const ticketUpdateCall = pool._recorder.calls[3]!;
+    // tickets UPDATE — call index 6.
+    const ticketUpdateCall = pool._recorder.calls[6]!;
     expect(ticketUpdateCall.sql).toContain("UPDATE tickets");
     expect(ticketUpdateCall.sql).toContain("status = 'in_progress'");
   });
@@ -162,8 +182,11 @@ describe("executeAgentPrompt", () => {
     });
     const pool = makePool([
       { rows: [AGENT_ROW], rowCount: 1 } as unknown as QueryResult, // agent
-      { rows: [], rowCount: 1 } as unknown as QueryResult, // run
-      { rows: [], rowCount: 1 } as unknown as QueryResult, // ticket update
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // INSERT runs
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult, // cancel check #1
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult, // cancel check #2
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // UPDATE runs (finalize)
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // ticket_update
       { rows: [], rowCount: 0 } as unknown as QueryResult, // ticket status update
       { rows: [], rowCount: 1 } as unknown as QueryResult, // activity
     ]);
@@ -179,9 +202,75 @@ describe("executeAgentPrompt", () => {
     });
 
     expect(result.needsHumanInput).toBe(true);
-    // Run row status should be "escalated".
-    const runInsertCall = pool._recorder.calls[1]!;
-    expect(runInsertCall.params[3]).toBe("escalated");
+    // UPDATE runs (finalize) writes status="escalated" — call index 4.
+    const finalizeCall = pool._recorder.calls[4]!;
+    expect(finalizeCall.sql).toContain("UPDATE runs");
+    expect(finalizeCall.params[1]).toBe("escalated");
+  });
+
+  // HEL-175: cooperative cancellation paths.
+  it("returns cancelled=true and skips the LLM call when cancellation is requested before runAgentTurn", async () => {
+    const pool = makePool([
+      { rows: [AGENT_ROW], rowCount: 1 } as unknown as QueryResult, // agent
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // INSERT runs
+      { rows: [{ status: "cancelling" }], rowCount: 1 } as unknown as QueryResult, // cancel check #1 — flipped
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // UPDATE runs (finalize → canceled)
+    ]);
+
+    const result = await executeAgentPrompt({
+      pool,
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      agentId: AGENT_ID,
+      prompt: "Long-running task that user wants to abort.",
+      sourceRoutineId: "00000000-0000-4000-8000-000000000099",
+      triggerKind: "schedule",
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.needsHumanInput).toBe(false);
+    expect(runAgentTurn).not.toHaveBeenCalled();
+
+    // UPDATE runs to canceled — call index 3.
+    const finalizeCall = pool._recorder.calls[3]!;
+    expect(finalizeCall.sql).toContain("UPDATE runs");
+    expect(finalizeCall.params[1]).toBe("canceled");
+  });
+
+  it("returns cancelled=true after the LLM call when cancellation was requested mid-flight", async () => {
+    (runAgentTurn as jest.Mock).mockResolvedValue({
+      text: "Some result that will be discarded.",
+      usage: { promptTokens: 50, completionTokens: 25 },
+      provider: "anthropic",
+      model: "claude-sonnet",
+    });
+    const pool = makePool([
+      { rows: [AGENT_ROW], rowCount: 1 } as unknown as QueryResult, // agent
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // INSERT runs
+      { rows: [{ status: "running" }], rowCount: 1 } as unknown as QueryResult, // cancel check #1
+      { rows: [{ status: "cancelling" }], rowCount: 1 } as unknown as QueryResult, // cancel check #2 — flipped post-LLM
+      { rows: [], rowCount: 1 } as unknown as QueryResult, // UPDATE runs (finalize → canceled)
+    ]);
+
+    const result = await executeAgentPrompt({
+      pool,
+      workspaceId: WORKSPACE_ID,
+      userId: USER_ID,
+      agentId: AGENT_ID,
+      prompt: "Pull the marketing report.",
+      triggerKind: "manual",
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(runAgentTurn).toHaveBeenCalledTimes(1); // LLM was called — cost was paid
+    // The result text from runAgentTurn IS surfaced (cost was paid; caller
+    // can inspect it for debugging) but the cancelled flag tells them to
+    // discard.
+    expect(result.result).toBe("Some result that will be discarded.");
+
+    const finalizeCall = pool._recorder.calls[4]!;
+    expect(finalizeCall.sql).toContain("UPDATE runs");
+    expect(finalizeCall.params[1]).toBe("canceled");
   });
 
   it("throws agent_not_found when the agent row is missing", async () => {

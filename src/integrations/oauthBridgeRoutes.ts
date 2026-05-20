@@ -384,7 +384,12 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
     return;
   }
 
-  switch (provider) {
+  // HEL-180 / Codex P1 round 5 on #926: try/catch around the entire switch
+  // so async credential-lookup or service-disconnect failures (Slack,
+  // Apollo) route through a structured error response instead of becoming
+  // unhandled promise rejections under Express 4.
+  try {
+    switch (provider) {
     case "gmail": {
       const current = gmailCredentialStore.getActiveByUser(userId);
       if (current) {
@@ -482,10 +487,14 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       break;
     }
     default:
-      break;
-  }
+        break;
+    }
 
-  res.status(204).send();
+    res.status(204).send();
+  } catch (error) {
+    const message = errorMessage(error);
+    res.status(errorStatusCode(error)).json({ error: message });
+  }
 });
 
 export default router;

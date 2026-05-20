@@ -179,7 +179,33 @@ export class SlackConnectorService {
     // HEL-180: hydrate from Postgres so the ConnectorHealth dashboard
     // (HEL-179 Gap 2) doesn't show every Slack workspace as "disabled"
     // immediately after an API restart.
-    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
+    //
+    // Codex P1 round 5 on #926: a transient Postgres failure on this
+    // hydration call would otherwise bubble out of `health()` as a
+    // rejected promise instead of returning a structured Tier1 health
+    // payload. Catch it explicitly and surface as a provider_error.
+    let credential: Awaited<ReturnType<typeof slackCredentialStore.getActiveByUserAsync>>;
+    try {
+      credential = await slackCredentialStore.getActiveByUserAsync(userId);
+    } catch (error) {
+      return buildTier1ConnectionHealth({
+        connector: "slack",
+        subject: userId,
+        checkedAt,
+        status: "provider_error",
+        recommendedNextAction: "Retry shortly — credential store is temporarily unavailable.",
+        details: {
+          auth: false,
+          apiReachable: false,
+          rateLimited: false,
+          errorType: "upstream",
+          message:
+            error instanceof Error
+              ? `Credential store unavailable: ${error.message}`
+              : "Credential store unavailable",
+        },
+      });
+    }
 
     if (!credential) {
       return buildTier1ConnectionHealth({
@@ -349,11 +375,22 @@ export class SlackConnectorService {
           }
 
           const refreshed = await refreshAccessToken(refreshToken);
+          // Codex P2 round 5 on #926: Slack token-refresh responses can
+          // legally omit the `scope` field. Without this guard, the
+          // refresh would overwrite the credential's persisted scopes
+          // with `[]`, and the next `health()` would mark a perfectly
+          // healthy workspace as missing every required scope.
+          //
+          // Only override scopes when the refresh response actually
+          // includes them; otherwise rotateToken keeps the existing set
+          // (it treats undefined `scopes` as "no change" — see
+          // credentialStore.rotateToken).
+          const refreshedScopes = parseScopes(refreshed.scope);
           slackCredentialStore.rotateToken({
             credentialId: credential.id,
             accessToken: refreshed.accessToken,
             refreshToken: refreshed.refreshToken,
-            scopes: parseScopes(refreshed.scope),
+            scopes: refreshedScopes.length > 0 ? refreshedScopes : undefined,
           });
           credential.metadata = {
             ...(credential.metadata ?? {}),

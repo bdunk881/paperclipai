@@ -231,6 +231,21 @@ describe("HEL-154 — confirm seeds a prompt-backed routine per agent", () => {
   // confirm transaction under a SAVEPOINT and is followed by a BullMQ
   // scheduler register after commit. Lock these wires in via source-string
   // assertion — the deep integration test runs in app.integration.test.ts.
+  it("stores missionId and hiringPlanId in agent metadata on confirm", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require("node:path") as typeof import("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "hiringPlanRoutes.ts"),
+      "utf8",
+    );
+    expect(src).toMatch(/missionId:\s*params\.missionId/);
+    expect(src).toMatch(/hiringPlanId:\s*params\.hiringPlanId/);
+    expect(src).toMatch(/metadata/);
+    expect(src).toMatch(/missionId:\s*lookup!\.mission_id/);
+  });
+
   it("seeds a prompt-backed routine alongside each provisioned agent", () => {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const fs = require("node:fs") as typeof import("node:fs");

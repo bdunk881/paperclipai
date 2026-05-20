@@ -21,6 +21,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Loader2, Sparkles, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { Af2PageHead } from "../components/af2";
 import { useToast } from "../components/ToastProvider";
 import {
   createMission,
@@ -268,18 +269,16 @@ export default function Hire() {
 
   return (
     <div className="af2-page text-af2-ink" style={{ maxWidth: 920 }}>
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Workforce · Hiring</div>
-          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
-            Hire from a mission.
-          </h1>
-          <div className="af2-page-head-meta">
+      <Af2PageHead
+        eyebrow="Workforce · Hiring"
+        title="Hire from a mission."
+        subtitle={
+          <>
             Tell AutoFlow what you need done. We&rsquo;ll draft an org, a budget, and the
             first week of work.
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {notice ? (
         <div

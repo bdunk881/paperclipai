@@ -199,7 +199,7 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
           onClick={openSearch}
           title="Search"
           aria-label="Open search"
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
         >
           <Search size={16} />
         </button>
@@ -218,7 +218,7 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         onClick={() => navigate("/approvals")}
         title="Inbox - Approvals"
         aria-label="Inbox - Approvals"
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
+        className="flex h-10 w-10 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
       >
         <Inbox size={16} />
       </button>
@@ -228,7 +228,7 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         onClick={handleHelp}
         title="Help & feedback"
         aria-label="Help and feedback"
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
+        className="flex h-10 w-10 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
       >
         <CircleHelp size={16} />
       </button>
@@ -237,7 +237,7 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         to="/settings/profile"
         title={user?.name ?? user?.email ?? "Profile"}
         aria-label="Open profile settings"
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-af2-clay to-af2-mustard text-[11px] font-bold uppercase text-white"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-af2-clay to-af2-mustard text-[11px] font-bold uppercase text-white"
       >
         {initials}
       </Link>

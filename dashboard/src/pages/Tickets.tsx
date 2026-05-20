@@ -25,9 +25,9 @@ import {
   collectKnownActors,
   createTicket,
   getTicketActorProfile,
+  hydrateTicketActorProfiles,
   listTickets,
   normalizeTicketSlaState,
-  registerTicketActorProfile,
   type TicketActorRef,
   type TicketPriority,
   type TicketRecord,
@@ -147,47 +147,13 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
         accessToken ? listMissions(accessToken).catch(() => []) : Promise.resolve([]),
       ]);
 
+      hydrateTicketActorProfiles({ agents, user });
+
       const actorSeed: TicketActorRef[] = [];
       if (user) {
-        const initials =
-          user.name
-            .split(/\s+/)
-            .map((part) => part[0] ?? "")
-            .join("")
-            .slice(0, 3)
-            .toUpperCase() || "U";
-        registerTicketActorProfile(
-          { type: "user", id: user.id },
-          {
-            name: user.name,
-            initials,
-            title: "Workspace member",
-            tone: "slate",
-          },
-        );
         actorSeed.push({ type: "user", id: user.id });
       }
-
       for (const agent of agents) {
-        const initials =
-          agent.name
-            .split(/\s+/)
-            .map((part) => part[0] ?? "")
-            .join("")
-            .slice(0, 3)
-            .toUpperCase() || "AG";
-        registerTicketActorProfile(
-          { type: "agent", id: agent.id },
-          {
-            name: agent.name,
-            initials,
-            title:
-              typeof agent.metadata?.teamName === "string"
-                ? agent.metadata.teamName
-                : agent.roleKey ?? "Agent",
-            tone: "indigo",
-          },
-        );
         actorSeed.push({ type: "agent", id: agent.id });
       }
 
@@ -206,20 +172,31 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     if (!initialData) {
       void loadTickets();
     } else {
-      // initialData seeds tickets+actors; we still want the mission
-      // list for the create modal picker.
+      // Loader supplies tickets but not actor display names — hydrate from agents roster.
       void (async () => {
         const accessToken = (await getAccessToken()) ?? undefined;
         if (!accessToken) return;
         try {
-          const m = await listMissions(accessToken);
+          const [agents, m] = await Promise.all([
+            listAgents(accessToken).catch(() => []),
+            listMissions(accessToken).catch(() => []),
+          ]);
+          hydrateTicketActorProfiles({ agents, user });
+          const actorSeed: TicketActorRef[] = [];
+          if (user) {
+            actorSeed.push({ type: "user", id: user.id });
+          }
+          for (const agent of agents) {
+            actorSeed.push({ type: "agent", id: agent.id });
+          }
+          setAvailableActors(collectKnownActors(initialData.tickets, actorSeed));
           setMissions(m);
         } catch {
           // Soft-fail — mission picker stays empty rather than breaking the page.
         }
       })();
     }
-  }, [getAccessToken, initialData, loadTickets]);
+  }, [getAccessToken, initialData, loadTickets, user]);
 
   useEffect(() => {
     const actionData = routeAction?.data;
@@ -368,8 +345,8 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             Mission assignments
           </h1>
           <div className="af2-page-head-meta">
-            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} in
-            the queue · {counts.urgent} urgent · {counts.blocked} blocked.
+            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} on
+            the team's plate · {counts.urgent} urgent · {counts.blocked} stuck.
           </div>
         </div>
         <div className="af2-page-actions">
@@ -400,9 +377,9 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       </div>
 
       <div className="af2-stats" style={{ marginBottom: 22 }}>
-        <Stat label="Queue" value={String(counts.total)} hint="Open scope across the workspace." />
-        <Stat label="Executing" value={String(counts.active)} hint="In flight right now." />
-        <Stat label="Blocked" value={String(counts.blocked)} hint="Needs external action." />
+        <Stat label="On the plate" value={String(counts.total)} hint="Open scope across the workspace." />
+        <Stat label="In flight" value={String(counts.active)} hint="Agents working right now." />
+        <Stat label="Stuck" value={String(counts.blocked)} hint="Needs a human or external action." />
         <Stat label="Urgent" value={String(counts.urgent)} hint="Priority assignments at risk." />
       </div>
 
@@ -517,7 +494,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
             style={{ fontSize: 15, color: "var(--af2-ink-2)", margin: 0 }}
           >
             {tickets.length === 0
-              ? "No assignments yet. Hand off work to an agent to start the queue."
+              ? "No assignments yet. Hand off work to an agent to get the team started."
               : "No assignments match those filters."}
           </p>
           <button
@@ -794,8 +771,8 @@ function NewAssignmentModal({
               Hand off work to an agent
             </h2>
             <p className="af2-muted" style={{ fontSize: 13, marginTop: 4 }}>
-              Scope to a mission, pick the agent, set priority. The ticket
-              shows up in their queue immediately.
+              Scope to a mission, pick the agent, set priority. The
+              assignment lands on their plate immediately.
             </p>
           </div>
           <button

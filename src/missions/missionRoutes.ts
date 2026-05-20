@@ -466,6 +466,175 @@ export function createMissionRoutes(
   }));
 
   // ---------------------------------------------------------------------
+  // PATCH /api/missions/:missionId — edit a draft mission's brief (HEL-192)
+  //
+  // Semantics:
+  //   - Only `statement` and `metadata` are editable. Both are optional;
+  //     at least one must be present.
+  //   - Only `status='draft'` missions accept edits. Once a hiring plan
+  //     has been confirmed (status moves past draft), the brief is
+  //     immutable. The dashboard should hide the edit affordance there.
+  //   - Returns the updated MissionListItem so the dashboard can replace
+  //     the row in place without a refetch.
+  // ---------------------------------------------------------------------
+  router.patch("/:missionId", async (req: AuthenticatedRequest, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+
+    const missionId = req.params.missionId;
+    if (!missionId || !UUID_RE.test(missionId)) {
+      res.status(400).json({ error: "Invalid mission ID format" });
+      return;
+    }
+
+    const body = req.body as { statement?: unknown; metadata?: unknown };
+    const hasStatement = body?.statement !== undefined;
+    const hasMetadata = body?.metadata !== undefined;
+    if (!hasStatement && !hasMetadata) {
+      res.status(400).json({
+        error: "At least one of `statement` or `metadata` must be provided",
+      });
+      return;
+    }
+
+    let nextStatement: string | undefined;
+    if (hasStatement) {
+      if (typeof body.statement !== "string") {
+        res.status(400).json({ error: "Mission statement must be a string" });
+        return;
+      }
+      nextStatement = body.statement.trim();
+      if (!nextStatement) {
+        res.status(400).json({ error: "Mission statement is required" });
+        return;
+      }
+      if (nextStatement.length > MAX_STATEMENT_LENGTH) {
+        res.status(400).json({
+          error: `Mission statement is too long (max ${MAX_STATEMENT_LENGTH} characters)`,
+        });
+        return;
+      }
+    }
+
+    const nextMetadata = hasMetadata ? sanitizeMetadata(body.metadata) : undefined;
+
+    interface UpdatedRow {
+      id: string;
+      statement: string;
+      status: string;
+      metadata: MissionMetadata;
+      created_at: Date | string;
+      company_id: string;
+      company_name: string;
+      latest_hiring_plan_id: string | null;
+    }
+
+    try {
+      const result = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) => {
+          // Confirm ownership + status='draft' before the UPDATE so the
+          // error surfaces as 404 (wrong workspace) vs 409 (not draft)
+          // rather than a silent no-op.
+          const existing = await client.query<{ status: string }>(
+            `SELECT m.status
+               FROM missions m
+               JOIN companies c ON c.id = m.company_id
+              WHERE m.id = $1 AND c.workspace_id = $2
+              LIMIT 1`,
+            [missionId, workspaceId],
+          );
+          if (existing.rows.length === 0) {
+            throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+          }
+          if (existing.rows[0].status !== "draft") {
+            throw Object.assign(
+              new Error(
+                "Only draft missions can be edited. Withdraw the hiring plan first.",
+              ),
+              { code: "NOT_DRAFT" },
+            );
+          }
+
+          // Build a partial UPDATE so we only touch the columns the
+          // caller asked to change.
+          const sets: string[] = [];
+          const args: unknown[] = [];
+          if (nextStatement !== undefined) {
+            args.push(nextStatement);
+            sets.push(`statement = $${args.length}`);
+          }
+          if (nextMetadata !== undefined) {
+            args.push(JSON.stringify(nextMetadata));
+            sets.push(`metadata = $${args.length}::jsonb`);
+          }
+          args.push(missionId);
+          const missionIdIdx = args.length;
+
+          await client.query(
+            `UPDATE missions
+                SET ${sets.join(", ")}
+              WHERE id = $${missionIdIdx}`,
+            args,
+          );
+
+          return client.query<UpdatedRow>(
+            `SELECT m.id, m.statement, m.status, m.metadata, m.created_at,
+                    m.company_id, c.name AS company_name,
+                    (
+                      SELECT hp.id FROM hiring_plans hp
+                       WHERE hp.mission_id = m.id
+                       ORDER BY hp.created_at DESC
+                       LIMIT 1
+                    ) AS latest_hiring_plan_id
+               FROM missions m
+               JOIN companies c ON c.id = m.company_id
+              WHERE m.id = $1
+              LIMIT 1`,
+            [missionId],
+          );
+        },
+      );
+
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        statement: row.statement,
+        status: row.status,
+        metadata: row.metadata ?? {},
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        companyId: row.company_id,
+        companyName: row.company_name,
+        latestHiringPlanId: row.latest_hiring_plan_id,
+      } satisfies MissionListItem);
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code === "NOT_FOUND") {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+      if (code === "NOT_DRAFT") {
+        res.status(409).json({ error: (err as Error).message });
+        return;
+      }
+      console.error(`[missions] patch failed: ${(err as Error).message}`);
+      Sentry.captureException(err, {
+        tags: { route: "PATCH /api/missions/:missionId", phase: "patch" },
+        contexts: { mission: { workspaceId, userId, missionId } },
+      });
+      res.status(500).json({ error: "Failed to update mission" });
+    }
+  });
+
+  // ---------------------------------------------------------------------
   // DELETE /api/missions/:missionId — discard a mission + any drafts
   //
   // Semantics:

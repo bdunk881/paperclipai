@@ -1152,6 +1152,34 @@ export async function startRun(
   );
 }
 
+/**
+ * POST /api/runs/:runId/replay-from-step (HEL-176)
+ *
+ * Resumes execution from `stepIndex`, cloning the outputs of steps
+ * 0..stepIndex-1 so already-successful work is not redone. The original
+ * run stays intact; the new run is returned with status `pending`.
+ */
+export async function replayRunFromStep(
+  runId: string,
+  stepIndex: number,
+  accessToken?: string,
+): Promise<WorkflowRun> {
+  const res = await trackedFetch(
+    `${BASE}/runs/${encodeURIComponent(runId)}/replay-from-step`,
+    {
+      method: "POST",
+      headers: buildJsonHeaders(accessToken),
+      body: JSON.stringify({ stepIndex }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to replay run from step: ${res.status}`);
+  }
+  const body = (await res.json()) as { run: WorkflowRun };
+  return body.run;
+}
+
 /** POST /api/workflows/generate — NL description → workflow steps */
 export async function generateWorkflow(
   description: string,
@@ -1220,136 +1248,6 @@ export async function debugStep(
     throw new Error(err?.error ?? `Debug request failed: ${res.status}`);
   }
   return res.json() as Promise<{ explanation: string; suggestion: string }>;
-}
-
-// ---------------------------------------------------------------------------
-// Proposal Builder API
-// ---------------------------------------------------------------------------
-
-export interface ProposalCrmRecord {
-  id: string;
-  accountName: string;
-  contactName: string;
-  contactEmail: string;
-  dealValue: number;
-  stage: string;
-  owner: string;
-  updatedAt: string;
-}
-
-export interface ProposalTemplateOption {
-  id: string;
-  name: string;
-  description: string;
-  focus: string;
-}
-
-export interface ProposalHistoryItem {
-  id: string;
-  accountName: string;
-  status: "Draft" | "Sent" | "Exported";
-  format: "PDF" | "DOCX";
-  exportedAt: string;
-}
-
-export interface ProposalUsageSummary {
-  used: number;
-  limit: number;
-}
-
-export interface ProposalDraftResult {
-  title: string;
-  body: string;
-  variableHints: string[];
-}
-
-export interface ProposalContextResponse {
-  records: ProposalCrmRecord[];
-  templates: ProposalTemplateOption[];
-  history: ProposalHistoryItem[];
-  usage: ProposalUsageSummary;
-}
-
-export interface CreateProposalRequest {
-  crmRecordIds: string[];
-  templateId: string;
-}
-
-export interface CreateProposalResponse {
-  jobId: string;
-  status: "queued" | "processing";
-  pollUrl?: string;
-}
-
-export interface ProposalJobStatusResponse {
-  jobId: string;
-  status: "queued" | "processing" | "completed" | "failed";
-  draft?: ProposalDraftResult;
-  events: string[];
-  usage?: ProposalUsageSummary;
-}
-
-const EMPTY_PROPOSAL_CONTEXT: ProposalContextResponse = {
-  records: [],
-  templates: [],
-  history: [],
-  usage: { used: 0, limit: 0 },
-};
-
-export async function listProposalContext(accessToken?: string): Promise<ProposalContextResponse> {
-  const res = await trackedFetch(`${BASE}/proposals/context`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (res.status === 404) {
-    return EMPTY_PROPOSAL_CONTEXT;
-  }
-  if (!res.ok) throw new Error(`Failed to fetch proposal context: ${res.status}`);
-  const data = await res.json();
-  return {
-    records: (data.records ?? []) as ProposalCrmRecord[],
-    templates: (data.templates ?? []) as ProposalTemplateOption[],
-    history: (data.history ?? []) as ProposalHistoryItem[],
-    usage: (data.usage ?? EMPTY_PROPOSAL_CONTEXT.usage) as ProposalUsageSummary,
-  };
-}
-
-export async function createProposalDraft(
-  input: CreateProposalRequest,
-  accessToken: string
-): Promise<CreateProposalResponse> {
-  const res = await trackedFetch(`${BASE}/proposals`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...buildAuthHeaders(accessToken),
-    },
-    body: JSON.stringify(input),
-  });
-  if (res.status === 404) {
-    throw new Error("Proposal drafts are not available on this environment yet.");
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to create proposal draft: ${res.status}`);
-  }
-  return res.json() as Promise<CreateProposalResponse>;
-}
-
-export async function getProposalJobStatus(
-  jobId: string,
-  accessToken: string
-): Promise<ProposalJobStatusResponse> {
-  const res = await trackedFetch(`${BASE}/proposals/${encodeURIComponent(jobId)}`, {
-    headers: buildAuthHeaders(accessToken),
-  });
-  if (res.status === 404) {
-    throw new Error("Proposal job status is not available on this environment yet.");
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Failed to fetch proposal job status: ${res.status}`);
-  }
-  return res.json() as Promise<ProposalJobStatusResponse>;
 }
 
 // ---------------------------------------------------------------------------

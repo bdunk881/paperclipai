@@ -188,6 +188,7 @@ async function loadCanonicalAgents(
     instructions: string | null;
     budget_monthly_usd: string | number;
     reporting_to_agent_id: string | null;
+    metadata: Record<string, unknown> | null;
     status: "active" | "paused" | "terminated";
     last_heartbeat_at: Date | string | null;
     created_at: Date | string;
@@ -204,7 +205,7 @@ async function loadCanonicalAgents(
       const result = await client.query<AgentRow>(
         `SELECT a.id, a.workspace_id, a.user_id, a.team_id, a.name,
                 a.role_key, a.model, a.instructions, a.budget_monthly_usd,
-                a.reporting_to_agent_id, a.status, a.last_heartbeat_at,
+                a.reporting_to_agent_id, a.metadata, a.status, a.last_heartbeat_at,
                 a.created_at, a.updated_at,
                 t.name AS team_name, t.description AS team_description
            FROM agents a
@@ -213,37 +214,44 @@ async function loadCanonicalAgents(
           ORDER BY a.created_at ASC`,
         [workspaceId],
       );
-      return result.rows.map((row) => ({
-        id: row.id,
-        userId: row.user_id,
-        name: row.name,
-        description: row.team_description,
-        roleKey: row.role_key,
-        model: row.model,
-        instructions: row.instructions ?? "",
-        status: toDashboardAgentStatus(row.status),
-        budgetMonthlyUsd: Number(row.budget_monthly_usd),
-        metadata: {
-          teamId: row.team_id,
-          teamName: row.team_name,
-          reportingToAgentId: row.reporting_to_agent_id,
-          workflowStepId: null,
-          workflowStepKind: null,
-        },
-        lastHeartbeatAt:
-          row.last_heartbeat_at instanceof Date
-            ? row.last_heartbeat_at.toISOString()
-            : (row.last_heartbeat_at ?? null),
-        lastRunAt: null,
-        createdAt:
-          row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : String(row.created_at),
-        updatedAt:
-          row.updated_at instanceof Date
-            ? row.updated_at.toISOString()
-            : String(row.updated_at),
-      }));
+      return result.rows.map((row) => {
+        const stored =
+          row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        return {
+          id: row.id,
+          userId: row.user_id,
+          name: row.name,
+          description: row.team_description,
+          roleKey: row.role_key,
+          model: row.model,
+          instructions: row.instructions ?? "",
+          status: toDashboardAgentStatus(row.status),
+          budgetMonthlyUsd: Number(row.budget_monthly_usd),
+          metadata: {
+            teamId: row.team_id,
+            teamName: row.team_name,
+            reportingToAgentId: row.reporting_to_agent_id,
+            workflowStepId: null,
+            workflowStepKind: null,
+            ...stored,
+          },
+          lastHeartbeatAt:
+            row.last_heartbeat_at instanceof Date
+              ? row.last_heartbeat_at.toISOString()
+              : (row.last_heartbeat_at ?? null),
+          lastRunAt: null,
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
+          updatedAt:
+            row.updated_at instanceof Date
+              ? row.updated_at.toISOString()
+              : String(row.updated_at),
+        };
+      });
     },
   );
 }
@@ -462,5 +470,209 @@ router.get("/:id/token-usage", asyncHandler<WorkspaceAwareRequest>(async (req, r
     daily,
   });
 }));
+
+// ---------------------------------------------------------------------------
+// PATCH /api/agents/:id (HEL-190 — edit agent)
+//
+// Accepts partial `{ name?, status?, budgetMonthlyUsd?, instructions? }`.
+// `status` accepts the canonical DB enum ("active" | "paused" |
+// "terminated"); the dashboard maps to its presentation vocabulary
+// (idle/running/paused/error) at render time. Use DELETE to soft-terminate.
+// ---------------------------------------------------------------------------
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VALID_STATUSES = new Set(["active", "paused", "terminated"]);
+const MAX_NAME_LENGTH = 120;
+const MAX_INSTRUCTIONS_LENGTH = 8000;
+const MAX_BUDGET_USD = 100_000;
+
+router.patch("/:id", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveRequestContext(req);
+  if (!context || !context.workspaceId) {
+    res.status(401).json({ error: "Authenticated user + workspace required" });
+    return;
+  }
+  if (!UUID_RE.test(req.params.id)) {
+    res.status(400).json({ error: "Invalid agent ID format" });
+    return;
+  }
+  if (!isPostgresPersistenceEnabled()) {
+    res.status(503).json({ error: "Agent updates require PostgreSQL persistence" });
+    return;
+  }
+
+  const body = req.body as {
+    name?: unknown;
+    status?: unknown;
+    budgetMonthlyUsd?: unknown;
+    instructions?: unknown;
+  };
+
+  const sets: string[] = [];
+  const args: unknown[] = [];
+
+  if (body?.name !== undefined) {
+    if (typeof body.name !== "string") {
+      res.status(400).json({ error: "name must be a string" });
+      return;
+    }
+    const trimmed = body.name.trim();
+    if (!trimmed) {
+      res.status(400).json({ error: "name cannot be empty" });
+      return;
+    }
+    if (trimmed.length > MAX_NAME_LENGTH) {
+      res.status(400).json({ error: `name too long (max ${MAX_NAME_LENGTH})` });
+      return;
+    }
+    args.push(trimmed);
+    sets.push(`name = $${args.length}`);
+  }
+
+  if (body?.status !== undefined) {
+    if (typeof body.status !== "string" || !VALID_STATUSES.has(body.status)) {
+      res.status(400).json({
+        error: "status must be one of: active, paused, terminated",
+      });
+      return;
+    }
+    args.push(body.status);
+    sets.push(`status = $${args.length}`);
+  }
+
+  if (body?.budgetMonthlyUsd !== undefined) {
+    const budget = Number(body.budgetMonthlyUsd);
+    if (!Number.isFinite(budget) || budget < 0 || budget > MAX_BUDGET_USD) {
+      res.status(400).json({
+        error: `budgetMonthlyUsd must be a number between 0 and ${MAX_BUDGET_USD}`,
+      });
+      return;
+    }
+    args.push(budget);
+    sets.push(`budget_monthly_usd = $${args.length}`);
+  }
+
+  if (body?.instructions !== undefined) {
+    if (typeof body.instructions !== "string") {
+      res.status(400).json({ error: "instructions must be a string" });
+      return;
+    }
+    if (body.instructions.length > MAX_INSTRUCTIONS_LENGTH) {
+      res.status(400).json({
+        error: `instructions too long (max ${MAX_INSTRUCTIONS_LENGTH})`,
+      });
+      return;
+    }
+    args.push(body.instructions);
+    sets.push(`instructions = $${args.length}`);
+  }
+
+  if (sets.length === 0) {
+    res.status(400).json({
+      error: "At least one of `name`, `status`, `budgetMonthlyUsd`, or `instructions` must be provided",
+    });
+    return;
+  }
+
+  // Always bump updated_at for free.
+  sets.push(`updated_at = NOW()`);
+  args.push(req.params.id);
+  args.push(context.workspaceId);
+
+  try {
+    const pool = getPostgresPool();
+    const result = await withWorkspaceContext(
+      pool,
+      { workspaceId: context.workspaceId, userId: context.userId },
+      (client) =>
+        client.query<{ id: string }>(
+          `UPDATE agents
+              SET ${sets.join(", ")}
+            WHERE id = $${args.length - 1}
+              AND workspace_id = $${args.length}
+          RETURNING id`,
+          args,
+        ),
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    const refreshed = await loadCanonicalAgents(
+      context.workspaceId,
+      context.userId,
+    );
+    const updated = refreshed.find((agent) => agent.id === req.params.id);
+    if (!updated) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    res.json(updated);
+  } catch (err) {
+    console.error(
+      `[agentRoutes] PATCH /:id failed for agent=${req.params.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to update agent" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/agents/:id (HEL-190 — soft-terminate)
+//
+// Soft-delete: sets status='terminated' so historical runs, org_edges,
+// and audit references stay intact. The dashboard hides terminated
+// agents from the default Team view but they remain queryable for audit.
+// Already-terminated agents return 200 (idempotent) so the dashboard's
+// "are you sure?" flow doesn't 404 on retry.
+// ---------------------------------------------------------------------------
+router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveRequestContext(req);
+  if (!context || !context.workspaceId) {
+    res.status(401).json({ error: "Authenticated user + workspace required" });
+    return;
+  }
+  if (!UUID_RE.test(req.params.id)) {
+    res.status(400).json({ error: "Invalid agent ID format" });
+    return;
+  }
+  if (!isPostgresPersistenceEnabled()) {
+    res.status(503).json({ error: "Agent termination requires PostgreSQL persistence" });
+    return;
+  }
+
+  try {
+    const pool = getPostgresPool();
+    const result = await withWorkspaceContext(
+      pool,
+      { workspaceId: context.workspaceId, userId: context.userId },
+      (client) =>
+        client.query<{ id: string }>(
+          `UPDATE agents
+              SET status = 'terminated', updated_at = NOW()
+            WHERE id = $1
+              AND workspace_id = $2
+          RETURNING id`,
+          [req.params.id, context.workspaceId],
+        ),
+    );
+
+    if (result.rowCount === 0) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    res.status(204).end();
+  } catch (err) {
+    console.error(
+      `[agentRoutes] DELETE /:id failed for agent=${req.params.id}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to terminate agent" });
+  }
+});
 
 export default router;

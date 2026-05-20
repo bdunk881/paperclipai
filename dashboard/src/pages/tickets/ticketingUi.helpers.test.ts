@@ -105,13 +105,25 @@ describe("relativeTicketTime", () => {
 // ---------------------------------------------------------------------------
 // statusLabel / priorityLabel / slaLabel
 // ---------------------------------------------------------------------------
-describe("statusLabel", () => {
-  it("replaces underscore with space", () => {
-    expect(statusLabel("in_progress")).toBe("in progress");
+describe("statusLabel (HEL-187 plain-language)", () => {
+  it("maps 'open' to 'waiting on you'", () => {
+    expect(statusLabel("open")).toBe("waiting on you");
   });
 
-  it("leaves non-underscored status as-is", () => {
-    expect(statusLabel("open")).toBe("open");
+  it("maps 'in_progress' to 'in flight'", () => {
+    expect(statusLabel("in_progress")).toBe("in flight");
+  });
+
+  it("maps 'blocked' to 'stuck'", () => {
+    expect(statusLabel("blocked")).toBe("stuck");
+  });
+
+  it("maps 'resolved' to 'done'", () => {
+    expect(statusLabel("resolved")).toBe("done");
+  });
+
+  it("maps 'cancelled' to 'cancelled' (unchanged but explicit)", () => {
+    expect(statusLabel("cancelled")).toBe("cancelled");
   });
 });
 

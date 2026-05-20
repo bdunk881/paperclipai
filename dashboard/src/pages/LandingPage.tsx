@@ -35,9 +35,9 @@ const FEATURES = [
   },
   {
     icon: Plug,
-    title: "1,000+ Integrations",
+    title: "Connect any tool",
     description:
-      "Connect to any API, database, or SaaS tool. OAuth, API keys, and webhooks out of the box.",
+      "First-class connectors for the apps SMB teams already use, plus any REST API or MCP server.",
     gradient: "from-af2-sage/20 to-af2-sage-2/20",
     iconColor: "text-af2-sage",
     borderColor: "border-af2-sage/40 hover:border-af2-sage/40",
@@ -64,7 +64,7 @@ const FEATURES = [
     icon: Shield,
     title: "Enterprise-Grade Security",
     description:
-      "SOC 2 ready. Role-based access, encrypted credentials, and full audit trails.",
+      "SOC 2 in progress. Role-based access, encrypted credentials, and full audit trails.",
     gradient: "from-blue-500/20 to-indigo-600/20",
     iconColor: "text-blue-400",
     borderColor: "border-blue-500/20 hover:border-blue-500/40",
@@ -108,10 +108,10 @@ const INTEGRATIONS = [
 ];
 
 const STATS = [
-  { value: "10x", label: "Faster than manual" },
-  { value: "100+", label: "Pre-built templates" },
-  { value: "99.9%", label: "Uptime SLA" },
-  { value: "24/7", label: "Agent runtime" },
+  { value: "Free", label: "During private beta" },
+  { value: "BYO", label: "LLM key + tier routing" },
+  { value: "HITL", label: "Approvals + audit trail" },
+  { value: "24/7", label: "Scheduled routines" },
 ];
 
 export default function LandingPage() {
@@ -422,7 +422,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-8">
             {[
               { icon: Lock, title: "Encrypted at Rest", desc: "AES-256 encryption for all credentials and sensitive data." },
-              { icon: Globe, title: "SOC 2 Ready", desc: "Enterprise compliance with full audit trails and access controls." },
+              { icon: Globe, title: "SOC 2 in progress", desc: "Auditing in flight. Full audit trail and role-based access controls already live." },
               { icon: Layers, title: "Your Infrastructure", desc: "Self-host or use our cloud. Data stays where you choose." },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4">

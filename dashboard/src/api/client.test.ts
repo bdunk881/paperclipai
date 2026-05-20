@@ -11,7 +11,6 @@ import * as authStorage from "../auth/authStorage";
 import {
   createApiKey,
   createLLMConfig,
-  createProposalDraft,
   createTemplate,
   debugStep,
   revokeApiKey,
@@ -23,7 +22,6 @@ import {
   getConnectorHealth,
   getControlPlaneTeam,
   listCompanyRoleTemplates,
-  getProposalJobStatus,
   getObservabilityStreamPath,
   getObservabilityThroughput,
   getMemoryStats,
@@ -33,7 +31,6 @@ import {
   listLLMConfigs,
   listObservabilityEvents,
   listMemoryEntries,
-  listProposalContext,
   listTemplates,
   getTemplate,
   listRuns,
@@ -742,31 +739,6 @@ describe("control plane client", () => {
     const headers = lastFetchOptions().headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer token-123");
     expect(headers["X-Paperclip-Run-Id"]).toBe("run-abc");
-  });
-});
-
-describe("proposal builder client", () => {
-  it("returns empty proposal context when /api/proposals/context returns 404", async () => {
-    mockFetchFail(404);
-    const result = await listProposalContext(ACCESS_TOKEN);
-    expect(lastFetchUrl()).toBe("/api/proposals/context");
-    expect(result.records).toEqual([]);
-    expect(result.templates).toEqual([]);
-  });
-
-  it("posts to /api/proposals when creating a draft", async () => {
-    mockFetch({ jobId: "job-123", status: "queued" }, 202);
-    await createProposalDraft({ crmRecordIds: ["crm-1"], templateId: "tpl-1" }, ACCESS_TOKEN);
-    expect(lastFetchUrl()).toBe("/api/proposals");
-    expect(lastFetchOptions().method).toBe("POST");
-  });
-
-  it("throws when proposal polling returns 404", async () => {
-    mockFetchFail(404);
-    await expect(getProposalJobStatus("job-123", ACCESS_TOKEN)).rejects.toThrow(
-      /not available/i,
-    );
-    expect(lastFetchUrl()).toBe("/api/proposals/job-123");
   });
 });
 

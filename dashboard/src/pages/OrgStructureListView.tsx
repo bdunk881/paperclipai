@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import type { Agent } from "../api/agentApi";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import type { AgentPresence } from "../hooks/useAgentPresence";
 import type { ListRow } from "./orgStructureModel";

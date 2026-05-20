@@ -477,7 +477,7 @@ export function createMissionRoutes(
   //   - Returns the updated MissionListItem so the dashboard can replace
   //     the row in place without a refetch.
   // ---------------------------------------------------------------------
-  router.patch("/:missionId", async (req: AuthenticatedRequest, res) => {
+  router.patch("/:missionId", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -632,7 +632,7 @@ export function createMissionRoutes(
       });
       res.status(500).json({ error: "Failed to update mission" });
     }
-  });
+  }));
 
   // ---------------------------------------------------------------------
   // DELETE /api/missions/:missionId — discard a mission + any drafts

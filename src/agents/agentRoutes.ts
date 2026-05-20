@@ -485,7 +485,7 @@ const MAX_NAME_LENGTH = 120;
 const MAX_INSTRUCTIONS_LENGTH = 8000;
 const MAX_BUDGET_USD = 100_000;
 
-router.patch("/:id", async (req: WorkspaceAwareRequest, res) => {
+router.patch("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context || !context.workspaceId) {
     res.status(401).json({ error: "Authenticated user + workspace required" });
@@ -617,7 +617,7 @@ router.patch("/:id", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to update agent" });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // DELETE /api/agents/:id (HEL-190 — soft-terminate)
@@ -628,7 +628,7 @@ router.patch("/:id", async (req: WorkspaceAwareRequest, res) => {
 // Already-terminated agents return 200 (idempotent) so the dashboard's
 // "are you sure?" flow doesn't 404 on retry.
 // ---------------------------------------------------------------------------
-router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
+router.delete("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context || !context.workspaceId) {
     res.status(401).json({ error: "Authenticated user + workspace required" });
@@ -673,6 +673,6 @@ router.delete("/:id", async (req: WorkspaceAwareRequest, res) => {
     );
     res.status(500).json({ error: "Failed to terminate agent" });
   }
-});
+}));
 
 export default router;

@@ -1,15 +1,23 @@
-# Dashboard Pages deploy runs for staging/master only. Dev dashboard deploy is
-# manual (wrangler) until Infisical dev secrets + lint gates are stable.
+# Dashboard Pages deploy. Triggers on every push to dev/staging/master (paths-
+# filtered) so the latest branch HEAD always reaches the matching Pages project:
+#   - dev    → autoflow-dashboard-dev-git (dev.app.helloautoflow.com)
+#   - staging/master → autoflow-dashboard (app.helloautoflow.com)
+#
+# The `target_branch == 'dev'` code path further down in this file selects the
+# dev project + dev secrets from Infisical. Adding `dev` to the trigger list
+# replaces the always-failing external Cloudflare Pages Git-integration check
+# (`Cloudflare Pages: autoflow-dashboard-dev`) which was blocking PR visibility
+# without actually deploying anything.
 name: Deploy Dashboard to Cloudflare Pages
 
 on:
   pull_request:
-    branches: [staging, master]
+    branches: [dev, staging, master]
     paths:
       - "dashboard/**"
       - ".github/workflows/dashboard-cloudflare-pages.yml"
   push:
-    branches: [staging, master]
+    branches: [dev, staging, master]
     paths:
       - "dashboard/**"
       - ".github/workflows/dashboard-cloudflare-pages.yml"

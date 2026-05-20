@@ -136,7 +136,7 @@ export function createWorkspaceRoutes(pool: Pool) {
   // on the user's "active" workspace — the path param picks the
   // workspace to mutate.
   // -------------------------------------------------------------------
-  router.patch("/:id", async (req: AuthenticatedRequest, res) => {
+  router.patch("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub?.trim();
     if (!userId) {
       res.status(401).json({ error: "Authenticated user required" });
@@ -201,7 +201,7 @@ export function createWorkspaceRoutes(pool: Pool) {
       console.error("[workspaces] Failed to patch workspace:", (error as Error).message);
       res.status(500).json({ error: "Failed to update workspace" });
     }
-  });
+  }));
 
   return router;
 }

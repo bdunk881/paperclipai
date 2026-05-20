@@ -1,0 +1,185 @@
+name: Rollback Fly API
+
+# Manual rollback for any autoflow-api Fly app. Pick the env (dev /
+# staging / production) and optionally a target Fly release version.
+# Uses `flyctl releases rollback` — Fly keeps prior releases available
+# for ~24h after a successful forward deploy.
+#
+# How to use:
+#   1. Go to Actions → Rollback Fly API → Run workflow
+#   2. Pick the env (dev | staging | production)
+#   3. Optionally enter the target Fly release version (e.g. 47).
+#      Leave blank to roll back one step.
+#   4. Enter a reason — it shows up in the action summary for audit.
+#
+# What this does NOT do:
+#   - Roll back DB migrations (Postgres is forward-only by design)
+#   - Roll back Cloudflare Pages (use CF dashboard's Deployments tab
+#     → Rollback for the autoflow-dashboard project)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Which environment to roll back"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+        default: dev
+      target_version:
+        description: "Fly release version to roll back to (e.g. 47). Leave blank to roll back one release."
+        required: false
+        type: string
+      reason:
+        description: "Why are we rolling back? (logged to the action summary)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  # Pair with the matching forward-deploy concurrency group so a
+  # rollback cannot race a deploy.
+  group: deploy-fly-api-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    name: Rollback autoflow-api-${{ inputs.env }}
+    runs-on: ubuntu-latest
+    # Re-uses the same GitHub environment as the forward deploy so any
+    # manual-approval gate on `production` still applies here.
+    environment: ${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve env-specific URLs
+        id: env
+        run: |
+          case "${{ inputs.env }}" in
+            dev)
+              echo "fly_app=autoflow-api-dev" >> $GITHUB_OUTPUT
+              echo "health_url=https://dev-api.helloautoflow.com/health" >> $GITHUB_OUTPUT
+              echo "infisical_env=dev" >> $GITHUB_OUTPUT
+              ;;
+            staging)
+              echo "fly_app=autoflow-api-staging" >> $GITHUB_OUTPUT
+              echo "health_url=https://staging-api.helloautoflow.com/health" >> $GITHUB_OUTPUT
+              echo "infisical_env=staging" >> $GITHUB_OUTPUT
+              ;;
+            production)
+              echo "fly_app=autoflow-api-production" >> $GITHUB_OUTPUT
+              echo "health_url=https://api.helloautoflow.com/health" >> $GITHUB_OUTPUT
+              echo "infisical_env=production" >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+      - name: Pull Fly token from Infisical
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: auto-flow-va-pt
+          env-slug: ${{ steps.env.outputs.infisical_env }}
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Verify Fly token
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN:-}" ]; then
+            echo "::error::FLY_API_TOKEN was not pulled from Infisical (env=${{ steps.env.outputs.infisical_env }})."
+            exit 1
+          fi
+          flyctl auth whoami
+
+      - name: Show current releases
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          echo "## Rollback target: \`${{ steps.env.outputs.fly_app }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Current state (latest 5 releases)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          flyctl releases -a "${{ steps.env.outputs.fly_app }}" --json \
+            | jq -r '.[:5] | .[] | "v\(.version) \(.status) \(.created_at) — \(.description)"' \
+            | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Determine target version
+        id: target
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+          INPUT_VERSION: ${{ inputs.target_version }}
+        run: |
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            target="$INPUT_VERSION"
+          else
+            # Default: the release immediately before the current one.
+            target=$(flyctl releases -a "${{ steps.env.outputs.fly_app }}" --json \
+              | jq -r 'sort_by(-.version) | .[1].version // empty')
+            if [ -z "$target" ]; then
+              echo "::error::No prior release found for ${{ steps.env.outputs.fly_app }} — cannot roll back."
+              exit 1
+            fi
+          fi
+          echo "target=$target" >> $GITHUB_OUTPUT
+          {
+            echo ""
+            echo "### Action"
+            echo "- **App:** \`${{ steps.env.outputs.fly_app }}\`"
+            echo "- **Target version:** v$target"
+            echo "- **Reason:** ${{ inputs.reason }}"
+            echo "- **Triggered by:** @${{ github.actor }}"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Execute rollback
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+          TARGET: ${{ steps.target.outputs.target }}
+        run: |
+          set -euo pipefail
+          flyctl releases rollback "$TARGET" -a "${{ steps.env.outputs.fly_app }}" --yes
+
+      - name: Verify post-rollback release
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### After rollback" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          flyctl releases -a "${{ steps.env.outputs.fly_app }}" --json \
+            | jq -r '.[:3] | .[] | "v\(.version) \(.status) \(.created_at) — \(.description)"' \
+            | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Smoke-test /health
+        run: |
+          # Let Fly's proxy flip to the rolled-back release.
+          sleep 20
+          set -euo pipefail
+          URL="${{ steps.env.outputs.health_url }}"
+          for i in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --max-time 10 "$URL" > /tmp/health.json; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### Smoke test ✓" >> $GITHUB_STEP_SUMMARY
+              echo "Attempt $i succeeded against \`$URL\`:" >> $GITHUB_STEP_SUMMARY
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              cat /tmp/health.json >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "Health probe attempt $i against $URL failed; retrying in 10s..."
+            sleep 10
+          done
+          echo "::error::Post-rollback health probe failed 5× against $URL."
+          exit 1

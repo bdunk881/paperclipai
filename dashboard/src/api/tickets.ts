@@ -295,8 +295,14 @@ export type HydrateTicketActorProfilesInput = {
   agents: Array<{
     id: string;
     name: string;
-    roleKey?: string;
-    description?: string;
+    // Widened to `string | null | undefined` so this accepts the canonical
+    // `Agent` shape from agentApi.ts where nullable fields are
+    // `string | null` (PATCH /api/agents/:id can clear them to NULL on
+    // the server side). Without the null union, every caller has to
+    // pre-coerce before passing — which the PRs that added the new
+    // Tickets / TicketDetail surfaces forgot to do, breaking the build.
+    roleKey?: string | null;
+    description?: string | null;
     metadata?: Record<string, unknown>;
   }>;
   user?: { id: string; name: string } | null;

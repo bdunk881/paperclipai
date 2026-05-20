@@ -40,10 +40,16 @@ const registry = new CredentialRegistry<SlackCredential, SlackCredentialPublic>(
   toPublic,
 });
 
-function upsertByUserAndTeam(credential: SlackCredential): void {
+async function upsertByUserAndTeam(credential: SlackCredential): Promise<void> {
   // Soft-evict any prior active credential for the same (userId, teamId).
   // Mirrors the legacy in-memory behavior: a fresh OAuth grant should
   // replace, not duplicate, an existing active connection.
+  //
+  // HEL-180 / Codex P2 on #926: hydrate from Postgres BEFORE purging so
+  // we catch credentials that exist only in the durable store after a
+  // restart. `registry.purge()` itself deletes hydrated rows from
+  // Postgres for any IDs it finds in the (now-populated) local bucket.
+  await registry.listStoredByUserAsync(credential.userId);
   registry.purge(
     (existing) =>
       existing.userId === credential.userId &&
@@ -54,7 +60,10 @@ function upsertByUserAndTeam(credential: SlackCredential): void {
 }
 
 export const slackCredentialStore = {
-  saveOAuth(params: {
+  // HEL-180 / Codex P2 on #926: now async so the upsert can hydrate
+  // existing credentials from Postgres before purging the prior active
+  // record for the same (userId, teamId).
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -62,7 +71,7 @@ export const slackCredentialStore = {
     teamId: string;
     teamName?: string;
     metadata?: Record<string, string>;
-  }): SlackCredentialPublic {
+  }): Promise<SlackCredentialPublic> {
     const credential: SlackCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -79,18 +88,18 @@ export const slackCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndTeam(credential);
+    await upsertByUserAndTeam(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     botToken: string;
     scopes?: string[];
     teamId: string;
     teamName?: string;
     metadata?: Record<string, string>;
-  }): SlackCredentialPublic {
+  }): Promise<SlackCredentialPublic> {
     const credential: SlackCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -104,7 +113,7 @@ export const slackCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndTeam(credential);
+    await upsertByUserAndTeam(credential);
     return toPublic(credential);
   },
 

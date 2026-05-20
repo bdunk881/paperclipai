@@ -191,7 +191,7 @@ describe("Slack connector", () => {
     // bucket IS the persistence layer — so we instead verify the API
     // contract: async lookups return the same shape as sync lookups when
     // hydration is needed.
-    const saved = slackCredentialStore.saveOAuth({
+    const saved = await slackCredentialStore.saveOAuth({
       userId: "user-restart",
       accessToken: "xoxb-fresh-1234",
       scopes: ["channels:read", "chat:write"],
@@ -221,11 +221,44 @@ describe("Slack connector", () => {
     expect(wrongUser).toBeNull();
   });
 
-  it("encrypts tokens via the shared connectorSecretVault (HEL-180)", () => {
+  it("upsert dedupes prior (user, team) active credentials before saving (Codex P2 on #926)", async () => {
+    // Save → save again for the same (user, team) — the second should
+    // replace the first, not coexist. The original Map-backed code did
+    // this synchronously by walking the in-memory Map. The refactored
+    // code must do the same after hydrating from Postgres, otherwise
+    // a post-restart reconnect leaves two active rows.
+    const first = await slackCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "xoxb-first",
+      scopes: ["chat:write"],
+      teamId: "T-dedup",
+    });
+
+    const second = await slackCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "xoxb-second",
+      scopes: ["chat:write", "channels:read"],
+      teamId: "T-dedup",
+    });
+
+    // Only ONE active credential should remain for this (user, team).
+    const active = await slackCredentialStore.getPublicByUserAsync("user-dedup");
+    const liveForTeam = active.filter(
+      (c) => c.teamId === "T-dedup" && !c.revokedAt,
+    );
+    expect(liveForTeam).toHaveLength(1);
+    expect(liveForTeam[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+
+    // The latest credential's scopes match the second save.
+    expect(liveForTeam[0]?.scopes).toContain("channels:read");
+  });
+
+  it("encrypts tokens via the shared connectorSecretVault (HEL-180)", async () => {
     // Verify that the refactored store still encrypts at rest — the raw
     // record's tokenEncrypted must NOT contain the plaintext, and the
     // decrypt helper must round-trip.
-    const saved = slackCredentialStore.saveOAuth({
+    const saved = await slackCredentialStore.saveOAuth({
       userId: "user-encrypt",
       accessToken: "xoxb-plaintext-secret-9999",
       refreshToken: "xoxr-refresh-secret-8888",

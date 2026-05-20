@@ -392,8 +392,12 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       break;
     }
     case "slack": {
-      // HEL-180: slackConnectorService.disconnect is now async.
-      const current = slackCredentialStore.getActiveByUser(userId);
+      // HEL-180: hydrate the credential from Postgres so the bridge
+      // disconnect actually revokes after a restart. Codex P1 on #926
+      // caught that the sync `getActiveByUser` would silently return
+      // null when the bucket was empty post-restart, leaving Slack
+      // connected even though the user clicked Disconnect.
+      const current = await slackCredentialStore.getActiveByUserAsync(userId);
       if (current) {
         await slackConnectorService.disconnect(userId, current.id);
       }

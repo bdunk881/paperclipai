@@ -27,7 +27,7 @@ describe("notification system", () => {
   });
 
   it("sends an immediate Slack notification for a configured workspace", async () => {
-    slackCredentialStore.saveApiKey({
+    await slackCredentialStore.saveApiKey({
       userId: "user-1",
       botToken: "xoxb-slack-token",
       teamId: "T123",

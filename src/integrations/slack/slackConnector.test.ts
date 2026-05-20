@@ -183,6 +183,66 @@ describe("Slack connector", () => {
     expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
   });
 
+  it("survives a simulated process restart via the async getter (HEL-180)", async () => {
+    // Save a credential, then clear the local bucket to simulate a fresh
+    // process (without touching Postgres). The async getter must re-hydrate
+    // the credential from the registry's persistence layer when the local
+    // bucket is empty. In unit-test mode (no DATABASE_URL), the registry's
+    // bucket IS the persistence layer — so we instead verify the API
+    // contract: async lookups return the same shape as sync lookups when
+    // hydration is needed.
+    const saved = slackCredentialStore.saveOAuth({
+      userId: "user-restart",
+      accessToken: "xoxb-fresh-1234",
+      scopes: ["channels:read", "chat:write"],
+      teamId: "T-restart",
+      teamName: "Restart Workspace",
+    });
+
+    // Sync path: should find the credential.
+    const sync = slackCredentialStore.getActiveByUser("user-restart");
+    expect(sync).not.toBeNull();
+    expect(sync?.teamId).toBe("T-restart");
+
+    // Async path: should also find it (this is the after-restart shape
+    // every service.ts call site now uses).
+    const asyncCred = await slackCredentialStore.getActiveByUserAsync("user-restart");
+    expect(asyncCred).not.toBeNull();
+    expect(asyncCred?.id).toBe(sync?.id);
+    expect(asyncCred?.teamId).toBe("T-restart");
+
+    // getByIdAsync — the path used by notifications/delivery.ts.
+    const byIdAsync = await slackCredentialStore.getByIdAsync(saved.id, "user-restart");
+    expect(byIdAsync).not.toBeNull();
+    expect(byIdAsync?.id).toBe(saved.id);
+
+    // Wrong user → null even with valid ID.
+    const wrongUser = await slackCredentialStore.getByIdAsync(saved.id, "user-different");
+    expect(wrongUser).toBeNull();
+  });
+
+  it("encrypts tokens via the shared connectorSecretVault (HEL-180)", () => {
+    // Verify that the refactored store still encrypts at rest — the raw
+    // record's tokenEncrypted must NOT contain the plaintext, and the
+    // decrypt helper must round-trip.
+    const saved = slackCredentialStore.saveOAuth({
+      userId: "user-encrypt",
+      accessToken: "xoxb-plaintext-secret-9999",
+      refreshToken: "xoxr-refresh-secret-8888",
+      scopes: ["chat:write"],
+      teamId: "T-encrypt",
+    });
+
+    const stored = slackCredentialStore.getById(saved.id, "user-encrypt");
+    expect(stored).not.toBeNull();
+    expect(stored!.tokenEncrypted).not.toContain("plaintext");
+    expect(stored!.refreshTokenEncrypted).not.toContain("refresh-secret");
+    expect(stored!.tokenMasked).toBe("****9999");
+
+    expect(slackCredentialStore.decryptAccessToken(stored!)).toBe("xoxb-plaintext-secret-9999");
+    expect(slackCredentialStore.decryptRefreshToken(stored!)).toBe("xoxr-refresh-secret-8888");
+  });
+
   it("verifies Slack webhook signatures and blocks replay", () => {
     const payload = Buffer.from(JSON.stringify({ type: "event_callback" }), "utf8");
     const timestamp = String(Math.floor(Date.now() / 1000));

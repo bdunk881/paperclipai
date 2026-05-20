@@ -392,9 +392,10 @@ router.delete("/:provider/disconnect", requireAuth, async (req: AuthenticatedReq
       break;
     }
     case "slack": {
+      // HEL-180: slackConnectorService.disconnect is now async.
       const current = slackCredentialStore.getActiveByUser(userId);
       if (current) {
-        slackConnectorService.disconnect(userId, current.id);
+        await slackConnectorService.disconnect(userId, current.id);
       }
       break;
     }

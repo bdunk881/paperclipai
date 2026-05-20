@@ -105,8 +105,10 @@ export class SlackConnectorService {
     return credential;
   }
 
-  listConnections(userId: string): SlackCredentialPublic[] {
-    return slackCredentialStore.getPublicByUser(userId);
+  async listConnections(userId: string): Promise<SlackCredentialPublic[]> {
+    // HEL-180: async so Postgres-backed credentials surface after restart
+    // even when nothing has touched this process's local bucket yet.
+    return slackCredentialStore.getPublicByUserAsync(userId);
   }
 
   async testConnection(userId: string): Promise<{ teamId: string; teamName?: string }> {
@@ -129,7 +131,10 @@ export class SlackConnectorService {
 
   async health(userId: string): Promise<SlackConnectionHealth> {
     const checkedAt = new Date().toISOString();
-    const credential = slackCredentialStore.getActiveByUser(userId);
+    // HEL-180: hydrate from Postgres so the ConnectorHealth dashboard
+    // (HEL-179 Gap 2) doesn't show every Slack workspace as "disabled"
+    // immediately after an API restart.
+    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
       return buildTier1ConnectionHealth({
@@ -217,8 +222,10 @@ export class SlackConnectorService {
     }
   }
 
-  disconnect(userId: string, credentialId: string): boolean {
-    const revoked = slackCredentialStore.revoke(credentialId, userId);
+  async disconnect(userId: string, credentialId: string): Promise<boolean> {
+    // HEL-180: async so disconnect can find + revoke a credential that
+    // was saved in a different process (only persisted in Postgres).
+    const revoked = await slackCredentialStore.revokeAsync(credentialId, userId);
 
     if (revoked) {
       logSlack({
@@ -250,7 +257,10 @@ export class SlackConnectorService {
   }
 
   private async ensureValidCredential(userId: string) {
-    const credential = slackCredentialStore.getActiveByUser(userId);
+    // HEL-180: hydrate from Postgres if the local bucket is empty
+    // (post-restart / multi-worker). Sync `getActiveByUser` would only
+    // see the in-process Map and return null after every Fly restart.
+    const credential = await slackCredentialStore.getActiveByUserAsync(userId);
     if (!credential) {
       throw new ConnectorError("auth", "Slack connector is not configured", 404);
     }

@@ -1,11 +1,15 @@
+# Dashboard Pages deploy runs for staging/master only. Dev dashboard deploy is
+# manual (wrangler) until Infisical dev secrets + lint gates are stable.
 name: Deploy Dashboard to Cloudflare Pages
 
 on:
   pull_request:
+    branches: [staging, master]
     paths:
       - "dashboard/**"
       - ".github/workflows/dashboard-cloudflare-pages.yml"
   push:
+    branches: [staging, master]
     paths:
       - "dashboard/**"
       - ".github/workflows/dashboard-cloudflare-pages.yml"

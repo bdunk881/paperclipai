@@ -98,7 +98,13 @@ describe("controlPlaneRoutes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ alerts, total: 2 });
-      expect(spy).toHaveBeenCalledWith("test-user", undefined);
+      // HEL-143 Codex P1: route forwards the resolved workspaceId so the
+      // store's workspace-wide path can build a ctx without a teamId hint.
+      expect(spy).toHaveBeenCalledWith(
+        "test-user",
+        undefined,
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      );
     });
 
     it("forwards the teamId query param as a filter", async () => {
@@ -109,7 +115,11 @@ describe("controlPlaneRoutes", () => {
         .query({ teamId: "team-zebra" });
 
       expect(response.status).toBe(200);
-      expect(spy).toHaveBeenCalledWith("test-user", "team-zebra");
+      expect(spy).toHaveBeenCalledWith(
+        "test-user",
+        "team-zebra",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      );
     });
 
     it("returns 500 with a stable shape when the store throws", async () => {

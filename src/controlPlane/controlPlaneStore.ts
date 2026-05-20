@@ -1854,13 +1854,41 @@ export const controlPlaneStore = {
       .sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
-  // DASH-64.3: now async — repository-backed. teamId required to
-  // resolve the workspace context.
-  async listBudgetAlerts(userId: string, teamId?: string): Promise<ControlPlaneBudgetAlert[]> {
-    if (!teamId) return [];
-    const ctx = await workspaceContextForTeam(teamId, userId);
+  // DASH-64.3 / HEL-143: repository-backed.
+  //
+  // Workspace context resolution (in priority order):
+  //   1. teamId provided  → derive workspace via workspaceContextForTeam
+  //      (existing behavior; keeps per-team filtering working).
+  //   2. workspaceId provided → use it directly. This is the workspace-wide
+  //      read path used by `BudgetDashboard`'s "Recent budget alerts" panel
+  //      — the route handler passes the resolved `context.workspaceId` from
+  //      `resolveWorkspaceContext()`.
+  //   3. Test mode fallback → workspaceId = userId, matching the convention
+  //      used by `workspaceContextForTeam` for auto-provisioned test teams.
+  //   4. Otherwise → []  (genuinely unknown workspace; safer than leaking
+  //      cross-tenant data).
+  //
+  // HEL-143 Codex P1 fix: prior to this revision, the no-teamId path
+  // returned `[]` unconditionally, so the default workspace-wide query
+  // never returned alerts — the dashboard panel was effectively dead.
+  async listBudgetAlerts(
+    userId: string,
+    teamId?: string,
+    workspaceId?: string,
+  ): Promise<ControlPlaneBudgetAlert[]> {
+    let ctx: { workspaceId: string; userId: string } | undefined;
+    if (teamId) {
+      ctx = await workspaceContextForTeam(teamId, userId);
+    } else if (workspaceId) {
+      ctx = { workspaceId, userId };
+    } else if (!postgresPersistenceAvailable()) {
+      ctx = { workspaceId: userId, userId };
+    }
     if (!ctx) return [];
-    const rows = await controlPlaneRepository.listBudgetAlerts(ctx, { teamId });
+    const rows = await controlPlaneRepository.listBudgetAlerts(
+      ctx,
+      teamId ? { teamId } : undefined,
+    );
     return rows.sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 

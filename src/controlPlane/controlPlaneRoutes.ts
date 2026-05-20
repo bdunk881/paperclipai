@@ -849,7 +849,14 @@ router.get("/budget-alerts", async (req: WorkspaceAwareRequest, res) => {
   }
   const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
   try {
-    const alerts = await controlPlaneStore.listBudgetAlerts(context.userId, teamId);
+    // HEL-143 Codex P1: pass workspaceId so the no-teamId path returns the
+    // full workspace-wide alert list (the store now short-circuits to [] only
+    // when neither teamId nor workspaceId resolves).
+    const alerts = await controlPlaneStore.listBudgetAlerts(
+      context.userId,
+      teamId,
+      context.workspaceId,
+    );
     res.json({ alerts, total: alerts.length });
   } catch (err) {
     console.error(

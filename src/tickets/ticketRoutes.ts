@@ -1111,6 +1111,53 @@ router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, r
   res.status(202).json({ status: "queued", ticketId: aggregate.ticket.id });
 });
 
+/**
+ * HEL-175: cancel the in-flight agent run for this ticket.
+ *
+ * Finds the most recent `runs` row where `source_ticket_id = :id` and
+ * `status = 'running'` and flips it to `'cancelling'`. The worker's
+ * cooperative cancel checkpoint in `executeAgentPrompt` reads the
+ * status and bails before the next external call.
+ *
+ * Returns:
+ *   - 202 with the cancelled run row when one was found
+ *   - 404 when no active run exists for this ticket (idempotent UX:
+ *     dashboard's Cancel button can be clicked without checking first)
+ */
+router.delete("/:id/cancel-active-run", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  if (!isPostgresConfigured()) {
+    res.status(503).json({ error: "Run cancellation requires PostgreSQL persistence." });
+    return;
+  }
+  const pool = getPostgresPool();
+  // Look up the active run for this ticket. Latest started_at wins so
+  // re-clicks of Run-agent followed by Cancel target the freshest one.
+  const activeResult = await pool.query<{ id: string }>(
+    `SELECT id::text
+       FROM runs
+      WHERE source_ticket_id = $1::uuid
+        AND status = 'running'
+        AND workspace_id = $2::uuid
+      ORDER BY started_at DESC
+      LIMIT 1`,
+    [req.params.id, context.workspaceId],
+  );
+  if (activeResult.rowCount === 0) {
+    res.status(404).json({ error: "No active agent run found for this ticket" });
+    return;
+  }
+  const runId = activeResult.rows[0]!.id;
+  await pool.query(
+    `UPDATE runs SET status = 'cancelling' WHERE id = $1::uuid AND status = 'running'`,
+    [runId],
+  );
+  res.status(202).json({ status: "cancelling", runId, ticketId: req.params.id });
+});
+
 router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest, res) => {
   const parsed = parseBody(transitionSchema, req, res);
   if (!parsed) {

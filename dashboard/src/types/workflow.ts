@@ -91,7 +91,10 @@ export interface WorkflowRun {
   routineId?: string;
   workflowVersionId?: string;
   workflowVersion?: number;
-  status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled";
+  // HEL-175: 'cancelling' is the intermediate state after the cancel
+  // request is accepted but before the worker's next checkpoint flips it
+  // to 'canceled'. Always converges to 'canceled' or 'completed'.
+  status: "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled" | "cancelling";
   startedAt: string;
   completedAt?: string;
   input: Record<string, unknown>;

@@ -18,6 +18,7 @@ const ticketsApiMocks = vi.hoisted(() => ({
   transitionTicket: vi.fn(),
   searchTicketMemories: vi.fn(),
   runTicketAgent: vi.fn(),
+  cancelTicketAgentRun: vi.fn(),
 }));
 
 const agentApiMocks = vi.hoisted(() => ({
@@ -41,6 +42,7 @@ vi.mock("../api/tickets", async () => {
     transitionTicket: ticketsApiMocks.transitionTicket,
     searchTicketMemories: ticketsApiMocks.searchTicketMemories,
     runTicketAgent: ticketsApiMocks.runTicketAgent,
+    cancelTicketAgentRun: ticketsApiMocks.cancelTicketAgentRun,
   };
 });
 
@@ -142,6 +144,11 @@ describe("TicketDetail", () => {
       ok: true,
       runId: "run-1",
       needsHumanInput: false,
+    });
+    ticketsApiMocks.cancelTicketAgentRun.mockResolvedValue({
+      status: "cancelling",
+      runId: "run-1",
+      ticketId: "ticket-1",
     });
     agentApiMocks.listAgents.mockResolvedValue([
       {
@@ -282,6 +289,47 @@ describe("TicketDetail", () => {
     // Wait for the page to mount.
     await screen.findByText("Memory");
     expect(screen.queryByRole("button", { name: /run agent/i })).not.toBeInTheDocument();
+  });
+
+  it("calls cancelTicketAgentRun and shows the sage toast on success (HEL-175)", async () => {
+    const user = userEvent.setup();
+    renderTicketDetail();
+
+    const cancelButton = await screen.findByRole("button", { name: /cancel agent/i });
+    await user.click(cancelButton);
+
+    await waitFor(() => {
+      expect(ticketsApiMocks.cancelTicketAgentRun).toHaveBeenCalledWith("ticket-1", "token-123");
+    });
+
+    expect(
+      await screen.findByText(/cancel requested.*run will stop at the next checkpoint/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the 'No active run' toast when no run is in flight (HEL-175)", async () => {
+    ticketsApiMocks.cancelTicketAgentRun.mockResolvedValueOnce({
+      status: "no_active_run",
+      ticketId: "ticket-1",
+    });
+    const user = userEvent.setup();
+    renderTicketDetail();
+
+    await user.click(await screen.findByRole("button", { name: /cancel agent/i }));
+
+    expect(await screen.findByText(/no active agent run to cancel/i)).toBeInTheDocument();
+  });
+
+  it("surfaces a clay error banner when Cancel-agent fails (HEL-175)", async () => {
+    ticketsApiMocks.cancelTicketAgentRun.mockRejectedValueOnce(
+      new Error("cancellation request was rejected"),
+    );
+    const user = userEvent.setup();
+    renderTicketDetail();
+
+    await user.click(await screen.findByRole("button", { name: /cancel agent/i }));
+
+    expect(await screen.findByText("cancellation request was rejected")).toBeInTheDocument();
   });
 
   it("does not advertise mock ticket data when both live and fallback loads fail", async () => {

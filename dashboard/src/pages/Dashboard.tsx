@@ -327,7 +327,7 @@ export default function Dashboard() {
         <div className="af2-stat">
           <div className="af2-stat-label">Hours saved · 7d</div>
           <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Tracking lands with HEL-118</div>
+          <div className="af2-stat-delta">Coming soon</div>
         </div>
         <div className="af2-stat">
           <div className="af2-stat-label">Spend · month</div>
@@ -341,7 +341,7 @@ export default function Dashboard() {
         <div className="af2-stat">
           <div className="af2-stat-label">Approval p50</div>
           <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Median wired with approvals rollup</div>
+          <div className="af2-stat-delta">Coming soon</div>
         </div>
       </div>
 

@@ -229,7 +229,7 @@ export default function BudgetDashboard() {
         <div className="af2-stat">
           <div className="af2-stat-label">Cost per hour saved</div>
           <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Wired with HEL-118 step_results</div>
+          <div className="af2-stat-delta">Coming soon</div>
         </div>
       </div>
 
@@ -515,7 +515,7 @@ export default function BudgetDashboard() {
         <div className="af2-row" style={{ gap: 8 }}>
           <span className="af2-mono" style={{ fontSize: 14 }}>—</span>
           <span className="af2-muted" style={{ fontSize: 12.5 }}>
-            Per-model rollup lands with HEL-118 step_results.cost_cents aggregation.
+            Per-model rollup coming soon.
           </span>
         </div>
       </div>

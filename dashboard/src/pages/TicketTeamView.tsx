@@ -65,7 +65,7 @@ export default function TicketTeamView() {
       <div className="af2-page-head">
         <div>
           <div className="af2-eyebrow">Run · Assignments · Team</div>
-          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+          <h1 className="af2-h1 mt-1.5 font-af2-serif">
             Team assignment view
           </h1>
           <div className="af2-page-head-meta">
@@ -76,8 +76,7 @@ export default function TicketTeamView() {
         <div className="af2-page-actions">
           <Link
             to="/mission-assignments"
-            className="af2-btn af2-btn-ghost af2-btn-sm"
-            style={{ textDecoration: "none" }}
+            className="af2-btn af2-btn-ghost af2-btn-sm no-underline"
           >
             ← Back to queue
           </Link>
@@ -86,8 +85,7 @@ export default function TicketTeamView() {
             onClick={() => {
               void load();
             }}
-            className="af2-btn af2-btn-sm"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            className="af2-btn af2-btn-sm inline-flex items-center gap-1.5"
             aria-label="Refresh team view"
           >
             <RefreshCw size={13} />
@@ -99,24 +97,14 @@ export default function TicketTeamView() {
       <TicketSourceNotice source={source} />
 
       {loading ? (
-        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
-          <Loader2
-            className="animate-spin"
-            style={{ margin: "0 auto 12px", opacity: 0.5 }}
-          />
+        <div className="af2-card p-10 text-center">
+          <Loader2 className="mx-auto mb-3 animate-spin opacity-50" />
           <p className="af2-muted">Loading team view…</p>
         </div>
       ) : error ? (
         <div
           role="alert"
-          style={{
-            padding: "12px 16px",
-            borderRadius: "var(--af2-radius)",
-            border: "1px solid rgba(192,84,76,0.30)",
-            background: "rgba(192,84,76,0.10)",
-            color: "var(--af2-clay)",
-            fontSize: 13,
-          }}
+          className="rounded-[var(--af2-radius)] border border-[rgba(192,84,76,0.30)] bg-[rgba(192,84,76,0.10)] px-4 py-3 text-[13px] text-af2-clay"
         >
           {error}
         </div>
@@ -126,13 +114,7 @@ export default function TicketTeamView() {
           body="Hand off work to an agent to start the team queue."
         />
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-            gap: 20,
-          }}
-        >
+        <div className="grid gap-5 lg:grid-cols-2">
           <ActorColumn
             title="Agents"
             body="Operational workload for autonomous teammates."
@@ -163,88 +145,44 @@ function ActorColumn({
   icon: React.ReactNode;
 }) {
   return (
-    <section className="af2-card" style={{ padding: 18 }}>
-      <div
-        className="af2-eyebrow"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-      >
+    <section className="af2-card p-4">
+      <div className="af2-eyebrow inline-flex items-center gap-1.5">
         {icon}
         {title}
       </div>
-      <p className="af2-muted" style={{ fontSize: 12, marginTop: 6 }}>
+      <p className="af2-muted mt-1.5 text-xs">
         {body}
       </p>
 
       {actors.length === 0 ? (
-        <p
-          className="af2-muted-2"
-          style={{ fontSize: 12, marginTop: 18, textAlign: "center" }}
-        >
+        <p className="af2-muted-2 mt-4 text-center text-xs">
           No {title.toLowerCase()} in the queue.
         </p>
       ) : (
-        <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+        <div className="mt-3.5 grid gap-2">
           {actors.map((actor) => {
             const profile = getTicketActorProfile(actor);
             return (
               <Link
                 key={`${actor.type}:${actor.id}`}
                 to={`/mission-assignments/actors/${actor.type}/${actor.id}`}
-                className="af2-card"
-                style={{
-                  padding: 14,
-                  textDecoration: "none",
-                  color: "inherit",
-                  borderColor: "var(--af2-line)",
-                }}
+                className="af2-card block border-af2-line p-3.5 text-inherit no-underline"
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div
-                      className="font-af2-serif"
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: "var(--af2-ink)",
-                      }}
-                    >
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <div className="font-af2-serif text-[15px] font-semibold text-af2-ink">
                       {profile.name}
                     </div>
-                    <div
-                      className="af2-mono af2-muted-2"
-                      style={{
-                        fontSize: 10.5,
-                        marginTop: 4,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                      }}
-                    >
+                    <div className="af2-mono af2-muted-2 mt-1 text-[10.5px] uppercase tracking-[0.08em]">
                       {profile.title}
                     </div>
                   </div>
-                  <span
-                    className="af2-pill"
-                    style={{ flexShrink: 0, fontSize: 11 }}
-                  >
+                  <span className="af2-pill shrink-0 text-[11px]">
                     {actor.total} total
                   </span>
                 </div>
 
-                <div
-                  style={{
-                    marginTop: 12,
-                    display: "grid",
-                    gridTemplateColumns: "repeat(4, 1fr)",
-                    gap: 6,
-                  }}
-                >
+                <div className="mt-3 grid grid-cols-4 gap-1.5">
                   <CountPill label="Open" value={actor.open} />
                   <CountPill label="Active" value={actor.in_progress} tone="sage" />
                   <CountPill label="Blocked" value={actor.blocked} tone="mustard" />
@@ -271,31 +209,25 @@ function CountPill({
   const { fg, bg } = toneStyle(tone);
   return (
     <div
+      className="rounded-lg border px-1.5 py-2 text-center"
+      // Tone colors are data-derived; static spacing and type stay in classes.
       style={{
-        padding: "8px 6px",
-        borderRadius: 8,
-        border: `1px solid ${bg}`,
+        borderColor: bg,
         background: bg,
-        textAlign: "center",
       }}
     >
       <div
-        className="af2-mono"
+        className="af2-mono text-[10px] uppercase tracking-[0.06em]"
         style={{
-          fontSize: 10,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
           color: fg,
         }}
       >
         {label}
       </div>
       <div
+        className="mt-0.5 text-base font-semibold"
         style={{
-          fontSize: 16,
-          fontWeight: 600,
           color: fg,
-          marginTop: 2,
         }}
       >
         {value}

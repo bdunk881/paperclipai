@@ -65,7 +65,7 @@ export default function TicketSlaDashboard() {
       <div className="af2-page-head">
         <div>
           <div className="af2-eyebrow">Run · Assignments · SLA</div>
-          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+          <h1 className="af2-h1 mt-1.5 font-af2-serif">
             Mission Assignment SLA Dashboard
           </h1>
           <div className="af2-page-head-meta">
@@ -76,20 +76,13 @@ export default function TicketSlaDashboard() {
         <div className="af2-page-actions">
           <Link
             to="/mission-assignments"
-            className="af2-btn af2-btn-ghost af2-btn-sm"
-            style={{ textDecoration: "none" }}
+            className="af2-btn af2-btn-ghost af2-btn-sm no-underline"
           >
             ← Back to queue
           </Link>
           <Link
             to="/settings/ticketing-sla"
-            className="af2-btn"
-            style={{
-              textDecoration: "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
+            className="af2-btn inline-flex items-center gap-1.5 no-underline"
           >
             SLA settings
             <ArrowUpRight size={13} />
@@ -99,8 +92,7 @@ export default function TicketSlaDashboard() {
             onClick={() => {
               void loadDashboard();
             }}
-            className="af2-btn af2-btn-sm"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            className="af2-btn af2-btn-sm inline-flex items-center gap-1.5"
             aria-label="Refresh SLA dashboard"
           >
             <RefreshCw size={13} />
@@ -110,31 +102,21 @@ export default function TicketSlaDashboard() {
       </div>
 
       {loading ? (
-        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
-          <Loader2
-            className="animate-spin"
-            style={{ margin: "0 auto 12px", opacity: 0.5 }}
-          />
+        <div className="af2-card p-10 text-center">
+          <Loader2 className="mx-auto mb-3 animate-spin opacity-50" />
           <p className="af2-muted">Loading SLA dashboard…</p>
         </div>
       ) : error ? (
         <div
           role="alert"
-          style={{
-            padding: "12px 16px",
-            borderRadius: "var(--af2-radius)",
-            border: "1px solid rgba(192,84,76,0.30)",
-            background: "rgba(192,84,76,0.10)",
-            color: "var(--af2-clay)",
-            fontSize: 13,
-          }}
+          className="rounded-[var(--af2-radius)] border border-[rgba(192,84,76,0.30)] bg-[rgba(192,84,76,0.10)] px-4 py-3 text-[13px] text-af2-clay"
         >
           {error}
         </div>
       ) : dashboard ? (
         <>
           {/* Summary strip — Breach Rate / Avg first response / Active breaches. */}
-          <div className="af2-stats" style={{ marginBottom: 22 }}>
+          <div className="af2-stats mb-6">
             {dashboard.summaryCards.map((card) => {
               const improving = card.trend === "improving";
               return (
@@ -142,12 +124,10 @@ export default function TicketSlaDashboard() {
                   <div className="af2-stat-label">{card.label}</div>
                   <div className="af2-stat-value">{card.value}</div>
                   <div
-                    className="af2-stat-delta"
+                    className="af2-stat-delta inline-flex items-center gap-1"
+                    // Trend color is data-derived; static layout lives in classes.
                     style={{
                       color: improving ? "var(--af2-sage)" : "var(--af2-clay)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
                     }}
                   >
                     {!improving ? <AlertTriangle size={11} /> : null}
@@ -159,68 +139,35 @@ export default function TicketSlaDashboard() {
           </div>
 
           {/* Two-column row: resolution distribution + per-priority breakdown */}
-          <div
-            style={{
-              display: "grid",
-              gap: 20,
-              gridTemplateColumns: "minmax(0, 1.1fr) minmax(320px, 0.9fr)",
-              marginBottom: 22,
-            }}
-          >
-            <section className="af2-card" style={{ padding: 18 }}>
+          <div className="mb-6 grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+            <section className="af2-card p-4">
               <div className="af2-eyebrow">Time to resolution</div>
-              <h2
-                className="af2-h3 font-af2-serif"
-                style={{ marginTop: 6, marginBottom: 14 }}
-              >
+              <h2 className="af2-h3 mb-3.5 mt-1.5 font-af2-serif">
                 Distribution
               </h2>
-              <div style={{ display: "grid", gap: 12 }}>
+              <div className="grid gap-3">
                 {dashboard.resolutionBuckets.map((bucket) => (
                   <div
                     key={bucket.label}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "84px minmax(0, 1fr) 80px",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
+                    className="grid items-center gap-3 [grid-template-columns:84px_minmax(0,1fr)_80px]"
                   >
                     <span
-                      className="af2-mono af2-muted-2"
-                      style={{
-                        fontSize: 11,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                      }}
+                      className="af2-mono af2-muted-2 text-[11px] uppercase tracking-[0.06em]"
                     >
                       {bucket.label}
                     </span>
-                    <div
-                      style={{
-                        height: 10,
-                        borderRadius: 999,
-                        background: "var(--af2-paper-2)",
-                        overflow: "hidden",
-                      }}
-                    >
+                    <div className="h-2.5 overflow-hidden rounded-full bg-af2-paper-2">
                       <div
+                        // Runtime width comes from live SLA bucket percentages;
+                        // keep it inline so the bar accurately reflects data.
+                        className="h-full rounded-full bg-af2-clay transition-[width] duration-200 ease-out"
                         style={{
-                          height: "100%",
                           width: `${Math.max(bucket.percent, 4)}%`,
-                          background: "var(--af2-clay)",
-                          borderRadius: 999,
-                          transition: "width 220ms ease-out",
                         }}
                       />
                     </div>
                     <span
-                      className="af2-mono"
-                      style={{
-                        fontSize: 12,
-                        textAlign: "right",
-                        color: "var(--af2-ink-2)",
-                      }}
+                      className="af2-mono text-right text-xs text-af2-ink-2"
                     >
                       {bucket.count} · {bucket.percent}%
                     </span>
@@ -229,65 +176,33 @@ export default function TicketSlaDashboard() {
               </div>
             </section>
 
-            <section className="af2-card" style={{ padding: 18 }}>
+            <section className="af2-card p-4">
               <div className="af2-eyebrow">Per priority</div>
-              <h2
-                className="af2-h3 font-af2-serif"
-                style={{ marginTop: 6, marginBottom: 14 }}
-              >
+              <h2 className="af2-h3 mb-3.5 mt-1.5 font-af2-serif">
                 Breach rate
               </h2>
-              <div style={{ display: "grid", gap: 8 }}>
+              <div className="grid gap-2">
                 {dashboard.priorityBreakdown.map((row) => (
                   <Link
                     key={row.priority}
                     to={`/mission-assignments?priority=${row.priority}`}
-                    className="af2-card"
-                    style={{
-                      padding: 12,
-                      textDecoration: "none",
-                      color: "inherit",
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto",
-                      alignItems: "center",
-                      gap: 10,
-                      borderColor: "var(--af2-line)",
-                    }}
+                    className="af2-card grid items-center gap-2.5 border-af2-line p-3 text-inherit no-underline [grid-template-columns:minmax(0,1fr)_auto]"
                   >
-                    <div style={{ minWidth: 0 }}>
+                    <div className="min-w-0">
                       <div
-                        className="af2-mono"
-                        style={{
-                          fontSize: 11,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.08em",
-                          color: "var(--af2-ink-3)",
-                        }}
+                        className="af2-mono text-[11px] uppercase tracking-[0.08em] text-af2-ink-3"
                       >
                         {row.priority}
                       </div>
-                      <div
-                        className="af2-muted"
-                        style={{ fontSize: 12, marginTop: 4 }}
-                      >
+                      <div className="af2-muted mt-1 text-xs">
                         {row.activeCount} active · {row.atRiskCount} at risk
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        className="font-af2-serif"
-                        style={{
-                          fontSize: 18,
-                          fontWeight: 600,
-                          color: "var(--af2-ink)",
-                        }}
-                      >
+                    <div className="text-right">
+                      <div className="font-af2-serif text-lg font-semibold text-af2-ink">
                         {row.breachRate}%
                       </div>
-                      <div
-                        className="af2-muted-2"
-                        style={{ fontSize: 11 }}
-                      >
+                      <div className="af2-muted-2 text-[11px]">
                         breach rate
                       </div>
                     </div>
@@ -298,24 +213,13 @@ export default function TicketSlaDashboard() {
           </div>
 
           {/* Per-actor table */}
-          <section className="af2-card" style={{ padding: 18 }}>
+          <section className="af2-card p-4">
             <div className="af2-eyebrow">Per actor</div>
-            <h2
-              className="af2-h3 font-af2-serif"
-              style={{ marginTop: 6, marginBottom: 14 }}
-            >
+            <h2 className="af2-h3 mb-3.5 mt-1.5 font-af2-serif">
               Performance breakdown
             </h2>
             <div className="af2-list">
-              <div
-                className="af2-list-head"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns:
-                    "minmax(0, 1.4fr) 90px 90px 100px 140px",
-                  gap: 12,
-                }}
-              >
+              <div className="af2-list-head grid gap-3 [grid-template-columns:minmax(0,1.4fr)_90px_90px_100px_140px]">
                 <span>Actor</span>
                 <span>Active</span>
                 <span>At risk</span>
@@ -328,58 +232,28 @@ export default function TicketSlaDashboard() {
                   <Link
                     key={`${row.actor.type}:${row.actor.id}`}
                     to={`/mission-assignments/actors/${row.actor.type}/${row.actor.id}`}
-                    className="af2-list-row"
-                    style={{
-                      gridTemplateColumns:
-                        "minmax(0, 1.4fr) 90px 90px 100px 140px",
-                      gap: 12,
-                      textDecoration: "none",
-                      color: "inherit",
-                      cursor: "pointer",
-                      borderBottom:
-                        idx < dashboard.actorBreakdown.length - 1
-                          ? "1px solid var(--af2-line)"
-                          : "none",
-                    }}
+                    className={`af2-list-row grid cursor-pointer gap-3 text-inherit no-underline [grid-template-columns:minmax(0,1.4fr)_90px_90px_100px_140px] ${
+                      idx < dashboard.actorBreakdown.length - 1
+                        ? "border-b border-af2-line"
+                        : "border-b-0"
+                    }`}
                   >
                     <span
-                      className="font-af2-serif"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        fontSize: 14,
-                        color: "var(--af2-ink)",
-                      }}
+                      className="inline-flex items-center gap-1.5 font-af2-serif text-sm text-af2-ink"
                     >
                       {profile.name}
-                      <ArrowUpRight
-                        size={12}
-                        style={{ color: "var(--af2-muted)" }}
-                      />
+                      <ArrowUpRight size={12} className="text-af2-ink-3" />
                     </span>
-                    <span
-                      className="af2-mono"
-                      style={{ fontSize: 12, color: "var(--af2-ink-2)" }}
-                    >
+                    <span className="af2-mono text-xs text-af2-ink-2">
                       {row.activeCount}
                     </span>
-                    <span
-                      className="af2-mono"
-                      style={{ fontSize: 12, color: "var(--af2-mustard)" }}
-                    >
+                    <span className="af2-mono text-xs text-af2-mustard">
                       {row.atRiskCount}
                     </span>
-                    <span
-                      className="af2-mono"
-                      style={{ fontSize: 12, color: "var(--af2-clay)" }}
-                    >
+                    <span className="af2-mono text-xs text-af2-clay">
                       {row.breachedCount}
                     </span>
-                    <span
-                      className="af2-mono"
-                      style={{ fontSize: 12, color: "var(--af2-ink-2)" }}
-                    >
+                    <span className="af2-mono text-xs text-af2-ink-2">
                       {row.avgResolutionHours.toFixed(1)}h
                     </span>
                   </Link>

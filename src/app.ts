@@ -1092,9 +1092,21 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
 });
 
 /**
- * Cancel a queued (not yet running) run.
- * Removes the BullMQ job if it is still waiting, then marks the run canceled.
- * Returns 409 if the run has already started or finished.
+ * Cancel a run.
+ *
+ * HEL-108 originally only accepted 'queued'/'pending' runs (removed the
+ * BullMQ job and flipped status straight to 'canceled').
+ *
+ * HEL-175 extends this to 'running' runs as well, but rather than killing
+ * the worker mid-step it flips the status to 'cancelling'. The worker
+ * checks `runs.status` at the next safe checkpoint (e.g. before invoking
+ * `runAgentTurn()`) and transitions 'cancelling' → 'canceled' on the way
+ * out. The HTTP response is 202 Accepted for in-flight cancellations so
+ * the dashboard knows the cancel was registered but execution may take a
+ * moment to wind down.
+ *
+ * Status that allows cancellation: queued | pending | running.
+ * Anything else (completed, failed, canceled, etc.) returns 409.
  */
 app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
@@ -1106,24 +1118,44 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
     return;
   }
 
-  if (run.status !== "queued" && run.status !== "pending") {
+  const cancellable = new Set(["queued", "pending", "running"]);
+  if (!cancellable.has(run.status)) {
     res.status(409).json({ error: `Run cannot be canceled: status is '${run.status}'` });
     return;
   }
+
+  const isInFlight = run.status === "running";
 
   const runQueue = getRunQueue();
   if (runQueue) {
     try {
       const job = await runQueue.getJob(runId);
       if (job) {
+        // If the job hasn't actually picked up yet, remove it outright —
+        // safer than letting it start and then race the cancellation flag.
+        // BullMQ's `getState()` would let us be more precise; `.remove()`
+        // on an in-flight job is a no-op so this is safe either way.
         await job.remove();
       }
     } catch {
-      // Job may already be gone; continue to update DB status.
+      // Job may already be gone or in-flight; continue to update DB status.
     }
   }
 
-  const canceled = await runStore.update(runId, { status: "canceled", completedAt: new Date().toISOString() });
+  if (isInFlight) {
+    // HEL-175: cooperative cancellation. The worker's checkpoint
+    // (executeAgentPrompt et al.) reads `runs.status` and bails before
+    // the next external call.
+    const updated = await runStore.update(runId, { status: "cancelling" });
+    res.status(202).json(updated);
+    return;
+  }
+
+  // Queued/pending: never started → flip straight to canceled.
+  const canceled = await runStore.update(runId, {
+    status: "canceled",
+    completedAt: new Date().toISOString(),
+  });
   res.json(canceled);
 });
 

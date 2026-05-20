@@ -20,6 +20,7 @@ import {
   addTicketUpdate,
   getTicket,
   getTicketActorProfile,
+  cancelTicketAgentRun,
   runTicketAgent,
   searchTicketMemories,
   transitionTicket,
@@ -106,6 +107,10 @@ export default function TicketDetail({
   const [runAgentBusy, setRunAgentBusy] = useState(false);
   const [runAgentError, setRunAgentError] = useState<string | null>(null);
   const [runAgentToast, setRunAgentToast] = useState<string | null>(null);
+  // HEL-175: cancel-active-run UI state. Surfaces a clay error banner on
+  // failure and a sage toast on success ("Cancel requested — the run will
+  // stop at the next checkpoint").
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const ticket = aggregate?.ticket ?? null;
   const updates = useMemo(() => aggregate?.updates ?? [], [aggregate]);
@@ -592,33 +597,68 @@ export default function TicketDetail({
             ← Back to queue
           </Link>
           {/* HEL-174: Run-agent CTA. Visible when ticket is open or
-              in_progress AND has at least one agent assignee. */}
+              in_progress AND has at least one agent assignee.
+              HEL-175: Cancel agent CTA rendered alongside — looks up the
+              latest running run and flips it to 'cancelling'. */}
           {(() => {
             const hasAgentAssignee = ticket.assignees.some((a) => a.type === "agent");
             const isActive = ticket.status === "open" || ticket.status === "in_progress";
             if (!hasAgentAssignee || !isActive) return null;
             return (
-              <button
-                type="button"
-                className="af2-btn af2-btn-sm"
-                disabled={runAgentBusy}
-                onClick={async () => {
-                  setRunAgentBusy(true);
-                  setRunAgentError(null);
-                  setRunAgentToast(null);
-                  try {
-                    const token = (await getAccessToken()) ?? undefined;
-                    await runTicketAgent(ticket.id, token);
-                    setRunAgentToast("Agent run queued — the timeline will update when it completes.");
-                  } catch (err) {
-                    setRunAgentError(err instanceof Error ? err.message : "Failed to run agent");
-                  } finally {
-                    setRunAgentBusy(false);
-                  }
-                }}
-              >
-                {runAgentBusy ? "Queueing…" : "Run agent"}
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="af2-btn af2-btn-sm"
+                  disabled={runAgentBusy || cancelBusy}
+                  onClick={async () => {
+                    setRunAgentBusy(true);
+                    setRunAgentError(null);
+                    setRunAgentToast(null);
+                    try {
+                      const token = (await getAccessToken()) ?? undefined;
+                      await runTicketAgent(ticket.id, token);
+                      setRunAgentToast("Agent run queued — the timeline will update when it completes.");
+                    } catch (err) {
+                      setRunAgentError(err instanceof Error ? err.message : "Failed to run agent");
+                    } finally {
+                      setRunAgentBusy(false);
+                    }
+                  }}
+                >
+                  {runAgentBusy ? "Queueing…" : "Run agent"}
+                </button>
+                <button
+                  type="button"
+                  className="af2-btn af2-btn-sm af2-btn-ghost"
+                  disabled={runAgentBusy || cancelBusy}
+                  style={{ color: "var(--af2-clay)" }}
+                  onClick={async () => {
+                    setCancelBusy(true);
+                    setRunAgentError(null);
+                    setRunAgentToast(null);
+                    try {
+                      const token = (await getAccessToken()) ?? undefined;
+                      const outcome = await cancelTicketAgentRun(ticket.id, token);
+                      if (outcome.status === "no_active_run") {
+                        setRunAgentToast("No active agent run to cancel.");
+                      } else {
+                        setRunAgentToast(
+                          "Cancel requested — the run will stop at the next checkpoint.",
+                        );
+                      }
+                    } catch (err) {
+                      setRunAgentError(
+                        err instanceof Error ? err.message : "Failed to cancel agent run",
+                      );
+                    } finally {
+                      setCancelBusy(false);
+                    }
+                  }}
+                  title="Stop the currently in-flight agent run for this ticket"
+                >
+                  {cancelBusy ? "Cancelling…" : "Cancel agent"}
+                </button>
+              </>
             );
           })()}
           <Link

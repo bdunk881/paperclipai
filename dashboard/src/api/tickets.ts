@@ -835,6 +835,42 @@ export async function runTicketAgent(
   return res.json() as Promise<{ status: string; ticketId: string }>;
 }
 
+/**
+ * HEL-175: cancel the active agent run for this ticket. Backend looks
+ * up the latest `runs` row with status='running' for this ticket and
+ * flips it to 'cancelling'. The worker's cooperative cancel checkpoint
+ * picks up the new status and bails before the next external call.
+ *
+ * Returns 202 when an active run was found, 404 otherwise. The dashboard
+ * surfaces both as a toast (the 404 case maps to "No active run to cancel").
+ */
+export async function cancelTicketAgentRun(
+  ticketId: string,
+  accessToken?: string,
+): Promise<{ status: string; runId?: string; ticketId: string }> {
+  if (USE_MOCK_API) {
+    return { status: "cancelling", ticketId };
+  }
+  const res = await trackedFetch(
+    `${BASE}/tickets/${encodeURIComponent(ticketId)}/cancel-active-run`,
+    {
+      method: "DELETE",
+      headers: buildMutationHeaders(accessToken),
+    },
+  );
+  if (res.status === 404) {
+    // Idempotent UX: nothing to cancel is not an error from the caller's
+    // perspective; surface the status so the dashboard can show "No
+    // active run" rather than an error banner.
+    return { status: "no_active_run", ticketId };
+  }
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to cancel agent run");
+    throw new Error(message);
+  }
+  return res.json() as Promise<{ status: string; runId: string; ticketId: string }>;
+}
+
 export async function transitionTicket(
   ticketId: string,
   input: TransitionTicketInput,

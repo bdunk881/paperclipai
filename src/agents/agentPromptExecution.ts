@@ -77,6 +77,14 @@ export interface ExecuteAgentPromptResult {
   model: string;
   /** Whether the agent flagged that human input is needed. */
   needsHumanInput: boolean;
+  /**
+   * HEL-175: `true` when the run was halted by a cooperative
+   * cancellation check (DB status flipped to `cancelling`). The
+   * `result`/`provider`/`model`/`usage` fields are empty placeholders
+   * when this is set — the caller should branch on this BEFORE reading
+   * the agent's reply.
+   */
+  cancelled?: boolean;
 }
 
 interface AgentRow {
@@ -182,11 +190,16 @@ function parseAgentReply(text: string): ParsedAgentReply {
 }
 
 /**
- * Persists a prompt-backed `runs` row. The CHECK constraint
- * `runs_exactly_one_execution` (migration 053) enforces that
- * `workflow_version_id` is NULL when `prompt` is set.
+ * Inserts a prompt-backed `runs` row in `running` state at the START of
+ * `executeAgentPrompt`. HEL-175: surfaces the run to the dashboard +
+ * the cancel API while it's actually in flight, so a Cancel click has
+ * something to target. `finalizeRunRow` updates this same row with the
+ * terminal status + output once the agent finishes (or cancels).
+ *
+ * The CHECK constraint `runs_exactly_one_execution` (migration 053)
+ * enforces that `workflow_version_id` is NULL when `prompt` is set.
  */
-async function persistRunRow(input: {
+async function createRunningRunRow(input: {
   pool: Pool;
   workspaceId: string;
   userId: string;
@@ -194,9 +207,6 @@ async function persistRunRow(input: {
   prompt: string;
   sourceTicketId?: string;
   sourceRoutineId?: string;
-  status: "completed" | "failed" | "escalated";
-  output: Record<string, unknown>;
-  error?: string;
 }): Promise<string> {
   const runId = randomUUID();
   const startedAt = new Date().toISOString();
@@ -206,25 +216,65 @@ async function persistRunRow(input: {
        started_at, ended_at, input, output, runtime_state_json,
        error, user_id, prompt, source_ticket_id
      ) VALUES (
-       $1::uuid, $2::uuid, $3::uuid, NULL, $4,
-       $5::timestamptz, $5::timestamptz, $6::jsonb, $7::jsonb, NULL,
-       $8, $9, $10, $11::uuid
+       $1::uuid, $2::uuid, $3::uuid, NULL, 'running',
+       $4::timestamptz, NULL, $5::jsonb, '{}'::jsonb, NULL,
+       NULL, $6, $7, $8::uuid
      )`,
     [
       runId,
       input.workspaceId,
       input.sourceRoutineId ?? null,
-      input.status,
       startedAt,
       JSON.stringify({ agentId: input.agentId, prompt: input.prompt }),
-      JSON.stringify(input.output),
-      input.error ?? null,
       input.userId,
       input.prompt,
       input.sourceTicketId ?? null,
     ],
   );
   return runId;
+}
+
+/**
+ * HEL-175: cooperative cancellation checkpoint. Reads the current
+ * `runs.status` for `runId` and returns `true` if a cancellation has
+ * been requested (`status === 'cancelling'`). Caller bails the
+ * remaining work and lets `finalizeRunRow` write the terminal
+ * `canceled` state.
+ */
+async function wasCancellationRequested(pool: Pool, runId: string): Promise<boolean> {
+  const result = await pool.query<{ status: string }>(
+    `SELECT status FROM runs WHERE id = $1::uuid LIMIT 1`,
+    [runId],
+  );
+  return result.rows[0]?.status === "cancelling";
+}
+
+/**
+ * Updates the pre-created `runs` row with its terminal status + output.
+ * Mirrors the original `persistRunRow` but writes via UPDATE instead of
+ * INSERT so the dashboard's view of the in-flight run stays consistent.
+ */
+async function finalizeRunRow(input: {
+  pool: Pool;
+  runId: string;
+  status: "completed" | "failed" | "escalated" | "canceled";
+  output: Record<string, unknown>;
+  error?: string;
+}): Promise<void> {
+  await input.pool.query(
+    `UPDATE runs
+        SET status = $2,
+            ended_at = now(),
+            output = $3::jsonb,
+            error = $4
+      WHERE id = $1::uuid`,
+    [
+      input.runId,
+      input.status,
+      JSON.stringify(input.output),
+      input.error ?? null,
+    ],
+  );
 }
 
 /**
@@ -372,6 +422,39 @@ export async function executeAgentPrompt(
     conversationContext: input.conversationContext,
   });
 
+  // HEL-175: pre-create the runs row in `running` state so the dashboard
+  // can show the in-flight run + the cancel API has a real row to target.
+  const runId = await createRunningRunRow({
+    pool: input.pool,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    agentId: input.agentId,
+    prompt: input.prompt,
+    sourceTicketId: input.sourceTicketId,
+    sourceRoutineId: input.sourceRoutineId,
+  });
+
+  // HEL-175 cooperative cancel checkpoint #1 — before paying for the
+  // LLM call. Cheap; covers the case where Cancel was clicked while the
+  // job was still queued in BullMQ.
+  if (await wasCancellationRequested(input.pool, runId)) {
+    await finalizeRunRow({
+      pool: input.pool,
+      runId,
+      status: "canceled",
+      output: { reason: "cancelled_before_llm_call" },
+    });
+    return {
+      runId,
+      result: "",
+      usage: { promptTokens: 0, completionTokens: 0 },
+      provider: "n/a",
+      model: "n/a",
+      needsHumanInput: false,
+      cancelled: true,
+    };
+  }
+
   // 2. Run the agentic turn.
   let turnResult: RunAgentTurnResult;
   try {
@@ -390,14 +473,9 @@ export async function executeAgentPrompt(
     });
   } catch (err) {
     const message = (err as Error).message;
-    const runId = await persistRunRow({
+    await finalizeRunRow({
       pool: input.pool,
-      workspaceId: input.workspaceId,
-      userId: input.userId,
-      agentId: input.agentId,
-      prompt: input.prompt,
-      sourceTicketId: input.sourceTicketId,
-      sourceRoutineId: input.sourceRoutineId,
+      runId,
       status: "failed",
       output: { error: message },
       error: message.slice(0, 1000),
@@ -425,18 +503,40 @@ export async function executeAgentPrompt(
     throw err;
   }
 
+  // HEL-175 cooperative cancel checkpoint #2 — after the LLM call but
+  // before persisting the timeline update. The LLM cost is already paid
+  // but at least we avoid documenting an action the user explicitly
+  // killed.
+  if (await wasCancellationRequested(input.pool, runId)) {
+    await finalizeRunRow({
+      pool: input.pool,
+      runId,
+      status: "canceled",
+      output: {
+        reason: "cancelled_after_llm_call",
+        provider: turnResult.provider,
+        model: turnResult.model,
+        usage: turnResult.usage,
+      },
+    });
+    return {
+      runId,
+      result: turnResult.text,
+      usage: turnResult.usage,
+      provider: turnResult.provider,
+      model: turnResult.model,
+      needsHumanInput: false,
+      cancelled: true,
+    };
+  }
+
   // 3. Parse the agent's reply for the action-summary + needs-human signals.
   const parsed = parseAgentReply(turnResult.text);
 
-  // 4. Persist runs row.
-  const runId = await persistRunRow({
+  // 4. Finalize the runs row with the terminal status + full output.
+  await finalizeRunRow({
     pool: input.pool,
-    workspaceId: input.workspaceId,
-    userId: input.userId,
-    agentId: input.agentId,
-    prompt: input.prompt,
-    sourceTicketId: input.sourceTicketId,
-    sourceRoutineId: input.sourceRoutineId,
+    runId,
     status: parsed.needsHumanInput ? "escalated" : "completed",
     output: {
       text: turnResult.text,

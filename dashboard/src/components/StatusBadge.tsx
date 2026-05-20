@@ -1,6 +1,6 @@
 import clsx from "clsx";
 
-type RunStatus = "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled";
+type RunStatus = "queued" | "pending" | "running" | "completed" | "failed" | "escalated" | "awaiting_approval" | "canceled" | "cancelling";
 type StepStatus = "success" | "failure" | "skipped" | "running";
 type MissionStatus = "On Track" | "At Risk" | "Blocked" | "Off Track" | "Not Started";
 
@@ -16,6 +16,10 @@ const RUN_STATUS_STYLES: Record<RunStatus, string> = {
   escalated: "bg-af2-plum/15 text-af2-plum",
   awaiting_approval: "bg-af2-mustard/15 text-af2-mustard",
   canceled: "bg-af2-paper-2 text-af2-ink-4",
+  // HEL-175: transient state while the worker checkpoints to halt.
+  // Mustard (pending tone) signals "in flight, please wait" — converges
+  // to canceled within seconds at the next cooperative checkpoint.
+  cancelling: "bg-af2-mustard/15 text-af2-mustard",
 };
 
 const STEP_STATUS_STYLES: Record<StepStatus, string> = {
@@ -46,7 +50,7 @@ const RUN_LABELS: Partial<Record<RunStatus, string>> = {
 };
 
 function isRunStatus(status: string): status is RunStatus {
-  return ["queued", "pending", "running", "completed", "failed", "escalated", "awaiting_approval", "canceled"].includes(status);
+  return ["queued", "pending", "running", "completed", "failed", "escalated", "awaiting_approval", "canceled", "cancelling"].includes(status);
 }
 
 function isMissionStatus(status: string): status is MissionStatus {

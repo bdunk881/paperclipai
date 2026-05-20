@@ -16,8 +16,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bot, Loader2, RefreshCw, UserRound } from "lucide-react";
+import { listAgents } from "../api/agentApi";
 import {
   getTicketActorProfile,
+  hydrateTicketActorProfiles,
   listTickets,
   type TicketRecord,
 } from "../api/tickets";
@@ -29,7 +31,7 @@ import {
 import { aggregateActorCounts } from "./tickets/ticketingUi.helpers";
 
 export default function TicketTeamView() {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +42,11 @@ export default function TicketTeamView() {
     setError(null);
     try {
       const accessToken = (await getAccessToken()) ?? undefined;
-      const response = await listTickets({}, accessToken);
+      const [response, agents] = await Promise.all([
+        listTickets({}, accessToken),
+        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
+      ]);
+      hydrateTicketActorProfiles({ agents, user });
       setTickets(response.tickets);
       setSource(response.source);
     } catch (loadError) {
@@ -50,7 +56,7 @@ export default function TicketTeamView() {
     } finally {
       setLoading(false);
     }
-  }, [getAccessToken]);
+  }, [getAccessToken, user]);
 
   useEffect(() => {
     void load();

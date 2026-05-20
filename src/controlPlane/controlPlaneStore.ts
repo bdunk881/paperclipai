@@ -1264,8 +1264,8 @@ function createTeamRecord(input: {
   userId: string;
   name: string;
   description?: string;
-  workflowTemplateId?: string;
-  workflowTemplateName?: string;
+  workflowId?: string;
+  workflowName?: string;
   deploymentMode?: ControlPlaneTeam["deploymentMode"];
   budgetMonthlyUsd?: number;
   toolBudgetCeilings?: Record<string, number>;
@@ -1278,8 +1278,8 @@ function createTeamRecord(input: {
     userId: input.userId,
     name: input.name,
     description: input.description,
-    workflowTemplateId: input.workflowTemplateId,
-    workflowTemplateName: input.workflowTemplateName,
+    workflowId: input.workflowId,
+    workflowName: input.workflowName,
     deploymentMode: input.deploymentMode ?? "workflow_runtime",
     status: "active",
     restartCount: 0,
@@ -1601,8 +1601,8 @@ export const controlPlaneStore = {
     userId: string;
     name: string;
     description?: string;
-    workflowTemplateId?: string;
-    workflowTemplateName?: string;
+    workflowId?: string;
+    workflowName?: string;
     deploymentMode?: ControlPlaneTeam["deploymentMode"];
     budgetMonthlyUsd?: number;
     toolBudgetCeilings?: Record<string, number>;
@@ -1945,8 +1945,8 @@ export const controlPlaneStore = {
       userId: input.userId,
       name: input.teamName?.trim() || `${input.template.name} Control Plane`,
       description: `Agent team deployed from workflow template ${input.template.name}`,
-      workflowTemplateId: input.template.id,
-      workflowTemplateName: input.template.name,
+      workflowId: input.template.id,
+      workflowName: input.template.name,
       deploymentMode: "continuous_agents",
       budgetMonthlyUsd: teamBudget,
       toolBudgetCeilings: input.toolBudgetCeilings,

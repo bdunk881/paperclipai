@@ -37,6 +37,7 @@ import LandingPage from "./pages/LandingPage";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
 import MCPIntegrations from "./pages/MCPIntegrations";
+import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
 import MissionState from "./pages/MissionState";
@@ -231,6 +232,11 @@ const routes: RouteObject[] = [
 
       // Connect pillar
       { path: "integrations/mcp", element: <MCPIntegrations /> },
+      // HEL-179: operator-visible health surface for every workspace connector
+      // (status pills + Reconnect CTA on auth_failed). Backed by the existing
+      // `GET /api/connectors/health` route + `getConnectorHealth()` typed
+      // client that have been wired for months but never had a UI.
+      { path: "integrations/health", element: <ConnectorHealth /> },
       { path: "memory", element: <Memory /> },
       // HEL-90/92: Workspace memory (instructions + knowledge + episodes)
       { path: "settings/memory", element: <WorkspaceMemory /> },
@@ -280,7 +286,7 @@ const routes: RouteObject[] = [
       // distinct from a UUID.
       { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
       { path: "integrations", element: <Navigate to="/integrations/mcp" replace /> },
-      { path: "integrations/health", element: <Navigate to="/integrations/mcp" replace /> },
+      // HEL-179: `/integrations/health` redirect retired — real page mounted above.
       { path: "settings/integrations", element: <Navigate to="/integrations/mcp" replace /> },
       { path: "logs", element: <Navigate to="/agents/activity" replace /> },
       { path: "monitor", element: <Navigate to="/" replace /> },

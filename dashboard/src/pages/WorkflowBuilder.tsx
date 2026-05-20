@@ -449,6 +449,23 @@ export default function WorkflowBuilder() {
     return params.get("popout") === "1";
   }, [location.search]);
 
+  // HEL-188: the xyflow canvas + studio palette + inspector are not
+  // usable on touch / narrow screens. Track the lg breakpoint (1024px)
+  // so the render path can fork to a "desktop-only" fallback instead of
+  // mounting a broken editor on phones. Guarded against jsdom/SSR (no
+  // matchMedia) — those environments render the full editor.
+  const [isNarrowViewport, setIsNarrowViewport] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 1023px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 1023px)");
+    const onChange = (event: MediaQueryListEvent) => setIsNarrowViewport(event.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
   const [template, setTemplate] = useState<WorkflowTemplate>(BLANK_TEMPLATE);
   const [loading, setLoading] = useState(!!templateId);
   const [allTemplates, setAllTemplates] = useState<TemplateSummary[]>([]);
@@ -1232,6 +1249,43 @@ export default function WorkflowBuilder() {
           message={templateLoadError}
           onRetry={() => navigate("/builder")}
         />
+      </div>
+    );
+  }
+
+  // HEL-188: xyflow canvas + studio palette + inspector are unusable on
+  // touch / narrow screens. Show a brief explainer + "Open on desktop"
+  // affordance below the lg breakpoint instead of dropping the operator
+  // into a broken editing surface.
+  if (isNarrowViewport) {
+    return (
+      <div className="af2-page" style={{ minHeight: "calc(100vh - 56px)" }}>
+        <div className="af2-eyebrow">Build · Workflow</div>
+        <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
+          Builder is desktop-only
+        </h1>
+        <p className="af2-muted" style={{ marginTop: 16, maxWidth: 480, fontSize: 14 }}>
+          The visual workflow editor uses a draggable canvas that needs a
+          larger screen to be useful. Open this URL on a tablet or desktop
+          to edit the workflow. You can still view runs and approvals on
+          this device.
+        </p>
+        <div className="af2-row" style={{ marginTop: 22, gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="af2-btn af2-btn-ghost"
+          >
+            Back to dashboard
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/approvals")}
+            className="af2-btn"
+          >
+            Go to approvals
+          </button>
+        </div>
       </div>
     );
   }

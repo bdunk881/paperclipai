@@ -556,12 +556,7 @@ function GeneralTab({
 
   return (
     <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "200px 1fr",
-        gap: 28,
-        alignItems: "start",
-      }}
+      className="grid items-start gap-7 grid-cols-1 lg:grid-cols-[200px_1fr]"
     >
       <div className="af2-eyebrow" style={{ paddingTop: 8 }}>
         Workspace

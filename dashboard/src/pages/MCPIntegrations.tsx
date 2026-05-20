@@ -385,6 +385,14 @@ export default function IntegrationsHub() {
           </div>
         </div>
         <div className="af2-page-actions">
+          {/* HEL-179: operator-visible connector health surface */}
+          <Link
+            to="/integrations/health"
+            className="af2-btn af2-btn-ghost af2-btn-sm"
+            style={{ textDecoration: "none" }}
+          >
+            Health
+          </Link>
           <Link
             to={REGISTRY_ROUTE}
             className="af2-btn"

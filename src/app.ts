@@ -856,7 +856,7 @@ app.get("/api/templates", (req, res) => {
 });
 
 /** Create or update a user-managed template */
-app.post("/api/templates", requireAuth, async (req, res) => {
+app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -936,7 +936,7 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
-app.post("/api/templates/import", requireAuth, async (req, res) => {
+app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), async (req, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -988,6 +988,7 @@ app.post(
   "/api/runs",
   requireAuthOrQaBypass,
   workspaceResolver,
+  requireRole("admin", "developer", "operator"),
   llmEndpointRateLimiter,
   requireEntitlement("runsPerMonth", {
     getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
@@ -1108,7 +1109,7 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, async (req: W
  * Status that allows cancellation: queued | pending | running.
  * Anything else (completed, failed, canceled, etc.) returns 409.
  */
-app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1164,7 +1165,7 @@ app.delete("/api/runs/:id/cancel", requireAuthOrQaBypass, workspaceResolver, asy
  * Resets status to "queued" and re-adds the job to the main runs queue.
  * Returns 409 if the run is not in the "failed" state.
  */
-app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1227,7 +1228,7 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, async 
  * Creates a fresh run record and enqueues it. Use /retry to replay with the
  * original version instead.
  */
-app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: WorkspaceAwareRequest, res) => {
   const runId = req.params.id;
   const run = await runStore.get(runId);
   const userId = req.auth?.sub;
@@ -1366,7 +1367,7 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole("admin", "developer", "operator"), upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -1541,7 +1542,7 @@ app.use("/api/workflows", requireAuth, workspaceResolver, requireRole("admin", "
 // POST /api/goals/team-assembly
 // ---------------------------------------------------------------------------
 
-app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
+app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, async (req: AuthenticatedRequest, res) => {
   const parsedRequest = teamAssemblyRequestSchema.safeParse(req.body);
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
@@ -1600,8 +1601,22 @@ app.post("/api/goals/team-assembly", requireAuth, llmEndpointRateLimiter, async 
  * POST /api/webhooks/:templateId
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
+ *
+ * HEL-186: this endpoint previously trusted an arbitrary `x-user-id` header,
+ * allowing any caller with a templateId to enqueue a run in any user's
+ * scope. Gated behind `WEBHOOK_TRIGGERS_ENABLED=true` (default off) until a
+ * per-template signing-secret design lands. A follow-up ticket tracks the
+ * signed-payload + workspace-binding work.
  */
 app.post("/api/webhooks/:templateId", async (req, res) => {
+  if (process.env.WEBHOOK_TRIGGERS_ENABLED !== "true") {
+    res.status(503).json({
+      error:
+        "Webhook triggers are disabled in this environment pending signed-payload support",
+    });
+    return;
+  }
+
   const { templateId } = req.params;
 
   let template: WorkflowTemplate;
@@ -1709,7 +1724,7 @@ app.get("/api/approvals/:id/notifications", requireAuth, async (req: Authenticat
  * Body: { decision: "approved" | "rejected" | "request_changes", comment?: string }
  * Resolves the approval request, resuming or terminating the paused run.
  */
-app.post("/api/approvals/:id/resolve", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/approvals/:id/resolve", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), async (req: AuthenticatedRequest, res) => {
   const { decision, comment } = req.body as { decision?: string; comment?: string };
 
   if (decision !== "approved" && decision !== "rejected" && decision !== "request_changes") {
@@ -1773,7 +1788,7 @@ app.get("/api/executions/:id/state", requireAuth, async (req, res) => {
  * Manually resumes a paused execution after its approval decision has already
  * been persisted and the original live worker is gone.
  */
-app.post("/api/executions/:id/resume", requireAuth, async (req: AuthenticatedRequest, res) => {
+app.post("/api/executions/:id/resume", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), async (req: AuthenticatedRequest, res) => {
   const run = await runStore.get(req.params.id);
   if (!run || (run.userId !== undefined && run.userId !== req.auth?.sub)) {
     res.status(404).json({ error: `Execution not found: ${req.params.id}` });

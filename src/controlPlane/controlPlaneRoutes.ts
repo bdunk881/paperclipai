@@ -826,6 +826,41 @@ router.get("/tasks", async (req: WorkspaceAwareRequest, res) => {
   res.json({ tasks, total: tasks.length });
 });
 
+/**
+ * HEL-143: surface budget_alerts so the dashboard can show
+ * "Atlas blew through 80% of its monthly budget at 2:14 PM yesterday."
+ *
+ * Each row is written by `applyBudgetPolicies` (controlPlaneStore) every
+ * time spend crosses an `alertThresholds` value. Pre-HEL-143 nothing
+ * read them — they accumulated as a write-only audit trail.
+ *
+ * Query params:
+ *   teamId: optional team filter (otherwise returns alerts across all teams)
+ *
+ * Response:
+ *   { alerts: ControlPlaneBudgetAlert[], total: number }
+ *
+ * Alerts are ordered DESC by recordedAt (newest first) by the repository.
+ */
+router.get("/budget-alerts", async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const teamId = typeof req.query.teamId === "string" ? req.query.teamId : undefined;
+  try {
+    const alerts = await controlPlaneStore.listBudgetAlerts(context.userId, teamId);
+    res.json({ alerts, total: alerts.length });
+  } catch (err) {
+    console.error(
+      `[controlPlaneRoutes] /budget-alerts repository error for user=${context.userId}: ${
+        (err as Error).message
+      }`,
+    );
+    res.status(500).json({ error: "Failed to load budget alerts" });
+  }
+});
+
 router.get("/executions", async (req: WorkspaceAwareRequest, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {

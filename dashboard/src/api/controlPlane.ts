@@ -93,6 +93,28 @@ export interface ControlPlaneTeamDetail {
   heartbeats: ControlPlaneHeartbeat[];
 }
 
+/**
+ * HEL-143: a single threshold trip emitted by `applyBudgetPolicies` when
+ * a team or agent crosses one of the configured `alertThresholds` values
+ * (e.g. 50% / 80% / 100% of monthly budget). One row per (team, agent,
+ * tool, scope, threshold) — the unique-index in migration 019 dedupes
+ * within a window.
+ */
+export interface ControlPlaneBudgetAlert {
+  id: string;
+  teamId: string;
+  userId: string;
+  agentId?: string;
+  toolName?: string;
+  /** 'team' | 'agent' | 'tool' — which budget tier tripped. */
+  scope: string;
+  /** Fractional threshold (0.5 = 50%, 0.8 = 80%, 1.0 = 100%). */
+  threshold: number;
+  budgetUsd: number;
+  spentUsd: number;
+  recordedAt: string;
+}
+
 export interface ControlPlaneDeploymentResponse {
   team: ControlPlaneTeam;
   agents: ControlPlaneAgent[];
@@ -158,6 +180,29 @@ export async function getControlPlaneTeamDetail(
 export async function getControlPlaneSnapshot(accessToken: string): Promise<ControlPlaneTeamDetail[]> {
   const teams = await listControlPlaneTeams(accessToken);
   return Promise.all(teams.map((team) => getControlPlaneTeamDetail(team.id, accessToken)));
+}
+
+/**
+ * HEL-143: fetch budget alerts (workspace-scoped, ordered newest first).
+ * Pre-HEL-143 nothing read this table — alerts accumulated as a
+ * write-only audit trail. Surfaces in BudgetDashboard's "Recent budget
+ * alerts" panel.
+ */
+export async function listBudgetAlerts(
+  accessToken: string,
+  options: { teamId?: string } = {},
+): Promise<ControlPlaneBudgetAlert[]> {
+  const params = new URLSearchParams();
+  if (options.teamId) params.set("teamId", options.teamId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const res = await fetch(`${BASE}/control-plane/budget-alerts${query}`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch budget alerts: ${res.status}`);
+  }
+  const data = (await res.json()) as { alerts: ControlPlaneBudgetAlert[]; total: number };
+  return data.alerts;
 }
 
 export type CompanyLifecycleStatus = "active" | "paused";

@@ -26,6 +26,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { listAgents, type Agent } from "../api/agentApi";
 import { listBudgets, type BudgetRow } from "../api/canonicalApi";
+import {
+  listBudgetAlerts,
+  type ControlPlaneBudgetAlert,
+} from "../api/controlPlane";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
@@ -72,6 +76,10 @@ export default function BudgetDashboard() {
   const { accessMode, getAccessToken } = useAuth();
   const presence = useAgentPresence();
   const [agentRows, setAgentRows] = useState<AgentBudgetRow[]>([]);
+  // HEL-143: surface the budget_alerts table that was previously a
+  // write-only audit trail. Owner can now see "Atlas blew through 80%
+  // of its monthly budget at 2:14 PM yesterday."
+  const [budgetAlerts, setBudgetAlerts] = useState<ControlPlaneBudgetAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,10 +97,15 @@ export default function BudgetDashboard() {
       // come from the canonical budgets table; if a row is missing for a
       // specific agent we fall back to `agent.budgetMonthlyUsd` for the cap
       // and 0 for spend.
-      const [agents, budgets] = await Promise.all([
+      // HEL-143: pulled in parallel — alerts surface in the "Recent
+      // budget alerts" panel below the per-agent table. Alerts failure
+      // shouldn't blow up the whole page; degrade to empty list.
+      const [agents, budgets, alerts] = await Promise.all([
         listAgents(token),
         listBudgets(token).catch(() => [] as BudgetRow[]),
+        listBudgetAlerts(token).catch(() => [] as ControlPlaneBudgetAlert[]),
       ]);
+      setBudgetAlerts(alerts);
       const byAgent = new Map<string, BudgetRow>();
       for (const row of budgets) {
         if (row.scopeKind === "agent" && row.scopeId) byAgent.set(row.scopeId, row);
@@ -386,6 +399,110 @@ export default function BudgetDashboard() {
           })}
         </div>
       )}
+
+      {/* HEL-143: Recent budget alerts — surfaces threshold trips that
+          were previously a write-only audit trail. Only renders when
+          there's something to show so a healthy workspace doesn't get
+          an empty panel. */}
+      {budgetAlerts.length > 0 ? (
+        <>
+          <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+            Recent budget alerts
+          </h3>
+          <div className="af2-card" style={{ padding: 0, overflow: "hidden" }}>
+            {budgetAlerts.slice(0, 10).map((alert, idx) => {
+              const pct = Math.round(alert.threshold * 100);
+              const overage = alert.spentUsd - alert.budgetUsd;
+              const isOverBudget = alert.spentUsd > alert.budgetUsd;
+              return (
+                <div
+                  key={alert.id}
+                  style={{
+                    padding: "12px 16px",
+                    borderBottom:
+                      idx < Math.min(budgetAlerts.length, 10) - 1
+                        ? "1px solid var(--af2-line)"
+                        : undefined,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <span
+                    className="af2-pill"
+                    style={{
+                      background: isOverBudget
+                        ? "rgba(194,80,43,0.10)"
+                        : "rgba(184,134,44,0.10)",
+                      color: isOverBudget ? "var(--af2-clay)" : "var(--af2-mustard)",
+                      borderColor: isOverBudget
+                        ? "rgba(194,80,43,0.25)"
+                        : "rgba(184,134,44,0.25)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span className="af2-dot" />
+                    {pct}% threshold
+                  </span>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                      {alert.agentId ? (
+                        <Link
+                          to={`/agents/${encodeURIComponent(alert.agentId)}`}
+                          style={{ color: "var(--af2-ink)" }}
+                        >
+                          Agent {alert.agentId.slice(0, 8)}
+                        </Link>
+                      ) : (
+                        <>Team {alert.teamId.slice(0, 8)}</>
+                      )}
+                      {alert.toolName ? (
+                        <span className="af2-muted" style={{ fontWeight: 400, marginLeft: 6 }}>
+                          · {alert.toolName}
+                        </span>
+                      ) : null}
+                      <span className="af2-muted" style={{ fontWeight: 400, marginLeft: 6 }}>
+                        · scope: {alert.scope}
+                      </span>
+                    </div>
+                    <div className="af2-muted" style={{ fontSize: 12, marginTop: 2 }}>
+                      {formatCurrency(alert.spentUsd, 2)} spent of {formatCurrency(alert.budgetUsd, 2)} cap
+                      {isOverBudget ? ` · over by ${formatCurrency(overage, 2)}` : ""}
+                    </div>
+                  </div>
+                  <span
+                    className="af2-muted af2-mono"
+                    style={{ fontSize: 11.5, whiteSpace: "nowrap" }}
+                    title={new Date(alert.recordedAt).toLocaleString()}
+                  >
+                    {new Date(alert.recordedAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              );
+            })}
+            {budgetAlerts.length > 10 ? (
+              <div
+                className="af2-muted"
+                style={{
+                  padding: "8px 16px",
+                  fontSize: 12,
+                  borderTop: "1px solid var(--af2-line)",
+                  background: "var(--af2-paper-2)",
+                }}
+              >
+                Showing 10 of {budgetAlerts.length} alerts. Older alerts persist in the
+                budget_alerts table.
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
       <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
         By model · last 30 days

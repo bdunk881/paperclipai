@@ -346,7 +346,7 @@ export default function Dashboard() {
       </div>
 
       <div
-        style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 22 }}
+        className="grid gap-[22px] grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"
       >
         <section>
           <div className="af2-row" style={{ marginBottom: 10 }}>

@@ -28,6 +28,7 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
+import securityRoutes from "./security/securityRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -753,6 +754,16 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   connectorConnectionsRoutes,
+);
+// HEL-167: user security settings. The actions are user-scoped, but they
+// write workspace audit events, so every authenticated workspace member gets
+// the same RLS-scoped workspace context as the read-only canonical surfaces.
+app.use(
+  "/api/security",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  securityRoutes,
 );
 // HEL-27 canonical workflows router is mounted further below, AFTER the
 // pre-existing /api/workflows/schema + /api/workflows/generate specific

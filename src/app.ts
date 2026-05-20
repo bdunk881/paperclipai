@@ -1367,7 +1367,7 @@ app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
  * starts a workflow run with { content, mimeType, filename } injected as input.
  * Returns the created run (status=pending).
  */
-app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.single("file"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { templateId } = req.body as { templateId?: string };
 
   if (!templateId) {
@@ -1423,7 +1423,7 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, upload.sing
 
   const run = await workflowEngine.startRun(template, input, undefined, userId);
   res.status(202).json(run);
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Workflow generation — NL description → DAG steps via LLM
@@ -1456,7 +1456,7 @@ Rules:
  * Uses the authenticated JWT subject to resolve the user's LLM config.
  * Returns: { steps: WorkflowStep[] }
  */
-app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, async (req: WorkspaceAwareRequest, res) => {
+app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmEndpointRateLimiter, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { description, llmConfigId } = req.body as {
     description?: unknown;
     llmConfigId?: unknown;
@@ -1529,7 +1529,7 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
   }
 
   res.json({ steps });
-});
+}));
 
 // HEL-27: mount the canonical workflows router AFTER the specific
 // /api/workflows/schema + /api/workflows/generate handlers above so those

@@ -102,7 +102,7 @@ router.patch("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) =
   res.json(base);
 }));
 
-router.post("/bases/:id/documents", upload.single("file"), async (req: AuthenticatedRequest, res) => {
+router.post("/bases/:id/documents", upload.single("file"), asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -177,7 +177,7 @@ router.post("/bases/:id/documents", upload.single("file"), async (req: Authentic
   });
 
   res.status(201).json(result);
-});
+}));
 
 router.get("/bases/:id/documents", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = resolveUserId(req);

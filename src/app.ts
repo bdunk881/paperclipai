@@ -1396,18 +1396,44 @@ app.post(
 
     if (runQueue) {
       const idempotencyKey = `${newRun.id}:${stepIndex}:replay-from-step`;
-      await runQueue.add(
-        "run",
-        {
-          runId: newRun.id,
-          templateId: newRun.templateId,
-          workflowVersionId: newRun.workflowVersionId,
-          workspaceId: newRun.workspaceId ?? "",
-          stepIndex,
-          idempotencyKey,
-        },
-        { jobId: newRun.id, removeOnComplete: 100 },
-      );
+      try {
+        await runQueue.add(
+          "run",
+          {
+            runId: newRun.id,
+            templateId: newRun.templateId,
+            workflowVersionId: newRun.workflowVersionId,
+            workspaceId: newRun.workspaceId ?? "",
+            stepIndex,
+            idempotencyKey,
+          },
+          { jobId: newRun.id, removeOnComplete: 100 },
+        );
+      } catch (enqueueErr) {
+        // HEL-176 Codex P2: if runQueue.add throws (transient Redis
+        // outage etc.), the new run is already `queued` but no job
+        // exists to execute it. Mark it failed so it doesn't sit
+        // forever pretending to be active, and surface a 503.
+        const message =
+          enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+        await runStore
+          .update(newRun.id, {
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: `Replay enqueue failed: ${message}`,
+          })
+          .catch((rollbackErr) => {
+            console.error(
+              "[runs] replay-from-step orphan rollback failed:",
+              (rollbackErr as Error).message,
+            );
+          });
+        res.status(503).json({
+          error: "Run queue unavailable — replay was rolled back",
+          detail: message,
+        });
+        return;
+      }
     }
 
     // HEL-176: best-effort activity event so the operator dashboard

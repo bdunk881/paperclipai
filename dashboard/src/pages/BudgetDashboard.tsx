@@ -89,7 +89,11 @@ export default function BudgetDashboard() {
     try {
       const token = await getAccessToken();
       if (accessMode === "preview" && !token) {
+        // HEL-143 Codex P2: clear ALL stateful collections on the
+        // preview early-return so prior authenticated alerts/rows
+        // don't leak into the new (unauthenticated) preview state.
         setAgentRows([]);
+        setBudgetAlerts([]);
         return;
       }
       if (!token) throw new Error("Authentication session expired.");

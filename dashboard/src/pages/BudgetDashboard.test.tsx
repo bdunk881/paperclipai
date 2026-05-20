@@ -142,6 +142,10 @@ describe("BudgetDashboard", () => {
     ).toBeInTheDocument();
     expect(listAgentsMock).not.toHaveBeenCalled();
     expect(listBudgetsMock).not.toHaveBeenCalled();
+    // HEL-143 Codex P2: preview early-return clears alerts so prior
+    // authenticated state doesn't leak into the new preview render.
+    expect(listBudgetAlertsMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/recent budget alerts/i)).not.toBeInTheDocument();
   });
 
   it("shows auth error when token is null in authenticated mode", async () => {

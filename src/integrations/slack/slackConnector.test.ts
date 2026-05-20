@@ -295,6 +295,39 @@ describe("Slack connector", () => {
     expect((health as unknown as { missingScopes?: string[] }).missingScopes).toBeUndefined();
   });
 
+  it("skips scope-degradation for API-key connections (Codex P2 round 4 on #926)", async () => {
+    // API-key connections save with scopes:[] because Slack doesn't return
+    // bot-token scopes on the saveApiKey path. Without the skip in health(),
+    // EVERY API-key connection would report degraded with every required
+    // scope missing — false-negative health spam on connections that work.
+    await slackCredentialStore.saveApiKey({
+      userId: "user-apikey-scopes",
+      botToken: "xoxb-bot-token-no-scope-metadata",
+      teamId: "T-apikey",
+      teamName: "API-Key Workspace",
+      // intentional: no scopes provided, mirrors connectApiKey() flow
+    });
+
+    jest.spyOn(global, "fetch").mockImplementation(async () =>
+      mockJsonResponse({
+        ok: true,
+        team: "API-Key Workspace",
+        team_id: "T-apikey",
+        user_id: "U-bot",
+      }),
+    );
+
+    const service = new SlackConnectorService();
+    const health = await service.health("user-apikey-scopes");
+
+    // healthy, NOT degraded — the auth.test succeeded and bot-token scope
+    // discovery happens at API-call time, not here.
+    expect(health.status).toBe("healthy");
+    expect(health.details.message).toBeUndefined();
+    expect((health as unknown as { missingScopes?: string[] }).missingScopes).toBeUndefined();
+    expect(health.authMethod).toBe("api_key");
+  });
+
   it("upsert dedupes prior (user, team) active credentials before saving (Codex P2 on #926)", async () => {
     // Save → save again for the same (user, team) — the second should
     // replace the first, not coexist. The original Map-backed code did

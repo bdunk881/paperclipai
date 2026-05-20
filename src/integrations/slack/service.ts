@@ -206,7 +206,17 @@ export class SlackConnectorService {
       // granted set is missing anything the connector needs. The dashboard
       // ConnectorHealth.tsx (HEL-179 Gap 2) renders the message + the
       // Reconnect CTA.
-      const missingScopes = missingRequiredScopes(credential.scopes);
+      //
+      // Codex P2 on #926: API-key (bot-token) connections never persist
+      // scopes — `connectApiKey()` saves with `scopes: []` because Slack
+      // doesn't return the bot scopes on the API-key save path. Without
+      // this skip, every API-key connection would report degraded with
+      // every required scope missing, even when `auth.test` succeeded.
+      // Bot-token scope discovery happens at API-call time, not here.
+      const missingScopes =
+        credential.authMethod === "api_key"
+          ? []
+          : missingRequiredScopes(credential.scopes);
       const health: SlackConnectionHealth = buildTier1ConnectionHealth({
         connector: "slack",
         subject: userId,

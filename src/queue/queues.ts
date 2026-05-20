@@ -10,6 +10,31 @@ export interface RunJobPayload {
   idempotencyKey: string;
 }
 
+/**
+ * HEL-174: payload for agent NL-prompt execution jobs. Used by the
+ * three trigger paths — ticket-created, ticket-update, manual
+ * "Run agent" — to dispatch through the worker. Scheduled prompt
+ * routines reuse this payload from the worker's `runs` cron handler
+ * once it identifies a prompt-backed routine.
+ */
+export interface AgentPromptJobPayload {
+  workspaceId: string;
+  userId: string;
+  agentId: string;
+  prompt: string;
+  systemPrompt?: string;
+  llmTier?: "lite" | "standard" | "power";
+  sourceTicketId?: string;
+  sourceRoutineId?: string;
+  triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
+  /**
+   * Idempotency key — same key inside the BullMQ jobId-dedupe window
+   * is deduplicated so rapid double-clicks on "Run agent" or
+   * duplicate ticket-update webhooks don't fire the agent twice.
+   */
+  idempotencyKey: string;
+}
+
 const DEFAULT_JOB_OPTIONS = {
   attempts: 3,
   backoff: { type: "exponential" as const, delay: 2000 },
@@ -56,4 +81,29 @@ export function getDlqQueue(): Queue<RunJobPayload> | null {
 
 export function resetDlqQueueForTests(): void {
   _dlqQueue = null;
+}
+
+let _agentPromptQueue: Queue<AgentPromptJobPayload> | null = null;
+
+/**
+ * HEL-174: Singleton BullMQ Queue for ad-hoc + cron-fired agent NL
+ * prompt execution. Worker picks these up and dispatches to
+ * `executeAgentPrompt`. Returns null when Redis is unavailable so
+ * test contexts can call directly through the primitive without a
+ * queue round-trip.
+ */
+export function getAgentPromptQueue(): Queue<AgentPromptJobPayload> | null {
+  const connection = getRedisClient();
+  if (!connection) return null;
+  if (!_agentPromptQueue) {
+    _agentPromptQueue = new Queue<AgentPromptJobPayload>("agent-prompt", {
+      connection,
+      defaultJobOptions: DEFAULT_JOB_OPTIONS,
+    });
+  }
+  return _agentPromptQueue;
+}
+
+export function resetAgentPromptQueueForTests(): void {
+  _agentPromptQueue = null;
 }

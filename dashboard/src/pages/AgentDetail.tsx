@@ -30,7 +30,11 @@ import {
   listAgentInstructions,
   type Instruction,
 } from "../api/instructionsApi";
-import { listRoutines, type Routine } from "../api/routinesApi";
+import {
+  createRoutine,
+  listRoutines,
+  type Routine,
+} from "../api/routinesApi";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { AgentCardActions } from "../components/AgentCardActions";
 import { useAgentPresence } from "../hooks/useAgentPresence";
@@ -222,6 +226,222 @@ export default function AgentDetail() {
         />
         <QuickFactsCard agent={agent} />
       </div>
+
+      {/* HEL-174: prompt-backed routine form. Pure NL — no workflow
+          builder required. */}
+      <SchedulePromptCard
+        agentId={agent.id}
+        agentName={agent.name}
+        routines={routines}
+        onCreated={(routine) => setRoutines((prev) => [routine, ...prev])}
+      />
+    </div>
+  );
+}
+
+// HEL-174: Cron presets so users don't need to know cron syntax.
+const CRON_PRESETS: Array<{ label: string; cron: string | null; trigger: "manual" | "scheduled" }> = [
+  { label: "Manual only", cron: null, trigger: "manual" },
+  { label: "Every weekday 9am UTC", cron: "0 9 * * 1-5", trigger: "scheduled" },
+  { label: "Monday mornings (9am UTC)", cron: "0 9 * * 1", trigger: "scheduled" },
+  { label: "Hourly", cron: "0 * * * *", trigger: "scheduled" },
+  { label: "Daily at 8am UTC", cron: "0 8 * * *", trigger: "scheduled" },
+];
+
+function SchedulePromptCard({
+  agentId,
+  agentName,
+  routines,
+  onCreated,
+}: {
+  agentId: string;
+  agentName: string;
+  routines: Routine[];
+  onCreated: (routine: Routine) => void;
+}) {
+  const { requireAccessToken } = useAuth();
+  const [name, setName] = useState(`${agentName} scheduled prompt`);
+  const [prompt, setPrompt] = useState("");
+  const [presetIdx, setPresetIdx] = useState(1);
+  const [llmTier, setLlmTier] = useState<"lite" | "standard" | "power">("standard");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const promptBackedRoutines = useMemo(
+    () => routines.filter((r) => r.prompt && r.agentId === agentId),
+    [routines, agentId],
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!prompt.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await requireAccessToken();
+      const preset = CRON_PRESETS[presetIdx]!;
+      const created = await createRoutine(
+        {
+          agentId,
+          name: name.trim() || `${agentName} scheduled prompt`,
+          prompt: prompt.trim(),
+          llmTier,
+          scheduleCron: preset.cron,
+          triggerKind: preset.trigger,
+          enabled: true,
+        },
+        token,
+      );
+      onCreated(created);
+      setPrompt("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to schedule prompt");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="af2-card" style={{ padding: 16, marginTop: 18 }}>
+      <div
+        className="af2-eyebrow"
+        style={{ marginBottom: 6, color: "var(--af2-ink-2)" }}
+      >
+        <Sparkles size={12} style={{ display: "inline-block", marginRight: 4 }} />
+        Scheduled prompts (no workflow needed)
+      </div>
+      <p
+        className="af2-muted"
+        style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 0, marginBottom: 14 }}
+      >
+        Write a natural-language instruction. {agentName} will read it on the
+        cron you pick and act — no DAG, no steps. For complex multi-step
+        automation, build a workflow in Studio instead.
+      </p>
+
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: "grid", gap: 10 }}
+      >
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--af2-ink-2)" }}>
+            Name
+          </span>
+          <input
+            type="text"
+            className="af2-input"
+            value={name}
+            maxLength={200}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={`${agentName} scheduled prompt`}
+          />
+        </label>
+        <label style={{ display: "grid", gap: 4 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--af2-ink-2)" }}>
+            Prompt
+          </span>
+          <textarea
+            className="af2-input"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={`e.g., "Every Monday, generate a summary of last week's marketing performance and post it to the team channel."`}
+            rows={4}
+            maxLength={10000}
+            required
+          />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 10 }}>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--af2-ink-2)" }}>
+              Schedule
+            </span>
+            <select
+              className="af2-input"
+              value={presetIdx}
+              onChange={(e) => setPresetIdx(Number(e.target.value))}
+            >
+              {CRON_PRESETS.map((p, i) => (
+                <option key={p.label} value={i}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--af2-ink-2)" }}>
+              Model
+            </span>
+            <select
+              className="af2-input"
+              value={llmTier}
+              onChange={(e) => setLlmTier(e.target.value as "lite" | "standard" | "power")}
+            >
+              <option value="lite">Lite</option>
+              <option value="standard">Standard</option>
+              <option value="power">Power</option>
+            </select>
+          </label>
+        </div>
+        {error ? (
+          <div className="af2-muted" style={{ color: "var(--af2-clay)", fontSize: 12 }}>
+            {error}
+          </div>
+        ) : null}
+        <div>
+          <button
+            type="submit"
+            className="af2-btn af2-btn-primary"
+            disabled={busy || !prompt.trim()}
+          >
+            {busy ? "Saving…" : "Schedule prompt"}
+          </button>
+        </div>
+      </form>
+
+      {promptBackedRoutines.length > 0 ? (
+        <div style={{ marginTop: 18 }}>
+          <div
+            className="af2-eyebrow"
+            style={{ marginBottom: 6, color: "var(--af2-ink-2)" }}
+          >
+            Active scheduled prompts
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "grid", gap: 8 }}>
+            {promptBackedRoutines.map((r) => {
+              const readable = readableCron(r.scheduleCron);
+              return (
+                <li
+                  key={r.id}
+                  style={{
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    padding: "8px 10px",
+                    background: "var(--af2-paper-soft, rgba(0,0,0,0.02))",
+                    borderRadius: 6,
+                  }}
+                >
+                  <div style={{ fontWeight: 600 }}>{r.name}</div>
+                  <div className="af2-muted" style={{ fontSize: 12 }}>
+                    {readable.label}
+                    {!r.enabled ? " · paused" : ""}
+                  </div>
+                  <div
+                    className="af2-muted"
+                    style={{
+                      fontSize: 12,
+                      marginTop: 4,
+                      whiteSpace: "pre-wrap",
+                      opacity: 0.85,
+                    }}
+                  >
+                    {r.prompt}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
     </div>
   );
 }

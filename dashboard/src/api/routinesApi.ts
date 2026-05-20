@@ -39,7 +39,14 @@ export interface Routine {
   name: string;
   scheduleCron: string | null;
   triggerKind: string;
-  workflowId: string;
+  /** HEL-174: workflowId is nullable when the routine is prompt-backed. */
+  workflowId: string | null;
+  /** HEL-174: NL prompt the agent reads when this routine fires. */
+  prompt: string | null;
+  /** HEL-174: optional per-routine system prompt override. */
+  systemPrompt: string | null;
+  /** HEL-174: model tier for the LLM call. */
+  llmTier: "lite" | "standard" | "power" | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -61,14 +68,35 @@ export interface UpdateRoutineInput {
   scheduleCron?: string | null;
 }
 
-export interface CreateRoutineInput {
-  agentId: string;
-  workflowId: string;
-  name: string;
-  scheduleCron?: string | null;
-  triggerKind?: "manual" | "scheduled" | "webhook" | "event";
-  enabled?: boolean;
-}
+/**
+ * HEL-174: a routine is either workflow-backed (DAG) OR prompt-backed
+ * (NL). Provide exactly one of `workflowId` or `prompt`. The backend
+ * rejects when both / neither are set.
+ */
+export type CreateRoutineInput =
+  | {
+      agentId: string;
+      workflowId: string;
+      prompt?: never;
+      systemPrompt?: never;
+      llmTier?: never;
+      name: string;
+      scheduleCron?: string | null;
+      triggerKind?: "manual" | "scheduled" | "webhook" | "event";
+      enabled?: boolean;
+    }
+  | {
+      agentId: string;
+      workflowId?: never;
+      /** Natural-language instructions the agent reads when the routine fires. */
+      prompt: string;
+      systemPrompt?: string;
+      llmTier?: "lite" | "standard" | "power";
+      name: string;
+      scheduleCron?: string | null;
+      triggerKind?: "manual" | "scheduled" | "webhook" | "event";
+      enabled?: boolean;
+    };
 
 export async function createRoutine(
   input: CreateRoutineInput,

@@ -221,6 +221,72 @@ describe("Slack connector", () => {
     expect(wrongUser).toBeNull();
   });
 
+  it("reports degraded health with missing required scopes (HEL-181)", async () => {
+    // Connect a Slack workspace that only granted channels:read — missing
+    // chat:write + channels:history. health() must surface this as
+    // "degraded" with a missing-scopes list so the ConnectorHealth UI
+    // can show a Reconnect CTA.
+    await slackCredentialStore.saveOAuth({
+      userId: "user-scopes",
+      accessToken: "xoxb-narrow-grant",
+      scopes: ["channels:read"], // missing chat:write + channels:history
+      teamId: "T-narrow",
+      teamName: "Narrow Workspace",
+    });
+
+    // auth.test will succeed — the missing scope only affects specific
+    // Slack methods, not the identity check.
+    jest.spyOn(global, "fetch").mockImplementation(async () =>
+      mockJsonResponse({
+        ok: true,
+        team: "Narrow Workspace",
+        team_id: "T-narrow",
+        user_id: "U-bot",
+      }),
+    );
+
+    const service = new SlackConnectorService();
+    const health = await service.health("user-scopes");
+
+    expect(health.status).toBe("degraded");
+    expect(health.details.message).toMatch(/missing required scopes/i);
+    expect(health.details.message).toMatch(/chat:write/);
+    expect(health.details.message).toMatch(/channels:history/);
+    // metadata.missingScopes is what the dashboard renders in the row.
+    // The Tier1 metadata fields (including `missingScopes`) are spread
+    // onto the top of the health response, not nested under .metadata.
+    expect((health as unknown as { missingScopes?: string[] }).missingScopes).toEqual(
+      expect.arrayContaining(["chat:write", "channels:history"]),
+    );
+    expect(health.recommendedNextAction).toMatch(/reconnect slack/i);
+  });
+
+  it("reports healthy when all required scopes are granted (HEL-181)", async () => {
+    await slackCredentialStore.saveOAuth({
+      userId: "user-fullscopes",
+      accessToken: "xoxb-full-grant",
+      scopes: ["channels:read", "chat:write", "channels:history"],
+      teamId: "T-full",
+      teamName: "Full Workspace",
+    });
+
+    jest.spyOn(global, "fetch").mockImplementation(async () =>
+      mockJsonResponse({
+        ok: true,
+        team: "Full Workspace",
+        team_id: "T-full",
+        user_id: "U-bot",
+      }),
+    );
+
+    const service = new SlackConnectorService();
+    const health = await service.health("user-fullscopes");
+
+    expect(health.status).toBe("healthy");
+    expect(health.details.message).toBeUndefined();
+    expect((health as unknown as { missingScopes?: string[] }).missingScopes).toBeUndefined();
+  });
+
   it("upsert dedupes prior (user, team) active credentials before saving (Codex P2 on #926)", async () => {
     // Save → save again for the same (user, team) — the second should
     // replace the first, not coexist. The original Map-backed code did

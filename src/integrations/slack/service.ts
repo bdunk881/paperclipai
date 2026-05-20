@@ -11,6 +11,35 @@ function parseScopes(scope?: string): string[] {
   return scope.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+/**
+ * HEL-181: scopes the Slack connector relies on for its public service
+ * methods (listChannels, listChannelMessages, sendMessage). Mirrors the
+ * pattern in `shopify/service.ts` + `docusign/service.ts`.
+ *
+ * `chat:write`         — sendMessage
+ * `channels:read`      — listChannels public
+ * `channels:history`   — listChannelMessages public
+ * `groups:read`        — listChannels private
+ *
+ * Configurable via `SLACK_REQUIRED_SCOPES` (comma-separated) for ops who
+ * deploy with a narrower bot integration. Default matches `SLACK_SCOPES`
+ * in `oauth.ts:29` so out-of-the-box grants pass the check.
+ */
+function requiredScopes(): string[] {
+  return (
+    process.env.SLACK_REQUIRED_SCOPES ??
+    "channels:read,chat:write,channels:history"
+  )
+    .split(",")
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+function missingRequiredScopes(granted: string[]): string[] {
+  const available = new Set(granted);
+  return requiredScopes().filter((scope) => !available.has(scope));
+}
+
 export class SlackConnectorService {
   beginOAuth(userId: string): {
     authUrl: string;
@@ -64,14 +93,25 @@ export class SlackConnectorService {
       metadata: tokenSet.expiresAt ? { expiresAt: tokenSet.expiresAt } : undefined,
     });
 
+    // HEL-181: warn at OAuth completion if the workspace granted fewer
+    // scopes than the connector needs. Surfaces in `health()` too so the
+    // ConnectorHealth dashboard (HEL-179 Gap 2) shows "degraded" with
+    // the missing-scopes list and prompts re-consent.
+    const missingScopes = missingRequiredScopes(scopes);
     logSlack({
-      event: "connect",
-      level: "info",
+      event: missingScopes.length > 0 ? "error" : "connect",
+      level: missingScopes.length > 0 ? "warn" : "info",
       connector: "slack",
       userId: state.userId,
       teamId: tokenSet.teamId,
-      message: "Slack OAuth connection completed",
-      metadata: { authMethod: "oauth2_pkce" },
+      message:
+        missingScopes.length > 0
+          ? "Slack OAuth connection completed with missing required scopes"
+          : "Slack OAuth connection completed",
+      metadata: {
+        authMethod: "oauth2_pkce",
+        ...(missingScopes.length > 0 ? { missingScopes } : {}),
+      },
     });
 
     return credential;
@@ -157,6 +197,11 @@ export class SlackConnectorService {
       const client = new SlackClient(token);
       await client.authTest();
 
+      // HEL-181: degrade to "needs reconnect with more scopes" when the
+      // granted set is missing anything the connector needs. The dashboard
+      // ConnectorHealth.tsx (HEL-179 Gap 2) renders the message + the
+      // Reconnect CTA.
+      const missingScopes = missingRequiredScopes(credential.scopes);
       const health: SlackConnectionHealth = buildTier1ConnectionHealth({
         connector: "slack",
         subject: userId,
@@ -168,13 +213,27 @@ export class SlackConnectorService {
               ? "healthy"
               : "failed"
             : "not_applicable",
+        ...(missingScopes.length > 0
+          ? {
+              status: "degraded" as const,
+              recommendedNextAction:
+                "Reconnect Slack with the required scopes: " + missingScopes.join(", "),
+            }
+          : {}),
         metadata: {
           teamId: credential.teamId,
+          ...(missingScopes.length > 0 ? { missingScopes } : {}),
         },
         details: {
           auth: true,
           apiReachable: true,
           rateLimited: false,
+          ...(missingScopes.length > 0
+            ? {
+                errorType: "schema" as const,
+                message: `Missing required scopes: ${missingScopes.join(", ")}`,
+              }
+            : {}),
         },
       });
 

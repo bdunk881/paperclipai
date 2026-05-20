@@ -187,6 +187,7 @@ async function loadCanonicalAgents(
     instructions: string | null;
     budget_monthly_usd: string | number;
     reporting_to_agent_id: string | null;
+    metadata: Record<string, unknown> | null;
     status: "active" | "paused" | "terminated";
     last_heartbeat_at: Date | string | null;
     created_at: Date | string;
@@ -203,7 +204,7 @@ async function loadCanonicalAgents(
       const result = await client.query<AgentRow>(
         `SELECT a.id, a.workspace_id, a.user_id, a.team_id, a.name,
                 a.role_key, a.model, a.instructions, a.budget_monthly_usd,
-                a.reporting_to_agent_id, a.status, a.last_heartbeat_at,
+                a.reporting_to_agent_id, a.metadata, a.status, a.last_heartbeat_at,
                 a.created_at, a.updated_at,
                 t.name AS team_name, t.description AS team_description
            FROM agents a
@@ -212,37 +213,44 @@ async function loadCanonicalAgents(
           ORDER BY a.created_at ASC`,
         [workspaceId],
       );
-      return result.rows.map((row) => ({
-        id: row.id,
-        userId: row.user_id,
-        name: row.name,
-        description: row.team_description,
-        roleKey: row.role_key,
-        model: row.model,
-        instructions: row.instructions ?? "",
-        status: toDashboardAgentStatus(row.status),
-        budgetMonthlyUsd: Number(row.budget_monthly_usd),
-        metadata: {
-          teamId: row.team_id,
-          teamName: row.team_name,
-          reportingToAgentId: row.reporting_to_agent_id,
-          workflowStepId: null,
-          workflowStepKind: null,
-        },
-        lastHeartbeatAt:
-          row.last_heartbeat_at instanceof Date
-            ? row.last_heartbeat_at.toISOString()
-            : (row.last_heartbeat_at ?? null),
-        lastRunAt: null,
-        createdAt:
-          row.created_at instanceof Date
-            ? row.created_at.toISOString()
-            : String(row.created_at),
-        updatedAt:
-          row.updated_at instanceof Date
-            ? row.updated_at.toISOString()
-            : String(row.updated_at),
-      }));
+      return result.rows.map((row) => {
+        const stored =
+          row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        return {
+          id: row.id,
+          userId: row.user_id,
+          name: row.name,
+          description: row.team_description,
+          roleKey: row.role_key,
+          model: row.model,
+          instructions: row.instructions ?? "",
+          status: toDashboardAgentStatus(row.status),
+          budgetMonthlyUsd: Number(row.budget_monthly_usd),
+          metadata: {
+            teamId: row.team_id,
+            teamName: row.team_name,
+            reportingToAgentId: row.reporting_to_agent_id,
+            workflowStepId: null,
+            workflowStepKind: null,
+            ...stored,
+          },
+          lastHeartbeatAt:
+            row.last_heartbeat_at instanceof Date
+              ? row.last_heartbeat_at.toISOString()
+              : (row.last_heartbeat_at ?? null),
+          lastRunAt: null,
+          createdAt:
+            row.created_at instanceof Date
+              ? row.created_at.toISOString()
+              : String(row.created_at),
+          updatedAt:
+            row.updated_at instanceof Date
+              ? row.updated_at.toISOString()
+              : String(row.updated_at),
+        };
+      });
     },
   );
 }

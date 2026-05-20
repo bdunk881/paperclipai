@@ -111,6 +111,7 @@ import {
   createStepResultsRoutes,
   createWakeEventsRoutes,
 } from "./canonical/canonicalReadRoutes";
+import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
@@ -193,6 +194,11 @@ const orgGraphRoutes = canonicalReadsArePostgres
   ? createOrgGraphRoutes(getPostgresPool())
   : express.Router().get("/", (_req, res) =>
       res.json({ workspaceId: null, agents: [], edges: [] }),
+    );
+const globalSearchRoutes = canonicalReadsArePostgres
+  ? createGlobalSearchRoutes(getPostgresPool())
+  : express.Router().get("/", (_req, res) =>
+      res.json({ query: "", results: [], total: 0 }),
     );
 const stepResultsRoutes = canonicalReadsArePostgres
   ? createStepResultsRoutes(getPostgresPool())
@@ -716,6 +722,13 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   orgGraphRoutes,
+);
+app.use(
+  "/api/search",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  globalSearchRoutes,
 );
 // HEL-118: step-results is mounted under /api/step-results (not /api/runs/...)
 // to avoid colliding with the legacy /api/runs/:id endpoint which uses

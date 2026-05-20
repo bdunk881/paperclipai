@@ -20,6 +20,10 @@ const llmConfigStoreMock = {
   getDecryptedDefault: jest.fn(),
 };
 const resolveModelForTierMock = jest.fn();
+// Codex P2 on #929: triageInvoker now consults estimateCost(model,...).
+// Default mock returns a deterministic non-zero number so the existing
+// "costUsd > 0" assertions stay true; individual tests can override.
+const estimateCostMock = jest.fn().mockReturnValue(0.0008);
 
 jest.mock("../engine/llmProviders", () => ({
   getProvider: (...args: unknown[]) => getProviderMock(...args),
@@ -34,6 +38,7 @@ jest.mock("../llmConfig/llmConfigStore", () => ({
 
 jest.mock("../engine/llmRouter", () => ({
   resolveModelForTier: (...args: unknown[]) => resolveModelForTierMock(...args),
+  estimateCost: (...args: unknown[]) => estimateCostMock(...args),
 }));
 
 import {
@@ -282,6 +287,83 @@ describe("createLlmTriageInvoker", () => {
     expect(result.decision).toBe("DEFER");
     expect(result.reason).toMatch(/503 service unavailable/i);
     expect(result.costUsd).toBe(0);
+  });
+
+  it("rejects DEFER reply missing deferredUntil (Codex P1 on #929)", async () => {
+    // Output contract requires deferredUntil when decision=DEFER. A
+    // sloppy model reply with null deferredUntil would otherwise be
+    // persisted unchanged and downstream re-fire scheduling silently
+    // no-ops. Parser rejects → safety-default DEFER fires with the
+    // correct deferredUntil value.
+    setupLlmStack(
+      '{"decision":"DEFER","reason":"low signal","escalatedTo":null,"deferredUntil":null}',
+    );
+    const invoker = createLlmTriageInvoker({
+      pool: POOL,
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+
+    const result = await invoker({
+      agentIdentityCard: AGENT_CARD,
+      policyBody: POLICY_BODY,
+      event: makeEvent(),
+    });
+
+    expect(result.decision).toBe("DEFER");
+    // The reason mentions "unparseable" → confirms the safety-default
+    // fired rather than the model's reply being passed through.
+    expect(result.reason).toMatch(/unparseable/i);
+    expect(result.deferredUntil).toBeTruthy();
+  });
+
+  it("rejects ESCALATE reply missing escalatedTo (Codex P1 on #929)", async () => {
+    setupLlmStack(
+      '{"decision":"ESCALATE","reason":"compliance","escalatedTo":null,"deferredUntil":null}',
+    );
+    const invoker = createLlmTriageInvoker({
+      pool: POOL,
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+    });
+
+    const result = await invoker({
+      agentIdentityCard: AGENT_CARD,
+      policyBody: POLICY_BODY,
+      event: makeEvent({ summary: "auth failure" }),
+    });
+
+    expect(result.decision).toBe("DEFER");
+    expect(result.reason).toMatch(/unparseable/i);
+  });
+
+  it("passes the resolved model name to estimateCost (Codex P2 on #929)", async () => {
+    // Previously the cost was hardcoded to Haiku rates regardless of
+    // the actual model. Now estimateCost is called with the resolved
+    // model name so non-lite/non-Anthropic tiers price correctly.
+    setupLlmStack(
+      '{"decision":"ACT","reason":"x","escalatedTo":null,"deferredUntil":null}',
+      { promptTokens: 2000, completionTokens: 100 },
+    );
+    // Override the model AFTER setupLlmStack — setupLlmStack hardcodes
+    // resolveModelForTierMock back to "claude-haiku".
+    resolveModelForTierMock.mockReturnValue("claude-sonnet-4-6");
+    estimateCostMock.mockReturnValue(0.0145);
+
+    const invoker = createLlmTriageInvoker({
+      pool: POOL,
+      userId: USER_ID,
+      workspaceId: WORKSPACE_ID,
+      tier: "standard",
+    });
+    const result = await invoker({
+      agentIdentityCard: AGENT_CARD,
+      policyBody: POLICY_BODY,
+      event: makeEvent(),
+    });
+
+    expect(estimateCostMock).toHaveBeenCalledWith("claude-sonnet-4-6", 2000, 100);
+    expect(result.costUsd).toBe(0.0145);
   });
 
   it("rejects a parsed object with an unknown decision enum value", async () => {

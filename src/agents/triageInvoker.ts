@@ -37,7 +37,7 @@
 import type { Pool } from "pg";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "../engine/llmProviders";
-import { resolveModelForTier } from "../engine/llmRouter";
+import { estimateCost, resolveModelForTier } from "../engine/llmRouter";
 import type {
   TriageInvokeInput,
   TriageInvokeOutput,
@@ -172,33 +172,52 @@ function parseTriageReply(rawText: string): ParsedTriageReply | null {
   }
   const reason = typeof obj.reason === "string" && obj.reason.trim() ? obj.reason.trim() : null;
   if (!reason) return null;
+  const escalatedTo = typeof obj.escalatedTo === "string" && obj.escalatedTo.trim()
+    ? obj.escalatedTo.trim()
+    : null;
+  const deferredUntil = typeof obj.deferredUntil === "string" && obj.deferredUntil.trim()
+    ? obj.deferredUntil.trim()
+    : null;
+  // Codex P1 on #929: the output contract REQUIRES `deferredUntil` for
+  // DEFER and `escalatedTo` for ESCALATE. Without enforcing this, a
+  // sloppy model reply (`{ decision: "ESCALATE", escalatedTo: null }`)
+  // would be persisted unchanged and downstream code (parent-wake,
+  // re-fire scheduling) silently no-ops. Reject the parse so the
+  // safety-default DEFER fires with a clear reason message instead.
+  if (decision === "DEFER" && !deferredUntil) {
+    return null;
+  }
+  if (decision === "ESCALATE" && !escalatedTo) {
+    return null;
+  }
   return {
     decision,
     reason,
-    escalatedTo: typeof obj.escalatedTo === "string" ? obj.escalatedTo : null,
-    deferredUntil: typeof obj.deferredUntil === "string" ? obj.deferredUntil : null,
+    escalatedTo,
+    deferredUntil,
   };
 }
 
 /**
- * Anthropic's cached-token output usage shape. The provider doesn't
- * surface a discrete unit price for cached vs uncached tokens, so we
- * approximate cost from the `usage` snapshot returned by the LLM call.
- * Pricing is per-1k-token; values match the Haiku/Sonnet/Opus rates as
- * of 2026-05. Update when Anthropic ships a new model tier.
+ * Codex P2 on #929: cost approximation must use the resolved model's
+ * actual rates, not a hardcoded Haiku constant. Standard / power tiers
+ * and non-Anthropic providers (OpenAI Sonnet-class equivalents, etc.)
+ * have materially different unit prices; pinning to Haiku would
+ * undercount cost on every non-lite triage call. Delegate to the
+ * canonical pricing table in `llmRouter.ts::estimateCost` which has
+ * per-model rates.
+ *
+ * Returns 0 for any model the price table doesn't know — same default
+ * behavior as `estimateCost`, surfaces "unknown" as zero rather than
+ * lying about a value we can't compute.
  */
-const HAIKU_INPUT_PRICE_PER_1K = 0.00025; // $0.25 / 1M input tokens
-const HAIKU_OUTPUT_PRICE_PER_1K = 0.00125; // $1.25 / 1M output tokens
-
 function estimateCostUsd(
+  modelId: string,
   usage: { promptTokens: number; completionTokens: number },
 ): number {
-  // Conservative estimate — assumes Haiku rates. Standard tier would
-  // bump these, but `lite` is the default for triage so most calls
-  // land on Haiku anyway.
-  const inputCost = (usage.promptTokens / 1000) * HAIKU_INPUT_PRICE_PER_1K;
-  const outputCost = (usage.completionTokens / 1000) * HAIKU_OUTPUT_PRICE_PER_1K;
-  return Number((inputCost + outputCost).toFixed(6));
+  return Number(
+    estimateCost(modelId, usage.promptTokens, usage.completionTokens).toFixed(6),
+  );
 }
 
 /**
@@ -265,13 +284,14 @@ export function createLlmTriageInvoker(
 
     const parsed = parseTriageReply(response.text);
     if (!parsed) {
-      // Model returned something we can't parse — DEFER as a safety
-      // default. Surface the raw text in the reason for operators.
+      // Model returned something we can't parse (or a DEFER/ESCALATE
+      // without the required target field) — DEFER as a safety default.
+      // Surface the raw text in the reason for operators.
       return {
         decision: "DEFER",
         reason: `LLM triage returned an unparseable reply: ${response.text.slice(0, 140)}. Defer 1h.`,
         deferredUntil: new Date(Date.now() + 3600_000).toISOString(),
-        costUsd: estimateCostUsd(response.usage ?? { promptTokens: 0, completionTokens: 0 }),
+        costUsd: estimateCostUsd(model, response.usage ?? { promptTokens: 0, completionTokens: 0 }),
       };
     }
 
@@ -280,7 +300,7 @@ export function createLlmTriageInvoker(
       reason: parsed.reason,
       escalatedTo: parsed.escalatedTo,
       deferredUntil: parsed.deferredUntil,
-      costUsd: estimateCostUsd(response.usage ?? { promptTokens: 0, completionTokens: 0 }),
+      costUsd: estimateCostUsd(model, response.usage ?? { promptTokens: 0, completionTokens: 0 }),
     };
   };
 }

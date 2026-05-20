@@ -59,11 +59,11 @@ export default function AgentStandingTasks() {
       const token = await requireAccessToken();
       const [agents, allRoutines] = await Promise.all([
         listAgents(token),
-        listRoutines(token),
+        listRoutines(token, { agentId }),
       ]);
       setAgent(agents.find((a) => a.id === agentId) ?? null);
-      // Server returns the whole workspace; filter client-side. With
-      // dozens of routines per workspace this is cheap.
+      // The backend filters by agentId; keep the client-side guard for
+      // older API instances that may still return the workspace list.
       setRoutines(allRoutines.filter((r) => r.agentId === agentId));
       setState("ready");
     } catch (err) {

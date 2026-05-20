@@ -45,8 +45,14 @@ export interface Routine {
   updatedAt: string;
 }
 
-export async function listRoutines(accessToken: string): Promise<Routine[]> {
-  const response = await trackedFetch(`${BASE}/routines`, {
+export async function listRoutines(
+  accessToken: string,
+  options: { agentId?: string } = {},
+): Promise<Routine[]> {
+  const params = new URLSearchParams();
+  if (options.agentId) params.set("agentId", options.agentId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  const response = await trackedFetch(`${BASE}/routines${query}`, {
     headers: buildHeaders(accessToken),
   });
   const payload = await parseJsonOrError<{ routines: Routine[] }>(

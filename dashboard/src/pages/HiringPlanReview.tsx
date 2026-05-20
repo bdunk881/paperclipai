@@ -30,6 +30,7 @@ import {
   type StaffingRecommendation,
   type StarterJobDescription,
   type RoleLibraryEntry,
+  type ProvisionedAgent,
 } from "../api/missionsApi";
 
 type PageState =
@@ -275,6 +276,7 @@ export default function HiringPlanReview() {
   const [pageState, setPageState] = useState<PageState>("loading");
   const [plan, setPlan] = useState<HiringPlanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmedAgents, setConfirmedAgents] = useState<ProvisionedAgent[]>([]);
 
   const load = useCallback(async () => {
     if (!planId) return;
@@ -284,6 +286,7 @@ export default function HiringPlanReview() {
       const token = await requireAccessToken();
       const data = await getHiringPlan(planId, token);
       setPlan(data);
+      if (!data.acceptedAt) setConfirmedAgents([]);
       setPageState(data.acceptedAt ? "confirmed" : "ready");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load hiring plan");
@@ -301,7 +304,8 @@ export default function HiringPlanReview() {
     setError(null);
     try {
       const token = await requireAccessToken();
-      await confirmHiringPlan(planId, token);
+      const confirmed = await confirmHiringPlan(planId, token);
+      setConfirmedAgents(confirmed.agents);
       setPageState("confirmed");
       // Refresh plan data so the confirmed state is reflected.
       const refreshed = await getHiringPlan(planId, token);
@@ -560,6 +564,12 @@ export default function HiringPlanReview() {
                   </Link>{" "}
                   will reflect the new graph.
                 </p>
+                {confirmedAgents.length > 0 ? (
+                  <ConfirmedRoutineCtas
+                    plannedAgents={agents}
+                    provisionedAgents={confirmedAgents}
+                  />
+                ) : null}
               </div>
             </div>
           ) : (
@@ -632,6 +642,81 @@ export default function HiringPlanReview() {
       ) : null}
     </div>
   );
+}
+
+function ConfirmedRoutineCtas({
+  plannedAgents,
+  provisionedAgents,
+}: {
+  plannedAgents: StaffingRecommendation[];
+  provisionedAgents: ProvisionedAgent[];
+}) {
+  const provisionedByRoleKey = new Map(provisionedAgents.map((agent) => [agent.roleKey, agent]));
+  const rows = plannedAgents
+    .map((planned) => ({ planned, provisioned: provisionedByRoleKey.get(planned.roleKey) }))
+    .filter((row): row is { planned: StaffingRecommendation; provisioned: ProvisionedAgent } =>
+      Boolean(row.provisioned),
+    );
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
+      <div className="af2-eyebrow">Default routines are ready</div>
+      {rows.map(({ planned, provisioned }) => (
+        <div
+          key={provisioned.id}
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid rgba(74,107,74,0.18)",
+            background: "rgba(255,255,255,0.55)",
+          }}
+        >
+          <span style={{ flex: "1 1 180px", fontSize: 12.5, color: "var(--af2-ink-2)" }}>
+            {provisioned.name} has a weekday default check-in.
+          </span>
+          <Link
+            to={`/agents/${encodeURIComponent(provisioned.id)}/standing-tasks`}
+            className="af2-btn af2-btn-sm af2-btn-ghost"
+            style={{ textDecoration: "none" }}
+          >
+            View routines
+          </Link>
+          <Link
+            to={buildStudioRoutineLink(planned, provisioned)}
+            className="af2-btn af2-btn-sm af2-btn-clay"
+            style={{ textDecoration: "none" }}
+          >
+            Create routine in Studio →
+          </Link>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildStudioRoutineLink(
+  planned: StaffingRecommendation,
+  provisioned: ProvisionedAgent,
+): string {
+  const params = new URLSearchParams({
+    agentId: provisioned.id,
+    agentName: provisioned.name,
+    roleKey: provisioned.roleKey,
+    routineName: `${provisioned.name} custom routine`,
+    scheduleCron: "0 9 * * 1-5",
+    prompt: [
+      `Act as ${provisioned.name}.`,
+      planned.mandate,
+      "Create a scheduled routine that reviews your mission assignments, uses connected workspace context where available, and returns a concise report with next actions.",
+    ].join("\n\n"),
+  });
+  return `/builder?${params.toString()}`;
 }
 
 /**

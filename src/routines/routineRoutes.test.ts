@@ -72,6 +72,30 @@ describe("GET /api/routines", () => {
     expect(res.body.routines[0].scheduleCron).toBe("0 2 * * *");
   });
 
+  it("filters routines by agentId when provided", async () => {
+    const agentId = "44444444-4444-4444-8444-444444444444";
+    const pool = makePool([{ ...ROUTINE_ROW, agent_id: agentId }]);
+    const app = buildApp(pool);
+
+    const res = await request(app).get(`/api/routines?agentId=${agentId}`);
+
+    expect(res.status).toBe(200);
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining("agent_id = $2::uuid"), [
+      WS_ID,
+      agentId,
+    ]);
+    expect(res.body.routines[0].agentId).toBe(agentId);
+  });
+
+  it("returns 400 when agentId filter is invalid", async () => {
+    const app = buildApp(makePool([]));
+
+    const res = await request(app).get("/api/routines?agentId=not-a-uuid");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/agentId/);
+  });
+
   it("returns 401 when workspace is missing", async () => {
     const app = express();
     app.use(express.json());

@@ -67,7 +67,7 @@ export default function AgentDetail() {
       const [agents, instructions, allRoutines] = await Promise.all([
         listAgents(token),
         listAgentInstructions(agentId, token),
-        listRoutines(token),
+        listRoutines(token, { agentId }),
       ]);
       const a = agents.find((x) => x.id === agentId) ?? null;
       setAgent(a);

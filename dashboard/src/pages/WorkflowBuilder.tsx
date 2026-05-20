@@ -72,6 +72,7 @@ import {
   type CanonicalWorkflowVersionDetail,
   type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
+import { createRoutine } from "../api/routinesApi";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import type { WorkflowRun, WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
@@ -234,6 +235,15 @@ type BuilderLocationState = {
   copilotPrompt?: string;
 } | null;
 
+type RoutineStudioIntent = {
+  agentId: string;
+  agentName: string;
+  roleKey: string;
+  routineName: string;
+  scheduleCron: string;
+  prompt: string;
+};
+
 type CopilotProposalMode = "replace" | "append" | "insert_after";
 
 type CopilotProposal = {
@@ -283,6 +293,65 @@ function getTimezoneOptions(): string[] {
     return Array.from(new Set([...COMMON_TIMEZONES, ...supported]));
   }
   return [...COMMON_TIMEZONES];
+}
+
+function readRoutineStudioIntent(search: string): RoutineStudioIntent | null {
+  const params = new URLSearchParams(search);
+  const agentId = params.get("agentId")?.trim() ?? "";
+  if (!agentId) return null;
+
+  const agentName = params.get("agentName")?.trim() || "Agent";
+  return {
+    agentId,
+    agentName,
+    roleKey: params.get("roleKey")?.trim() || agentName.toLowerCase().replace(/\s+/g, "-"),
+    routineName: params.get("routineName")?.trim() || `${agentName} routine`,
+    scheduleCron: params.get("scheduleCron")?.trim() || "0 9 * * 1-5",
+    prompt:
+      params.get("prompt")?.trim() ||
+      `Act as ${agentName}. Review your current mission assignments and produce a concise report with next actions.`,
+  };
+}
+
+function buildRoutineIntentTemplate(intent: RoutineStudioIntent): WorkflowTemplate {
+  return {
+    ...BLANK_TEMPLATE,
+    id: "tpl-custom-" + Date.now(),
+    name: intent.routineName,
+    description: `Scheduled natural-language routine for ${intent.agentName}.`,
+    steps: [
+      {
+        id: "scheduled-wake-up",
+        name: "Scheduled wake-up",
+        kind: "cron_trigger",
+        description: "Fires this routine on its cron schedule.",
+        inputKeys: [],
+        outputKeys: ["scheduledAt"],
+        cronExpression: intent.scheduleCron,
+        timezone: "UTC",
+      },
+      {
+        id: "agent-routine-prompt",
+        name: `${intent.agentName} prompt`,
+        kind: "llm",
+        description: "Natural-language instructions the agent sees when the routine runs.",
+        inputKeys: ["scheduledAt"],
+        outputKeys: ["routineResult"],
+        promptTemplate: [
+          intent.prompt,
+          "",
+          "Scheduled wake-up: {{scheduledAt}}",
+          "Return a concise result with completed work, blockers, and recommended next actions.",
+        ].join("\n"),
+      },
+    ],
+    sampleInput: {
+      scheduledAt: new Date().toISOString(),
+    },
+    expectedOutput: {
+      routineResult: "Completed work, blockers, and recommended next actions.",
+    },
+  };
 }
 
 function validateCronExpression(value: string): string | null {
@@ -441,6 +510,10 @@ export default function WorkflowBuilder() {
   const { requireAccessToken, getAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const incomingState = location.state as BuilderLocationState;
+  const routineIntent = useMemo(
+    () => readRoutineStudioIntent(location.search),
+    [location.search],
+  );
   // HEL-100: builder pop-out (?popout=1) hides every piece of chrome —
   // Layout.tsx skips its sidebar+topbar, and we skip the left palette
   // rail too so the canvas can go full-bleed.
@@ -477,6 +550,8 @@ export default function WorkflowBuilder() {
   const [copilotModel, setCopilotModel] = useState("Auto");
   const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
   const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
+  const [consumedRoutineIntent, setConsumedRoutineIntent] = useState(false);
+  const [routineCreated, setRoutineCreated] = useState(false);
   const [fieldFlashKey, setFieldFlashKey] = useState<string | null>(null);
   // HEL-27: Pro mode reveals the env panel + advanced inspector. The toggle
   // lives next to Save/Run in the header; the panel renders alongside the
@@ -558,6 +633,16 @@ export default function WorkflowBuilder() {
       .then(setAllTemplates)
       .catch((e) => setTemplatesError(e instanceof Error ? e.message : "Failed to load templates"));
   }, [activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!routineIntent || templateId || consumedRoutineIntent) return;
+
+    setTemplate(buildRoutineIntentTemplate(routineIntent));
+    setSelectedStepId("agent-routine-prompt");
+    setShowCopilot(true);
+    setCopilotInput(routineIntent.prompt);
+    setConsumedRoutineIntent(true);
+  }, [consumedRoutineIntent, routineIntent, templateId]);
 
   useEffect(() => {
     if (!templateId) return;
@@ -1120,6 +1205,7 @@ export default function WorkflowBuilder() {
       // store. Non-blocking: if the canonical write fails (e.g. backend not
       // upgraded), the legacy template save above already succeeded so the
       // user-facing flow is intact. The error is logged for diagnosis.
+      let savedCanonicalWorkflowId = canonicalWorkflowId;
       if (accessToken) {
         try {
           const dag = {
@@ -1146,6 +1232,7 @@ export default function WorkflowBuilder() {
               accessToken,
             );
             setCanonicalWorkflowId(created.id);
+            savedCanonicalWorkflowId = created.id;
           }
         } catch (canonicalErr) {
           console.warn(
@@ -1153,6 +1240,31 @@ export default function WorkflowBuilder() {
             canonicalErr instanceof Error ? canonicalErr.message : canonicalErr,
           );
         }
+      }
+
+      if (routineIntent && !savedCanonicalWorkflowId) {
+        throw new Error("Saved workflow, but could not attach a routine because canonical workflow save failed.");
+      }
+
+      if (routineIntent && !accessToken) {
+        throw new Error("Saved workflow, but could not attach a routine because authentication is required.");
+      }
+
+      if (routineIntent && !routineCreated && savedCanonicalWorkflowId && accessToken) {
+        const createdRoutine = await createRoutine(
+          {
+            agentId: routineIntent.agentId,
+            workflowId: savedCanonicalWorkflowId,
+            name: routineIntent.routineName,
+            scheduleCron: routineIntent.scheduleCron,
+            triggerKind: "manual",
+            enabled: true,
+          },
+          accessToken,
+        );
+        setRoutineCreated(true);
+        setRunError(null);
+        setCopilotLiveMessage(`Routine "${createdRoutine.name}" is attached to ${routineIntent.agentName}.`);
       }
 
       setSaved(true);
@@ -1284,6 +1396,21 @@ export default function WorkflowBuilder() {
               className="rounded-full bg-af2-sage px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-af2-sage-2"
             >
               Open team monitor
+            </a>
+          </div>
+        )}
+        {routineIntent && !routineCreated && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-af2-sage/30 bg-af2-sage/10 px-6 py-3 text-sm text-af2-sage">
+            <div>
+              <span className="font-semibold">Routine draft for {routineIntent.agentName}.</span>{" "}
+              Save this workflow to attach "{routineIntent.routineName}" on{" "}
+              <span className="font-af2-mono">{routineIntent.scheduleCron}</span>.
+            </div>
+            <a
+              href={`/agents/${encodeURIComponent(routineIntent.agentId)}/standing-tasks`}
+              className="rounded-full border border-af2-sage/40 px-3 py-1.5 text-xs font-semibold text-af2-sage transition hover:bg-af2-sage/10"
+            >
+              View agent routines
             </a>
           </div>
         )}

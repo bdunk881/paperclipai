@@ -8,6 +8,7 @@
  */
 
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HiringPlanResponse } from "../api/missionsApi";
@@ -236,6 +237,55 @@ describe("HiringPlanReview (HEL-105)", () => {
       "href",
       "/workspace/org-structure",
     );
+  });
+
+  it("shows post-confirm routine CTAs that deep-link into Studio", async () => {
+    const user = userEvent.setup();
+    getHiringPlanMock
+      .mockResolvedValueOnce(makeResponse())
+      .mockResolvedValueOnce(
+        makeResponse({ acceptedAt: new Date().toISOString(), acceptedByUserId: "user-1" }),
+      );
+    confirmHiringPlanMock.mockResolvedValueOnce({
+      hiringPlanId: "plan-1",
+      missionId: "mission-1",
+      acceptedAt: new Date().toISOString(),
+      agents: [
+        {
+          id: "agent-ceo",
+          roleKey: "ceo",
+          name: "CEO",
+          modelTier: "power",
+          model: null,
+          budgetMonthlyUsd: 500,
+          reportingToAgentId: null,
+        },
+        {
+          id: "agent-sdr",
+          roleKey: "sdr",
+          name: "SDR",
+          modelTier: "lite",
+          model: null,
+          budgetMonthlyUsd: 80,
+          reportingToAgentId: "agent-ceo",
+        },
+      ],
+      orgEdges: [{ managerAgentId: "agent-ceo", agentId: "agent-sdr" }],
+    });
+    renderRoute();
+
+    await user.click(
+      await screen.findByRole("button", { name: /Confirm & provision agents/i }),
+    );
+
+    expect(await screen.findByText(/Default routines are ready/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /View routines/i })[0]).toHaveAttribute(
+      "href",
+      "/agents/agent-ceo/standing-tasks",
+    );
+    const studioLinks = screen.getAllByRole("link", { name: /Create routine in Studio/i });
+    expect(studioLinks[0].getAttribute("href")).toContain("/builder?agentId=agent-ceo");
+    expect(studioLinks[0].getAttribute("href")).toContain("scheduleCron=0+9+*+*+1-5");
   });
 
   it("renders the library role picker with roles when plan is unconfirmed", async () => {

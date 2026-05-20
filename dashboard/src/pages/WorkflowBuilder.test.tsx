@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import WorkflowBuilder from "./WorkflowBuilder";
 import { generateWorkflow, getTemplate, listLLMConfigs, listRuns, listTemplates, startRunWithFile } from "../api/client";
+import { createRoutine } from "../api/routinesApi";
 import type { WorkflowStep } from "../types/workflow";
 
 const requireAccessTokenMock = vi.fn();
@@ -74,6 +75,10 @@ vi.mock("../api/workflowsApi", () => ({
   getCanonicalWorkflowVersion: vi.fn(),
 }));
 
+vi.mock("../api/routinesApi", () => ({
+  createRoutine: vi.fn(),
+}));
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     getAccessToken: vi.fn().mockResolvedValue("token-123"),
@@ -87,12 +92,14 @@ const generateWorkflowMock = vi.mocked(generateWorkflow);
 const startRunWithFileMock = vi.mocked(startRunWithFile);
 const listRunsMock = vi.mocked(listRuns);
 const getTemplateMock = vi.mocked(getTemplate);
+const createRoutineMock = vi.mocked(createRoutine);
 
-function renderBuilder() {
+function renderBuilder(initialEntry = "/builder") {
   render(
-    <MemoryRouter initialEntries={["/builder"]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route path="/builder" element={<WorkflowBuilder />} />
+        <Route path="/builder/:templateId" element={<WorkflowBuilder />} />
       </Routes>
     </MemoryRouter>
   );
@@ -111,6 +118,18 @@ beforeEach(() => {
   getTemplateMock.mockReset();
   generateWorkflowMock.mockReset();
   startRunWithFileMock.mockReset();
+  createRoutineMock.mockResolvedValue({
+    id: "routine-1",
+    workspaceId: "workspace-1",
+    agentId: "agent-1",
+    name: "Routine",
+    scheduleCron: "0 9 * * 1-5",
+    triggerKind: "manual",
+    workflowId: "workflow-1",
+    enabled: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
 });
 
 describe("WorkflowBuilder", () => {
@@ -188,6 +207,17 @@ describe("WorkflowBuilder", () => {
     const proToggleOn = screen.getByRole("button", { name: /Disable Pro mode/i });
     expect(proToggleOn).toHaveAttribute("aria-pressed", "true");
     expect(proToggleOn).toHaveTextContent(/Pro mode ON/i);
+  });
+
+  it("pre-populates a Studio routine draft from hiring-plan CTA query params", async () => {
+    renderBuilder(
+      "/builder?agentId=agent-1&agentName=Marketing%20Lead&roleKey=marketing&routineName=Weekly%20Review&scheduleCron=0%209%20*%20*%201&prompt=Generate%20this%20week%27s%20review",
+    );
+
+    expect(await screen.findByDisplayValue("Weekly Review")).toBeInTheDocument();
+    expect(screen.getByText(/Routine draft for Marketing Lead/i)).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue(/Generate this week's review/i).length).toBeGreaterThan(0);
+    expect(screen.getByText("0 9 * * 1")).toBeInTheDocument();
   });
 
   it("skips invalid auto-links when adding a step after an output", async () => {

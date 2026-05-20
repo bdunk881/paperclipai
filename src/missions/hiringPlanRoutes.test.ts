@@ -16,7 +16,7 @@ jest.mock("../engine/llmProviders", () => ({
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
-import { createHiringPlanRoutes } from "./hiringPlanRoutes";
+import { buildStarterRoutineDag, createHiringPlanRoutes } from "./hiringPlanRoutes";
 
 // Stub Postgres pool — never queried in the rejection paths we test.
 const stubPool = { query: jest.fn() } as unknown as Parameters<typeof createHiringPlanRoutes>[0];
@@ -222,5 +222,43 @@ describe("DASH-1 — canonical table-name regression", () => {
       .replace(/(['"`])(?:\\.|(?!\1).)*\1/g, "");
     expect(codeOnly).not.toMatch(/\bFROM\s+teams\b/);
     expect(codeOnly).not.toMatch(/\bINTO\s+teams\b/);
+  });
+});
+
+describe("HEL-154 — hiring-plan confirm routine seeding", () => {
+  it("builds a natural-language starter routine DAG with a cron trigger", () => {
+    const dag = buildStarterRoutineDag({
+      title: "Marketing Lead",
+      roleKey: "marketing-lead",
+      mandate: "Own weekly marketing reporting.",
+      modelTier: "standard",
+      scheduleCron: "0 9 * * 1-5",
+    });
+
+    expect(dag.name).toBe("Marketing Lead default routine");
+    expect(dag.steps[0]).toMatchObject({
+      kind: "cron_trigger",
+      cronExpression: "0 9 * * 1-5",
+    });
+    expect(dag.steps[1]).toMatchObject({
+      kind: "llm",
+      llmTier: "standard",
+      outputKeys: ["routineSummary"],
+    });
+    expect(dag.steps[1]?.promptTemplate).toContain("Own weekly marketing reporting.");
+  });
+
+  it("keeps confirm wired to routines and scheduler sync", () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("node:fs") as typeof import("node:fs");
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const path = require("node:path") as typeof import("node:path");
+    const src = fs.readFileSync(
+      path.join(__dirname, "hiringPlanRoutes.ts"),
+      "utf8",
+    );
+
+    expect(src).toMatch(/INSERT\s+INTO\s+routines\b/);
+    expect(src).toMatch(/syncRepeatableJobs\(runQueue,\s*pool\)/);
   });
 });

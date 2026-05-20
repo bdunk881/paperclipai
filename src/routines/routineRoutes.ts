@@ -70,15 +70,25 @@ export function createRoutineRoutes(
       return;
     }
 
+    const agentId =
+      typeof req.query.agentId === "string" && req.query.agentId.trim()
+        ? req.query.agentId.trim()
+        : null;
+    if (agentId && !UUID_RE.test(agentId)) {
+      res.status(400).json({ error: "Invalid agentId format" });
+      return;
+    }
+
     try {
       const result = await pool.query<RoutineRow>(
         `SELECT id, workspace_id::text, agent_id::text, name, schedule_cron,
                 trigger_kind, workflow_id::text, enabled, created_at, updated_at
            FROM routines
           WHERE workspace_id = $1::uuid
+            AND ($2::uuid IS NULL OR agent_id = $2::uuid)
           ORDER BY created_at DESC
           LIMIT 100`,
-        [workspaceId]
+        [workspaceId, agentId]
       );
       res.json({ routines: result.rows.map(mapRow) });
     } catch (err) {

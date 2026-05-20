@@ -29,6 +29,7 @@
 
 import { Router } from "express";
 import type { Pool, PoolClient } from "pg";
+import type { Queue } from "bullmq";
 import { randomUUID } from "node:crypto";
 import * as Sentry from "@sentry/node";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
@@ -44,8 +45,12 @@ import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
 import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../billing/entitlements";
 import type { SubscriptionTier } from "../billing/subscriptionStore";
+import { syncRepeatableJobs } from "../queue/scheduler";
+import type { RunJobPayload } from "../queue/queues";
+import type { WorkflowTemplate } from "../types/workflow";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEFAULT_ROUTINE_CRON = "0 9 * * 1-5";
 
 const UPGRADE_PATH: Record<SubscriptionTier, SubscriptionTier | null> = {
   explore: "flow",
@@ -349,6 +354,118 @@ async function insertStarterJobDescription(
   );
 }
 
+export function buildStarterRoutineDag(agent: {
+  title: string;
+  roleKey: string;
+  mandate: string;
+  modelTier: "lite" | "standard" | "power";
+  scheduleCron?: string;
+}): WorkflowTemplate {
+  const scheduleCron = agent.scheduleCron ?? DEFAULT_ROUTINE_CRON;
+  return {
+    id: `routine-${agent.roleKey}-starter`,
+    name: `${agent.title} default routine`,
+    description: `Default scheduled check-in for ${agent.title}.`,
+    category: "custom",
+    version: "1.0.0",
+    configFields: [],
+    steps: [
+      {
+        id: "scheduled-wake-up",
+        name: "Scheduled wake-up",
+        kind: "cron_trigger",
+        description: "Wakes the agent on the default weekday schedule.",
+        inputKeys: [],
+        outputKeys: ["scheduledAt"],
+        cronExpression: scheduleCron,
+        timezone: "UTC",
+      },
+      {
+        id: "agent-routine-prompt",
+        name: `${agent.title} routine prompt`,
+        kind: "llm",
+        description: "Prompts the agent to review assignments and report next actions.",
+        inputKeys: ["scheduledAt"],
+        outputKeys: ["routineSummary"],
+        llmTier: agent.modelTier,
+        promptTemplate: [
+          `You are ${agent.title}, an AutoFlow agent.`,
+          "",
+          `Mandate: ${agent.mandate}`,
+          "",
+          "Routine: check for new mission assignments, review any connected workspace context available to you, and produce a concise status update with concrete next actions.",
+          "If you need human input or approval, clearly ask for it.",
+          "",
+          "Scheduled wake-up: {{scheduledAt}}",
+        ].join("\n"),
+      },
+    ],
+    sampleInput: {
+      scheduledAt: "{{scheduledAt}}",
+    },
+    expectedOutput: {
+      routineSummary: "A concise status update with next actions.",
+    },
+  };
+}
+
+async function insertStarterRoutine(
+  client: PoolClient,
+  params: {
+    workspaceId: string;
+    userId: string;
+    agentId: string;
+    agentTitle: string;
+    roleKey: string;
+    mandate: string;
+    modelTier: "lite" | "standard" | "power";
+  },
+): Promise<{ routineId: string; workflowId: string }> {
+  const workflowId = randomUUID();
+  const workflowVersionId = randomUUID();
+  const routineId = randomUUID();
+  const workflowName = `${params.agentTitle} default routine`;
+  const dag = buildStarterRoutineDag({
+    title: params.agentTitle,
+    roleKey: params.roleKey,
+    mandate: params.mandate,
+    modelTier: params.modelTier,
+    scheduleCron: DEFAULT_ROUTINE_CRON,
+  });
+
+  await client.query(
+    `INSERT INTO workflows (id, workspace_id, name, external_template_id)
+       VALUES ($1, $2, $3, $4)`,
+    [workflowId, params.workspaceId, workflowName, `starter-routine:${params.agentId}`],
+  );
+  await client.query(
+    `INSERT INTO workflow_versions (id, workflow_id, version, dag, created_by_user_id)
+       VALUES ($1, $2, 1, $3::jsonb, $4)`,
+    [workflowVersionId, workflowId, JSON.stringify(dag), params.userId],
+  );
+  await client.query(
+    `UPDATE workflows SET latest_version_id = $1, updated_at = now() WHERE id = $2`,
+    [workflowVersionId, workflowId],
+  );
+  await client.query(
+    `INSERT INTO routines (
+       id, workspace_id, agent_id, name, schedule_cron, trigger_kind, workflow_id, enabled
+     ) VALUES (
+       $1, $2, $3, $4, $5, 'manual', $6, true
+     )`,
+    [
+      routineId,
+      params.workspaceId,
+      params.agentId,
+      "Default check-in",
+      DEFAULT_ROUTINE_CRON,
+      workflowId,
+    ],
+  );
+
+  return { routineId, workflowId };
+}
+
 async function emitActivityEvent(
   client: PoolClient,
   workspaceId: string,
@@ -458,7 +575,10 @@ function libraryEntryToRecommendation(
   };
 }
 
-export function createHiringPlanRoutes(pool: Pool) {
+export function createHiringPlanRoutes(
+  pool: Pool,
+  runQueue: Queue<RunJobPayload> | null = null,
+) {
   const router = Router();
 
   // HEL-138: expose the role library so the dashboard can render the pre-built
@@ -784,6 +904,16 @@ export function createHiringPlanRoutes(pool: Pool) {
                   },
                 });
               }
+
+              await insertStarterRoutine(client, {
+                workspaceId,
+                userId,
+                agentId: id,
+                agentTitle: agent.title,
+                roleKey: agent.roleKey,
+                mandate: agent.mandate,
+                modelTier: agent.modelTier,
+              });
             }
 
             // 2. Insert org_edges from reportingLines.
@@ -928,6 +1058,32 @@ export function createHiringPlanRoutes(pool: Pool) {
         ...(Object.keys(pgFields).length > 0 ? { postgres: pgFields } : {}),
       });
       return;
+    }
+
+    if (runQueue) {
+      try {
+        await syncRepeatableJobs(runQueue, pool);
+      } catch (syncErr) {
+        console.warn(
+          `[hiring-plans] routine scheduler sync failed after confirm ${hiringPlanId} (continuing): ${
+            (syncErr as Error).message
+          }`,
+        );
+        Sentry.captureException(syncErr, {
+          tags: {
+            route: "POST /api/hiring-plans/:hiringPlanId/confirm",
+            phase: "routine_scheduler_sync",
+          },
+          contexts: {
+            hiring_plan: {
+              workspaceId,
+              userId,
+              hiringPlanId,
+              missionId: lookup?.mission_id,
+            },
+          },
+        });
+      }
     }
 
     res.status(200).json(response);

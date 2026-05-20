@@ -2289,10 +2289,12 @@ describe("POST /api/runs/:runId/replay-from-step", () => {
       userId = "hel-176-user",
       workspaceId,
       stepStatuses,
+      status,
     }: {
       userId?: string;
       workspaceId?: string;
       stepStatuses: Array<"success" | "failure">;
+      status?: "pending" | "queued" | "running" | "completed" | "failed" | "escalated" | "canceled" | "cancelling" | "awaiting_approval";
     },
   ) {
     await runStore.create({
@@ -2300,7 +2302,7 @@ describe("POST /api/runs/:runId/replay-from-step", () => {
       templateId: "tpl-replay-route",
       templateName: "Replay route template",
       workspaceId,
-      status: stepStatuses.includes("failure") ? "failed" : "completed",
+      status: status ?? (stepStatuses.includes("failure") ? "failed" : "completed"),
       startedAt: new Date().toISOString(),
       input: { seed: "value" },
       stepResults: stepStatuses.map((status, ordinal) => ({
@@ -2442,6 +2444,47 @@ describe("POST /api/runs/:runId/replay-from-step", () => {
       .post("/api/runs/run-irrelevant/replay-from-step")
       .send({ stepIndex: 1 });
     expect(res.status).toBe(401);
+  });
+
+  // HEL-176 Codex P2: only failed/escalated runs may be replayed.
+  it("returns 409 when replaying a non-failed run (running)", async () => {
+    await seedRun("run-replay-step-running", {
+      stepStatuses: ["success", "success"],
+      status: "running",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-running/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/only 'failed' or 'escalated' runs are replayable/);
+  });
+
+  it("returns 409 when replaying a completed run", async () => {
+    await seedRun("run-replay-step-completed", {
+      stepStatuses: ["success", "success"],
+      status: "completed",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-completed/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(409);
+  });
+
+  it("accepts an escalated run for replay", async () => {
+    await seedRun("run-replay-step-escalated", {
+      stepStatuses: ["success", "failure"],
+      status: "escalated",
+    });
+
+    const res = await request(app)
+      .post("/api/runs/run-replay-step-escalated/replay-from-step")
+      .set(asAuth("hel-176-user"))
+      .send({ stepIndex: 1 });
+    expect(res.status).toBe(200);
   });
 });
 

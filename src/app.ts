@@ -1362,9 +1362,27 @@ app.post(
       return;
     }
 
+    // HEL-176 Codex P2: only allow replay for terminal failure states.
+    // Replaying a `running` / `queued` run can race with the original's
+    // remaining steps; replaying a `completed` run duplicates
+    // side-effecting work (the whole reason this feature exists is to
+    // recover from a failure, not fork from a successful run).
+    if (run.status !== "failed" && run.status !== "escalated") {
+      res.status(409).json({
+        error: `Cannot replay run in status '${run.status}'; only 'failed' or 'escalated' runs are replayable`,
+      });
+      return;
+    }
+
+    // HEL-176 Codex P1: route through the BullMQ queue when Redis is
+    // available so the replay benefits from worker retry/DLQ/cancellation
+    // and survives API restarts — mirrors the POST /api/runs path.
+    const runQueue = getRunQueue();
     let newRun;
     try {
-      newRun = await workflowEngine.replayFromStep(runId, stepIndex, userId);
+      newRun = await workflowEngine.replayFromStep(runId, stepIndex, userId, {
+        skipExecution: Boolean(runQueue),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/not found/i.test(message)) {
@@ -1373,6 +1391,22 @@ app.post(
       }
       res.status(400).json({ error: message });
       return;
+    }
+
+    if (runQueue) {
+      const idempotencyKey = `${newRun.id}:${stepIndex}:replay-from-step`;
+      await runQueue.add(
+        "run",
+        {
+          runId: newRun.id,
+          templateId: newRun.templateId,
+          workflowVersionId: newRun.workflowVersionId,
+          workspaceId: newRun.workspaceId ?? "",
+          stepIndex,
+          idempotencyKey,
+        },
+        { jobId: newRun.id, removeOnComplete: 100 },
+      );
     }
 
     // HEL-176: best-effort activity event so the operator dashboard

@@ -343,7 +343,8 @@ export class WorkflowEngine {
   async replayFromStep(
     originalRunId: string,
     stepIndex: number,
-    userId?: string
+    userId?: string,
+    options?: { skipExecution?: boolean }
   ): Promise<WorkflowRun> {
     const original = await runStore.get(originalRunId);
     if (!original) {
@@ -434,6 +435,16 @@ export class WorkflowEngine {
       },
       ...(userId !== undefined ? { userId } : {}),
     });
+
+    // HEL-176 Codex P1: caller may opt out of inline execution so the
+    // endpoint can route through the BullMQ queue when Redis is
+    // available — matching the POST /api/runs enqueue path. When
+    // skipExecution is true we leave the new run in 'queued' so the
+    // worker is the sole executor.
+    if (options?.skipExecution) {
+      await runStore.update(newRun.id, { status: "queued" });
+      return { ...newRun, status: "queued" };
+    }
 
     // Fire-and-forget the run loop so the HTTP response returns
     // immediately. _runSteps owns transitioning pending → running →

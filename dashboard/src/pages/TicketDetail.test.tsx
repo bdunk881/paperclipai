@@ -17,6 +17,7 @@ const ticketsApiMocks = vi.hoisted(() => ({
   addTicketUpdate: vi.fn(),
   transitionTicket: vi.fn(),
   searchTicketMemories: vi.fn(),
+  runTicketAgent: vi.fn(),
 }));
 
 const agentApiMocks = vi.hoisted(() => ({
@@ -39,6 +40,7 @@ vi.mock("../api/tickets", async () => {
     addTicketUpdate: ticketsApiMocks.addTicketUpdate,
     transitionTicket: ticketsApiMocks.transitionTicket,
     searchTicketMemories: ticketsApiMocks.searchTicketMemories,
+    runTicketAgent: ticketsApiMocks.runTicketAgent,
   };
 });
 
@@ -59,6 +61,7 @@ const baseAggregate = {
     assignees: [
       { type: "user", id: "user-1", role: "primary" },
       { type: "user", id: "user-2", role: "collaborator" },
+      { type: "agent", id: "frontend-engineer", role: "collaborator" },
     ],
     createdAt: "2026-04-24T00:00:00.000Z",
     updatedAt: "2026-04-24T01:00:00.000Z",
@@ -134,6 +137,11 @@ describe("TicketDetail", () => {
       ],
       total: 1,
       source: "api",
+    });
+    ticketsApiMocks.runTicketAgent.mockResolvedValue({
+      ok: true,
+      runId: "run-1",
+      needsHumanInput: false,
     });
     agentApiMocks.listAgents.mockResolvedValue([
       {
@@ -232,6 +240,48 @@ describe("TicketDetail", () => {
         "token-123"
       );
     });
+  });
+
+  it("queues an agent run and shows a sage toast when Run-agent succeeds (HEL-174)", async () => {
+    const user = userEvent.setup();
+    renderTicketDetail();
+
+    const button = await screen.findByRole("button", { name: /run agent/i });
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(ticketsApiMocks.runTicketAgent).toHaveBeenCalledWith("ticket-1", "token-123");
+    });
+
+    expect(
+      await screen.findByText(/agent run queued — the timeline will update when it completes/i)
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a clay error banner when Run-agent fails (HEL-174)", async () => {
+    ticketsApiMocks.runTicketAgent.mockRejectedValueOnce(new Error("agent crashed mid-turn"));
+    const user = userEvent.setup();
+    renderTicketDetail();
+
+    const button = await screen.findByRole("button", { name: /run agent/i });
+    await user.click(button);
+
+    expect(await screen.findByText("agent crashed mid-turn")).toBeInTheDocument();
+  });
+
+  it("hides the Run-agent button when the ticket is resolved (HEL-174)", async () => {
+    ticketsApiMocks.getTicket.mockResolvedValue({
+      ...structuredClone(baseAggregate),
+      ticket: {
+        ...structuredClone(baseAggregate).ticket,
+        status: "resolved",
+      },
+    });
+    renderTicketDetail();
+
+    // Wait for the page to mount.
+    await screen.findByText("Memory");
+    expect(screen.queryByRole("button", { name: /run agent/i })).not.toBeInTheDocument();
   });
 
   it("does not advertise mock ticket data when both live and fallback loads fail", async () => {

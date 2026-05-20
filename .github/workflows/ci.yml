@@ -65,7 +65,7 @@ jobs:
       - name: Forbid Azure Container Registry references (HEL-163)
         run: |
           if git grep -lnE 'azurecr\.io|autoflowacr\.azurecr|autoflowproductionacr' -- . \
-             -- ':!k8s/README.md'; then
+             -- ':!k8s/README.md' ':!.github/workflows/ci.yml'; then
             echo "Azure ACR image references are retired — deploy via Fly.io (see AGENTS.md)"
             exit 1
           fi

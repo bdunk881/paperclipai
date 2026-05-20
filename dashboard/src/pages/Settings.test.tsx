@@ -209,7 +209,11 @@ describe("Settings (v2 tabbed surface)", () => {
     // Danger zone
     expect(screen.getByText("Danger zone")).toBeInTheDocument();
     expect(screen.getByText("Pause all agents")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pause all" })).toBeEnabled();
+    // The Pause-all button enables once the lifecycle fetch resolves —
+    // give it a tick to settle.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Pause all" })).toBeEnabled()
+    );
   });
 
   it("renders the workspace meta strap with the active workspace name", async () => {

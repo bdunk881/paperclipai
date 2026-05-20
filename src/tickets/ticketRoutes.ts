@@ -1,11 +1,13 @@
 import { NextFunction, Response, Router } from "express";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   TicketActorType,
   TicketAssignee,
   TicketPriority,
+  TicketRecord,
   TicketStatus,
   TicketUpdateType,
   ticketStore,
@@ -13,6 +15,20 @@ import {
 import { ticketSlaStore } from "./ticketSlaStore";
 import { ticketSyncService } from "../ticketSync/service";
 import { observabilityStore } from "../observability/store";
+import { getAgentPromptQueue } from "../queue/queues";
+import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
+
+// HEL-174: lazy-import the agent execution primitive so ticketRoutes.ts
+// doesn't pull the entire LLM provider stack (including ESM-only
+// `@mistralai/mistralai`) into Jest's transform graph at import time.
+// The primitive is only resolved at dispatch time; in production
+// every dispatch falls through to the BullMQ queue path anyway.
+type ExecuteAgentPromptInput = import("../agents/agentPromptExecution").ExecuteAgentPromptInput;
+type ExecuteAgentPromptFn = (input: ExecuteAgentPromptInput) => Promise<unknown>;
+async function resolveExecuteAgentPrompt(): Promise<ExecuteAgentPromptFn> {
+  const mod = await import("../agents/agentPromptExecution");
+  return mod.executeAgentPrompt as unknown as ExecuteAgentPromptFn;
+}
 
 const router = Router();
 
@@ -182,6 +198,78 @@ function resolveActor(req: AuthenticatedRequest, actorType?: TicketActorType) {
     type: actorType ?? "user",
     id: actorId,
   };
+}
+
+/**
+ * HEL-174: Enqueue agent NL execution when a ticket has an agent
+ * assignee. Picks the primary agent assignee (or first agent
+ * assignee if none is marked primary). No-ops when there's no
+ * agent assignee, when Postgres isn't configured, or when the
+ * agent ID isn't a UUID.
+ *
+ * triggerKind:
+ *   - "assignment" — fired on ticket create
+ *   - "assignment_update" — fired on follow-up comment
+ *   - "manual" — fired by Run-agent CTA
+ */
+async function dispatchAgentPromptForTicket(input: {
+  ticket: TicketRecord;
+  userId: string;
+  triggerKind: "assignment" | "assignment_update" | "manual";
+  /**
+   * Latest content to surface as the agent's prompt. On create this
+   * is the ticket description; on follow-up update it's the latest
+   * comment so the agent picks up the new instruction.
+   */
+  prompt: string;
+}): Promise<void> {
+  if (!isPostgresConfigured()) {
+    return;
+  }
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const agentAssignee =
+    input.ticket.assignees.find((a) => a.type === "agent" && a.role === "primary") ??
+    input.ticket.assignees.find((a) => a.type === "agent");
+  if (!agentAssignee || !UUID_RE.test(agentAssignee.id)) {
+    return;
+  }
+  const queue = getAgentPromptQueue();
+  const idempotencyKey = `ticket:${input.ticket.id}:${input.triggerKind}:${randomUUID()}`;
+  const payload = {
+    workspaceId: input.ticket.workspaceId,
+    userId: input.userId,
+    agentId: agentAssignee.id,
+    prompt: input.prompt,
+    sourceTicketId: input.ticket.id,
+    triggerKind: input.triggerKind,
+    idempotencyKey,
+  };
+  if (queue) {
+    await queue.add(input.triggerKind, payload, { jobId: idempotencyKey });
+    return;
+  }
+  // Redis unavailable — execute inline so dev still exercises the
+  // path. Failures here log but don't block the route response; ticket
+  // create/update must succeed even if the agent run flakes. Lazy-loads
+  // the primitive so test contexts that don't have @mistralai/mistralai
+  // transformed don't trip on the import chain.
+  void resolveExecuteAgentPrompt()
+    .then((executeAgentPrompt) =>
+      executeAgentPrompt({
+        pool: getPostgresPool(),
+        workspaceId: payload.workspaceId,
+        userId: payload.userId,
+        agentId: payload.agentId,
+        prompt: payload.prompt,
+        sourceTicketId: payload.sourceTicketId,
+        triggerKind: payload.triggerKind,
+      }),
+    )
+    .catch((err) => {
+      console.warn(
+        `[tickets] inline agent dispatch failed for ticket=${payload.sourceTicketId}: ${(err as Error).message}`,
+      );
+    });
 }
 
 function targetToMinutes(target: { kind: "minutes" | "business_days"; value: number }): number {
@@ -364,6 +452,20 @@ router.post("/", requireRunId, async (req: WorkspaceAwareRequest, res) => {
       },
     },
     occurredAt: aggregate.ticket.createdAt,
+  });
+
+  // HEL-174: if the new assignment has an agent assignee, kick off the
+  // agent NL execution. Mission Assignments are the front-door for
+  // user → agent NL requests; this is the dispatch hook.
+  await dispatchAgentPromptForTicket({
+    ticket: aggregate.ticket,
+    userId: actor.id,
+    triggerKind: "assignment",
+    prompt: aggregate.ticket.description || aggregate.ticket.title,
+  }).catch((err) => {
+    console.warn(
+      `[tickets] HEL-174 dispatch failed for ticket=${aggregate.ticket.id}: ${(err as Error).message}`,
+    );
   });
 
   res.status(201).json(aggregate);
@@ -947,10 +1049,66 @@ router.post("/:id/updates", requireRunId, async (req: WorkspaceAwareRequest, res
         },
         occurredAt: update.createdAt,
       });
+
+      // HEL-174: when a user adds a comment to an assignment with an
+      // agent assignee, re-fire the agent with the new comment as the
+      // prompt. Skip when the actor is the agent itself (avoids
+      // self-trigger loops).
+      if (actor.type === "user" && aggregate.ticket.status !== "resolved" && aggregate.ticket.status !== "cancelled") {
+        await dispatchAgentPromptForTicket({
+          ticket: aggregate.ticket,
+          userId: actor.id,
+          triggerKind: "assignment_update",
+          prompt: update.content,
+        }).catch((err) => {
+          console.warn(
+            `[tickets] HEL-174 follow-up dispatch failed for ticket=${aggregate.ticket.id}: ${(err as Error).message}`,
+          );
+        });
+      }
     }
   }
 
   res.status(201).json({ update });
+});
+
+/**
+ * HEL-174: manual "Run agent" CTA on a ticket. Re-fires the agent
+ * against the current state of the ticket. The ticket's latest comment
+ * (or its description when no comments) is the prompt.
+ */
+router.post("/:id/run-agent", requireRunId, async (req: WorkspaceAwareRequest, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+  const actor = resolveActor(req, "user");
+  if (!actor) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+  const aggregate = await ticketStore.get(req.params.id, context);
+  if (!aggregate) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  // Use the latest user/system comment as the prompt; fall back to
+  // the ticket description.
+  const latestUserUpdate = [...aggregate.updates]
+    .reverse()
+    .find(
+      (u) =>
+        u.type === "comment" &&
+        (u.actor.type === "user" || u.actor.id === "system"),
+    );
+  const prompt = latestUserUpdate?.content || aggregate.ticket.description || aggregate.ticket.title;
+  await dispatchAgentPromptForTicket({
+    ticket: aggregate.ticket,
+    userId: actor.id,
+    triggerKind: "manual",
+    prompt,
+  });
+  res.status(202).json({ status: "queued", ticketId: aggregate.ticket.id });
 });
 
 router.post("/:id/transitions", requireRunId, async (req: WorkspaceAwareRequest, res) => {

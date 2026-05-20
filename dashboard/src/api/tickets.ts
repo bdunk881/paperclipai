@@ -807,6 +807,34 @@ export async function addTicketUpdate(
   return { update: data.update, source: "api" as const };
 }
 
+/**
+ * HEL-174: kick off agent NL execution against a ticket on-demand.
+ * Backend `POST /api/tickets/:id/run-agent` enqueues `agent-prompt`
+ * with `triggerKind: "manual"` and uses the latest user comment (or
+ * the ticket description) as the prompt.
+ */
+export async function runTicketAgent(
+  ticketId: string,
+  accessToken?: string,
+): Promise<{ status: string; ticketId: string }> {
+  if (USE_MOCK_API) {
+    return { status: "queued", ticketId };
+  }
+  const res = await trackedFetch(
+    `${BASE}/tickets/${encodeURIComponent(ticketId)}/run-agent`,
+    {
+      method: "POST",
+      headers: buildMutationHeaders(accessToken),
+      body: JSON.stringify({}),
+    },
+  );
+  if (!res.ok) {
+    const message = await readErrorMessage(res, "Failed to run agent on ticket");
+    throw new Error(message);
+  }
+  return res.json() as Promise<{ status: string; ticketId: string }>;
+}
+
 export async function transitionTicket(
   ticketId: string,
   input: TransitionTicketInput,

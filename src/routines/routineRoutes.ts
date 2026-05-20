@@ -27,7 +27,10 @@ interface RoutineRow {
   name: string;
   schedule_cron: string | null;
   trigger_kind: string;
-  workflow_id: string;
+  workflow_id: string | null;
+  prompt: string | null;
+  system_prompt: string | null;
+  llm_tier: "lite" | "standard" | "power" | null;
   enabled: boolean;
   created_at: Date | string;
   updated_at: Date | string;
@@ -42,6 +45,9 @@ function mapRow(row: RoutineRow) {
     scheduleCron: row.schedule_cron,
     triggerKind: row.trigger_kind,
     workflowId: row.workflow_id,
+    prompt: row.prompt,
+    systemPrompt: row.system_prompt,
+    llmTier: row.llm_tier,
     enabled: row.enabled,
     createdAt:
       row.created_at instanceof Date
@@ -73,7 +79,8 @@ export function createRoutineRoutes(
     try {
       const result = await pool.query<RoutineRow>(
         `SELECT id, workspace_id::text, agent_id::text, name, schedule_cron,
-                trigger_kind, workflow_id::text, enabled, created_at, updated_at
+                trigger_kind, workflow_id::text, prompt, system_prompt, llm_tier,
+                enabled, created_at, updated_at
            FROM routines
           WHERE workspace_id = $1::uuid
           ORDER BY created_at DESC
@@ -101,6 +108,9 @@ export function createRoutineRoutes(
     const body = req.body as {
       agentId?: unknown;
       workflowId?: unknown;
+      prompt?: unknown;
+      systemPrompt?: unknown;
+      llmTier?: unknown;
       name?: unknown;
       scheduleCron?: unknown;
       triggerKind?: unknown;
@@ -108,17 +118,44 @@ export function createRoutineRoutes(
     };
 
     const agentId = typeof body.agentId === "string" ? body.agentId.trim() : "";
-    const workflowId = typeof body.workflowId === "string" ? body.workflowId.trim() : "";
+    const workflowIdRaw = typeof body.workflowId === "string" ? body.workflowId.trim() : "";
+    const promptRaw = typeof body.prompt === "string" ? body.prompt.trim() : "";
+    const systemPromptRaw =
+      typeof body.systemPrompt === "string" && body.systemPrompt.trim()
+        ? body.systemPrompt.trim()
+        : null;
+    const llmTierRaw =
+      typeof body.llmTier === "string" && ["lite", "standard", "power"].includes(body.llmTier)
+        ? (body.llmTier as "lite" | "standard" | "power")
+        : null;
     const name = typeof body.name === "string" ? body.name.trim() : "";
 
     if (!agentId || !UUID_RE.test(agentId)) {
       res.status(400).json({ error: "Valid agentId is required" });
       return;
     }
-    if (!workflowId || !UUID_RE.test(workflowId)) {
+
+    // HEL-174: a routine is either workflow-backed (DAG) OR
+    // prompt-backed (NL). Exactly one must be supplied. Enforce here
+    // so the DB-level CHECK constraint isn't the user-facing error.
+    const hasWorkflow = workflowIdRaw.length > 0;
+    const hasPrompt = promptRaw.length > 0;
+    if (hasWorkflow === hasPrompt) {
+      res.status(400).json({
+        error:
+          "Provide exactly one of `workflowId` (DAG-backed) or `prompt` (NL-backed) — not both.",
+      });
+      return;
+    }
+    if (hasWorkflow && !UUID_RE.test(workflowIdRaw)) {
       res.status(400).json({ error: "Valid workflowId is required" });
       return;
     }
+    if (hasPrompt && promptRaw.length > 10_000) {
+      res.status(400).json({ error: "prompt is too long (max 10000 characters)" });
+      return;
+    }
+
     if (!name || name.length > 200) {
       res.status(400).json({ error: "name is required (max 200 characters)" });
       return;
@@ -154,23 +191,39 @@ export function createRoutineRoutes(
         return;
       }
 
-      const workflowCheck = await pool.query<{ id: string }>(
-        `SELECT id::text FROM workflows
-          WHERE id = $1::uuid AND workspace_id = $2::uuid`,
-        [workflowId, workspaceId],
-      );
-      if (workflowCheck.rowCount === 0) {
-        res.status(404).json({ error: "Workflow not found in this workspace" });
-        return;
+      if (hasWorkflow) {
+        const workflowCheck = await pool.query<{ id: string }>(
+          `SELECT id::text FROM workflows
+            WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+          [workflowIdRaw, workspaceId],
+        );
+        if (workflowCheck.rowCount === 0) {
+          res.status(404).json({ error: "Workflow not found in this workspace" });
+          return;
+        }
       }
 
       const insert = await pool.query<RoutineRow>(
         `INSERT INTO routines
-            (workspace_id, agent_id, name, schedule_cron, trigger_kind, workflow_id, enabled)
-         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7)
+            (workspace_id, agent_id, name, schedule_cron, trigger_kind,
+             workflow_id, prompt, system_prompt, llm_tier, enabled)
+         VALUES ($1::uuid, $2::uuid, $3, $4, $5,
+                 $6::uuid, $7, $8, $9, $10)
          RETURNING id, workspace_id::text, agent_id::text, name, schedule_cron,
-                   trigger_kind, workflow_id::text, enabled, created_at, updated_at`,
-        [workspaceId, agentId, name, scheduleCron, triggerKindRaw, workflowId, enabled],
+                   trigger_kind, workflow_id::text, prompt, system_prompt, llm_tier,
+                   enabled, created_at, updated_at`,
+        [
+          workspaceId,
+          agentId,
+          name,
+          scheduleCron,
+          triggerKindRaw,
+          hasWorkflow ? workflowIdRaw : null,
+          hasPrompt ? promptRaw : null,
+          systemPromptRaw,
+          llmTierRaw,
+          enabled,
+        ],
       );
 
       const created = insert.rows[0]!;
@@ -252,7 +305,8 @@ export function createRoutineRoutes(
           WHERE id = $1::uuid
             AND workspace_id = $2::uuid
           RETURNING id, workspace_id::text, agent_id::text, name, schedule_cron,
-                    trigger_kind, workflow_id::text, enabled, created_at, updated_at`,
+                    trigger_kind, workflow_id::text, prompt, system_prompt, llm_tier,
+                    enabled, created_at, updated_at`,
         values
       );
 

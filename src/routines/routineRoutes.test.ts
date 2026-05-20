@@ -127,6 +127,69 @@ describe("POST /api/routines", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // HEL-174: prompt-backed routine creation.
+  it("creates a prompt-backed routine without a workflowId", async () => {
+    const createdRow = {
+      ...ROUTINE_ROW,
+      agent_id: AGENT_ID,
+      name: "Weekly marketing summary",
+      workflow_id: null,
+      prompt: "Generate this week's marketing performance summary.",
+      system_prompt: null,
+      llm_tier: "standard",
+      trigger_kind: "scheduled",
+      schedule_cron: "0 9 * * 1",
+    };
+    const pool = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ id: AGENT_ID }] } as unknown as QueryResult) // agent check
+        .mockResolvedValueOnce({ rows: [createdRow] } as unknown as QueryResult), // insert (no workflow check)
+    } as unknown as Pool;
+    const queue = makeQueue();
+    const app = buildApp(pool, queue);
+
+    const res = await request(app)
+      .post("/api/routines")
+      .send({
+        agentId: AGENT_ID,
+        name: "Weekly marketing summary",
+        prompt: "Generate this week's marketing performance summary.",
+        llmTier: "standard",
+        scheduleCron: "0 9 * * 1",
+        triggerKind: "scheduled",
+        enabled: true,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.prompt).toBe("Generate this week's marketing performance summary.");
+    expect(res.body.workflowId).toBeNull();
+    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(1);
+  });
+
+  // HEL-174: must provide exactly one of workflowId / prompt.
+  it("rejects when both workflowId and prompt are supplied", async () => {
+    const app = buildApp(makePool([]));
+    const res = await request(app).post("/api/routines").send({
+      agentId: AGENT_ID,
+      workflowId: VALID_UUID,
+      prompt: "do the thing",
+      name: "ambiguous",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/exactly one/i);
+  });
+
+  it("rejects when neither workflowId nor prompt is supplied", async () => {
+    const app = buildApp(makePool([]));
+    const res = await request(app).post("/api/routines").send({
+      agentId: AGENT_ID,
+      name: "empty",
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/exactly one/i);
+  });
 });
 
 describe("PATCH /api/routines/:id", () => {

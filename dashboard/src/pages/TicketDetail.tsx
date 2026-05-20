@@ -20,6 +20,7 @@ import {
   addTicketUpdate,
   getTicket,
   getTicketActorProfile,
+  runTicketAgent,
   searchTicketMemories,
   transitionTicket,
   type TicketActorRef,
@@ -102,6 +103,9 @@ export default function TicketDetail({
   const [holdProgress, setHoldProgress] = useState(0);
   const [holdActive, setHoldActive] = useState(false);
   const [timerNow, setTimerNow] = useState(() => Date.now());
+  const [runAgentBusy, setRunAgentBusy] = useState(false);
+  const [runAgentError, setRunAgentError] = useState<string | null>(null);
+  const [runAgentToast, setRunAgentToast] = useState<string | null>(null);
 
   const ticket = aggregate?.ticket ?? null;
   const updates = useMemo(() => aggregate?.updates ?? [], [aggregate]);
@@ -587,6 +591,36 @@ export default function TicketDetail({
           >
             ← Back to queue
           </Link>
+          {/* HEL-174: Run-agent CTA. Visible when ticket is open or
+              in_progress AND has at least one agent assignee. */}
+          {(() => {
+            const hasAgentAssignee = ticket.assignees.some((a) => a.type === "agent");
+            const isActive = ticket.status === "open" || ticket.status === "in_progress";
+            if (!hasAgentAssignee || !isActive) return null;
+            return (
+              <button
+                type="button"
+                className="af2-btn af2-btn-sm"
+                disabled={runAgentBusy}
+                onClick={async () => {
+                  setRunAgentBusy(true);
+                  setRunAgentError(null);
+                  setRunAgentToast(null);
+                  try {
+                    const token = (await getAccessToken()) ?? undefined;
+                    await runTicketAgent(ticket.id, token);
+                    setRunAgentToast("Agent run queued — the timeline will update when it completes.");
+                  } catch (err) {
+                    setRunAgentError(err instanceof Error ? err.message : "Failed to run agent");
+                  } finally {
+                    setRunAgentBusy(false);
+                  }
+                }}
+              >
+                {runAgentBusy ? "Queueing…" : "Run agent"}
+              </button>
+            );
+          })()}
           <Link
             to="/mission-assignments/sla"
             className="af2-btn af2-btn-sm"
@@ -662,6 +696,38 @@ export default function TicketDetail({
         }}
       >
         <TicketSourceNotice source={source} />
+
+        {/* HEL-174: Run-agent feedback. Toast on success, banner on error. */}
+        {runAgentError ? (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              borderRadius: "var(--af2-radius)",
+              border: "1px solid rgba(192,84,76,0.30)",
+              background: "rgba(192,84,76,0.10)",
+              color: "var(--af2-clay)",
+              fontSize: 13,
+            }}
+          >
+            {runAgentError}
+          </div>
+        ) : null}
+        {runAgentToast ? (
+          <div
+            role="status"
+            style={{
+              padding: "10px 14px",
+              borderRadius: "var(--af2-radius)",
+              border: "1px solid var(--af2-sage, rgba(80,140,90,0.30))",
+              background: "var(--af2-sage-soft, rgba(80,140,90,0.10))",
+              color: "var(--af2-ink)",
+              fontSize: 13,
+            }}
+          >
+            {runAgentToast}
+          </div>
+        ) : null}
 
         {error ? (
           <div

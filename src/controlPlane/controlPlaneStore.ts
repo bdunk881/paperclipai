@@ -1885,11 +1885,14 @@ export const controlPlaneStore = {
       ctx = { workspaceId: userId, userId };
     }
     if (!ctx) return [];
-    const rows = await controlPlaneRepository.listBudgetAlerts(
+    // Preserve the repository's DESC ordering (`ORDER BY recorded_at DESC`).
+    // The dashboard renders the top 10 newest first; re-sorting ascending
+    // here would hide the most recent threshold trips behind older ones.
+    // HEL-143 Codex P2.
+    return controlPlaneRepository.listBudgetAlerts(
       ctx,
       teamId ? { teamId } : undefined,
     );
-    return rows.sort((left, right) => left.recordedAt.localeCompare(right.recordedAt));
   },
 
   // DASH-64.3: now async because buildTeamSpendSnapshot reads spend

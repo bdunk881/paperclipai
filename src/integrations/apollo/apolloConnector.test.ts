@@ -168,4 +168,67 @@ describe("Apollo connector", () => {
     expect(viewer.accountId).toBe("apollo-api-key");
     expect((global.fetch as jest.Mock).mock.calls).toHaveLength(2);
   });
+
+  it("upsert dedupes prior (user, account) active credentials before saving (HEL-182)", async () => {
+    // Two OAuth saves for the same (userId, accountId) should leave exactly
+    // one active row — the second one.
+    const first = await apolloCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "apollo-first",
+      scopes: ["leads:read"],
+      accountId: "acct-dedup",
+    });
+
+    const second = await apolloCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "apollo-second",
+      scopes: ["leads:read", "leads:write"],
+      accountId: "acct-dedup",
+    });
+
+    const active = apolloCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.accountId === "acct-dedup" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("leads:write");
+  });
+
+  it("upsert purges ALL pre-existing active rows for the same (user, account) (HEL-182 Codex P1)", async () => {
+    // Codex P1 on PR #931: if the bucket already contains N>=2 active
+    // rows for the same (user, accountId) — from prior duplicate state
+    // before this fix landed — the pre-fix code only deleted ONE (the
+    // latest), so N stayed N forever. Predicate purge must cover all.
+    await apolloCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "apollo-pre-1",
+      scopes: ["leads:read"],
+      accountId: "acct-dupes",
+    });
+    await apolloCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "apollo-pre-2",
+      scopes: ["leads:read"],
+      accountId: "acct-dupes",
+    });
+    // Sanity: above already exercises the dedup path. Now simulate a
+    // "stuck N=2 duplicates" state by saving a third — Codex's claim
+    // is that without the predicate purge, the prior N rows would
+    // accumulate. With the predicate purge, total active stays at 1.
+    const newest = await apolloCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "apollo-pre-3",
+      scopes: ["leads:read", "leads:write"],
+      accountId: "acct-dupes",
+    });
+
+    const active = apolloCredentialStore
+      .getPublicByUser("user-dupes")
+      .filter((c) => c.accountId === "acct-dupes" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(newest.id);
+  });
 });

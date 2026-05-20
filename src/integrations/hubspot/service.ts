@@ -46,7 +46,7 @@ export class HubSpotConnectorService {
     }
 
     const tokenSet = await exchangeCodeForTokens({ code: params.code });
-    const credential = hubSpotCredentialStore.saveOAuth({
+    const credential = await hubSpotCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -76,7 +76,7 @@ export class HubSpotConnectorService {
     const client = new HubSpotClient(params.apiKey, "api_key");
     const viewer = await client.viewer();
 
-    const credential = hubSpotCredentialStore.saveApiKey({
+    const credential = await hubSpotCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       scopes: viewer.scopes,

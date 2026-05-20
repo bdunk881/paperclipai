@@ -246,4 +246,67 @@ describe("Stripe connector", () => {
       })
     ).toThrow(/replay/i);
   });
+
+  it("upsert dedupes prior (user, account) active credentials before saving (HEL-182)", async () => {
+    // Two OAuth saves for the same (userId, accountId) should leave exactly
+    // one active row — the second one.
+    const first = await stripeCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "stripe-first",
+      scopes: ["read_only"],
+      accountId: "acct_dedup",
+      livemode: false,
+    });
+
+    const second = await stripeCredentialStore.saveOAuth({
+      userId: "user-dedup",
+      accessToken: "stripe-second",
+      scopes: ["read_write"],
+      accountId: "acct_dedup",
+      livemode: false,
+    });
+
+    const active = stripeCredentialStore
+      .getPublicByUser("user-dedup")
+      .filter((c) => c.accountId === "acct_dedup" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(second.id);
+    expect(first.id).not.toBe(second.id);
+    expect(active[0]?.scopes).toContain("read_write");
+  });
+
+  it("upsert purges ALL pre-existing active rows for the same (user, account) (HEL-182 Codex P1)", async () => {
+    // Codex P1 on PR #931: predicate purge must cover all matching
+    // active rows, not just the latest. Three consecutive saves for
+    // the same (user, account) must converge on a single active row.
+    await stripeCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "stripe-pre-1",
+      scopes: ["read_only"],
+      accountId: "acct_dupes",
+      livemode: false,
+    });
+    await stripeCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "stripe-pre-2",
+      scopes: ["read_only"],
+      accountId: "acct_dupes",
+      livemode: false,
+    });
+    const newest = await stripeCredentialStore.saveOAuth({
+      userId: "user-dupes",
+      accessToken: "stripe-pre-3",
+      scopes: ["read_write"],
+      accountId: "acct_dupes",
+      livemode: false,
+    });
+
+    const active = stripeCredentialStore
+      .getPublicByUser("user-dupes")
+      .filter((c) => c.accountId === "acct_dupes" && !c.revokedAt);
+
+    expect(active).toHaveLength(1);
+    expect(active[0]?.id).toBe(newest.id);
+  });
 });

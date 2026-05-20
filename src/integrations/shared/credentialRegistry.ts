@@ -273,7 +273,26 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
   }
 
   async listStoredByUserAsync(userId: string, includeRevoked = true): Promise<TStored[]> {
-    return (await this.listStoredAsync(includeRevoked)).filter((record) => record.userId === userId);
+    // HEL-182 Codex P2: query `(service, user_id)` directly instead of
+    // pulling the entire service bucket and filtering in-memory. Hits the
+    // `idx_connector_credentials_service_user` partial index (migration
+    // 006) so OAuth callbacks stay fast even when other tenants have
+    // accumulated many rows for the same service.
+    const local = Array.from(this.bucket.values()).filter(
+      (record) => record.userId === userId && (includeRevoked ? true : !record.revokedAt),
+    );
+    if (!this.postgresPersistenceAvailable()) {
+      return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
+    }
+
+    const result = await queryPostgres<PersistedCredentialRegistryRow>(
+      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 AND user_id = $2 ORDER BY created_at DESC",
+      [this.service, userId],
+    );
+    const persisted = result.rows
+      .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
+      .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));
+    return mergeStoredRecords(local, persisted, this.sortValue);
   }
 
   async listStoredAsync(includeRevoked = true): Promise<TStored[]> {

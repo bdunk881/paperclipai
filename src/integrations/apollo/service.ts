@@ -38,7 +38,7 @@ export class ApolloConnectorService {
     }
 
     const tokenSet = await exchangeCodeForTokens({ code: params.code });
-    const credential = apolloCredentialStore.saveOAuth({
+    const credential = await apolloCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -65,7 +65,7 @@ export class ApolloConnectorService {
     const client = new ApolloClient(params.apiKey, "api_key");
     const viewer = await client.viewer();
 
-    const credential = apolloCredentialStore.saveApiKey({
+    const credential = await apolloCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       accountId: viewer.accountId,

@@ -27,23 +27,27 @@ function maskToken(value: string): string {
   return `****${value.slice(-4)}`;
 }
 
-function upsertByUserAndAccount(credential: StripeCredential): void {
-  const existing = registry.findLatest(
+async function upsertByUserAndAccount(credential: StripeCredential): Promise<void> {
+  // HEL-182: hydrate from Postgres BEFORE purging — see
+  // slack/credentialStore.ts (post-#926) for the canonical pattern.
+  //
+  // HEL-182 Codex P1 #2: purge by the full predicate, NOT findLatest+id.
+  // The hydrated bucket can already contain multiple active rows for
+  // the same (userId, accountId); the old findLatest+purge-by-id only
+  // deleted ONE, so N duplicates stayed N after each save. The
+  // predicate purge covers all matches.
+  await registry.listStoredByUserAsync(credential.userId);
+  registry.purge(
     (record) =>
       record.userId === credential.userId &&
       record.accountId === credential.accountId &&
-      !record.revokedAt
+      !record.revokedAt,
   );
-
-  if (existing) {
-    registry.purge((record) => record.id === existing.id);
-  }
-
   registry.save(credential);
 }
 
 export const stripeCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -53,7 +57,7 @@ export const stripeCredentialStore = {
     accountEmail?: string;
     livemode: boolean;
     metadata?: Record<string, string>;
-  }): StripeCredentialPublic {
+  }): Promise<StripeCredentialPublic> {
     const credential: StripeCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -72,11 +76,11 @@ export const stripeCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
@@ -85,7 +89,7 @@ export const stripeCredentialStore = {
     accountEmail?: string;
     livemode: boolean;
     metadata?: Record<string, string>;
-  }): StripeCredentialPublic {
+  }): Promise<StripeCredentialPublic> {
     const credential: StripeCredential = {
       id: randomUUID(),
       userId: params.userId,
@@ -101,7 +105,7 @@ export const stripeCredentialStore = {
       metadata: params.metadata,
     };
 
-    upsertByUserAndAccount(credential);
+    await upsertByUserAndAccount(credential);
     return toPublic(credential);
   },
 

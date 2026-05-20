@@ -468,7 +468,7 @@ router.post(
     },
     delta: 1,
   }),
-  async (req: WorkspaceAwareRequest, res) => {
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
     return;
@@ -565,7 +565,7 @@ router.post(
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
   }
-});
+}));
 
 router.get("/teams/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);

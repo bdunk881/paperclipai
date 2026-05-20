@@ -201,7 +201,7 @@ router.post(
       (await integrationCredentialStore.list((req as AuthenticatedRequest).auth!.sub)).length,
     delta: 1,
   }),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const { integrationSlug, label, credentials } = req.body as {
@@ -233,7 +233,7 @@ router.post(
   });
 
   res.status(201).json(conn);
-});
+}));
 
 /** GET /api/integrations/connections/:id */
 router.get("/connections/:id", asyncHandler(async (req, res) => {

@@ -335,7 +335,7 @@ export function createWorkflowRoutes(pool: Pool) {
   // ---------------------------------------------------------------------
   router.get(
     "/:workflowId/versions/:versionId",
-    async (req: AuthenticatedRequest, res) => {
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
       const userId = req.auth?.sub;
       const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
       if (!userId || !workspaceId) {
@@ -399,7 +399,7 @@ export function createWorkflowRoutes(pool: Pool) {
         );
         res.status(500).json({ error: "Failed to load workflow version" });
       }
-    },
+    }),
   );
 
   // ---------------------------------------------------------------------

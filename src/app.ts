@@ -994,7 +994,7 @@ app.post(
     getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
     delta: 1,
   }),
-  async (req: WorkspaceAwareRequest, res) => {
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { templateId, input, config } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
@@ -1068,7 +1068,7 @@ app.post(
   // Legacy in-process path (used when Redis is not configured).
   const run = await workflowEngine.startRun(template, resolvedInput, resolvedConfig, userId);
   res.status(202).json(run);
-});
+}));
 
 /** List all runs, optionally filtered by templateId or status */
 app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {

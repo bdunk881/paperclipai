@@ -178,14 +178,14 @@ router.get("/companies/:companyId/checkpoint-schedule", asyncHandler<Authenticat
 router.put(
   "/companies/:companyId/checkpoint-schedule",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
     const parsed = parseBody(scheduleUpdateSchema, req, res);
     if (!parsed) return;
     res.json({ schedule: await hitlStore.upsertSchedule(userId, companyId, parsed) });
-  }
+  })
 );
 
 router.get("/companies/:companyId/checkpoints", asyncHandler<AuthenticatedRequest>(async (req, res) => {
@@ -205,7 +205,7 @@ router.get("/companies/:companyId/checkpoints", asyncHandler<AuthenticatedReques
 router.post(
   "/companies/:companyId/checkpoints",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -225,13 +225,13 @@ router.post(
       recipientId: parsed.recipientId,
     });
     res.status(201).json({ checkpoint });
-  }
+  })
 );
 
 router.post(
   "/companies/:companyId/checkpoints/evaluate-trigger",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -246,7 +246,7 @@ router.post(
       event: parsed.event,
     });
     res.json(evaluation);
-  }
+  })
 );
 
 router.get("/companies/:companyId/artifact-comments", asyncHandler<AuthenticatedRequest>(async (req, res) => {
@@ -265,7 +265,7 @@ router.get("/companies/:companyId/artifact-comments", asyncHandler<Authenticated
 router.post(
   "/companies/:companyId/artifact-comments",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -280,13 +280,13 @@ router.post(
       routing: parsed.routing,
     });
     res.status(201).json({ comment });
-  }
+  })
 );
 
 router.post(
   "/companies/:companyId/ask-ceo/requests",
   requirePaperclipRunId,
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -299,12 +299,12 @@ router.post(
       context: parsed.context as AskCeoRequest["context"] | undefined,
     });
     res.status(201).json({ request: requestRecord });
-  }
+  })
 );
 
 router.get(
   "/companies/:companyId/ask-ceo/requests/:requestId",
-  async (req: AuthenticatedRequest, res) => {
+  asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
     if (!userId || !companyId) return;
@@ -314,7 +314,7 @@ router.get(
       return;
     }
     res.json({ request: requestRecord });
-  }
+  })
 );
 
 router.get("/companies/:companyId/state", asyncHandler<AuthenticatedRequest>(async (req, res) => {

@@ -47,6 +47,7 @@ import {
   resolveHostedFreeApiKey,
 } from "../hostedFreeModels/providers";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { registerMissionTeamRoutes } from "./missionTeamRoutes";
 
 export interface MissionRow {
   id: string;
@@ -710,22 +711,30 @@ export function createMissionRoutes(
           throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
         }
 
-        // Guard against blowing away a confirmed plan's parent. The
-        // dedicated "retire team" flow lives in a later wave.
-        const confirmed = await client.query<{ count: string }>(
-          `SELECT COUNT(*)::text AS count
-             FROM hiring_plans
-            WHERE mission_id = $1
-              AND accepted_by_user_id IS NOT NULL`,
+        const missionStatus = await client.query<{ status: string }>(
+          `SELECT status FROM missions WHERE id = $1 LIMIT 1`,
           [missionId],
         );
-        if (Number(confirmed.rows[0]?.count ?? "0") > 0) {
-          throw Object.assign(
-            new Error(
-              "This mission has a confirmed hiring plan and active agents — retire the team before deleting the mission.",
-            ),
-            { code: "CONFIRMED_PLAN_EXISTS" },
+        const status = missionStatus.rows[0]?.status ?? "";
+
+        // Guard against deleting a live team. After retire-team the mission
+        // is archived and agents are terminated — delete is allowed.
+        if (status !== "archived") {
+          const confirmed = await client.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count
+               FROM hiring_plans
+              WHERE mission_id = $1
+                AND accepted_by_user_id IS NOT NULL`,
+            [missionId],
           );
+          if (Number(confirmed.rows[0]?.count ?? "0") > 0) {
+            throw Object.assign(
+              new Error(
+                "This mission has a confirmed hiring plan and active agents — retire the team before deleting the mission.",
+              ),
+              { code: "CONFIRMED_PLAN_EXISTS" },
+            );
+          }
         }
 
         // Draft hiring_plans drop via FK ON DELETE CASCADE.
@@ -970,6 +979,8 @@ export function createMissionRoutes(
       costCents: costResult.costCents,
     });
   }));
+
+  registerMissionTeamRoutes(router, pool);
 
   return router;
 }

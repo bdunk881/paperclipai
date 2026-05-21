@@ -44,6 +44,7 @@ import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
 import MissionState from "./pages/MissionState";
+import MissionDetail from "./pages/MissionDetail";
 import NotificationsSettings from "./pages/NotificationsSettings";
 import OrgStructure from "./pages/OrgStructure";
 import Pricing from "./pages/Pricing";
@@ -251,8 +252,10 @@ const routes: RouteObject[] = [
       { path: "hire", element: <Hire /> },
       // HEL-105: side-by-side review page for a drafted hiring plan.
       { path: "hire/plan/:missionId/:planId", element: <HiringPlanReview /> },
+      { path: "missions/:missionId", element: <MissionDetail /> },
       { path: "workspace/budget-dashboard", element: <BudgetDashboard /> },
       { path: "workspace/org-structure", element: <OrgStructure /> },
+      { path: "team", element: <Navigate to="/workspace/org-structure" replace /> },
 
       // Connect pillar
       { path: "integrations/mcp", element: <MCPIntegrations /> },

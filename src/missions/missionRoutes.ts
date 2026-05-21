@@ -30,7 +30,6 @@ import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   buildTeamAssemblyPrompt,
-  DEFAULT_ROLE_LIBRARY,
   parseTeamAssemblyResponse,
   TEAM_ASSEMBLY_SCHEMA_VERSION,
   type TeamAssemblyRequest,
@@ -49,12 +48,14 @@ import {
 } from "../hostedFreeModels/providers";
 import { asyncHandler } from "../middleware/asyncHandler";
 
-interface MissionRow {
+export interface MissionRow {
   id: string;
   company_id: string;
   statement: string;
   workspace_id: string;
   company_name: string | null;
+  company_description: string | null;
+  metadata: MissionMetadata | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -154,7 +155,9 @@ async function loadMissionScopedToWorkspace(
     { workspaceId, userId: "mission-route" },
     async (client) =>
       client.query<MissionRow>(
-        `SELECT m.id, m.company_id, m.statement, c.workspace_id, c.name AS company_name
+        `SELECT m.id, m.company_id, m.statement, m.metadata,
+                c.workspace_id, c.name AS company_name,
+                c.description AS company_description
            FROM missions m
            JOIN companies c ON c.id = m.company_id
           WHERE m.id = $1
@@ -167,25 +170,51 @@ async function loadMissionScopedToWorkspace(
 }
 
 /**
- * Builds a teamAssembly request from a mission. The mission carries only
- * the goal statement; the rest of the normalizedGoalDocument is filled
- * with defensible defaults that signal "we don't know this yet" rather
- * than fabricating numbers the LLM might anchor on.
+ * Builds a teamAssembly request from a mission row.
+ *
+ * Wires through the structured fields the mission-intake form captures
+ * (industry, target customer, success metric, runway) plus the company's
+ * own description so the LLM has actual company-specific signal — not
+ * just a one-line goal + the generic role library.
+ *
+ * Mission generate-plan does not inject DEFAULT_ROLE_LIBRARY; the model
+ * should design roles from the goal. Other callers may pass a library
+ * explicitly when they want vocabulary reference material.
  */
-function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+  const metadata = sanitizeMetadata(mission.metadata);
+
+  const constraints: string[] = [];
+  if (metadata.industry) constraints.push(`Industry: ${metadata.industry}`);
+
+  const summaryLines: string[] = [];
+  if (mission.company_name) summaryLines.push(`Company: ${mission.company_name}`);
+  if (mission.company_description) {
+    summaryLines.push(`About the company: ${mission.company_description}`);
+  }
+  if (metadata.industry) summaryLines.push(`Industry: ${metadata.industry}`);
+  if (metadata.targetCustomer) {
+    summaryLines.push(`Target customer: ${metadata.targetCustomer}`);
+  }
+  if (metadata.successMetric) {
+    summaryLines.push(`Success metric: ${metadata.successMetric}`);
+  }
+  if (metadata.runway) summaryLines.push(`Budget / runway: ${metadata.runway}`);
+
   return {
     companyName: mission.company_name ?? undefined,
     normalizedGoalDocument: {
       sourceType: "free_text",
       goal: mission.statement,
-      targetCustomer: null,
-      successMetrics: [],
-      constraints: [],
-      budget: null,
+      targetCustomer: metadata.targetCustomer ?? null,
+      successMetrics: metadata.successMetric ? [metadata.successMetric] : [],
+      constraints,
+      budget: metadata.runway ?? null,
       timeHorizon: null,
+      importedContextSummary: summaryLines.length > 0 ? summaryLines.join("\n") : null,
       planReadinessThreshold: 0.6,
     },
-    roleLibrary: [...DEFAULT_ROLE_LIBRARY],
+    roleLibrary: [],
   };
 }
 

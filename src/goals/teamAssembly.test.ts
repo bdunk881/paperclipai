@@ -13,6 +13,8 @@
  */
 
 import {
+  buildTeamAssemblyPrompt,
+  DEFAULT_ROLE_LIBRARY,
   parseTeamAssemblyResponse,
   TEAM_ASSEMBLY_SCHEMA_VERSION,
 } from "./teamAssembly";
@@ -103,5 +105,53 @@ describe("parseTeamAssemblyResponse", () => {
   it("throws when the extracted JSON is valid JSON but fails schema validation", () => {
     const badShape = JSON.stringify({ schemaVersion: "wrong-version" });
     expect(() => parseTeamAssemblyResponse(badShape)).toThrow();
+  });
+});
+
+describe("buildTeamAssemblyPrompt", () => {
+  const baseInput = {
+    companyName: "Northstar Ops",
+    normalizedGoalDocument: {
+      sourceType: "free_text" as const,
+      goal: "Launch a field-service automation offer for HVAC contractors.",
+      targetCustomer: "independent HVAC contractors with 10-50 technicians",
+      successMetrics: ["book 40 qualified demos in 90 days"],
+      constraints: ["Industry: HVAC field services"],
+      budget: "$80k over 3 months",
+      timeHorizon: null,
+      importedContextSummary:
+        "Industry: HVAC field services\nBudget / runway: $80k over 3 months",
+      planReadinessThreshold: 0.6,
+    },
+  };
+
+  it("omits the role catalog when the request has no role library", () => {
+    const prompt = buildTeamAssemblyPrompt({ ...baseInput, roleLibrary: [] });
+
+    expect(prompt).toContain("HVAC field services");
+    expect(prompt).toContain("Do not reuse generic executive/operator archetypes");
+    expect(prompt).not.toContain("Reference library");
+    expect(prompt).not.toContain("Own strategy, resource allocation");
+  });
+
+  it("includes a supplied role library as vocabulary-only reference material", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...baseInput,
+      roleLibrary: [DEFAULT_ROLE_LIBRARY[0]],
+    });
+
+    expect(prompt).toContain("Reference library");
+    expect(prompt).toContain('"defaultSkills"');
+    expect(prompt).not.toContain("hiringSignals");
+    expect(prompt).not.toContain("Own strategy, resource allocation");
+  });
+
+  it("includes targetCustomer, successMetrics, budget, and importedContextSummary in the prompt", () => {
+    const prompt = buildTeamAssemblyPrompt({ ...baseInput, roleLibrary: [] });
+
+    expect(prompt).toContain("independent HVAC contractors with 10-50 technicians");
+    expect(prompt).toContain("book 40 qualified demos in 90 days");
+    expect(prompt).toContain("$80k over 3 months");
+    expect(prompt).toContain("Industry: HVAC field services");
   });
 });

@@ -13,6 +13,8 @@
  */
 
 import {
+  buildTeamAssemblyPrompt,
+  DEFAULT_ROLE_LIBRARY,
   parseTeamAssemblyResponse,
   TEAM_ASSEMBLY_SCHEMA_VERSION,
 } from "./teamAssembly";
@@ -103,5 +105,101 @@ describe("parseTeamAssemblyResponse", () => {
   it("throws when the extracted JSON is valid JSON but fails schema validation", () => {
     const badShape = JSON.stringify({ schemaVersion: "wrong-version" });
     expect(() => parseTeamAssemblyResponse(badShape)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildTeamAssemblyPrompt — library vocabulary stripping
+// Regression guard: the role library reference in the prompt must NOT include
+// mandate or hiringSignals text, which caused the LLM to copy pre-written
+// mandates verbatim and produce template-looking hiring plans.
+// ---------------------------------------------------------------------------
+describe("buildTeamAssemblyPrompt — role library reference", () => {
+  const BASE_REQUEST = {
+    companyName: "Acme Corp",
+    normalizedGoalDocument: {
+      sourceType: "free_text" as const,
+      goal: "Launch a B2B sales motion in EMEA.",
+      targetCustomer: null,
+      successMetrics: [],
+      constraints: [],
+      budget: null,
+      timeHorizon: null,
+      planReadinessThreshold: 0.6,
+    },
+    roleLibrary: [...DEFAULT_ROLE_LIBRARY],
+  };
+
+  it("includes roleKey, title, department, defaultSkills, defaultTools in the prompt", () => {
+    const prompt = buildTeamAssemblyPrompt(BASE_REQUEST);
+    expect(prompt).toContain('"roleKey"');
+    expect(prompt).toContain('"title"');
+    expect(prompt).toContain('"department"');
+    expect(prompt).toContain('"defaultSkills"');
+    expect(prompt).toContain('"defaultTools"');
+  });
+
+  it("does NOT include role mandate text in the library reference section", () => {
+    const prompt = buildTeamAssemblyPrompt(BASE_REQUEST);
+    // The CEO mandate is a sentinel — if it appears, the library was included verbatim.
+    expect(prompt).not.toContain("Own strategy, resource allocation, and cross-functional prioritization.");
+    // Check a few others to be sure
+    expect(prompt).not.toContain("Own pipeline creation, conversion, and revenue expansion.");
+    expect(prompt).not.toContain("Own product architecture, engineering throughput, and technical risk management.");
+  });
+
+  it("does NOT include hiringSignals in the library reference section", () => {
+    const prompt = buildTeamAssemblyPrompt(BASE_REQUEST);
+    expect(prompt).not.toContain("hiringSignals");
+    expect(prompt).not.toContain("ambiguous business strategy");
+  });
+
+  it("includes the goal statement verbatim in the prompt", () => {
+    const prompt = buildTeamAssemblyPrompt(BASE_REQUEST);
+    expect(prompt).toContain("Launch a B2B sales motion in EMEA.");
+  });
+
+  it("includes targetCustomer in the prompt when provided", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...BASE_REQUEST,
+      normalizedGoalDocument: {
+        ...BASE_REQUEST.normalizedGoalDocument,
+        targetCustomer: "EMEA enterprise procurement leads",
+      },
+    });
+    expect(prompt).toContain("EMEA enterprise procurement leads");
+  });
+
+  it("includes successMetrics in the prompt when provided", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...BASE_REQUEST,
+      normalizedGoalDocument: {
+        ...BASE_REQUEST.normalizedGoalDocument,
+        successMetrics: ["€2M ARR by end of year"],
+      },
+    });
+    expect(prompt).toContain("€2M ARR by end of year");
+  });
+
+  it("includes budget in the prompt when provided", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...BASE_REQUEST,
+      normalizedGoalDocument: {
+        ...BASE_REQUEST.normalizedGoalDocument,
+        budget: "€400k over 9 months",
+      },
+    });
+    expect(prompt).toContain("€400k over 9 months");
+  });
+
+  it("includes importedContextSummary in the prompt when provided", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...BASE_REQUEST,
+      normalizedGoalDocument: {
+        ...BASE_REQUEST.normalizedGoalDocument,
+        importedContextSummary: "Industry: industrial automation",
+      },
+    });
+    expect(prompt).toContain("Industry: industrial automation");
   });
 });

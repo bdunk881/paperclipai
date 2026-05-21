@@ -24,7 +24,7 @@ import { ensureUserProfileExists as mockedEnsureUserProfileExists } from "../use
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
-import { createMissionRoutes } from "./missionRoutes";
+import { createMissionRoutes, teamAssemblyRequestFromMission } from "./missionRoutes";
 
 // Stub Postgres pool — never queried in the rejection paths we test.
 const stubPool = { query: jest.fn() } as unknown as Parameters<typeof createMissionRoutes>[0];
@@ -367,5 +367,93 @@ describe("LLM rate-limiter wiring", () => {
     // matters is we reached the handler, not that we crashed on a
     // missing limiter.
     expect([400, 404, 500]).toContain(res.status);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// teamAssemblyRequestFromMission — metadata wiring
+// Regression guard: metadata fields collected on /hire must flow through to
+// the normalizedGoalDocument so the LLM gets real company context.
+// ---------------------------------------------------------------------------
+describe("teamAssemblyRequestFromMission", () => {
+  const BASE_MISSION = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    company_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    statement: "Grow our robotic arm sales in North America.",
+    workspace_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    company_name: "Acme Robotics",
+    metadata: {},
+  };
+
+  it("maps targetCustomer from metadata into normalizedGoalDocument", () => {
+    const result = teamAssemblyRequestFromMission({
+      ...BASE_MISSION,
+      metadata: { targetCustomer: "OEM purchasing managers in the US" },
+    });
+    expect(result.normalizedGoalDocument.targetCustomer).toBe(
+      "OEM purchasing managers in the US",
+    );
+  });
+
+  it("maps successMetric from metadata into successMetrics array", () => {
+    const result = teamAssemblyRequestFromMission({
+      ...BASE_MISSION,
+      metadata: { successMetric: "200 demos by Q4" },
+    });
+    expect(result.normalizedGoalDocument.successMetrics).toEqual(["200 demos by Q4"]);
+  });
+
+  it("maps runway from metadata into budget", () => {
+    const result = teamAssemblyRequestFromMission({
+      ...BASE_MISSION,
+      metadata: { runway: "$250k over 6 months" },
+    });
+    expect(result.normalizedGoalDocument.budget).toBe("$250k over 6 months");
+  });
+
+  it("maps industry from metadata into importedContextSummary", () => {
+    const result = teamAssemblyRequestFromMission({
+      ...BASE_MISSION,
+      metadata: { industry: "industrial robotics" },
+    });
+    expect(result.normalizedGoalDocument.importedContextSummary).toBe(
+      "Industry: industrial robotics",
+    );
+  });
+
+  it("wires all four metadata fields together in one request", () => {
+    const result = teamAssemblyRequestFromMission({
+      ...BASE_MISSION,
+      metadata: {
+        industry: "B2B SaaS",
+        targetCustomer: "SMB ops teams",
+        successMetric: "$50k MRR",
+        runway: "$500k over 12 months",
+      },
+    });
+    const doc = result.normalizedGoalDocument;
+    expect(doc.targetCustomer).toBe("SMB ops teams");
+    expect(doc.successMetrics).toEqual(["$50k MRR"]);
+    expect(doc.budget).toBe("$500k over 12 months");
+    expect(doc.importedContextSummary).toBe("Industry: B2B SaaS");
+  });
+
+  it("produces null/empty defaults when metadata is empty (no regression)", () => {
+    const result = teamAssemblyRequestFromMission(BASE_MISSION);
+    const doc = result.normalizedGoalDocument;
+    expect(doc.targetCustomer).toBeNull();
+    expect(doc.successMetrics).toEqual([]);
+    expect(doc.budget).toBeNull();
+    expect(doc.importedContextSummary).toBeUndefined();
+  });
+
+  it("preserves the goal statement verbatim", () => {
+    const result = teamAssemblyRequestFromMission(BASE_MISSION);
+    expect(result.normalizedGoalDocument.goal).toBe(BASE_MISSION.statement);
+  });
+
+  it("uses company_name as companyName", () => {
+    const result = teamAssemblyRequestFromMission(BASE_MISSION);
+    expect(result.companyName).toBe("Acme Robotics");
   });
 });

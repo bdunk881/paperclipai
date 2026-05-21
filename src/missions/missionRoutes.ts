@@ -55,6 +55,7 @@ interface MissionRow {
   statement: string;
   workspace_id: string;
   company_name: string | null;
+  metadata: MissionMetadata;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -154,7 +155,7 @@ async function loadMissionScopedToWorkspace(
     { workspaceId, userId: "mission-route" },
     async (client) =>
       client.query<MissionRow>(
-        `SELECT m.id, m.company_id, m.statement, c.workspace_id, c.name AS company_name
+        `SELECT m.id, m.company_id, m.statement, m.metadata, c.workspace_id, c.name AS company_name
            FROM missions m
            JOIN companies c ON c.id = m.company_id
           WHERE m.id = $1
@@ -167,22 +168,27 @@ async function loadMissionScopedToWorkspace(
 }
 
 /**
- * Builds a teamAssembly request from a mission. The mission carries only
- * the goal statement; the rest of the normalizedGoalDocument is filled
- * with defensible defaults that signal "we don't know this yet" rather
- * than fabricating numbers the LLM might anchor on.
+ * Builds a teamAssembly request from a mission, wiring all user-provided
+ * metadata fields (industry, targetCustomer, successMetric, runway) into
+ * the normalizedGoalDocument so the LLM designs a team around the real
+ * company context rather than a generic goal statement alone.
  */
-function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+  const meta = mission.metadata ?? {};
+  const contextParts: string[] = [];
+  if (meta.industry) contextParts.push(`Industry: ${meta.industry}`);
+
   return {
     companyName: mission.company_name ?? undefined,
     normalizedGoalDocument: {
       sourceType: "free_text",
       goal: mission.statement,
-      targetCustomer: null,
-      successMetrics: [],
+      targetCustomer: meta.targetCustomer ?? null,
+      successMetrics: meta.successMetric ? [meta.successMetric] : [],
       constraints: [],
-      budget: null,
+      budget: meta.runway ?? null,
       timeHorizon: null,
+      importedContextSummary: contextParts.length > 0 ? contextParts.join("\n") : undefined,
       planReadinessThreshold: 0.6,
     },
     roleLibrary: [...DEFAULT_ROLE_LIBRARY],

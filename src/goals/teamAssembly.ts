@@ -409,13 +409,26 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "",
     `PRD (optional, may be null):\n${JSON.stringify(input.prd ?? null, null, 2)}`,
     "",
-    // Reference is offered LAST + framed as inspiration so the model
-    // doesn't read it as constraint. The user-facing "Add this role"
-    // UX (tracked separately) will use this same library directly,
-    // bypassing the LLM, when an owner wants to pin a pre-built role.
-    "Reference library (skills/tools vocabulary + common archetypes):",
-    "Treat this as a glossary — borrow skill labels and tool slugs from here for consistency, but invent any role this goal actually needs. Do NOT limit yourself to the entries below.",
-    JSON.stringify(input.roleLibrary, null, 2),
+    // Reference is offered LAST + stripped to vocabulary-only (no mandate
+    // text, no hiringSignals) so the model can't lift pre-written mandates
+    // verbatim. Skill labels, tool slugs, and tier conventions are the only
+    // things worth borrowing from the library; role identity (what a role
+    // *does*) must come from the goal, not the library.
+    "Reference library — vocabulary only (skills, tools, tier conventions):",
+    "Borrow skill labels and tool slugs for consistency. Role mandates, KPIs, and justifications must come from the goal above — do not copy anything from this library.",
+    JSON.stringify(
+      input.roleLibrary.map(({ roleKey, title, roleType, department, defaultSkills, defaultTools, defaultModelTier }) => ({
+        roleKey,
+        title,
+        roleType,
+        department,
+        defaultSkills,
+        defaultTools,
+        defaultModelTier,
+      })),
+      null,
+      2,
+    ),
   ].join("\n");
 }
 

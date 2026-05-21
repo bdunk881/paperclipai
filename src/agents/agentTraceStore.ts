@@ -6,6 +6,7 @@ import type { Pool } from "pg";
 import type { AgentTraceEnvelope } from "../engine/agentTrace/types";
 import { inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 
+// allowlist: ephemeral replay cache — Postgres is the durable store; this is the in-memory fallback for dev/test
 const inMemoryEvents = new Map<string, AgentTraceEnvelope[]>();
 
 function storageKey(workspaceId: string, runId: string): string {

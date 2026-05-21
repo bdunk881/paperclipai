@@ -15,6 +15,7 @@ export function agentTraceChannel(workspaceId: string): string {
   return `workspace:${workspaceId}:agent-trace`;
 }
 
+// allowlist: process-local SSE subscriber registry — Redis pub/sub is used in prod; this is the dev/test fallback
 const inMemorySubscribers = new Map<string, Set<(envelope: AgentTraceEnvelope) => void>>();
 
 function channelKey(workspaceId: string, runId: string): string {

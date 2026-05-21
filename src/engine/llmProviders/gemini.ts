@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { emitTrace, resolveTraceCallback } from "../agentTrace/emitCallbacks";
 import {
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
   LLMProvider,
@@ -62,19 +63,48 @@ export function createGeminiProvider(config: LLMProviderConfig): LLMProvider {
   // underlying fetch.
   const timeoutMs = config.requestTimeoutMs ?? DEFAULT_LLM_REQUEST_TIMEOUT_MS;
 
+  const onTrace = resolveTraceCallback(config);
+
   return async (prompt: string): Promise<LLMResponse> => {
+    const modelParams = {
+      model: config.model,
+      ...(generationConfig ? { generationConfig } : {}),
+    } as Parameters<typeof genAI.getGenerativeModel>[0];
+    const model = genAI.getGenerativeModel(modelParams, { timeout: timeoutMs });
+
+    if (onTrace && !config.responseFormat) {
+      let accumulated = "";
+      try {
+        const streamResult = await model.generateContentStream(prompt);
+        for await (const chunk of streamResult.stream) {
+          const delta = chunk.text();
+          if (delta) {
+            accumulated += delta;
+            emitTrace(onTrace, {
+              type: "assistant.delta",
+              delta,
+              accumulated,
+            });
+          }
+        }
+        const response = await streamResult.response;
+        const usageMeta = response.usageMetadata;
+        const usage = {
+          promptTokens: usageMeta?.promptTokenCount ?? 0,
+          completionTokens: usageMeta?.candidatesTokenCount ?? 0,
+        };
+        const text = response.text() || accumulated;
+        emitTrace(onTrace, { type: "turn.completed", text, usage });
+        return { text, usage };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        emitTrace(onTrace, { type: "turn.error", message: msg });
+        throw new Error(`Gemini API error: ${msg}`);
+      }
+    }
+
     let result;
     try {
-      // The SDK's GenerationConfig type narrows responseSchema to a
-      // proprietary union (FunctionDeclarationSchema) that's awkward to
-      // construct from a vanilla JSON Schema object. Cast through
-      // `unknown` so the wire format goes through unchanged — Gemini
-      // accepts standard JSON Schema in practice.
-      const modelParams = {
-        model: config.model,
-        ...(generationConfig ? { generationConfig } : {}),
-      } as Parameters<typeof genAI.getGenerativeModel>[0];
-      const model = genAI.getGenerativeModel(modelParams, { timeout: timeoutMs });
       result = await model.generateContent(prompt);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

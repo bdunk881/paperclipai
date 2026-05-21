@@ -1,4 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
+import type { AgentTraceCallback } from "../agentTrace/types";
+import { emitTrace, resolveTraceCallback } from "../agentTrace/emitCallbacks";
+import { previewToolOutput } from "../agentTrace/redact";
+import {
+  createAnthropicStreamAccumulators,
+  wireAnthropicMessageStream,
+} from "./anthropicStream";
 import {
   AgentTool,
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
@@ -124,7 +131,22 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     // or we hit maxToolIterations. JSON-mode (forcedTool) is
     // intentionally not combined with this path — they use the same
     // tool primitive in opposite ways.
+    const onTrace = resolveTraceCallback(config);
+
     if (config.tools && config.tools.length > 0 && !forcedTool) {
+      if (onTrace) {
+        return runAnthropicToolLoopStream({
+          client,
+          model: config.model,
+          prompt,
+          tools: config.tools,
+          maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+          systemField,
+          cachingEnabled,
+          maxOutputTokens: config.maxOutputTokens,
+          onTrace,
+        });
+      }
       return runAnthropicToolLoop({
         client,
         model: config.model,
@@ -137,7 +159,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
       });
     }
 
-    // Streaming path: caller wired an onText callback to forward
+    // Streaming path: caller wired onTrace / onText to forward
     // incremental deltas (e.g. SSE → agent presence pill). Use the
     // Anthropic SDK's `messages.stream` helper so we still get the
     // final assembled message + usage when the stream completes.
@@ -147,9 +169,8 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
     // input_json_delta events). When `responseFormat` is set, skip the
     // stream and fall through to the standard create() call so
     // structured-output callers continue to get clean JSON.
-    if (config.onText && !forcedTool) {
-      let accumulated = "";
-      const onText = config.onText;
+    if (onTrace && !forcedTool) {
+      const acc = createAnthropicStreamAccumulators();
       try {
         const stream = client.messages.stream({
           model: config.model,
@@ -157,16 +178,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
           system: systemField,
           messages: [{ role: "user", content: prompt }],
         });
-        stream.on("text", (delta) => {
-          accumulated += delta;
-          try {
-            onText(delta, accumulated);
-          } catch {
-            // Swallow callback errors — streaming UX shouldn't break
-            // the LLM call. The final response below is what callers
-            // actually consume.
-          }
-        });
+        wireAnthropicMessageStream(stream, onTrace, acc);
         const final = await stream.finalMessage();
         const usage = {
           promptTokens: totalPromptTokens(final.usage),
@@ -174,9 +186,7 @@ export function createAnthropicProvider(config: LLMProviderConfig): LLMProvider 
           cachedPromptTokens: readCachedTokens(final.usage),
           cachedCreationTokens: readCacheCreationTokens(final.usage),
         };
-        const firstBlock = final.content[0];
-        const text =
-          firstBlock?.type === "text" ? firstBlock.text : accumulated;
+        const text = extractAssistantText(final.content) || acc.assistantText;
         return { text, usage };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -284,6 +294,190 @@ function buildAnthropicSystemField(
  * runaway loop. The model gets a final summarize-only turn when the
  * cap fires so the caller always receives readable text.
  */
+async function runAnthropicToolLoopStream(args: {
+  client: Anthropic;
+  model: string;
+  prompt: string;
+  tools: AgentTool[];
+  maxIterations: number;
+  systemField?: string | Anthropic.Messages.TextBlockParam[];
+  cachingEnabled: boolean;
+  maxOutputTokens?: number;
+  onTrace: AgentTraceCallback;
+}): Promise<LLMResponse> {
+  const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
+  const anthropicTools = buildAnthropicToolDefs(args.tools, args.cachingEnabled);
+
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: args.prompt },
+  ];
+
+  let cumulativePromptTokens = 0;
+  let cumulativeCompletionTokens = 0;
+  let cumulativeCachedTokens = 0;
+  let cumulativeCacheCreationTokens = 0;
+
+  const addUsage = (usage: Anthropic.Messages.Usage) => {
+    const cachedThisTurn = (usage as { cache_read_input_tokens?: number | null })
+      .cache_read_input_tokens;
+    const cacheCreationThisTurn = (usage as { cache_creation_input_tokens?: number | null })
+      .cache_creation_input_tokens;
+    const cachedAdd = typeof cachedThisTurn === "number" && cachedThisTurn > 0 ? cachedThisTurn : 0;
+    const creationAdd =
+      typeof cacheCreationThisTurn === "number" && cacheCreationThisTurn > 0 ? cacheCreationThisTurn : 0;
+    cumulativePromptTokens += usage.input_tokens + cachedAdd + creationAdd;
+    cumulativeCompletionTokens += usage.output_tokens;
+    cumulativeCachedTokens += cachedAdd;
+    cumulativeCacheCreationTokens += creationAdd;
+  };
+
+  const finishUsage = (): LLMResponse["usage"] => ({
+    promptTokens: cumulativePromptTokens,
+    completionTokens: cumulativeCompletionTokens,
+    cachedPromptTokens:
+      cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+    cachedCreationTokens:
+      cumulativeCacheCreationTokens > 0 ? cumulativeCacheCreationTokens : undefined,
+  });
+
+  for (let iteration = 0; iteration < args.maxIterations; iteration++) {
+    emitTrace(args.onTrace, { type: "iteration.started", iteration });
+    const acc = createAnthropicStreamAccumulators();
+    let response: Anthropic.Messages.Message;
+    try {
+      const stream = args.client.messages.stream({
+        model: args.model,
+        max_tokens: args.maxOutputTokens ?? 4096,
+        system: args.systemField,
+        messages,
+        tools: anthropicTools,
+      });
+      wireAnthropicMessageStream(stream, args.onTrace, acc);
+      response = await stream.finalMessage();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      emitTrace(args.onTrace, { type: "turn.error", message: msg });
+      throw new Error(`Anthropic API error: ${msg}`);
+    }
+
+    addUsage(response.usage);
+    messages.push({ role: "assistant", content: response.content });
+
+    if (response.stop_reason !== "tool_use") {
+      const text = extractAssistantText(response.content) || acc.assistantText;
+      const usage = finishUsage()!;
+      emitTrace(args.onTrace, { type: "turn.completed", text, usage });
+      return { text, usage };
+    }
+
+    const toolUses = response.content.filter(
+      (block): block is Anthropic.Messages.ToolUseBlock => block.type === "tool_use",
+    );
+
+    const toolResults = await Promise.all(
+      toolUses.map(async (use) => {
+        const tool = toolsByName.get(use.name);
+        if (!tool) {
+          emitTrace(args.onTrace, {
+            type: "tool_call.failed",
+            callId: use.id,
+            name: use.name,
+            error: `Tool "${use.name}" is not registered.`,
+          });
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: `Tool "${use.name}" is not registered. Try a different tool or finish without it.`,
+            is_error: true,
+          };
+        }
+        try {
+          const input = (use.input ?? {}) as Record<string, unknown>;
+          const result = await tool.handler(input);
+          emitTrace(args.onTrace, {
+            type: "tool_result",
+            callId: use.id,
+            name: use.name,
+            outputPreview: previewToolOutput(result),
+          });
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (handlerErr) {
+          const msg =
+            handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+          emitTrace(args.onTrace, {
+            type: "tool_call.failed",
+            callId: use.id,
+            name: use.name,
+            error: msg,
+          });
+          return {
+            type: "tool_result" as const,
+            tool_use_id: use.id,
+            content: `Tool "${use.name}" failed: ${msg}`,
+            is_error: true,
+          };
+        }
+      }),
+    );
+
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  try {
+    const finalTurn = await args.client.messages.create({
+      model: args.model,
+      max_tokens: Math.min(args.maxOutputTokens ?? 1024, 1024),
+      system: args.systemField,
+      messages: [
+        ...messages,
+        {
+          role: "user",
+          content:
+            "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
+        },
+      ],
+    });
+    addUsage(finalTurn.usage);
+    const text =
+      extractAssistantText(finalTurn.content) || "[interrupted: max iterations]";
+    const usage = finishUsage()!;
+    const fullText = `${text}\n\n[interrupted: max iterations]`;
+    emitTrace(args.onTrace, { type: "turn.completed", text: fullText, usage });
+    return { text: fullText, usage };
+  } catch {
+    const usage = finishUsage()!;
+    emitTrace(args.onTrace, {
+      type: "turn.completed",
+      text: "[interrupted: max iterations]",
+      usage,
+    });
+    return { text: "[interrupted: max iterations]", usage };
+  }
+}
+
+function buildAnthropicToolDefs(
+  tools: AgentTool[],
+  cachingEnabled: boolean,
+): Anthropic.Messages.Tool[] {
+  return tools.map((t, idx) => {
+    const base: Anthropic.Messages.Tool = {
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
+    };
+    if (cachingEnabled && idx === tools.length - 1) {
+      (base as Anthropic.Messages.Tool & {
+        cache_control?: { type: "ephemeral" };
+      }).cache_control = { type: "ephemeral" };
+    }
+    return base;
+  });
+}
+
 async function runAnthropicToolLoop(args: {
   client: Anthropic;
   model: string;
@@ -296,24 +490,7 @@ async function runAnthropicToolLoop(args: {
   maxOutputTokens?: number;
 }): Promise<LLMResponse> {
   const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
-  const anthropicTools: Anthropic.Messages.Tool[] = args.tools.map((t, idx) => {
-    const base: Anthropic.Messages.Tool = {
-      name: t.name,
-      description: t.description,
-      input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
-    };
-    // HEL-145: when caching is enabled, tag the LAST tool with
-    // cache_control. Anthropic caches every block up to and including
-    // the last cache_control breakpoint, so one tag covers system +
-    // every tool definition. Untagged tools after the breakpoint would
-    // bypass the cache, so the tag MUST be on the last tool.
-    if (args.cachingEnabled && idx === args.tools.length - 1) {
-      (base as Anthropic.Messages.Tool & {
-        cache_control?: { type: "ephemeral" };
-      }).cache_control = { type: "ephemeral" };
-    }
-    return base;
-  });
+  const anthropicTools = buildAnthropicToolDefs(args.tools, args.cachingEnabled);
 
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: args.prompt },

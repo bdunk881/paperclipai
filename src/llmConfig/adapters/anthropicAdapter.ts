@@ -13,6 +13,10 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
+import {
+  createAnthropicStreamAccumulators,
+  wireAnthropicMessageStream,
+} from "../../engine/llmProviders/anthropicStream";
 import type {
   NormalizedRequest,
   NormalizedResponse,
@@ -25,26 +29,59 @@ const STRUCTURED_OUTPUT_TOOL_NAME = "__structured_output__";
 export class AnthropicAdapter implements ProviderAdapter {
   readonly provider = "anthropic" as const;
 
+  async invokeStream(request: NormalizedRequest): Promise<NormalizedResponse> {
+    if (!request.onTrace) {
+      return this.invoke(request);
+    }
+    const built = this.buildRequestParams(request);
+    const acc = createAnthropicStreamAccumulators();
+    const stream = built.client.messages.stream({
+      model: request.model,
+      max_tokens: request.maxTokens ?? 4096,
+      temperature: request.temperature,
+      system: built.systemPrompt || undefined,
+      messages: built.anthropicMessages,
+      tools: built.tools.length > 0 ? built.tools : undefined,
+      tool_choice: built.toolChoice,
+    });
+    wireAnthropicMessageStream(stream, request.onTrace, acc);
+    const response = await stream.finalMessage();
+    return this.normalizeMessage(response);
+  }
+
   async invoke(request: NormalizedRequest): Promise<NormalizedResponse> {
+    const built = this.buildRequestParams(request);
+    let response: Anthropic.Message;
+    try {
+      response = await built.client.messages.create({
+        model: request.model,
+        max_tokens: request.maxTokens ?? 4096,
+        temperature: request.temperature,
+        system: built.systemPrompt || undefined,
+        messages: built.anthropicMessages,
+        tools: built.tools.length > 0 ? built.tools : undefined,
+        tool_choice: built.toolChoice,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Anthropic adapter API error: ${msg}`);
+    }
+    return this.normalizeMessage(response);
+  }
+
+  private buildRequestParams(request: NormalizedRequest) {
     const apiKey = request.apiKey;
     if (!apiKey) {
       throw new Error("Anthropic adapter: API key is required");
     }
-
     const client = new Anthropic({ apiKey });
-
-    // Translate messages into Anthropic format. System messages go into
-    // the dedicated `system` field; tool results become user messages with
-    // tool_result content blocks.
     const anthropicMessages: Anthropic.MessageParam[] = [];
     let systemPrompt = request.system ?? "";
-
     for (const msg of request.messages) {
       if (msg.role === "system") {
         systemPrompt = [systemPrompt, msg.content].filter(Boolean).join("\n\n");
         continue;
       }
-
       if (msg.role === "tool" && msg.toolResults?.length) {
         anthropicMessages.push({
           role: "user",
@@ -57,12 +94,10 @@ export class AnthropicAdapter implements ProviderAdapter {
         });
         continue;
       }
-
       if (msg.role === "user") {
         anthropicMessages.push({ role: "user", content: msg.content ?? "" });
         continue;
       }
-
       if (msg.role === "assistant") {
         const blocks: Anthropic.ContentBlockParam[] = [];
         if (msg.content) blocks.push({ type: "text", text: msg.content });
@@ -79,14 +114,11 @@ export class AnthropicAdapter implements ProviderAdapter {
         anthropicMessages.push({ role: "assistant", content: blocks });
       }
     }
-
-    // Translate tools (including the synthetic structured-output tool if needed).
     const tools: Anthropic.Tool[] = (request.tools ?? []).map((t) => ({
       name: t.name,
       description: t.description,
       input_schema: t.parameters as Anthropic.Tool["input_schema"],
     }));
-
     let toolChoice: Anthropic.MessageCreateParams["tool_choice"] | undefined;
     if (request.responseSchema) {
       tools.push({
@@ -97,24 +129,10 @@ export class AnthropicAdapter implements ProviderAdapter {
       });
       toolChoice = { type: "tool", name: STRUCTURED_OUTPUT_TOOL_NAME };
     }
+    return { client, anthropicMessages, systemPrompt, tools, toolChoice };
+  }
 
-    let response: Anthropic.Message;
-    try {
-      response = await client.messages.create({
-        model: request.model,
-        max_tokens: request.maxTokens ?? 4096,
-        temperature: request.temperature,
-        system: systemPrompt || undefined,
-        messages: anthropicMessages,
-        tools: tools.length > 0 ? tools : undefined,
-        tool_choice: toolChoice,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Anthropic adapter API error: ${msg}`);
-    }
-
-    // Parse response blocks
+  private normalizeMessage(response: Anthropic.Message): NormalizedResponse {
     let content = "";
     const toolCalls: NormalizedToolCall[] = [];
     for (const block of response.content) {
@@ -131,19 +149,19 @@ export class AnthropicAdapter implements ProviderAdapter {
         });
       }
     }
-
+    const usage = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      cachedInputTokens:
+        typeof (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens ===
+        "number"
+          ? (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens
+          : undefined,
+    };
     return {
       content,
       toolCalls,
-      usage: {
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
-        cachedInputTokens:
-          typeof (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens ===
-          "number"
-            ? (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens
-            : undefined,
-      },
+      usage,
       finishReason: mapAnthropicStopReason(response.stop_reason),
       cacheHit: Boolean(
         (response.usage as { cache_read_input_tokens?: number }).cache_read_input_tokens &&

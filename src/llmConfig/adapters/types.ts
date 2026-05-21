@@ -8,6 +8,7 @@
  * share the same tool registry, structured-output schema, and memory pool.
  */
 
+import type { AgentTraceCallback } from "../../engine/agentTrace/types";
 import type { ProviderName } from "../../engine/llmProviders/types";
 
 // ---------------------------------------------------------------------------
@@ -86,6 +87,8 @@ export interface NormalizedRequest {
   providerOptions?: Record<string, unknown>;
   /** API key / credentials. */
   apiKey?: string;
+  /** Optional live trace callback (HEL live trace streaming). */
+  onTrace?: AgentTraceCallback;
 }
 
 export interface NormalizedUsage {
@@ -125,4 +128,9 @@ export interface ProviderAdapter {
   readonly provider: ProviderName;
   /** Translate + send a normalized request, return a normalized response. */
   invoke(request: NormalizedRequest): Promise<NormalizedResponse>;
+  /**
+   * Stream a single model turn, emitting `onTrace` events when set.
+   * Tool-loop orchestration stays with the caller (same as `invoke`).
+   */
+  invokeStream?(request: NormalizedRequest): Promise<NormalizedResponse>;
 }

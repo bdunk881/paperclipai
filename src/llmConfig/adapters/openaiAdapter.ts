@@ -9,6 +9,7 @@
  * smaller call surface this adapter exposes.
  */
 
+import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
 import type {
   NormalizedRequest,
   NormalizedResponse,
@@ -43,6 +44,26 @@ interface OpenAIChatResponse {
 
 export class OpenAIAdapter implements ProviderAdapter {
   readonly provider = "openai" as const;
+
+  async invokeStream(request: NormalizedRequest): Promise<NormalizedResponse> {
+    const response = await this.invoke(request);
+    if (request.onTrace && response.content) {
+      emitTrace(request.onTrace, {
+        type: "assistant.delta",
+        delta: response.content,
+        accumulated: response.content,
+      });
+      emitTrace(request.onTrace, {
+        type: "turn.completed",
+        text: response.content,
+        usage: {
+          promptTokens: response.usage.inputTokens,
+          completionTokens: response.usage.outputTokens,
+        },
+      });
+    }
+    return response;
+  }
 
   async invoke(request: NormalizedRequest): Promise<NormalizedResponse> {
     const apiKey = request.apiKey;

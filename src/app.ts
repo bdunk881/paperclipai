@@ -35,6 +35,7 @@ import memoryRoutes from "./memory/memoryRoutes";
 import agentMemoryRoutes from "./agents/agentMemoryRoutes";
 import agentRoutes from "./agents/agentRoutes";
 import { createAgentPresenceRoutes } from "./agents/agentPresenceRoutes";
+import { createAgentTraceRoutes } from "./agents/agentTraceRoutes";
 import { createAgentJobDescriptionRoutes } from "./agents/agentJobDescriptionRoutes";
 import { createAgentActionsRoutes } from "./agents/agentActionsRoutes";
 import knowledgeRoutes from "./knowledge/routes";
@@ -604,6 +605,22 @@ app.use("/api/agents/presence/stream", (req, _res, next) => {
   }
   next();
 });
+app.use("/api/agents/runs", (req, _res, next) => {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+});
+app.use(
+  "/api/agents/runs",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "developer"),
+  createAgentTraceRoutes(),
+);
 app.use("/api/agents", requireAuth, workspaceResolver, requireRole("admin", "developer"), createAgentPresenceRoutes());
 // Wave 3: Job Description wizard (calls the workspace's default LLM
 // to draft a 3-section markdown body from four short answers). Mount

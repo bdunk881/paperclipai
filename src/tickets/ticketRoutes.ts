@@ -1,6 +1,5 @@
 import { NextFunction, Response, Router } from "express";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
@@ -15,6 +14,11 @@ import {
 import { ticketSlaStore } from "./ticketSlaStore";
 import { ticketSyncService } from "../ticketSync/service";
 import { observabilityStore } from "../observability/store";
+import {
+  buildAgentPromptJobIdForTicket,
+  buildPayloadIdempotencyKeyForTicket,
+  isJobIdAlreadyExists,
+} from "../queue/bullMqJobId";
 import { getAgentPromptQueue } from "../queue/queues";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import * as Sentry from "@sentry/node";
@@ -220,6 +224,8 @@ async function dispatchAgentPromptForTicket(input: {
    * comment so the agent picks up the new instruction.
    */
   prompt: string;
+  /** Comment/update id for assignment_update dedupe (HEL-193). */
+  updateId?: string;
 }): Promise<void> {
   if (!isPostgresConfigured()) {
     return;
@@ -232,7 +238,18 @@ async function dispatchAgentPromptForTicket(input: {
     return;
   }
   const queue = getAgentPromptQueue();
-  const idempotencyKey = `ticket:${input.ticket.id}:${input.triggerKind}:${randomUUID()}`;
+  const jobId = buildAgentPromptJobIdForTicket({
+    ticketId: input.ticket.id,
+    triggerKind: input.triggerKind,
+    updateId: input.updateId,
+    prompt: input.prompt,
+  });
+  const idempotencyKey = buildPayloadIdempotencyKeyForTicket({
+    ticketId: input.ticket.id,
+    triggerKind: input.triggerKind,
+    updateId: input.updateId,
+    prompt: input.prompt,
+  });
   const payload = {
     workspaceId: input.ticket.workspaceId,
     userId: input.userId,
@@ -273,7 +290,14 @@ async function dispatchAgentPromptForTicket(input: {
     });
     return;
   }
-  await queue.add(input.triggerKind, payload, { jobId: idempotencyKey });
+  try {
+    await queue.add(input.triggerKind, payload, { jobId });
+  } catch (err) {
+    if (isJobIdAlreadyExists(err)) {
+      return;
+    }
+    throw err;
+  }
 }
 
 function targetToMinutes(target: { kind: "minutes" | "business_days"; value: number }): number {
@@ -1064,6 +1088,7 @@ router.post("/:id/updates", requireRunId, asyncHandler<WorkspaceAwareRequest>(as
           userId: actor.id,
           triggerKind: "assignment_update",
           prompt: update.content,
+          updateId: update.id,
         }).catch((err) => {
           console.warn(
             `[tickets] HEL-174 follow-up dispatch failed for ticket=${aggregate.ticket.id}: ${(err as Error).message}`,

@@ -7,6 +7,26 @@ let _client: Redis | null = null;
  * Reads REDIS_URL (local/CI) or UPSTASH_REDIS_URL (production Upstash TCP).
  * Returns null when neither env var is set (tests, local dev without Redis).
  */
+export function isRedisConfigured(): boolean {
+  return Boolean(process.env.REDIS_URL ?? process.env.UPSTASH_REDIS_URL);
+}
+
+/**
+ * Pings Redis when configured. Returns false when URL is unset or ping fails.
+ */
+export async function checkRedisConnection(): Promise<boolean> {
+  const client = getRedisClient();
+  if (!client) {
+    return false;
+  }
+  try {
+    const pong = await client.ping();
+    return pong === "PONG";
+  } catch {
+    return false;
+  }
+}
+
 export function getRedisClient(): Redis | null {
   const url = process.env.REDIS_URL ?? process.env.UPSTASH_REDIS_URL;
   if (!url) return null;

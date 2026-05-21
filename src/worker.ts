@@ -24,22 +24,28 @@
 // before this import was added.
 import "./instrument";
 
-import { Worker, Job, Queue } from "bullmq";
+import * as Sentry from "@sentry/node";
+import { Worker, Job } from "bullmq";
+import {
+  buildRoutineCronAgentPromptJobId,
+  isJobIdAlreadyExists,
+} from "./queue/bullMqJobId";
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload, AgentPromptJobPayload } from "./queue/queues";
-import { getDlqQueue, getAgentPromptQueue } from "./queue/queues";
+import { getDlqQueue, getAgentPromptQueue, getRunQueue } from "./queue/queues";
 import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 import { executeAgentPrompt } from "./agents/agentPromptExecution";
 
-const connection = getRedisClient();
-if (!connection) {
+const redisConnection = getRedisClient();
+if (!redisConnection) {
   console.error(
     "[worker] REDIS_URL or UPSTASH_REDIS_URL must be set. Exiting."
   );
   process.exit(1);
 }
+const connection = redisConnection;
 
 /**
  * HEL-174: when the "runs" cron scheduler fires for a routine, the job
@@ -126,21 +132,30 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
       console.warn(`[worker] cron fire missing agent owner for routine ${routineId}`);
       return;
     }
-    await agentPromptQueue.add(
-      "schedule",
-      {
-        workspaceId: routine.workspace_id,
-        userId,
-        agentId: routine.agent_id,
-        prompt: routine.prompt,
-        systemPrompt: routine.system_prompt ?? undefined,
-        llmTier: routine.llm_tier ?? "standard",
-        sourceRoutineId: routine.id,
-        triggerKind: "schedule",
-        idempotencyKey: `routine-cron:${routine.id}:${Date.now()}`,
-      },
-      { jobId: `routine-cron:${routine.id}:${Date.now()}` },
-    );
+    const firedAtMs = Date.now();
+    const jobId = buildRoutineCronAgentPromptJobId(routine.id, firedAtMs);
+    try {
+      await agentPromptQueue.add(
+        "schedule",
+        {
+          workspaceId: routine.workspace_id,
+          userId,
+          agentId: routine.agent_id,
+          prompt: routine.prompt,
+          systemPrompt: routine.system_prompt ?? undefined,
+          llmTier: routine.llm_tier ?? "standard",
+          sourceRoutineId: routine.id,
+          triggerKind: "schedule",
+          idempotencyKey: `routine-cron:${routine.id}:${firedAtMs}`,
+        },
+        { jobId },
+      );
+    } catch (err) {
+      if (isJobIdAlreadyExists(err)) {
+        return;
+      }
+      throw err;
+    }
     return;
   }
   console.log(
@@ -148,7 +163,11 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
   );
 }
 
-const runQueue = new Queue<RunJobPayload>("runs", { connection });
+const runQueue = getRunQueue();
+if (!runQueue) {
+  console.error("[worker] Run queue unavailable despite Redis connection. Exiting.");
+  process.exit(1);
+}
 
 const runsWorker = new Worker<RunJobPayload>(
   "runs",
@@ -242,10 +261,58 @@ agentPromptWorker.on("completed", (job) => {
 });
 
 agentPromptWorker.on("failed", (job, err) => {
+  const attempts = job?.attemptsMade ?? 0;
+  const maxAttempts = job?.opts?.attempts ?? 3;
   console.error(
     `[worker:agent-prompt] Job ${job?.id ?? "unknown"} failed for agent ${job?.data?.agentId ?? "unknown"}:`,
     err.message,
   );
+  if (attempts < maxAttempts) {
+    return;
+  }
+  const reason = err.message.slice(0, 1000);
+  Sentry.captureException(err, {
+    tags: {
+      queue: "agent-prompt",
+      triggerKind: job?.data?.triggerKind ?? "unknown",
+    },
+    contexts: {
+      agent_prompt: {
+        jobId: job?.id,
+        agentId: job?.data?.agentId,
+        workspaceId: job?.data?.workspaceId,
+        sourceTicketId: job?.data?.sourceTicketId,
+        sourceRoutineId: job?.data?.sourceRoutineId,
+        error: reason,
+      },
+    },
+  });
+  if (isPostgresPersistenceEnabled() && job?.data?.workspaceId) {
+    const pool = getPostgresPool();
+    const subjectId = job.data.sourceTicketId ?? job.data.sourceRoutineId ?? job.data.agentId;
+    pool
+      .query(
+        `INSERT INTO activity_events (workspace_id, kind, actor, subject, payload, occurred_at)
+         VALUES ($1::uuid, 'agent.prompt.failed', $2::jsonb, $3::jsonb, $4::jsonb, now())`,
+        [
+          job.data.workspaceId,
+          JSON.stringify({ type: "system", id: "worker", label: "Worker" }),
+          JSON.stringify({
+            type: job.data.sourceTicketId ? "ticket" : "agent",
+            id: subjectId,
+            label: subjectId,
+          }),
+          JSON.stringify({
+            agentId: job.data.agentId,
+            triggerKind: job.data.triggerKind,
+            error: reason,
+          }),
+        ],
+      )
+      .catch((dbErr: Error) => {
+        console.error("[worker:agent-prompt] activity_events insert failed:", dbErr.message);
+      });
+  }
 });
 
 // Sync cron schedules after a short delay to let the DB connection warm up.
@@ -257,5 +324,19 @@ if (isPostgresConfigured()) {
     });
   }, 2000);
 }
+
+async function shutdownWorker(signal: string): Promise<void> {
+  console.log(`[worker] ${signal} received — closing queues`);
+  await Promise.all([runsWorker.close(), agentPromptWorker.close()]);
+  await connection.quit();
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => {
+  void shutdownWorker("SIGTERM");
+});
+process.on("SIGINT", () => {
+  void shutdownWorker("SIGINT");
+});
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' queues");

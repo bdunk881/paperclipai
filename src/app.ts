@@ -128,6 +128,7 @@ import {
 import landingPublicApiRoutes from "./landing/publicApiRoutes";
 import { requirePersistence } from "./bootstrap";
 import { randomUUID } from "crypto";
+import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
 import { getRunQueue } from "./queue/queues";
 
 import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
@@ -1050,18 +1051,30 @@ app.post(
       ...(userId !== undefined ? { userId } : {}),
     });
     const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
-    await runQueue.add(
-      "run",
-      {
-        runId: run.id,
-        templateId: template.id,
-        workflowVersionId: run.workflowVersionId,
-        workspaceId: req.workspaceId ?? "",
-        stepIndex: 0,
-        idempotencyKey,
-      },
-      { jobId: run.id, removeOnComplete: 100 }
-    );
+    try {
+      await runQueue.add(
+        "run",
+        {
+          runId: run.id,
+          templateId: template.id,
+          workflowVersionId: run.workflowVersionId,
+          workspaceId: req.workspaceId ?? "",
+          stepIndex: 0,
+          idempotencyKey,
+        },
+        { jobId: run.id, removeOnComplete: 100 },
+      );
+    } catch (enqueueErr) {
+      const message =
+        enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+      await runStore.update(run.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: `Run enqueue failed: ${message}`,
+      });
+      res.status(503).json({ error: `Failed to enqueue run: ${message}` });
+      return;
+    }
     res.status(202).json({ runId: run.id });
     return;
   }
@@ -1296,18 +1309,30 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
   const runQueue = getRunQueue();
   if (runQueue) {
     const idempotencyKey = `${newRun.id}:0:replay-latest:${Date.now()}`;
-    await runQueue.add(
-      "run",
-      {
-        runId: newRun.id,
-        templateId: run.templateId,
-        workflowVersionId: newRun.workflowVersionId,
-        workspaceId: run.workspaceId ?? "",
-        stepIndex: 0,
-        idempotencyKey,
-      },
-      { jobId: newRun.id, removeOnComplete: 100 }
-    );
+    try {
+      await runQueue.add(
+        "run",
+        {
+          runId: newRun.id,
+          templateId: run.templateId,
+          workflowVersionId: newRun.workflowVersionId,
+          workspaceId: run.workspaceId ?? "",
+          stepIndex: 0,
+          idempotencyKey,
+        },
+        { jobId: newRun.id, removeOnComplete: 100 },
+      );
+    } catch (enqueueErr) {
+      const message =
+        enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+      await runStore.update(newRun.id, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: `Replay enqueue failed: ${message}`,
+      });
+      res.status(503).json({ error: `Failed to enqueue replay: ${message}` });
+      return;
+    }
     res.status(202).json({ runId: newRun.id });
     return;
   }
@@ -1980,6 +2005,8 @@ app.get("/health", asyncHandler(async (_req, res) => {
   const { checkPostgresConnection, isPostgresConfigured: isPgConfigured } = await import("./db/postgres");
   const pgConfigured = isPgConfigured();
   const pgConnected = pgConfigured ? await checkPostgresConnection() : false;
+  const redisConfigured = isRedisConfigured();
+  const redisConnected = redisConfigured ? await checkRedisConnection() : false;
   let runs = [] as Awaited<ReturnType<typeof runStore.list>>;
   let runStoreError: string | null = null;
 
@@ -1991,8 +2018,11 @@ app.get("/health", asyncHandler(async (_req, res) => {
     runStoreError = message;
   }
 
+  const degraded =
+    Boolean(runStoreError) || (redisConfigured && !redisConnected) || (pgConfigured && !pgConnected);
+
   res.json({
-    status: runStoreError ? "degraded" : "ok",
+    status: degraded ? "degraded" : "ok",
     templates: listTemplates().length,
     runs: {
       total: runs.length,
@@ -2004,6 +2034,10 @@ app.get("/health", asyncHandler(async (_req, res) => {
     postgres: {
       configured: pgConfigured,
       connected: pgConnected,
+    },
+    redis: {
+      configured: redisConfigured,
+      connected: redisConnected,
     },
   });
 }));

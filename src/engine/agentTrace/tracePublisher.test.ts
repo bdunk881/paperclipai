@@ -1,9 +1,10 @@
 import { agentTraceChannel, AgentTracePublisher, subscribeAgentTraceInMemory } from "./tracePublisher";
 import type { AgentTraceScope, AgentTraceEnvelope } from "./types";
 
-// Suppress Redis — tests run without a Redis connection.
+// getRedisClient is a jest.fn() so individual tests can override its return value.
+const mockGetRedisClient = jest.fn<ReturnType<typeof import("../../queue/redisClient").getRedisClient>, []>(() => null);
 jest.mock("../../queue/redisClient", () => ({
-  getRedisClient: () => null,
+  getRedisClient: (...args: unknown[]) => mockGetRedisClient(...(args as [])),
 }));
 
 const SCOPE: AgentTraceScope = {
@@ -89,6 +90,50 @@ describe("AgentTracePublisher", () => {
     publisher.setIteration(3);
     const env = await publisher.publish({ type: "iteration.started", iteration: 3 });
     expect(env.iteration).toBe(3);
+  });
+});
+
+describe("AgentTracePublisher — Redis path", () => {
+  beforeEach(() => {
+    mockGetRedisClient.mockReset();
+    mockGetRedisClient.mockReturnValue(null); // default: no Redis
+  });
+
+  it("publishes to Redis when a client is available", async () => {
+    const mockPublish = jest.fn().mockResolvedValue(1);
+    mockGetRedisClient.mockReturnValueOnce({ publish: mockPublish } as never);
+
+    const publisher = new AgentTracePublisher({ ...SCOPE, runId: "run-redis" });
+    await publisher.publish({ type: "turn.started", at: "2026-01-01T00:00:00Z" });
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    const [channel, payload] = mockPublish.mock.calls[0]!;
+    expect(channel).toBe(`workspace:${SCOPE.workspaceId}:agent-trace`);
+    const parsed = JSON.parse(payload as string) as AgentTraceEnvelope;
+    expect(parsed.runId).toBe("run-redis");
+  });
+
+  it("swallows Redis publish errors and still returns the envelope", async () => {
+    const brokenPublish = jest.fn().mockRejectedValue(new Error("connection refused"));
+    mockGetRedisClient.mockReturnValueOnce({ publish: brokenPublish } as never);
+
+    const publisher = new AgentTracePublisher({ ...SCOPE, runId: "run-redis-err" });
+    await expect(
+      publisher.publish({ type: "turn.started", at: "2026-01-01T00:00:00Z" }),
+    ).resolves.toBeDefined();
+  });
+
+  it("sanitizes tool_result events (outputPreview truncation)", async () => {
+    const publisher = new AgentTracePublisher({ ...SCOPE, runId: "run-tool-result" });
+    const longOutput = "x".repeat(20_000);
+    const env = await publisher.publish({
+      type: "tool_result",
+      callId: "c1",
+      name: "fetch",
+      outputPreview: longOutput,
+    });
+    const event = env.event as Extract<typeof env.event, { type: "tool_result" }>;
+    expect(event.outputPreview.length).toBeLessThan(20_000);
   });
 });
 

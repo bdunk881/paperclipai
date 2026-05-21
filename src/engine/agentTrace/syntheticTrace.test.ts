@@ -98,8 +98,6 @@ describe("emitTurnCompleted", () => {
       emitTurnCompleted(undefined, {
         text: "done",
         usage: { promptTokens: 10, completionTokens: 5 },
-        provider: "anthropic",
-        model: "claude-sonnet",
       }),
     ).not.toThrow();
   });
@@ -109,8 +107,6 @@ describe("emitTurnCompleted", () => {
       emitTurnCompleted(cb, {
         text: "final answer",
         usage: { promptTokens: 100, completionTokens: 50 },
-        provider: "anthropic",
-        model: "claude-sonnet",
       }),
     );
     expect(events).toHaveLength(1);
@@ -122,12 +118,7 @@ describe("emitTurnCompleted", () => {
 
   it("defaults usage to zero when response.usage is undefined", () => {
     const events = collectEvents((cb) =>
-      emitTurnCompleted(cb, {
-        text: "result",
-        usage: undefined,
-        provider: "anthropic",
-        model: "claude-sonnet",
-      }),
+      emitTurnCompleted(cb, { text: "result" }),
     );
     const ev = events[0] as Extract<AgentTraceEvent, { type: "turn.completed" }>;
     expect(ev.usage).toEqual({ promptTokens: 0, completionTokens: 0 });

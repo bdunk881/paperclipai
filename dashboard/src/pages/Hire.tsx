@@ -33,6 +33,8 @@ import {
 } from "../api/missionsApi";
 import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { getHostedFreeCatalog } from "../api/hostedFreeModelsApi";
+import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { teamLinkForMission } from "../lib/missionNavigation";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
@@ -109,6 +111,8 @@ export default function Hire() {
   // two simultaneous deletes never collide on a shared spinner.
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [discardTarget, setDiscardTarget] = useState<Mission | null>(null);
+  const [discarding, setDiscarding] = useState(false);
   // Gate the Generate button on having at least one LLM credential. Without
   // one, the backend's POST /api/missions/:id/generate-plan returns 422
   // ("No LLM provider configured"). We surface the gap up front so the user
@@ -121,36 +125,23 @@ export default function Hire() {
   const llmCheckLoading = llmConfigs === null && llmConfigError === null;
 
   async function handleDelete(mission: Mission): Promise<void> {
-    // Native confirm() is fine for Wave 1 — fast path, clear copy,
-    // no modal infra needed. Confirmed-plan refusal is shaped on the
-    // backend (409 with explanation); we surface that error string
-    // verbatim so the user knows to retire the team first.
-    const ok = window.confirm(
-      `Discard this mission?\n\n"${mission.statement.slice(0, 140)}${
-        mission.statement.length > 140 ? "…" : ""
-      }"\n\nAny draft hiring plan attached to it will also be deleted. This can't be undone.`,
-    );
-    if (!ok) return;
-
+    setDiscarding(true);
     setDeletingId(mission.id);
     setDeleteError(null);
     try {
       const token = await requireAccessToken();
       await deleteMission(mission.id, token);
-      // Optimistic prune — list reflects the removal immediately while
-      // the background refresh confirms it from the server.
       setMissions((current) => current.filter((m) => m.id !== mission.id));
       void refreshMissions();
       toast.success("Mission discarded.");
+      setDiscardTarget(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to delete mission";
-      // Keep the inline error too — the 409 ("confirmed plan") message
-      // is long and important enough that a passing toast isn't
-      // sufficient on its own.
       setDeleteError(msg);
       toast.error(msg);
     } finally {
       setDeletingId(null);
+      setDiscarding(false);
     }
   }
 
@@ -577,7 +568,7 @@ export default function Hire() {
                 {mission.latestHiringPlanId ? (
                   mission.status === "active" ? (
                     <Link
-                      to="/team"
+                      to={teamLinkForMission(mission.id)}
                       className="af2-btn af2-btn-sm"
                       style={{ textDecoration: "none", display: "inline-block" }}
                     >
@@ -604,7 +595,7 @@ export default function Hire() {
                 aria-label={`Discard mission: ${mission.statement.slice(0, 60)}`}
                 title="Discard mission"
                 disabled={deletingId === mission.id}
-                onClick={() => void handleDelete(mission)}
+                onClick={() => setDiscardTarget(mission)}
                 style={{
                   background: "transparent",
                   border: "none",
@@ -638,6 +629,25 @@ export default function Hire() {
           ))}
         </div>
       ) : null}
+
+      <ConfirmDestructiveModal
+        open={discardTarget !== null}
+        onClose={() => setDiscardTarget(null)}
+        eyebrow="Discard mission"
+        title="Discard this mission?"
+        message={
+          discardTarget
+            ? `"${discardTarget.statement.slice(0, 140)}${
+                discardTarget.statement.length > 140 ? "…" : ""
+              }"\n\nAny draft hiring plan attached to it will also be deleted. This can't be undone.`
+            : ""
+        }
+        confirmLabel="Discard mission"
+        confirming={discarding}
+        onConfirm={async () => {
+          if (discardTarget) await handleDelete(discardTarget);
+        }}
+      />
     </div>
   );
 }

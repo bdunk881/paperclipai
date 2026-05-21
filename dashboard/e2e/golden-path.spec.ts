@@ -263,7 +263,7 @@ test.describe("Phase 7 — Confirm hiring plan", () => {
   }) => {
     await page.goto("/hire/plan");
     await page.getByRole("button", { name: /confirm|onboard/i }).click();
-    await expect(page).toHaveURL(/\/team/);
+    await expect(page).toHaveURL(/\/workspace\/org-structure/);
     // hiring_plans row should now have accepted_at; agents table has the new rows.
     // Asserted by the next phase rendering the org chart.
   });

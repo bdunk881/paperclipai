@@ -8,6 +8,7 @@ import {
   type OrgGraphAgent,
 } from "../api/canonicalApi";
 import { listMissions, type Mission } from "../api/missionsApi";
+import { AddReportModal } from "../components/missions/AddReportModal";
 import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
@@ -22,6 +23,7 @@ import {
   buildOrgTree,
   companyIdByAgentId,
   filterAgentsForMission,
+  missionIdFromAgent,
   parseViewMode,
   resolveMissionSelection,
   truncateStatement,
@@ -68,8 +70,7 @@ function initialsFor(name: string): string {
 }
 
 function MissionNode({ mission, allWorkspace }: { mission: Mission | null; allWorkspace: boolean }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+  const card = (
       <div
         className="af2-card"
         style={{ padding: 14, width: 280, textAlign: "center" }}
@@ -98,6 +99,24 @@ function MissionNode({ mission, allWorkspace }: { mission: Mission | null; allWo
           </div>
         ) : null}
       </div>
+  );
+
+  if (mission && !allWorkspace) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+        <Link
+          to={`/missions/${encodeURIComponent(mission.id)}`}
+          style={{ textDecoration: "none", color: "inherit" }}
+        >
+          {card}
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: 6 }}>
+      {card}
     </div>
   );
 }
@@ -144,6 +163,7 @@ function PodLead({
   leadStats,
   reportStats,
   presence,
+  onAddReport,
 }: {
   lead: Agent;
   reports: Agent[];
@@ -151,6 +171,7 @@ function PodLead({
   leadStats: LeadStats | null;
   reportStats: Map<string, AgentSpendRow>;
   presence: Map<string, AgentPresence>;
+  onAddReport: (lead: Agent) => void;
 }) {
   const avatarClass = avatarClassFor(tone);
   const borderColor = topBorderFor(tone);
@@ -298,19 +319,19 @@ function PodLead({
             </div>
           );
         })}
-        <Link
-          to="/hire"
+        <button
+          type="button"
           className="af2-btn af2-btn-ghost af2-btn-sm"
           style={{
             marginTop: 8,
             width: "100%",
-            textDecoration: "none",
             display: "inline-flex",
             justifyContent: "center",
           }}
+          onClick={() => onAddReport(lead)}
         >
           ＋ Add report
-        </Link>
+        </button>
       </div>
     </div>
   );
@@ -329,6 +350,7 @@ export default function OrgStructure() {
   const [budgets, setBudgets] = useState<Map<string, AgentSpendRow>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addReportLead, setAddReportLead] = useState<Agent | null>(null);
 
   const viewMode: TeamViewMode = parseViewMode(searchParams.get("view"));
   const missionIdParam = searchParams.get("missionId");
@@ -450,6 +472,16 @@ export default function OrgStructure() {
   ]);
 
   const missionSelectValue = scopeAllWorkspace ? "all" : (selectedMissionId ?? "all");
+
+  const existingRoleKeys = useMemo(
+    () =>
+      new Set(
+        filteredAgents
+          .map((a) => a.roleKey)
+          .filter((key): key is string => typeof key === "string" && key.length > 0),
+      ),
+    [filteredAgents],
+  );
 
   if (loading) {
     return (
@@ -594,11 +626,39 @@ export default function OrgStructure() {
                 leadStats={leadStatsFor(lead.id)}
                 reportStats={budgets}
                 presence={presence}
+                onAddReport={setAddReportLead}
               />
             ))}
           </div>
         </>
       )}
+
+      {addReportLead ? (() => {
+        const missionForReport =
+          selectedMission ??
+          missions.find((m) => m.id === missionIdFromAgent(addReportLead)) ??
+          null;
+        if (!missionForReport) return null;
+        const planConfirmed =
+          missionForReport.status === "active" ||
+          missionForReport.status === "in_flight" ||
+          missionForReport.status === "running" ||
+          missionForReport.status === "blocked";
+        return (
+          <AddReportModal
+            open
+            onClose={() => setAddReportLead(null)}
+            missionId={missionForReport.id}
+            managerAgentId={addReportLead.id}
+            managerName={addReportLead.name}
+            managerRoleKey={addReportLead.roleKey ?? null}
+            existingRoleKeys={existingRoleKeys}
+            hiringPlanId={missionForReport.latestHiringPlanId}
+            planConfirmed={planConfirmed}
+            onAdded={() => void loadOrg()}
+          />
+        );
+      })() : null}
     </div>
   );
 }

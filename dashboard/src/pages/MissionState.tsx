@@ -19,9 +19,13 @@
  * the loader-driven route are removed here; the route now renders straight
  * from the workspace missions list.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { listMissions, type Mission } from "../api/missionsApi";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Trash2 } from "lucide-react";
+import { deleteMission, listMissions, type Mission } from "../api/missionsApi";
+import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { missionLinkTo } from "../lib/missionNavigation";
+import { useToast } from "../components/ToastProvider";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -130,13 +134,6 @@ function successMetricText(mission: Mission): string {
   return mission.metadata?.successMetric?.trim() || "—";
 }
 
-function missionLinkTo(mission: Mission): string {
-  if (mission.latestHiringPlanId) {
-    return `/hire/plan/${mission.id}/${mission.latestHiringPlanId}`;
-  }
-  return "/hire";
-}
-
 function ownerFor(mission: Mission): { display: string; sub: string } {
   const company = mission.companyName?.trim() || "Workspace";
   const first = company.split(/\s+/)[0] ?? company;
@@ -146,11 +143,18 @@ function ownerFor(mission: Mission): { display: string; sub: string } {
 export default function MissionState() {
   const { requireAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const toast = useToast();
+  const highlightMissionId = searchParams.get("mission");
 
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("in_flight");
+  const [discardTarget, setDiscardTarget] = useState<Mission | null>(null);
+  const [discarding, setDiscarding] = useState(false);
+  const highlightedRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     document.title = "Missions | AutoFlow";
@@ -179,6 +183,16 @@ export default function MissionState() {
   useEffect(() => {
     void loadMissions();
   }, [loadMissions]);
+
+  useEffect(() => {
+    if (!highlightMissionId || loading) return;
+    const match = missions.find((m) => m.id === highlightMissionId);
+    if (match && missionLinkTo(match).startsWith("/missions/")) {
+      navigate(missionLinkTo(match), { replace: true });
+      return;
+    }
+    highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightMissionId, loading, missions, navigate]);
 
   const counts = useMemo(() => {
     const result: Record<TabKey, number> = {
@@ -302,19 +316,26 @@ export default function MissionState() {
             const progress = progressFor(mission.status);
             const color = progressColor(mission.status);
 
+            const highlighted = highlightMissionId === mission.id;
             return (
-              <Link
+              <div
                 key={mission.id}
-                to={missionLinkTo(mission)}
+                ref={highlighted ? highlightedRef : undefined}
                 className="af2-card"
                 style={{
                   padding: 20,
-                  cursor: "pointer",
-                  textDecoration: "none",
-                  color: "inherit",
                   display: "block",
+                  outline: highlighted ? "2px solid var(--af2-sage)" : undefined,
                 }}
               >
+                <Link
+                  to={missionLinkTo(mission)}
+                  style={{
+                    textDecoration: "none",
+                    color: "inherit",
+                    display: "block",
+                  }}
+                >
                 <div className="af2-row">
                   <span
                     className="af2-mono af2-muted-2"
@@ -388,11 +409,58 @@ export default function MissionState() {
                     {dueText(mission)}
                   </span>
                 </div>
-              </Link>
+                </Link>
+                <div style={{ marginTop: 12, textAlign: "right" }}>
+                  <button
+                    type="button"
+                    className="af2-btn af2-btn-ghost af2-btn-sm"
+                    style={{ color: "var(--af2-clay)" }}
+                    aria-label="Discard mission"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setDiscardTarget(mission);
+                    }}
+                  >
+                    <Trash2 size={14} style={{ marginRight: 4, verticalAlign: "middle" }} />
+                    Discard
+                  </button>
+                </div>
+              </div>
             );
           })}
         </div>
       )}
+
+      <ConfirmDestructiveModal
+        open={discardTarget !== null}
+        onClose={() => setDiscardTarget(null)}
+        eyebrow="Discard mission"
+        title="Discard this mission?"
+        message={
+          discardTarget
+            ? `"${discardTarget.statement.slice(0, 140)}${
+                discardTarget.statement.length > 140 ? "…" : ""
+              }"\n\nAny draft hiring plan will also be deleted. This can't be undone.`
+            : ""
+        }
+        confirmLabel="Discard mission"
+        confirming={discarding}
+        onConfirm={async () => {
+          if (!discardTarget) return;
+          setDiscarding(true);
+          try {
+            const token = await requireAccessToken();
+            await deleteMission(discardTarget.id, token);
+            toast.success("Mission discarded.");
+            setDiscardTarget(null);
+            await loadMissions();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to discard mission");
+          } finally {
+            setDiscarding(false);
+          }
+        }}
+      />
     </div>
   );
 }

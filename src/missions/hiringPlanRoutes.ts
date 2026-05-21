@@ -67,7 +67,7 @@ function firstTierThatAllowsAgentCap(fromTier: SubscriptionTier): SubscriptionTi
   return null;
 }
 
-async function assertAgentCapForConfirm(
+export async function assertAgentCapForConfirm(
   pool: Pool,
   workspaceId: string,
   agentsToAdd: number,
@@ -200,7 +200,7 @@ async function loadHiringPlanScopedToWorkspace(
  * "Failed to confirm hiring plan" 500 the dashboard rendered as
  * "Failed to deploy mission" (DASH-1).
  */
-async function ensureWorkspaceTeam(
+export async function ensureWorkspaceTeam(
   client: PoolClient,
   workspaceId: string,
   userId: string,
@@ -238,7 +238,7 @@ interface AgentInsertParams {
   mandate: string;
 }
 
-async function insertAgent(
+export async function insertAgent(
   client: PoolClient,
   params: AgentInsertParams,
   defaultProvider: "openai" | "anthropic" | null,
@@ -348,7 +348,7 @@ export function buildStarterJobDescriptionBody(agent: {
   ].join("\n");
 }
 
-async function insertStarterJobDescription(
+export async function insertStarterJobDescription(
   client: PoolClient,
   params: {
     workspaceId: string;
@@ -414,7 +414,7 @@ export function buildStarterRoutinePrompt(agent: {
  */
 const STARTER_ROUTINE_CRON = "0 9 * * 1-5";
 
-async function seedDefaultRoutineForAgent(
+export async function seedDefaultRoutineForAgent(
   client: PoolClient,
   params: {
     workspaceId: string;
@@ -460,7 +460,7 @@ async function seedDefaultRoutineForAgent(
   };
 }
 
-async function emitActivityEvent(
+export async function emitActivityEvent(
   client: PoolClient,
   workspaceId: string,
   kind: string,
@@ -541,7 +541,7 @@ const OPERATOR_DEFAULT_KPIS = [
   "Quality score (errors per task)",
 ];
 
-function libraryEntryToRecommendation(
+export function libraryEntryToRecommendation(
   entry: (typeof DEFAULT_ROLE_LIBRARY)[number],
   existingRoleKeys: Set<string>,
 ): TeamAssemblyResult["provisioningPlan"]["agents"][number] {

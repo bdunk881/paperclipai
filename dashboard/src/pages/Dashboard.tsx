@@ -27,6 +27,7 @@ import {
 } from "../api/agentApi";
 import { listBudgets, type BudgetRow } from "../api/canonicalApi";
 import { listMissions, type Mission } from "../api/missionsApi";
+import { missionLinkTo } from "../lib/missionNavigation";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -384,7 +385,7 @@ export default function Dashboard() {
                 return (
                   <Link
                     key={mission.id}
-                    to={mission.latestHiringPlanId ? `/hire/plan/${mission.id}/${mission.latestHiringPlanId}` : `/mission-state`}
+                    to={missionLinkTo(mission)}
                     className="af2-list-row"
                     style={{
                       gridTemplateColumns: "1.7fr 130px 110px 90px 90px",

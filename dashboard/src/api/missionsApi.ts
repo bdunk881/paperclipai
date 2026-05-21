@@ -102,6 +102,61 @@ export async function createMission(
  * already confirmed (agents provisioned) — in that case the user
  * needs to retire the team first.
  */
+export interface AddMissionReportInput {
+  managerAgentId: string;
+  roleKey: string;
+}
+
+export interface AddMissionReportResponse {
+  agent: {
+    id: string;
+    name: string;
+    roleKey: string;
+    model: string | null;
+    managerAgentId: string;
+  };
+}
+
+export async function addMissionReport(
+  missionId: string,
+  input: AddMissionReportInput,
+  accessToken: string,
+): Promise<AddMissionReportResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/add-report`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    },
+  );
+  return parseJsonOrError<AddMissionReportResponse>(
+    response,
+    `Failed to add report: ${response.status}`,
+  );
+}
+
+export interface RetireMissionTeamResponse {
+  retiredAgentCount: number;
+}
+
+export async function retireMissionTeam(
+  missionId: string,
+  accessToken: string,
+): Promise<RetireMissionTeamResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/retire-team`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken),
+    },
+  );
+  return parseJsonOrError<RetireMissionTeamResponse>(
+    response,
+    `Failed to retire team: ${response.status}`,
+  );
+}
+
 export async function deleteMission(
   missionId: string,
   accessToken: string,

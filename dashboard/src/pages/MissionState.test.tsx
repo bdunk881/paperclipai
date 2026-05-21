@@ -22,6 +22,8 @@ vi.mock("../api/missionsApi", () => ({
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     user: { id: "user-1", email: "user@example.com", name: "Test User" },
+    accessMode: "authenticated",
+    getAccessToken: requireAccessTokenMock,
     requireAccessToken: requireAccessTokenMock,
   }),
 }));
@@ -175,7 +177,7 @@ describe("MissionState (v2 missions list)", () => {
     ).toBeNull();
   });
 
-  it("renders the loading state before missions resolve", () => {
+  it("renders page chrome before missions resolve", () => {
     listMissionsMock.mockReturnValue(new Promise(() => {}));
 
     render(
@@ -184,7 +186,7 @@ describe("MissionState (v2 missions list)", () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Loading missions/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
   });
 
   it("renders the error state when the API call fails", async () => {

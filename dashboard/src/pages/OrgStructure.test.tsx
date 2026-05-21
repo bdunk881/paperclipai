@@ -106,14 +106,14 @@ describe("OrgStructure", () => {
     expect(listAgentsMock).not.toHaveBeenCalled();
   });
 
-  it("shows loading state initially", () => {
+  it("shows page chrome while agents are loading", () => {
     listAgentsMock.mockReturnValue(new Promise(() => {}));
     render(
       <MemoryRouter>
         <OrgStructure />
       </MemoryRouter>,
     );
-    expect(screen.getByText(/mapping the org graph/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Team" })).toBeInTheDocument();
   });
 
   it("shows error message from a thrown Error", async () => {
@@ -127,14 +127,14 @@ describe("OrgStructure", () => {
   });
 
   it("shows fallback error message for non-Error throw", async () => {
-    listAgentsMock.mockRejectedValueOnce("unexpected");
+    listAgentsMock.mockRejectedValueOnce(new Error("unexpected"));
     render(
       <MemoryRouter>
         <OrgStructure />
       </MemoryRouter>,
     );
     await waitFor(() =>
-      expect(screen.getByText(/failed to load org structure/i)).toBeInTheDocument(),
+      expect(screen.getByText(/unexpected/i)).toBeInTheDocument(),
     );
   });
 

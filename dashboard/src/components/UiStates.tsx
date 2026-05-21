@@ -1,6 +1,26 @@
 import { Loader2, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
+/** Inline skeleton block for shell-first page loads (section stays visible). */
+export function SkeletonBlock({
+  lines = 2,
+  className = "",
+}: {
+  lines?: number;
+  className?: string;
+}) {
+  return (
+    <div className={className} aria-hidden="true">
+      {Array.from({ length: lines }).map((_, index) => (
+        <div
+          key={index}
+          className={`animate-pulse rounded-full bg-af2-paper-2 ${index === 0 ? "h-3 w-full" : "mt-3 h-3 w-3/4"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   // DASH-35: replaced V1 scanline-skeleton bars with af2 placeholder
   // lines tinted from the paper-2 token. Same visual rhythm (two

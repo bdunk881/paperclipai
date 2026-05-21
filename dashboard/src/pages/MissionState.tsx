@@ -19,16 +19,19 @@
  * the loader-driven route are removed here; the route now renders straight
  * from the workspace missions list.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Trash2 } from "lucide-react";
-import { deleteMission, listMissions, type Mission } from "../api/missionsApi";
+import { deleteMission, type Mission } from "../api/missionsApi";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
 import { missionLinkTo } from "../lib/missionNavigation";
 import { useToast } from "../components/ToastProvider";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { queryKeys } from "../lib/queryKeys";
+import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 
 type TabKey = "in_flight" | "review" | "scheduled" | "done" | "all";
 
@@ -148,9 +151,12 @@ export default function MissionState() {
   const toast = useToast();
   const highlightMissionId = searchParams.get("mission");
 
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const missionsQuery = useMissionsQuery();
+  const missions = missionsQuery.data ?? [];
+  const loading = missionsQuery.isLoading && !missionsQuery.data;
+  const error =
+    missionsQuery.error instanceof Error ? missionsQuery.error.message : null;
   const [activeTab, setActiveTab] = useState<TabKey>("in_flight");
   const [discardTarget, setDiscardTarget] = useState<Mission | null>(null);
   const [discarding, setDiscarding] = useState(false);
@@ -159,30 +165,6 @@ export default function MissionState() {
   useEffect(() => {
     document.title = "Missions | AutoFlow";
   }, []);
-
-  const loadMissions = useCallback(async () => {
-    if (!activeWorkspaceId) {
-      setMissions([]);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    try {
-      setLoading(true);
-      setError(null);
-      const token = await requireAccessToken();
-      const list = await listMissions(token);
-      setMissions(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load missions");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId, requireAccessToken]);
-
-  useEffect(() => {
-    void loadMissions();
-  }, [loadMissions]);
 
   useEffect(() => {
     if (!highlightMissionId || loading) return;
@@ -259,12 +241,14 @@ export default function MissionState() {
       </div>
 
       {loading ? (
-        <LoadingState label="Loading missions…" />
+        <div className="af2-card" style={{ padding: 24 }}>
+          <SkeletonBlock lines={3} />
+        </div>
       ) : error ? (
         <ErrorState
           title="Missions unavailable"
           message={error}
-          onRetry={() => void loadMissions()}
+          onRetry={() => void missionsQuery.refetch()}
         />
       ) : visibleMissions.length === 0 ? (
         <div
@@ -453,7 +437,14 @@ export default function MissionState() {
             await deleteMission(discardTarget.id, token);
             toast.success("Mission discarded.");
             setDiscardTarget(null);
-            await loadMissions();
+            if (activeWorkspaceId) {
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.missions(activeWorkspaceId),
+              });
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.home(activeWorkspaceId),
+              });
+            }
           } catch (err) {
             toast.error(err instanceof Error ? err.message : "Failed to discard mission");
           } finally {

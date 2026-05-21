@@ -24,15 +24,17 @@
  * (rounded indigo→orange gradients, BudgetCard accent tiles). The v2
  * spec replaces it with the af2 stat strip + list pattern.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { listAgents, type Agent } from "../api/agentApi";
-import { listBudgets, type BudgetRow } from "../api/canonicalApi";
+import type { Agent } from "../api/agentApi";
+import type { BudgetRow } from "../api/canonicalApi";
+import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
+import { useBudgetsQuery } from "../hooks/queries/useBudgetsQuery";
 import {
   listBudgetAlerts,
   type ControlPlaneBudgetAlert,
 } from "../api/controlPlane";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { ErrorState } from "../components/UiStates";
 import { Af2PageHead } from "../components/af2";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
@@ -78,67 +80,53 @@ function roleFor(agent: Agent): string {
 export default function BudgetDashboard() {
   const { accessMode, getAccessToken } = useAuth();
   const presence = useAgentPresence();
-  const [agentRows, setAgentRows] = useState<AgentBudgetRow[]>([]);
-  // HEL-143: surface the budget_alerts table that was previously a
-  // write-only audit trail. Owner can now see "Atlas blew through 80%
-  // of its monthly budget at 2:14 PM yesterday."
+  const agentsQuery = useAgentsQuery();
+  const budgetsQuery = useBudgetsQuery();
   const [budgetAlerts, setBudgetAlerts] = useState<ControlPlaneBudgetAlert[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadBudget = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const agentRows = useMemo((): AgentBudgetRow[] => {
+    const agents = agentsQuery.data ?? [];
+    const budgets = budgetsQuery.data ?? [];
+    const byAgent = new Map<string, BudgetRow>();
+    for (const row of budgets) {
+      if (row.scopeKind === "agent" && row.scopeId) byAgent.set(row.scopeId, row);
+    }
+    const rows = agents.map((agent) => {
+      const row = byAgent.get(agent.id);
+      return {
+        id: agent.id,
+        name: agent.name,
+        role: roleFor(agent),
+        budget: row ? row.capCents / 100 : agent.budgetMonthlyUsd,
+        spent: row ? row.usedCents / 100 : 0,
+      };
+    });
+    rows.sort((left, right) => right.spent - left.spent);
+    return rows;
+  }, [agentsQuery.data, budgetsQuery.data]);
+
+  const error =
+    agentsQuery.error instanceof Error
+      ? agentsQuery.error.message
+      : budgetsQuery.error instanceof Error
+        ? budgetsQuery.error.message
+        : null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
       const token = await getAccessToken();
-      if (accessMode === "preview" && !token) {
-        // HEL-143 Codex P2: clear ALL stateful collections on the
-        // preview early-return so prior authenticated alerts/rows
-        // don't leak into the new (unauthenticated) preview state.
-        setAgentRows([]);
+      if (!token || accessMode === "preview" || cancelled) {
         setBudgetAlerts([]);
         return;
       }
-      if (!token) throw new Error("Authentication session expired.");
-      // Bulk: one /api/budgets call instead of one per agent. Caps + spend
-      // come from the canonical budgets table; if a row is missing for a
-      // specific agent we fall back to `agent.budgetMonthlyUsd` for the cap
-      // and 0 for spend.
-      // HEL-143: pulled in parallel — alerts surface in the "Recent
-      // budget alerts" panel below the per-agent table. Alerts failure
-      // shouldn't blow up the whole page; degrade to empty list.
-      const [agents, budgets, alerts] = await Promise.all([
-        listAgents(token),
-        listBudgets(token).catch(() => [] as BudgetRow[]),
-        listBudgetAlerts(token).catch(() => [] as ControlPlaneBudgetAlert[]),
-      ]);
-      setBudgetAlerts(alerts);
-      const byAgent = new Map<string, BudgetRow>();
-      for (const row of budgets) {
-        if (row.scopeKind === "agent" && row.scopeId) byAgent.set(row.scopeId, row);
-      }
-      const rows: AgentBudgetRow[] = agents.map((agent) => {
-        const row = byAgent.get(agent.id);
-        return {
-          id: agent.id,
-          name: agent.name,
-          role: roleFor(agent),
-          budget: row ? row.capCents / 100 : agent.budgetMonthlyUsd,
-          spent: row ? row.usedCents / 100 : 0,
-        };
-      });
-      rows.sort((left, right) => right.spent - left.spent);
-      setAgentRows(rows);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load budget dashboard");
-    } finally {
-      setLoading(false);
-    }
+      const alerts = await listBudgetAlerts(token).catch(() => [] as ControlPlaneBudgetAlert[]);
+      if (!cancelled) setBudgetAlerts(alerts);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [accessMode, getAccessToken]);
-
-  useEffect(() => {
-    void loadBudget();
-  }, [loadBudget]);
 
   const totals = useMemo(() => {
     const spent = agentRows.reduce((sum, row) => sum + row.spent, 0);
@@ -152,21 +140,16 @@ export default function BudgetDashboard() {
     return { spent, cap, pct, forecast, top, forecastDelta };
   }, [agentRows]);
 
-  if (loading) {
-    return (
-      <div className="af2-page">
-        <LoadingState label="Loading budget telemetry…" />
-      </div>
-    );
-  }
-
-  if (error) {
+  if (error && agentRows.length === 0) {
     return (
       <div className="af2-page">
         <ErrorState
           title="Signal Lost"
           message={error}
-          onRetry={() => void loadBudget()}
+          onRetry={() => {
+            void agentsQuery.refetch();
+            void budgetsQuery.refetch();
+          }}
         />
       </div>
     );

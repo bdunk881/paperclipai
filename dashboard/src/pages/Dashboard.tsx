@@ -16,25 +16,21 @@
  * it; the heavy observability streaming + ticket-routing flows were moved
  * to their canonical pages (Activity / Tickets) where they belong.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { listApprovals, listRuns, type ApprovalRequest } from "../api/client";
-import {
-  getAgentHeartbeat,
-  listAgents,
-  type Agent,
-  type AgentHeartbeat,
-} from "../api/agentApi";
-import { listBudgets, type BudgetRow } from "../api/canonicalApi";
-import { listMissions, type Mission } from "../api/missionsApi";
+import type { ApprovalRequest } from "../api/client";
+import type { Agent, AgentHeartbeat } from "../api/agentApi";
+import type { BudgetRow } from "../api/canonicalApi";
+import type { Mission } from "../api/missionsApi";
 import { missionLinkTo } from "../lib/missionNavigation";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { useHomeSnapshotQuery } from "../hooks/queries/useHomeSnapshotQuery";
+import type { WorkflowRun } from "../types/workflow";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
 import { OnboardingBanner } from "../components/OnboardingBanner";
-import type { WorkflowRun } from "../types/workflow";
 
 interface AgentSnapshot {
   agent: Agent;
@@ -43,9 +39,9 @@ interface AgentSnapshot {
   heartbeat: AgentHeartbeat | null;
 }
 
-// Cap how many agents we fetch live heartbeats for. Beyond this, "The room
-// right now" shows a compact summary instead of fanning out per-agent calls.
-const ROOM_NOW_HEARTBEAT_LIMIT = 6;
+// Cap how many agents we show in "The room right now" (heartbeats come from
+// the workspace snapshot bulk map — no per-agent fan-out).
+const ROOM_NOW_DISPLAY_LIMIT = 6;
 
 function greetingPart(): "morning" | "afternoon" | "evening" {
   const hour = new Date().getHours();
@@ -143,87 +139,43 @@ function approvalCostUsd(approval: ApprovalRequest): string {
 }
 
 export default function Dashboard() {
-  const { user, requireAccessToken } = useAuth();
-  const { activeWorkspaceId } = useWorkspace();
-  // Wave 2 live presence layer. Used to render an AgentPresencePill
-  // next to each agent in "The room right now" so the home page shows
-  // real-time "working: <task> · 12s" / "blocked" / "offline" state
-  // instead of the lagging controlPlane heartbeat summary.
+  const { user } = useAuth();
+  useWorkspace();
   const presence = useAgentPresence();
+  const snapshotQuery = useHomeSnapshotQuery();
 
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [agentSnapshots, setAgentSnapshots] = useState<AgentSnapshot[]>([]);
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [runs, setRuns] = useState<WorkflowRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadDashboard = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const accessToken = await requireAccessToken();
-
-      // Bulk + parallel: 4 fixed calls instead of 4 + 2N fan-out. The
-      // canonical /api/budgets returns one row per agent (and workspace) in
-      // a single shot, so per-agent budget fetches are no longer required.
-      const [agentList, approvalList, runList, budgetList, missionsList] =
-        await Promise.all([
-          listAgents(accessToken).catch(() => [] as Agent[]),
-          listApprovals(accessToken).catch(() => [] as ApprovalRequest[]),
-          listRuns(undefined, accessToken).catch(() => [] as WorkflowRun[]),
-          listBudgets(accessToken).catch(() => [] as BudgetRow[]),
-          activeWorkspaceId
-            ? listMissions(accessToken).catch(() => [] as Mission[])
-            : Promise.resolve([] as Mission[]),
-        ]);
-
-      // Heartbeats are limited to the top-N agents we actually render in
-      // "The room right now". Avoids a 50-agent dashboard burning the
-      // 100-requests-per-minute generalApiRateLimiter on a single page load.
-      const visibleAgents = agentList.slice(0, ROOM_NOW_HEARTBEAT_LIMIT);
-      const heartbeats = await Promise.all(
-        visibleAgents.map((agent) =>
-          getAgentHeartbeat(agent.id, accessToken).catch(() => null),
-        ),
-      );
-      const heartbeatById = new Map<string, AgentHeartbeat | null>(
-        visibleAgents.map((agent, idx) => [agent.id, heartbeats[idx]]),
-      );
-
-      // Build snapshots from the bulk budget rows. Workspace-scope budget
-      // rows are ignored here; we want per-agent caps for the spend strip.
-      const budgetByAgent = new Map<string, BudgetRow>();
-      for (const row of budgetList) {
-        if (row.scopeKind === "agent" && row.scopeId) {
-          budgetByAgent.set(row.scopeId, row);
-        }
+  const missions = snapshotQuery.data?.missions ?? [];
+  const approvals = snapshotQuery.data?.approvals ?? [];
+  const runs = (snapshotQuery.data?.runs ?? []) as WorkflowRun[];
+  const agentSnapshots = useMemo((): AgentSnapshot[] => {
+    const agentList = snapshotQuery.data?.agents ?? [];
+    const budgetList = snapshotQuery.data?.budgets ?? [];
+    const heartbeats = snapshotQuery.data?.heartbeats ?? {};
+    const budgetByAgent = new Map<string, BudgetRow>();
+    for (const row of budgetList) {
+      if (row.scopeKind === "agent" && row.scopeId) {
+        budgetByAgent.set(row.scopeId, row);
       }
-
-      const snapshots: AgentSnapshot[] = agentList.map((agent) => {
-        const budget = budgetByAgent.get(agent.id);
-        return {
-          agent,
-          budgetCents: budget?.usedCents ?? null,
-          capCents: budget?.capCents ?? null,
-          heartbeat: heartbeatById.get(agent.id) ?? null,
-        };
-      });
-
-      setMissions(missionsList);
-      setAgentSnapshots(snapshots);
-      setApprovals(approvalList);
-      setRuns(runList);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load dashboard");
-    } finally {
-      setLoading(false);
     }
-  }, [activeWorkspaceId, requireAccessToken]);
+    return agentList.map((agent) => {
+      const budget = budgetByAgent.get(agent.id);
+      return {
+        agent,
+        budgetCents: budget?.usedCents ?? null,
+        capCents: budget?.capCents ?? null,
+        heartbeat: (heartbeats[agent.id] as AgentHeartbeat | null | undefined) ?? null,
+      };
+    });
+  }, [snapshotQuery.data]);
 
-  useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+  const loading = snapshotQuery.isLoading && !snapshotQuery.data;
+  const error =
+    snapshotQuery.error instanceof Error
+      ? snapshotQuery.error.message
+      : snapshotQuery.error
+        ? "Failed to load dashboard"
+        : null;
+  const isRefreshing = snapshotQuery.isFetching && Boolean(snapshotQuery.data);
 
   const totals = useMemo(() => {
     const activeMissions = missions.filter(
@@ -259,21 +211,13 @@ export default function Dashboard() {
     };
   }, [missions, agentSnapshots, approvals]);
 
-  if (loading) {
-    return (
-      <div className="af2-page">
-        <LoadingState label="Loading home…" />
-      </div>
-    );
-  }
-
-  if (error) {
+  if (error && !snapshotQuery.data) {
     return (
       <div className="af2-page">
         <ErrorState
           title="Home unavailable"
           message={error}
-          onRetry={() => void loadDashboard()}
+          onRetry={() => void snapshotQuery.refetch()}
         />
       </div>
     );
@@ -292,8 +236,19 @@ export default function Dashboard() {
             Good {greetingPart()}, {firstName(user?.name)}.
           </h1>
           <div className="af2-page-head-meta">
-            {totals.liveAgents} agents on the clock · {totals.pendingApprovals.length}{" "}
-            approvals waiting · {formatCurrency(totals.todaySpend, 2)} spent today
+            {loading ? (
+              <SkeletonBlock lines={1} />
+            ) : (
+              <>
+                {totals.liveAgents} agents on the clock · {totals.pendingApprovals.length}{" "}
+                approvals waiting · {formatCurrency(totals.todaySpend, 2)} spent today
+                {isRefreshing ? (
+                  <span className="af2-muted-2" style={{ marginLeft: 8 }}>
+                    · Updating…
+                  </span>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
         <div className="af2-page-actions">
@@ -463,7 +418,7 @@ export default function Dashboard() {
                 No agents deployed yet. <Link to="/hire" style={{ color: "var(--af2-clay-2)" }}>Hire an agent →</Link>
               </div>
             ) : (
-              agentSnapshots.slice(0, 6).map((snap, idx) => {
+              agentSnapshots.slice(0, ROOM_NOW_DISPLAY_LIMIT).map((snap, idx) => {
                 const summary =
                   snap.heartbeat?.summary ??
                   (snap.agent.status === "idle" ? "Idle · awaiting next mission" : "Awaiting status…");

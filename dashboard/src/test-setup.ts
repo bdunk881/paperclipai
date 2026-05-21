@@ -1,6 +1,20 @@
 import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, vi } from "vitest";
+
+vi.mock("./context/useWorkspace", () => ({
+  useWorkspace: () => ({
+    workspaces: [{ id: "ws-test", name: "Test Workspace" }],
+    activeWorkspace: { id: "ws-test", name: "Test Workspace" },
+    activeWorkspaceId: "ws-test",
+    loading: false,
+    creating: false,
+    error: null,
+    setActiveWorkspaceId: vi.fn(),
+    refreshWorkspaces: vi.fn(async () => {}),
+    createWorkspace: vi.fn(),
+  }),
+}));
 
 if (typeof window !== "undefined") {
   window.AbortController = globalThis.AbortController;

@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  listObservabilityEvents,
-  type ObservabilityEvent,
-} from "../api/observability";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ObservabilityEvent } from "../api/observability";
 import { listRunsByStatus, retryRun } from "../api/runsApi";
 import type { WorkflowRun } from "../types/workflow";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
-
-// HEL-29 / HEL-60 v2: poll the observability feed every 5s while on the
-// Live tab so the timeline reflows in place. The interval is cleared when
-// the tab is not "Live" and on unmount.
-const ACTIVITY_POLL_MS = 5_000;
-const FEED_LIMIT = 100;
+import { useWorkspace } from "../context/useWorkspace";
+import { queryKeys } from "../lib/queryKeys";
+import { useObservabilityQuery } from "../hooks/queries/useObservabilityQuery";
+import { useObservabilityStream } from "../hooks/useObservabilityStream";
 
 /**
  * Activity feed (HEL-60 v2 restyle).
@@ -137,94 +133,51 @@ function formatFailedAt(iso: string | undefined): string {
 
 export default function AgentActivity() {
   const { accessMode, requireAccessToken } = useAuth();
-  const [events, setEvents] = useState<ObservabilityEvent[]>([]);
-  const [failedRuns, setFailedRuns] = useState<WorkflowRun[]>([]);
+  const { activeWorkspaceId } = useWorkspace();
+  const queryClient = useQueryClient();
   const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const [, setRetryError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("live");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Snapshot of `Date.now()` used to compute live/today/week windows.
-  // Refreshed every poll so the Live tab actually expires old events.
   const [now, setNow] = useState<number>(() => Date.now());
+  const [streamLive, setStreamLive] = useState(true);
 
-  const loadEvents = useCallback(
-    async (silent = false): Promise<void> => {
-      if (!silent) setLoading(true);
-      setError(null);
-      try {
-        if (accessMode === "preview") {
-          setEvents([]);
-          setNow(Date.now());
-          return;
-        }
-        const token = await requireAccessToken();
-        const page = await listObservabilityEvents(token, { limit: FEED_LIMIT });
-        setEvents(page.events);
-        setNow(Date.now());
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Failed to load activity");
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [accessMode, requireAccessToken],
-  );
+  const eventsQuery = useObservabilityQuery(tab === "failed" ? "all" : tab);
+  const events = eventsQuery.data ?? [];
+  const loading = eventsQuery.isLoading && tab !== "failed" && !eventsQuery.data;
 
-  const loadFailedRuns = useCallback(
-    async (silent = false): Promise<void> => {
-      if (!silent) setLoading(true);
-      setError(null);
-      try {
-        if (accessMode === "preview") {
-          setFailedRuns([]);
-          return;
-        }
-        const token = await requireAccessToken();
-        const { runs } = await listRunsByStatus(token, "failed");
-        setFailedRuns(runs);
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Failed to load failed runs");
-      } finally {
-        if (!silent) setLoading(false);
-      }
+  const failedRunsQuery = useQuery({
+    queryKey: [...queryKeys.workspace(activeWorkspaceId ?? "none"), "failed-runs"],
+    queryFn: async () => {
+      const token = await requireAccessToken();
+      const { runs } = await listRunsByStatus(token, "failed");
+      return runs;
     },
-    [accessMode, requireAccessToken],
-  );
+    enabled: tab === "failed" && Boolean(activeWorkspaceId) && accessMode !== "preview",
+  });
+  const failedRuns = (failedRunsQuery.data ?? []) as WorkflowRun[];
+
+  const error =
+    tab === "failed"
+      ? failedRunsQuery.error instanceof Error
+        ? failedRunsQuery.error.message
+        : null
+      : eventsQuery.error instanceof Error
+        ? eventsQuery.error.message
+        : null;
 
   useEffect(() => {
-    if (tab === "failed") {
-      void loadFailedRuns();
-    } else {
-      void loadEvents();
-    }
-  }, [tab, loadEvents, loadFailedRuns]);
-
-  // Live polling: only refresh while the Live tab is active AND the tab is
-  // visible. Background polling burns through the 100 req/min general API
-  // rate limiter without the user ever seeing the result; the visibility
-  // gate also pauses polling when the user switches windows so reopening
-  // dev.helloautoflow.com after lunch doesn't spam 12 backed-up requests.
-  useEffect(() => {
-    if (accessMode === "preview") return;
-    if (tab !== "live") return;
-    if (typeof document !== "undefined" && document.hidden) return;
-
-    const interval = window.setInterval(() => {
-      void loadEvents(true);
-    }, ACTIVITY_POLL_MS);
-
-    const onVisibility = () => {
-      if (document.hidden) {
-        window.clearInterval(interval);
-      }
-    };
+    const onVisibility = () => setStreamLive(!document.hidden);
     document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [accessMode, loadEvents, tab]);
+  useObservabilityStream(tab === "live" && streamLive);
+
+  useEffect(() => {
+    setNow(Date.now());
+    const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(tick);
+  }, [events]);
 
   const handleRetry = useCallback(
     async (runId: string): Promise<void> => {
@@ -233,9 +186,14 @@ export default function AgentActivity() {
         const token = await requireAccessToken();
         await retryRun(token, runId);
         // Optimistically remove from the failed list once re-queued.
-        setFailedRuns((prev) => prev.filter((r) => r.id !== runId));
+        if (activeWorkspaceId) {
+          queryClient.setQueryData<WorkflowRun[]>(
+            [...queryKeys.workspace(activeWorkspaceId), "failed-runs"],
+            (prev) => (prev ?? []).filter((r) => r.id !== runId),
+          );
+        }
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Retry failed");
+        setRetryError(cause instanceof Error ? cause.message : "Retry failed");
       } finally {
         setRetryingIds((prev) => {
           const next = new Set(prev);
@@ -244,7 +202,7 @@ export default function AgentActivity() {
         });
       }
     },
-    [requireAccessToken],
+    [activeWorkspaceId, queryClient, requireAccessToken],
   );
 
   const filtered = useMemo(
@@ -252,21 +210,15 @@ export default function AgentActivity() {
     [events, now, tab],
   );
 
-  if (loading) {
-    return (
-      <div className="af2-page">
-        <LoadingState label="Streaming agent activity..." />
-      </div>
-    );
-  }
-
-  if (error) {
+  if (error && (tab === "failed" ? failedRuns.length === 0 : events.length === 0)) {
     return (
       <div className="af2-page">
         <ErrorState
           title="Signal Lost"
           message={error}
-          onRetry={() => void (tab === "failed" ? loadFailedRuns() : loadEvents())}
+          onRetry={() =>
+            void (tab === "failed" ? failedRunsQuery.refetch() : eventsQuery.refetch())
+          }
         />
       </div>
     );
@@ -320,6 +272,12 @@ export default function AgentActivity() {
           </button>
         ))}
       </div>
+
+      {loading ? (
+        <div className="af2-card" style={{ padding: 24 }}>
+          <SkeletonBlock lines={4} />
+        </div>
+      ) : null}
 
       {tab === "failed" ? (
         <div className="af2-card" style={{ padding: 0 }}>

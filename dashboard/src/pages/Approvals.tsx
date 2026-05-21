@@ -19,12 +19,17 @@
  * surfaces off the Approvals board, so they have been removed from this
  * page. They'll come back on their own dedicated screen when that lands.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { listApprovals, resolveApproval, type ApprovalRequest } from "../api/client";
-import { listAgents, type Agent } from "../api/agentApi";
-import { ErrorState, LoadingState } from "../components/UiStates";
+import { resolveApproval, type ApprovalRequest } from "../api/client";
+import type { Agent } from "../api/agentApi";
+import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
+import { queryKeys } from "../lib/queryKeys";
+import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
+import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
 
@@ -56,35 +61,20 @@ const GRID_TEMPLATE = "90px 1.4fr 130px 80px 100px 130px";
 
 export default function Approvals() {
   const { requireAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
+  const queryClient = useQueryClient();
   const presence = useAgentPresence();
-  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  // Loaded once alongside approvals so we can map approval.assignee
-  // (display string today — no agentId on the backend ApprovalRequest)
-  // to a known agent and look up its live presence. A real fix is to
-  // surface agentId on the approval row server-side; this client-side
-  // name match is the small-PR version of the same idea.
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const approvalsQuery = useApprovalsQuery();
+  const agentsQuery = useAgentsQuery();
+  const approvals = approvalsQuery.data ?? [];
+  const agents = agentsQuery.data ?? [];
+  const loading = approvalsQuery.isLoading && !approvalsQuery.data;
+  const [error, setError] = useState<string | null>(
+    approvalsQuery.error instanceof Error ? approvalsQuery.error.message : null,
+  );
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-
-  const loadApprovals = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const accessToken = await requireAccessToken();
-      const [fetched, agentList] = await Promise.all([
-        listApprovals(accessToken),
-        listAgents(accessToken).catch(() => [] as Agent[]),
-      ]);
-      setApprovals(fetched);
-      setAgents(agentList);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load approvals");
-    } finally {
-      setLoading(false);
-    }
-  }, [requireAccessToken]);
+  const isRefreshing =
+    (approvalsQuery.isFetching || agentsQuery.isFetching) && Boolean(approvalsQuery.data);
 
   // Name → agent map for the presence lookup. Case-insensitive,
   // trimmed, so "Aaron Chen" matches "aaron chen ". Multiple agents
@@ -98,10 +88,6 @@ export default function Approvals() {
     }
     return map;
   }, [agents]);
-
-  useEffect(() => {
-    void loadApprovals();
-  }, [loadApprovals]);
 
   const pending = useMemo(
     () => approvals.filter((approval) => approval.status === "pending"),
@@ -117,7 +103,14 @@ export default function Approvals() {
     try {
       const accessToken = await requireAccessToken();
       await resolveApproval(approval.id, decision, accessToken);
-      await loadApprovals();
+      if (activeWorkspaceId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.approvals(activeWorkspaceId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.home(activeWorkspaceId),
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resolve approval");
     } finally {
@@ -125,15 +118,7 @@ export default function Approvals() {
     }
   }
 
-  if (loading && approvals.length === 0) {
-    return (
-      <div className="af2-page">
-        <LoadingState label="Loading approvals…" />
-      </div>
-    );
-  }
-
-  if (error && approvals.length === 0) {
+  if (error && approvals.length === 0 && !loading) {
     return (
       <div className="af2-page">
         <div className="af2-page-head">
@@ -147,7 +132,7 @@ export default function Approvals() {
         <ErrorState
           title="Approvals unavailable"
           message={error}
-          onRetry={() => void loadApprovals()}
+          onRetry={() => void approvalsQuery.refetch()}
         />
       </div>
     );
@@ -162,7 +147,19 @@ export default function Approvals() {
             Approvals
           </h1>
           <div className="af2-page-head-meta">
-            {pending.length} {pending.length === 1 ? "assignment" : "assignments"} waiting · median wait — · — in pending action.
+            {loading ? (
+              <SkeletonBlock lines={1} />
+            ) : (
+              <>
+                {pending.length} {pending.length === 1 ? "assignment" : "assignments"} waiting · median wait — · — in
+                pending action.
+                {isRefreshing ? (
+                  <span className="af2-muted-2" style={{ marginLeft: 8 }}>
+                    · Updating…
+                  </span>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
         <div className="af2-page-actions">
@@ -192,7 +189,7 @@ export default function Approvals() {
           <ErrorState
             title="Resolve failed"
             message={error}
-            onRetry={() => void loadApprovals()}
+            onRetry={() => void approvalsQuery.refetch()}
           />
         </div>
       )}

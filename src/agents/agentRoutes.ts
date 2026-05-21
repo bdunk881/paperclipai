@@ -256,6 +256,111 @@ async function loadCanonicalAgents(
   );
 }
 
+/**
+ * GET /api/agents/heartbeats — latest heartbeat per agent (workspace-scoped).
+ * Must be registered before /:id/heartbeat so "heartbeats" is not parsed as an id.
+ */
+router.get("/heartbeats", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+  const context = resolveRequestContext(req);
+  if (!context?.workspaceId) {
+    res.status(401).json({ error: "Authenticated user + workspace required" });
+    return;
+  }
+
+  const limitRaw = Number.parseInt(String(req.query.limit ?? "50"), 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 100) : 50;
+
+  if (!isPostgresPersistenceEnabled()) {
+    const allAgents = await controlPlaneStore.listAllAgents(context.userId, context.workspaceId);
+    const agentIds = allAgents.slice(0, limit).map((a) => a.id);
+    const heartbeats: Record<string, unknown> = {};
+    await Promise.all(
+      agentIds.map(async (agentId) => {
+        const rows = await controlPlaneStore.listAgentHeartbeats(
+          agentId,
+          context.userId,
+          context.workspaceId,
+        );
+        const heartbeat = rows.at(-1);
+        if (!heartbeat) {
+          heartbeats[agentId] = null;
+          return;
+        }
+        heartbeats[agentId] = {
+          id: heartbeat.id,
+          agentId: heartbeat.agentId,
+          userId: heartbeat.userId,
+          status: toDashboardHeartbeatStatus(heartbeat.status),
+          summary: heartbeat.summary ?? null,
+          tokenUsage: 0,
+          costUsd: heartbeat.costUsd ?? 0,
+          runId: heartbeat.executionId ?? null,
+          createdByRunId: heartbeat.executionId ?? "control-plane",
+          recordedAt: heartbeat.completedAt ?? heartbeat.startedAt,
+        };
+      }),
+    );
+    res.json({ heartbeats, total: Object.keys(heartbeats).length });
+    return;
+  }
+
+  try {
+    const pool = getPostgresPool();
+    const result = await withWorkspaceContext(
+      pool,
+      { workspaceId: context.workspaceId, userId: context.userId },
+      async (client) =>
+        client.query<{
+          id: string;
+          agent_id: string;
+          user_id: string;
+          status: "queued" | "running" | "completed" | "blocked";
+          summary: string | null;
+          cost_usd: string | number;
+          execution_id: string | null;
+          started_at: Date | string;
+          completed_at: Date | string | null;
+        }>(
+          `SELECT DISTINCT ON (h.agent_id)
+                  h.id, h.agent_id, h.user_id, h.status, h.summary,
+                  h.cost_usd, h.execution_id, h.started_at, h.completed_at
+             FROM agent_heartbeats h
+            WHERE h.workspace_id = $1
+            ORDER BY h.agent_id, h.started_at DESC
+            LIMIT $2`,
+          [context.workspaceId, limit],
+        ),
+    );
+
+    const heartbeats: Record<string, unknown> = {};
+    for (const row of result.rows) {
+      heartbeats[row.agent_id] = {
+        id: row.id,
+        agentId: row.agent_id,
+        userId: row.user_id,
+        status: toDashboardHeartbeatStatus(row.status),
+        summary: row.summary,
+        tokenUsage: 0,
+        costUsd: Number(row.cost_usd ?? 0),
+        runId: row.execution_id,
+        createdByRunId: row.execution_id ?? "control-plane",
+        recordedAt:
+          row.completed_at instanceof Date
+            ? row.completed_at.toISOString()
+            : row.completed_at
+              ? String(row.completed_at)
+              : row.started_at instanceof Date
+                ? row.started_at.toISOString()
+                : String(row.started_at),
+      };
+    }
+    res.json({ heartbeats, total: Object.keys(heartbeats).length });
+  } catch (err) {
+    console.error(`[agentRoutes] /heartbeats failed: ${(err as Error).message}`);
+    res.status(500).json({ error: "Failed to load agent heartbeats" });
+  }
+}));
+
 router.get("/:id/heartbeat", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveRequestContext(req);
   if (!context) {

@@ -30,7 +30,6 @@ import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   buildTeamAssemblyPrompt,
-  DEFAULT_ROLE_LIBRARY,
   parseTeamAssemblyResponse,
   TEAM_ASSEMBLY_SCHEMA_VERSION,
   type TeamAssemblyRequest,
@@ -49,12 +48,13 @@ import {
 } from "../hostedFreeModels/providers";
 import { asyncHandler } from "../middleware/asyncHandler";
 
-interface MissionRow {
+export interface MissionRow {
   id: string;
   company_id: string;
   statement: string;
   workspace_id: string;
   company_name: string | null;
+  metadata: MissionMetadata;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -154,7 +154,7 @@ async function loadMissionScopedToWorkspace(
     { workspaceId, userId: "mission-route" },
     async (client) =>
       client.query<MissionRow>(
-        `SELECT m.id, m.company_id, m.statement, c.workspace_id, c.name AS company_name
+        `SELECT m.id, m.company_id, m.statement, m.metadata, c.workspace_id, c.name AS company_name
            FROM missions m
            JOIN companies c ON c.id = m.company_id
           WHERE m.id = $1
@@ -167,25 +167,34 @@ async function loadMissionScopedToWorkspace(
 }
 
 /**
- * Builds a teamAssembly request from a mission. The mission carries only
- * the goal statement; the rest of the normalizedGoalDocument is filled
- * with defensible defaults that signal "we don't know this yet" rather
- * than fabricating numbers the LLM might anchor on.
+ * Builds a teamAssembly request from a mission. The free-text statement is
+ * the primary goal, and the structured intake fields are included as real
+ * anchors so the LLM can tailor the plan instead of falling back to generic
+ * company archetypes.
  */
-function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+  const metadata = sanitizeMetadata(mission.metadata);
+  const contextLines = [
+    metadata.industry ? `Industry: ${metadata.industry}` : null,
+    metadata.targetCustomer ? `Target customer: ${metadata.targetCustomer}` : null,
+    metadata.successMetric ? `Success metric: ${metadata.successMetric}` : null,
+    metadata.runway ? `Budget / runway: ${metadata.runway}` : null,
+  ].filter((line): line is string => Boolean(line));
+
   return {
     companyName: mission.company_name ?? undefined,
     normalizedGoalDocument: {
       sourceType: "free_text",
       goal: mission.statement,
-      targetCustomer: null,
-      successMetrics: [],
+      targetCustomer: metadata.targetCustomer ?? null,
+      successMetrics: metadata.successMetric ? [metadata.successMetric] : [],
       constraints: [],
-      budget: null,
+      budget: metadata.runway ?? null,
       timeHorizon: null,
+      importedContextSummary: contextLines.length > 0 ? contextLines.join("\n") : null,
       planReadinessThreshold: 0.6,
     },
-    roleLibrary: [...DEFAULT_ROLE_LIBRARY],
+    roleLibrary: [],
   };
 }
 

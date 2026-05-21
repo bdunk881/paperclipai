@@ -24,7 +24,7 @@ import { ensureUserProfileExists as mockedEnsureUserProfileExists } from "../use
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
-import { createMissionRoutes } from "./missionRoutes";
+import { createMissionRoutes, teamAssemblyRequestFromMission } from "./missionRoutes";
 
 // Stub Postgres pool — never queried in the rejection paths we test.
 const stubPool = { query: jest.fn() } as unknown as Parameters<typeof createMissionRoutes>[0];
@@ -51,6 +51,50 @@ function buildApp(authOverrides: { sub?: string; workspaceId?: string } = {}): e
 }
 
 describe("POST /api/missions/:missionId/generate-plan", () => {
+  it("builds a company-specific team assembly request from mission metadata", () => {
+    const requestBody = teamAssemblyRequestFromMission({
+      id: "22222222-2222-4222-8222-222222222222",
+      company_id: "33333333-3333-4333-8333-333333333333",
+      statement: "Launch a field-service automation offer for HVAC contractors.",
+      workspace_id: "11111111-1111-4111-8111-111111111111",
+      company_name: "Northstar Ops",
+      metadata: {
+        industry: "HVAC field services",
+        targetCustomer: "independent HVAC contractors with 10-50 technicians",
+        successMetric: "book 40 qualified demos in 90 days",
+        runway: "$80k over 3 months",
+      },
+    });
+
+    expect(requestBody.companyName).toBe("Northstar Ops");
+    expect(requestBody.normalizedGoalDocument.targetCustomer).toBe(
+      "independent HVAC contractors with 10-50 technicians",
+    );
+    expect(requestBody.normalizedGoalDocument.successMetrics).toEqual([
+      "book 40 qualified demos in 90 days",
+    ]);
+    expect(requestBody.normalizedGoalDocument.budget).toBe("$80k over 3 months");
+    expect(requestBody.normalizedGoalDocument.importedContextSummary).toContain(
+      "Industry: HVAC field services",
+    );
+    expect(requestBody.normalizedGoalDocument.importedContextSummary).toContain(
+      "Budget / runway: $80k over 3 months",
+    );
+  });
+
+  it("does not inject the default role library into mission-generated prompts", () => {
+    const requestBody = teamAssemblyRequestFromMission({
+      id: "22222222-2222-4222-8222-222222222222",
+      company_id: "33333333-3333-4333-8333-333333333333",
+      statement: "Create a concierge onboarding motion for dental offices.",
+      workspace_id: "11111111-1111-4111-8111-111111111111",
+      company_name: "PracticePilot",
+      metadata: {},
+    });
+
+    expect(requestBody.roleLibrary).toEqual([]);
+  });
+
   it("returns 401 when no authenticated user is present", async () => {
     const app = buildApp({ workspaceId: "11111111-1111-4111-8111-111111111111" });
     const res = await request(app)

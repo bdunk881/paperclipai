@@ -320,6 +320,20 @@ export type TeamAssemblyResult = z.infer<typeof teamAssemblyResultSchema>;
 
 export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
   const companyName = input.companyName?.trim() || "Unnamed Company";
+  const roleLibrary = input.roleLibrary ?? [];
+  const roleLibraryPrompt =
+    roleLibrary.length > 0
+      ? [
+          "",
+          // Reference is offered LAST + framed as inspiration so the model
+          // doesn't read it as constraint. The user-facing "Add this role"
+          // UX (tracked separately) will use this same library directly,
+          // bypassing the LLM, when an owner wants to pin a pre-built role.
+          "Reference library (skills/tools vocabulary + common archetypes):",
+          "Treat this as a glossary — borrow skill labels and tool slugs from here for consistency, but invent any role this goal actually needs. Do NOT limit yourself to the entries below.",
+          JSON.stringify(roleLibrary, null, 2),
+        ]
+      : [];
 
   // DASH-32: the LLM is the team architect, not a catalogue picker.
   // Earlier prompt told it to "Select only the roles needed... drawn
@@ -339,6 +353,7 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "You are the founding architect of an agentic AI team for a real company.",
     "Read the goal carefully. Design the team THAT GOAL needs — not a generic startup team.",
     "Every role you propose must be load-bearing for the goal. Cut anything that isn't.",
+    "Do not reuse generic executive/operator archetypes unless the mission clearly needs that exact role.",
     "",
     "You decide:",
     "  - WHICH roles exist (invent them; don't pick from a menu)",
@@ -408,14 +423,7 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     `Goal document:\n${JSON.stringify(input.normalizedGoalDocument, null, 2)}`,
     "",
     `PRD (optional, may be null):\n${JSON.stringify(input.prd ?? null, null, 2)}`,
-    "",
-    // Reference is offered LAST + framed as inspiration so the model
-    // doesn't read it as constraint. The user-facing "Add this role"
-    // UX (tracked separately) will use this same library directly,
-    // bypassing the LLM, when an owner wants to pin a pre-built role.
-    "Reference library (skills/tools vocabulary + common archetypes):",
-    "Treat this as a glossary — borrow skill labels and tool slugs from here for consistency, but invent any role this goal actually needs. Do NOT limit yourself to the entries below.",
-    JSON.stringify(input.roleLibrary, null, 2),
+    ...roleLibraryPrompt,
   ].join("\n");
 }
 

@@ -176,10 +176,97 @@ export function mapSupabaseAuthError(error: unknown): string {
     return "Too many attempts. Wait a moment before trying again.";
   }
   if (normalized.includes("pkce") && normalized.includes("code verifier")) {
-    return "This sign-in link must be opened in the same browser where you started it. Request a new link, or sign in with email and password.";
+    return "This recovery link could not be verified. Request a new recovery email below and open that link on the same site where you requested it (for example, both on localhost:5173).";
   }
 
   return message;
+}
+
+function readTokenHashFromUrl(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const queryHash = new URLSearchParams(window.location.search).get("token_hash");
+  if (queryHash?.trim()) {
+    return queryHash.trim();
+  }
+
+  const fragment = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!fragment) {
+    return null;
+  }
+
+  const hashHash = new URLSearchParams(fragment).get("token_hash");
+  return hashHash?.trim() ? hashHash.trim() : null;
+}
+
+function readAuthCallbackType(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const queryType = new URLSearchParams(window.location.search).get("type");
+  if (queryType?.trim()) {
+    return queryType.trim();
+  }
+
+  const fragment = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!fragment) {
+    return null;
+  }
+
+  const hashType = new URLSearchParams(fragment).get("type");
+  return hashType?.trim() ? hashType.trim() : null;
+}
+
+function stripAuthParamsFromUrl(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+  window.history.replaceState({}, "", cleanUrl);
+}
+
+let recoveryVerifyPromise: Promise<void> | null = null;
+
+async function verifyRecoveryTokenHashIfPresent(): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client || typeof window === "undefined") {
+    return;
+  }
+
+  const tokenHash = readTokenHashFromUrl();
+  if (!tokenHash) {
+    return;
+  }
+
+  const flowType = readAuthCallbackType();
+  if (flowType && flowType !== "recovery") {
+    return;
+  }
+
+  if (!recoveryVerifyPromise) {
+    recoveryVerifyPromise = (async () => {
+      const { error } = await client.auth.verifyOtp({
+        type: "recovery",
+        token_hash: tokenHash,
+      });
+      if (error) {
+        throw new Error(error.message);
+      }
+      stripAuthParamsFromUrl();
+    })().finally(() => {
+      recoveryVerifyPromise = null;
+    });
+  }
+
+  await recoveryVerifyPromise;
 }
 
 function readAuthCallbackError(): string | null {
@@ -204,15 +291,6 @@ function readAuthCallbackCode(): string | null {
   return new URLSearchParams(window.location.search).get("code");
 }
 
-function stripAuthCallbackParamsFromUrl(): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const cleanUrl = `${window.location.origin}${window.location.pathname}`;
-  window.history.replaceState({}, "", cleanUrl);
-}
-
 async function exchangeAuthCallbackCodeIfPresent(): Promise<void> {
   const client = getSupabaseClient();
   if (!client || typeof window === "undefined") {
@@ -235,7 +313,7 @@ async function exchangeAuthCallbackCodeIfPresent(): Promise<void> {
       if (exchangeError) {
         throw new Error(exchangeError.message);
       }
-      stripAuthCallbackParamsFromUrl();
+      stripAuthParamsFromUrl();
     })().finally(() => {
       codeExchangePromise = null;
     });
@@ -244,10 +322,15 @@ async function exchangeAuthCallbackCodeIfPresent(): Promise<void> {
   await codeExchangePromise;
 }
 
+async function establishSessionFromAuthRedirect(): Promise<void> {
+  await verifyRecoveryTokenHashIfPresent();
+  await exchangeAuthCallbackCodeIfPresent();
+}
+
 /**
  * Reads the current Supabase session from local storage, OR — if the caller
- * just landed with a `?code=` param from a magic-link / OAuth / signup-confirm
- * / recovery email — exchanges that code for a fresh session first.
+ * just landed with auth redirect params (`token_hash`, `?code=`, etc.) — establishes
+ * a session first (recovery uses verifyOtp; OAuth/magic-link use PKCE exchange).
  */
 export async function getSupabaseStoredSession(): Promise<StoredAuthSession | null> {
   const client = getSupabaseClient();
@@ -255,7 +338,7 @@ export async function getSupabaseStoredSession(): Promise<StoredAuthSession | nu
     return null;
   }
 
-  await exchangeAuthCallbackCodeIfPresent();
+  await establishSessionFromAuthRedirect();
 
   const { data, error } = await client.auth.getSession();
   if (error) {
@@ -376,5 +459,6 @@ export async function signOutSupabase(): Promise<void> {
 /** @internal Test-only reset for exchange deduplication state. */
 export function resetSupabaseAuthExchangeStateForTests(): void {
   codeExchangePromise = null;
+  recoveryVerifyPromise = null;
   cachedClient = undefined;
 }

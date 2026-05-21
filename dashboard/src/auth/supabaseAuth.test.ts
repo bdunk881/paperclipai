@@ -10,6 +10,7 @@ const mockAuthClient = {
   signOut: vi.fn(),
   resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
+  verifyOtp: vi.fn(),
   // HEL-76 follow-up: PKCE magic-link / OAuth callbacks need this to exchange
   // the `?code=...` query param for a session before getSession returns.
   exchangeCodeForSession: vi.fn(),
@@ -381,7 +382,53 @@ describe("password recovery helpers", () => {
     const { mapSupabaseAuthError } = await import("./supabaseAuth");
     expect(
       mapSupabaseAuthError(new Error("PKCE code verifier not found in storage.")),
-    ).toMatch(/same browser/i);
+    ).toMatch(/request a new recovery email/i);
+  });
+
+  it("verifies recovery token_hash before PKCE code exchange", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        search: "?token_hash=recovery-hash&type=recovery",
+        href: "https://app.test/reset-password?token_hash=recovery-hash&type=recovery",
+        origin: "https://app.test",
+        pathname: "/reset-password",
+        hash: "",
+      },
+    });
+    const originalReplaceState = window.history.replaceState;
+    window.history.replaceState = vi.fn();
+
+    mockAuthClient.verifyOtp.mockResolvedValue({ data: { session: null }, error: null });
+    mockAuthClient.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "recovery-token",
+          refresh_token: "refresh",
+          expires_at: 9999999999,
+          user: { id: "u1", email: "a@b.com", user_metadata: {}, app_metadata: {} },
+        },
+      },
+      error: null,
+    });
+
+    const { getSupabaseStoredSession } = await import("./supabaseAuth");
+    const session = await getSupabaseStoredSession();
+
+    expect(mockAuthClient.verifyOtp).toHaveBeenCalledWith({
+      type: "recovery",
+      token_hash: "recovery-hash",
+    });
+    expect(mockAuthClient.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(session?.accessToken).toBe("recovery-token");
+
+    Object.defineProperty(window, "location", { writable: true, value: originalLocation });
+    window.history.replaceState = originalReplaceState;
   });
 
   it("sends resetPasswordForEmail with a reset-password redirect", async () => {

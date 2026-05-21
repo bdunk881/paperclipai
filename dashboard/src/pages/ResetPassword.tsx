@@ -54,16 +54,16 @@ export default function ResetPassword() {
     void (async () => {
       try {
         const recoveryFromUrl = isPasswordRecoveryFlow();
-        const hadAuthCode =
-          typeof window !== "undefined" &&
-          Boolean(new URLSearchParams(window.location.search).get("code"));
+        const searchParams = new URLSearchParams(window.location.search);
+        const hadAuthCode = Boolean(searchParams.get("code"));
+        const hadTokenHash = Boolean(searchParams.get("token_hash"));
 
         await getSupabaseStoredSession();
         if (!active) {
           return;
         }
 
-        if (recoveryFromUrl || hadAuthCode) {
+        if (recoveryFromUrl || hadAuthCode || hadTokenHash) {
           setPhase("complete");
           return;
         }

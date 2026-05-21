@@ -303,7 +303,9 @@ The backend supports a **double-locked in-memory fallback** (HEL-80): set `AUTOF
 
 - **`ts-node` requires `--transpile-only`**: The root `dev:no-secrets` script calls `ts-node src/index.ts`, but `ts-node` is not in production dependencies. After `npm install`, use `npx ts-node --transpile-only src/index.ts` to skip type-checking at startup (avoids TS7016 errors in passport typings that are harmless at runtime).
 - **Sentry warning is expected**: On startup without `SENTRY_DSN`, the backend logs `[sentry] SENTRY_DSN is unset`. This is safe to ignore in local/cloud dev.
-- **Dashboard requires no env vars for basic rendering**: Without `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, the dashboard renders the login page with a configuration warning. Auth flows require a real Supabase project.
+- **Dashboard auth requires env vars**: Copy `dashboard/.env.local.example` → `dashboard/.env.local` with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from **autoflow-dev**. Without them, login is disabled with a configuration warning.
+- **Backend JWT verification**: Set `SUPABASE_URL` to the **same** project for API Bearer auth. Allow `http://localhost:5173/auth/callback` and `http://localhost:5173/reset-password` in Supabase Auth URL configuration.
+- **PKCE storage**: Supabase auth state uses `localStorage` (not `sessionStorage`) so magic-link and recovery emails work when opened in a new tab.
 - **Port conflicts**: Both the dashboard and landing site default to port 5173. Only run one at a time, or override with `--port`.
 
 ### Test commands

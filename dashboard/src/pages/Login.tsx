@@ -2,8 +2,10 @@ import { FormEvent, useState } from "react";
 import { ArrowRight, CheckCircle2, Link2, Loader2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { writeStoredAuthUser } from "../auth/authStorage";
+import { Link } from "react-router-dom";
 import {
   isSupabaseAuthConfigured,
+  mapSupabaseAuthError,
   sendSupabaseMagicLink,
   signInWithSupabaseOAuth,
   signInWithSupabasePassword,
@@ -42,23 +44,6 @@ function resolveMode(value: string | null): AuthMode {
   if (value === "signup") return "signup";
   if (value === "magic-link") return "magic-link";
   return "signin";
-}
-
-function mapSupabaseError(error: unknown): string {
-  const message = error instanceof Error ? error.message : "Authentication failed. Try again.";
-  const normalized = message.toLowerCase();
-
-  if (normalized.includes("invalid login credentials")) {
-    return "The email or password is incorrect.";
-  }
-  if (normalized.includes("email not confirmed")) {
-    return "Check your inbox and confirm your email before signing in.";
-  }
-  if (normalized.includes("rate limit")) {
-    return "Too many attempts. Wait a moment before trying again.";
-  }
-
-  return message;
 }
 
 function cardTitle(mode: AuthMode): string {
@@ -145,7 +130,7 @@ export default function Login() {
       await signInWithSupabaseOAuth(provider);
     } catch (authError) {
       setActiveProvider(null);
-      triggerError(mapSupabaseError(authError));
+      triggerError(mapSupabaseAuthError(authError));
     }
   }
 
@@ -170,7 +155,7 @@ export default function Login() {
       navigate("/", { replace: true });
     } catch (authError) {
       setBusy(false);
-      triggerError(mapSupabaseError(authError));
+      triggerError(mapSupabaseAuthError(authError));
     }
   }
 
@@ -210,7 +195,7 @@ export default function Login() {
       setBusy(false);
     } catch (authError) {
       setBusy(false);
-      triggerError(mapSupabaseError(authError));
+      triggerError(mapSupabaseAuthError(authError));
     }
   }
 
@@ -235,7 +220,7 @@ export default function Login() {
       setBusy(false);
     } catch (authError) {
       setBusy(false);
-      triggerError(mapSupabaseError(authError));
+      triggerError(mapSupabaseAuthError(authError));
     }
   }
 
@@ -338,6 +323,11 @@ export default function Login() {
                     placeholder="Enter your password"
                   />
                 </Field>
+                <p className="text-right text-xs">
+                  <Link to="/reset-password" className="font-medium text-af2-clay hover:underline">
+                    Forgot password?
+                  </Link>
+                </p>
                 <button type="submit" disabled={isAnyBusy || !configured} className="auth-primary-button mt-2">
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                   {busy ? "Authorizing..." : "Sign in"}

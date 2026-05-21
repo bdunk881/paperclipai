@@ -67,16 +67,24 @@ infisical login                                # one-time
 infisical run --env=dev -- npm run dev
 ```
 
-The API is on `http://localhost:8000`. Hit `/health` to verify.
+The API listens on `http://localhost:3000` by default. Hit `/health` to verify.
+
+Set `SUPABASE_URL` to the same Supabase project as the dashboard (`autoflow-dev` locally). Without it, sign-in succeeds in the browser but `/api/*` returns 503 for JWT verification.
+
+For persistence (workspaces after login), set `DATABASE_URL` to your dev Postgres. In-memory-only mode (`AUTOFLOW_ALLOW_INMEMORY=true` without Postgres) returns an empty workspace list.
 
 ### Run the dashboard
 
 ```bash
 cd dashboard
+cp .env.local.example .env.local   # fill VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY
 infisical run --env=dev -- npm run dev
+# or: npm run dev:no-secrets       # requires .env.local above
 ```
 
-Dashboard at `http://localhost:5173`.
+Dashboard at `http://localhost:5173`. Vite proxies `/api` to the backend at `localhost:3000`.
+
+In Supabase Auth → URL configuration, allow `http://localhost:5173/auth/callback` and `http://localhost:5173/reset-password`.
 
 ### Run via Docker (optional, for parity with prod)
 

@@ -6,6 +6,7 @@ export type SupabaseOAuthProvider = "google" | "github";
 const SUPABASE_STORAGE_KEY = "autoflow-supabase-auth";
 
 let cachedClient: SupabaseClient | null | undefined;
+let codeExchangePromise: Promise<void> | null = null;
 
 function firstString(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim()) {
@@ -28,28 +29,33 @@ function getSupabaseAnonKey(): string {
   return String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "").trim();
 }
 
-function createSessionStorageAdapter() {
+/**
+ * localStorage is shared across tabs on the same origin so PKCE verifiers
+ * survive magic-link / recovery emails opened in a new tab (sessionStorage
+ * is per-tab and caused "PKCE code verifier not found in storage").
+ */
+function createLocalStorageAdapter() {
   return {
     getItem(key: string) {
       if (typeof window === "undefined") {
         return null;
       }
 
-      return window.sessionStorage.getItem(key);
+      return window.localStorage.getItem(key);
     },
     setItem(key: string, value: string) {
       if (typeof window === "undefined") {
         return;
       }
 
-      window.sessionStorage.setItem(key, value);
+      window.localStorage.setItem(key, value);
     },
     removeItem(key: string) {
       if (typeof window === "undefined") {
         return;
       }
 
-      window.sessionStorage.removeItem(key);
+      window.localStorage.removeItem(key);
     },
   };
 }
@@ -69,6 +75,14 @@ function authCallbackUrl(): string | undefined {
   }
 
   return `${window.location.origin}/auth/callback`;
+}
+
+function resetPasswordUrl(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  return `${window.location.origin}/reset-password`;
 }
 
 export function isSupabaseAuthConfigured(): boolean {
@@ -94,7 +108,7 @@ export function getSupabaseClient(): SupabaseClient | null {
       detectSessionInUrl: true,
       flowType: "pkce",
       storageKey: SUPABASE_STORAGE_KEY,
-      storage: createSessionStorageAdapter(),
+      storage: createLocalStorageAdapter(),
     },
   });
 
@@ -125,18 +139,115 @@ export function sessionFromSupabaseSession(session: Session): StoredAuthSession 
   };
 }
 
+export function isPasswordRecoveryFlow(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  if (searchParams.get("type") === "recovery") {
+    return true;
+  }
+
+  const hash = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (hash) {
+    const hashParams = new URLSearchParams(hash);
+    if (hashParams.get("type") === "recovery") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function mapSupabaseAuthError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "Authentication failed. Try again.";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid login credentials")) {
+    return "The email or password is incorrect.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Check your inbox and confirm your email before signing in.";
+  }
+  if (normalized.includes("rate limit")) {
+    return "Too many attempts. Wait a moment before trying again.";
+  }
+  if (normalized.includes("pkce") && normalized.includes("code verifier")) {
+    return "This sign-in link must be opened in the same browser where you started it. Request a new link, or sign in with email and password.";
+  }
+
+  return message;
+}
+
+function readAuthCallbackError(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const errorDescription = params.get("error_description") || params.get("error");
+  if (!errorDescription) {
+    return null;
+  }
+
+  return decodeURIComponent(errorDescription.replace(/\+/g, " "));
+}
+
+function readAuthCallbackCode(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return new URLSearchParams(window.location.search).get("code");
+}
+
+function stripAuthCallbackParamsFromUrl(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const cleanUrl = `${window.location.origin}${window.location.pathname}`;
+  window.history.replaceState({}, "", cleanUrl);
+}
+
+async function exchangeAuthCallbackCodeIfPresent(): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client || typeof window === "undefined") {
+    return;
+  }
+
+  const authError = readAuthCallbackError();
+  if (authError) {
+    throw new Error(authError);
+  }
+
+  const code = readAuthCallbackCode();
+  if (!code) {
+    return;
+  }
+
+  if (!codeExchangePromise) {
+    codeExchangePromise = (async () => {
+      const { error: exchangeError } = await client.auth.exchangeCodeForSession(window.location.href);
+      if (exchangeError) {
+        throw new Error(exchangeError.message);
+      }
+      stripAuthCallbackParamsFromUrl();
+    })().finally(() => {
+      codeExchangePromise = null;
+    });
+  }
+
+  await codeExchangePromise;
+}
+
 /**
  * Reads the current Supabase session from local storage, OR — if the caller
- * just landed on /auth/callback with a `?code=` or `?token_hash=` param from
- * a magic-link / OAuth / signup-confirm email — exchanges that code for a
- * fresh session first.
- *
- * The PKCE flow (configured at client creation, line 95 above) delivers
- * magic links as `?code=<code>` query strings. Without an explicit
- * `exchangeCodeForSession(...)` call, `getSession()` returns `null` because
- * no session exists yet, and the user sees "The sign-in link is invalid…".
- * `detectSessionInUrl: true` on its own is timing-sensitive — explicitly
- * exchanging makes this deterministic.
+ * just landed with a `?code=` param from a magic-link / OAuth / signup-confirm
+ * / recovery email — exchanges that code for a fresh session first.
  */
 export async function getSupabaseStoredSession(): Promise<StoredAuthSession | null> {
   const client = getSupabaseClient();
@@ -144,32 +255,7 @@ export async function getSupabaseStoredSession(): Promise<StoredAuthSession | nu
     return null;
   }
 
-  // If we just landed from a magic-link / OAuth / signup-confirm redirect,
-  // there's a `?code=` query param (PKCE flow) we need to exchange before
-  // the session exists. Short-circuit if no code is present — that's the
-  // normal page-load path where the session is already in storage.
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("code");
-    const errorDescription = params.get("error_description") || params.get("error");
-
-    if (errorDescription) {
-      throw new Error(decodeURIComponent(errorDescription.replace(/\+/g, " ")));
-    }
-
-    if (code) {
-      const { error: exchangeError } = await client.auth.exchangeCodeForSession(
-        window.location.href,
-      );
-      if (exchangeError) {
-        throw new Error(exchangeError.message);
-      }
-      // Strip the code/state params from the URL after exchange so refreshes
-      // don't replay the now-consumed code.
-      const cleanUrl = `${window.location.origin}${window.location.pathname}`;
-      window.history.replaceState({}, "", cleanUrl);
-    }
-  }
+  await exchangeAuthCallbackCodeIfPresent();
 
   const { data, error } = await client.auth.getSession();
   if (error) {
@@ -235,6 +321,27 @@ export async function sendSupabaseMagicLink(email: string): Promise<void> {
   }
 }
 
+export async function sendSupabasePasswordReset(email: string): Promise<void> {
+  const client = requireSupabaseClient();
+  const redirectTo = resetPasswordUrl();
+  const { error } = await client.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function updateSupabasePassword(newPassword: string): Promise<void> {
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.updateUser({ password: newPassword });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function signInWithSupabaseOAuth(provider: SupabaseOAuthProvider): Promise<void> {
   const client = requireSupabaseClient();
   const { data, error } = await client.auth.signInWithOAuth({
@@ -264,4 +371,10 @@ export async function signOutSupabase(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+/** @internal Test-only reset for exchange deduplication state. */
+export function resetSupabaseAuthExchangeStateForTests(): void {
+  codeExchangePromise = null;
+  cachedClient = undefined;
 }

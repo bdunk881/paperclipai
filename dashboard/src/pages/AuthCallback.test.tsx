@@ -3,13 +3,19 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AuthCallback from "./AuthCallback";
 
-const { getSupabaseStoredSessionMock, writeStoredAuthUserMock } = vi.hoisted(() => ({
+const {
+  getSupabaseStoredSessionMock,
+  writeStoredAuthUserMock,
+  isPasswordRecoveryFlowMock,
+} = vi.hoisted(() => ({
   getSupabaseStoredSessionMock: vi.fn(),
   writeStoredAuthUserMock: vi.fn(),
+  isPasswordRecoveryFlowMock: vi.fn(() => false),
 }));
 
 vi.mock("../auth/supabaseAuth", () => ({
   getSupabaseStoredSession: getSupabaseStoredSessionMock,
+  isPasswordRecoveryFlow: isPasswordRecoveryFlowMock,
 }));
 
 vi.mock("../auth/authStorage", () => ({
@@ -19,6 +25,7 @@ vi.mock("../auth/authStorage", () => ({
 describe("AuthCallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isPasswordRecoveryFlowMock.mockReturnValue(false);
   });
 
   it("stores the Supabase user snapshot and redirects home", async () => {
@@ -45,6 +52,30 @@ describe("AuthCallback", () => {
       expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
     });
+  });
+
+  it("routes password recovery callbacks to /reset-password", async () => {
+    isPasswordRecoveryFlowMock.mockReturnValue(true);
+    getSupabaseStoredSessionMock.mockResolvedValueOnce({
+      accessToken: "token-123",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "user-1", email: "user@example.com", name: "Example User" },
+      authProvider: "supabase",
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/auth/callback?type=recovery&code=abc"]}>
+        <Routes>
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/reset-password" element={<div>Reset Password</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Reset Password")).toBeInTheDocument();
+    });
+    expect(writeStoredAuthUserMock).not.toHaveBeenCalled();
   });
 
   it("returns to login with an auth error when no session is available", async () => {

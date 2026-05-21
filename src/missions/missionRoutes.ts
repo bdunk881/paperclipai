@@ -55,6 +55,8 @@ interface MissionRow {
   statement: string;
   workspace_id: string;
   company_name: string | null;
+  company_description: string | null;
+  metadata: MissionMetadata | null;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -149,12 +151,20 @@ async function loadMissionScopedToWorkspace(
   missionId: string,
   workspaceId: string,
 ): Promise<MissionRow | null> {
+  // DASH-32 follow-up: select mission.metadata + companies.description so
+  // the structured intake fields (industry, target customer, success
+  // metric, runway) and the company's own description make it into the
+  // team-assembly prompt. Before this fix the route only loaded
+  // `statement` + company name, so the LLM never saw the operator's
+  // explicit context — which is why plans came back templated.
   const result = await withWorkspaceContext(
     pool,
     { workspaceId, userId: "mission-route" },
     async (client) =>
       client.query<MissionRow>(
-        `SELECT m.id, m.company_id, m.statement, c.workspace_id, c.name AS company_name
+        `SELECT m.id, m.company_id, m.statement, m.metadata,
+                c.workspace_id, c.name AS company_name,
+                c.description AS company_description
            FROM missions m
            JOIN companies c ON c.id = m.company_id
           WHERE m.id = $1
@@ -167,22 +177,52 @@ async function loadMissionScopedToWorkspace(
 }
 
 /**
- * Builds a teamAssembly request from a mission. The mission carries only
- * the goal statement; the rest of the normalizedGoalDocument is filled
- * with defensible defaults that signal "we don't know this yet" rather
- * than fabricating numbers the LLM might anchor on.
+ * Builds a teamAssembly request from a mission row.
+ *
+ * Wires through the structured fields the mission-intake form captures
+ * (industry, target customer, success metric, runway) plus the company's
+ * own description so the LLM has actual company-specific signal — not
+ * just a one-line goal + the generic role library.
+ *
+ * Mapping:
+ *   - mission.statement              → normalizedGoalDocument.goal
+ *   - metadata.targetCustomer        → normalizedGoalDocument.targetCustomer
+ *   - metadata.successMetric         → normalizedGoalDocument.successMetrics (1-elt array)
+ *   - metadata.runway                → normalizedGoalDocument.budget
+ *                                       (the UI labels this field "Budget / runway")
+ *   - metadata.industry              → normalizedGoalDocument.constraints (as "Industry: X")
+ *                                       so the LLM sees it as load-bearing context
+ *   - companies.description + industry + company name
+ *                                    → normalizedGoalDocument.importedContextSummary
+ *
+ * Anything the user didn't fill in stays null / empty — we deliberately
+ * don't fabricate values the model might anchor on.
  */
-function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+  const meta = mission.metadata ?? {};
+
+  const constraints: string[] = [];
+  if (meta.industry) constraints.push(`Industry: ${meta.industry}`);
+
+  const summaryLines: string[] = [];
+  if (mission.company_name) summaryLines.push(`Company: ${mission.company_name}`);
+  if (mission.company_description) {
+    summaryLines.push(`About the company: ${mission.company_description}`);
+  }
+  if (meta.industry) summaryLines.push(`Industry: ${meta.industry}`);
+  const importedContextSummary = summaryLines.length > 0 ? summaryLines.join("\n") : null;
+
   return {
     companyName: mission.company_name ?? undefined,
     normalizedGoalDocument: {
       sourceType: "free_text",
       goal: mission.statement,
-      targetCustomer: null,
-      successMetrics: [],
-      constraints: [],
-      budget: null,
+      targetCustomer: meta.targetCustomer ?? null,
+      successMetrics: meta.successMetric ? [meta.successMetric] : [],
+      constraints,
+      budget: meta.runway ?? null,
       timeHorizon: null,
+      importedContextSummary,
       planReadinessThreshold: 0.6,
     },
     roleLibrary: [...DEFAULT_ROLE_LIBRARY],

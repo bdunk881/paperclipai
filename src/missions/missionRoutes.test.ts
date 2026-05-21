@@ -24,7 +24,8 @@ import { ensureUserProfileExists as mockedEnsureUserProfileExists } from "../use
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import request from "supertest";
-import { createMissionRoutes } from "./missionRoutes";
+import { createMissionRoutes, teamAssemblyRequestFromMission } from "./missionRoutes";
+import { buildTeamAssemblyPrompt } from "../goals/teamAssembly";
 
 // Stub Postgres pool — never queried in the rejection paths we test.
 const stubPool = { query: jest.fn() } as unknown as Parameters<typeof createMissionRoutes>[0];
@@ -367,5 +368,118 @@ describe("LLM rate-limiter wiring", () => {
     // matters is we reached the handler, not that we crashed on a
     // missing limiter.
     expect([400, 404, 500]).toContain(res.status);
+  });
+});
+
+// Regression for the "mission generation feels templated" symptom:
+// the dashboard mission-intake form captures four structured fields
+// (industry, target customer, success metric, runway) plus a free-text
+// statement. Before this fix the generate-plan handler loaded only the
+// statement + company name and built a normalizedGoalDocument with
+// every other slot nulled out, so the LLM saw a one-line goal + the
+// generic role library and defaulted to a templated SaaS team.
+//
+// This block locks in that the helper actually propagates the
+// metadata, and that the resulting prompt mentions the user-supplied
+// values verbatim so the LLM can anchor on them.
+describe("teamAssemblyRequestFromMission — propagates mission metadata", () => {
+  const baseRow = {
+    id: "33333333-3333-4333-8333-333333333333",
+    company_id: "44444444-4444-4444-8444-444444444444",
+    statement: "Land 5 OEM design partners for our welding-robot scheduler.",
+    workspace_id: "11111111-1111-4111-8111-111111111111",
+    company_name: "WeldOps",
+    company_description: "Cloud scheduler for industrial welding robots.",
+  } as const;
+
+  it("maps every structured intake field into the normalized goal document", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseRow,
+      metadata: {
+        industry: "Industrial robotics",
+        targetCustomer: "OEM purchasing managers in the US",
+        successMetric: "5 signed design partners by Q4",
+        runway: "$250k over 6 months",
+      },
+    });
+
+    expect(request.companyName).toBe("WeldOps");
+    expect(request.normalizedGoalDocument.goal).toBe(baseRow.statement);
+    expect(request.normalizedGoalDocument.targetCustomer).toBe(
+      "OEM purchasing managers in the US",
+    );
+    expect(request.normalizedGoalDocument.successMetrics).toEqual([
+      "5 signed design partners by Q4",
+    ]);
+    expect(request.normalizedGoalDocument.budget).toBe("$250k over 6 months");
+    expect(request.normalizedGoalDocument.constraints).toEqual([
+      "Industry: Industrial robotics",
+    ]);
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Company: WeldOps",
+    );
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "About the company: Cloud scheduler for industrial welding robots.",
+    );
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Industry: Industrial robotics",
+    );
+  });
+
+  it("leaves optional fields null/empty when the operator skipped them", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseRow,
+      company_description: null,
+      metadata: null,
+    });
+
+    expect(request.normalizedGoalDocument.targetCustomer).toBeNull();
+    expect(request.normalizedGoalDocument.successMetrics).toEqual([]);
+    expect(request.normalizedGoalDocument.budget).toBeNull();
+    expect(request.normalizedGoalDocument.constraints).toEqual([]);
+    // Company name is still surfaced even when nothing else is.
+    expect(request.normalizedGoalDocument.importedContextSummary).toBe(
+      "Company: WeldOps",
+    );
+  });
+
+  it("partial metadata only emits the fields the operator filled in", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseRow,
+      company_description: null,
+      metadata: {
+        targetCustomer: "Mid-market HR ops leads",
+      },
+    });
+
+    expect(request.normalizedGoalDocument.targetCustomer).toBe(
+      "Mid-market HR ops leads",
+    );
+    expect(request.normalizedGoalDocument.successMetrics).toEqual([]);
+    expect(request.normalizedGoalDocument.budget).toBeNull();
+    expect(request.normalizedGoalDocument.constraints).toEqual([]);
+  });
+
+  it("the prompt the LLM receives embeds the user-supplied context", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseRow,
+      metadata: {
+        industry: "Industrial robotics",
+        targetCustomer: "OEM purchasing managers in the US",
+        successMetric: "5 signed design partners by Q4",
+        runway: "$250k over 6 months",
+      },
+    });
+    const prompt = buildTeamAssemblyPrompt(request);
+
+    // Every field the operator filled in must appear verbatim in the
+    // prompt body. If any of these regress, the LLM is back to
+    // generating from the bare goal + library template.
+    expect(prompt).toContain("Industrial robotics");
+    expect(prompt).toContain("OEM purchasing managers in the US");
+    expect(prompt).toContain("5 signed design partners by Q4");
+    expect(prompt).toContain("$250k over 6 months");
+    expect(prompt).toContain("Cloud scheduler for industrial welding robots.");
+    expect(prompt).toContain(baseRow.statement);
   });
 });

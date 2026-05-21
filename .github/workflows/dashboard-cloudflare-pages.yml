@@ -1,6 +1,6 @@
 # Dashboard Pages deploy. Triggers on every push to dev/staging/master (paths-
 # filtered) so the latest branch HEAD always reaches the matching Pages project:
-#   - dev    → autoflow-dashboard-dev-git (dev.app.helloautoflow.com)
+#   - dev    → autoflow-dashboard-dev-git (dev.helloautoflow.com)
 #   - staging/master → autoflow-dashboard (app.helloautoflow.com)
 #
 # The `target_branch == 'dev'` code path further down in this file selects the
@@ -61,7 +61,11 @@ jobs:
 
           if [ "$target_branch" = "dev" ]; then
             project_name="autoflow-dashboard-dev-git"
-            custom_domain="dev.app.helloautoflow.com"
+            # The canonical dev custom domain is dev.helloautoflow.com.
+            # cf-pages-add-domains.yml is the source of truth for this
+            # mapping; baseUrl.ts tolerates both dev.helloautoflow.com
+            # and dev.app.helloautoflow.com so existing tabs still work.
+            custom_domain="dev.helloautoflow.com"
           fi
 
           echo "deploy_branch=$deploy_branch" >> "$GITHUB_OUTPUT"

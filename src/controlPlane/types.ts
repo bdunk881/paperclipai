@@ -3,7 +3,9 @@ import { WorkflowTemplate } from "../types/workflow";
 export type AgentLifecycleStatus = "active" | "paused" | "terminated";
 export type HeartbeatStatus = "queued" | "running" | "completed" | "blocked";
 export type ControlPlaneTaskStatus = "todo" | "in_progress" | "done" | "blocked";
-export type AgentScheduleType = "manual" | "interval" | "cron";
+// HEL-142: AgentScheduleType + ControlPlaneAgentSchedule retired
+// 2026-05-21. agents.schedule column dropped (migration 057);
+// scheduling lives in routines exclusively.
 export type TeamDeploymentMode = "workflow_runtime" | "continuous_agents";
 export type TeamLifecycleStatus = "active" | "paused" | "stopped";
 export type SpendCategory = "llm" | "tool" | "api" | "compute" | "ad_spend" | "third_party";
@@ -16,12 +18,6 @@ export type ControlPlaneExecutionStatus =
   | "failed"
   | "stopped";
 export type ControlPlaneLifecycleAction = "pause" | "resume" | "restart" | "stop";
-
-export interface ControlPlaneAgentSchedule {
-  type: AgentScheduleType;
-  cronExpression?: string;
-  intervalMinutes?: number;
-}
 
 export interface ControlPlaneSkillDefinition {
   id: string;
@@ -52,7 +48,6 @@ export interface ControlPlaneAgent {
   budgetMonthlyUsd: number;
   reportingToAgentId?: string;
   skills: string[];
-  schedule: ControlPlaneAgentSchedule;
   status: AgentLifecycleStatus;
   pausedByCompanyLifecycle?: boolean;
   currentExecutionId?: string;

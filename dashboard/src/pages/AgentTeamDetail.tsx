@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Bot, Clock3, RefreshCw, Workflow } from "lucide-react";
+import { ArrowLeft, Bot, RefreshCw, Workflow } from "lucide-react";
 import * as Sentry from "@sentry/react";
 import {
   getControlPlaneTeam,
@@ -239,9 +239,11 @@ function AgentCard({
         </StatusPill>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+      {/* HEL-142: "Schedule" metric removed — agent.schedule never fired
+          any work and the UI was lying. Per-agent scheduling lives in
+          routines now. */}
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <InlineMetric label="Workflow step" value={agent.workflowStepKind ?? "manager"} icon={<Workflow size={12} />} />
-        <InlineMetric label="Schedule" value={formatSchedule(agent)} icon={<Clock3 size={12} />} />
         <InlineMetric label="Budget" value={`$${agent.budgetMonthlyUsd.toFixed(2)}`} icon={<Bot size={12} />} />
       </div>
 
@@ -317,15 +319,7 @@ function StatusPill({
   );
 }
 
-function formatSchedule(agent: ControlPlaneAgent): string {
-  if (agent.schedule.type === "interval") {
-    return `${agent.schedule.intervalMinutes ?? 0} min`;
-  }
-  if (agent.schedule.type === "cron") {
-    return agent.schedule.cronExpression ?? "cron";
-  }
-  return "manual";
-}
+// HEL-142: formatSchedule retired — agent.schedule field removed.
 
 function heartbeatTone(
   status?: ControlPlaneHeartbeatRecord["status"]

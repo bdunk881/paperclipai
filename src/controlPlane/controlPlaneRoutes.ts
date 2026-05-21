@@ -270,7 +270,6 @@ async function loadCanonicalTeamDetail(
       budgetMonthlyUsd: Number(agentRow.budget_monthly_usd),
       reportingToAgentId: agentRow.reporting_to_agent_id ?? undefined,
       skills: [],
-      schedule: { type: "manual" },
       status: agentRow.status,
       lastHeartbeatAt: isoOrNull(agentRow.last_heartbeat_at),
       createdAt:

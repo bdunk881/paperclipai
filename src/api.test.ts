@@ -1015,14 +1015,7 @@ describe("Control plane APIs", () => {
     expect(
       res.body.agents.some((agent: { roleKey: string }) => agent.roleKey === "workflow-manager")
     ).toBe(true);
-    expect(
-      res.body.agents
-        .filter((agent: { roleKey: string }) => agent.roleKey !== "workflow-manager")
-        .every(
-          (agent: { schedule: { type: string; intervalMinutes?: number } }) =>
-            agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
-        )
-    ).toBe(true);
+    // HEL-142: agent.schedule removed (migration 057). Scheduling lives in routines.
   });
 
   it("sanitizes generated role keys without the polynomial trim regex", async () => {
@@ -1916,14 +1909,7 @@ describe("Control plane APIs", () => {
     expect(
       res.body.agents.some((agent: { roleKey: string }) => agent.roleKey === "workflow-manager")
     ).toBe(true);
-    expect(
-      res.body.agents
-        .filter((agent: { roleKey: string }) => agent.roleKey !== "workflow-manager")
-        .every(
-          (agent: { schedule: { type: string; intervalMinutes?: number } }) =>
-            agent.schedule.type === "interval" && agent.schedule.intervalMinutes === 30
-        )
-    ).toBe(true);
+    // HEL-142: agent.schedule removed (migration 057). Scheduling lives in routines.
   });
 
   it("creates a bridged task and enforces atomic checkout", async () => {

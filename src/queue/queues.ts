@@ -28,9 +28,8 @@ export interface AgentPromptJobPayload {
   sourceRoutineId?: string;
   triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
   /**
-   * Idempotency key — same key inside the BullMQ jobId-dedupe window
-   * is deduplicated so rapid double-clicks on "Run agent" or
-   * duplicate ticket-update webhooks don't fire the agent twice.
+   * Logical idempotency key stored in job payload (may contain `:`).
+   * BullMQ dedupe uses a separate colon-free `jobId` from bullMqJobId.ts.
    */
   idempotencyKey: string;
 }

@@ -9,26 +9,20 @@
  *   - Pick the model by tier
  *   - Splice memory guidance into the system prompt when save_memory
  *     is in the tool set
- *   - Optionally publish streaming token previews to the agent
- *     presence pill
+ *   - Optionally publish live trace events (tool calls, reasoning, text)
+ *     and token previews to the agent presence pill
  *   - Return the full assistant text + cost + which tools fired
- *
- * The function intentionally doesn't own the *decision* of when to
- * call an agent — that's the route handler's job (Check-in, Hand-off,
- * scheduled routine, etc.). It just gives those handlers a clean
- * one-call surface.
- *
- * NOT covered here:
- *   - Multi-turn conversation persistence (each call is one turn)
- *   - HITL approval interception (will land with the engine-level
- *     approval policy plumbing)
- *   - Cost ceiling pre-checks (call sites still do that themselves)
  */
 
+import { randomUUID } from "crypto";
 import type { Pool } from "pg";
+import type { AgentTraceEvent } from "../engine/agentTrace/types";
+import { AgentTracePublisher } from "../engine/agentTrace/tracePublisher";
+import { emitTrace } from "../engine/agentTrace/emitCallbacks";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
+import { providerSupportsNativeAgentStream } from "../engine/llmProviders/capabilities";
 import type {
   AgentTool,
   LLMResponse,
@@ -36,6 +30,7 @@ import type {
 import {
   publishAgentTokenPreview,
 } from "./agentPresence";
+import { persistAgentTraceEvent } from "./agentTraceStore";
 import {
   createSaveMemoryAgentTool,
   SAVE_MEMORY_SYSTEM_PROMPT_GUIDANCE,
@@ -56,40 +51,24 @@ export interface RunAgentTurnInput {
   workspaceId: string;
   userId: string;
   agentId: string;
-  /** Free-text role identity that drives prompt voice + tone. */
+  /** Correlates live trace SSE + persistence (from `runs.id`). */
+  runId?: string;
   agentName: string;
-  /** Owner-facing role like "support triage", "data analyst". */
   agentRoleKey?: string | null;
-  /**
-   * Caller-provided system prompt. The wrapper appends memory
-   * guidance to it when save_memory is enabled. Keep it focused on
-   * THIS agent's job + constraints.
-   */
   systemPrompt: string;
-  /** The actual user / event prompt for this turn. */
   userPrompt: string;
-  /** Which model tier to bind the call to. Defaults to "standard". */
   tier?: AgentRunTier;
-  /**
-   * Additional tools the agent can call beyond the built-ins. The
-   * wrapper assembles the final tool list (save_memory + these) and
-   * forwards to the provider's tool loop.
-   */
   extraTools?: AgentTool[];
-  /**
-   * Toggle the save_memory built-in tool. Defaults to true. Set
-   * false for cheap classifier-style calls where memory is overkill.
-   */
   includeSaveMemory?: boolean;
-  /** Forwards to saveMemory's permission gate. Default false. */
   canWriteAuthoritative?: boolean;
   /**
-   * When true, the wrapper streams assistant text into the agent
-   * presence pill via the existing token-preview Redis channel. No-op
-   * when the underlying provider doesn't support streaming.
+   * When true, publish canonical trace events to Redis/SSE and persist
+   * them when `runId` is set. Also updates the presence pill from
+   * assistant text deltas.
    */
+  streamTrace?: boolean;
+  /** @deprecated Prefer `streamTrace` — kept for backward compatibility. */
   streamToPresence?: boolean;
-  /** Hard wall-clock cap on the provider call. */
   requestTimeoutMs?: number;
 }
 
@@ -98,14 +77,9 @@ export interface RunAgentTurnResult {
   usage: NonNullable<LLMResponse["usage"]>;
   provider: string;
   model: string;
+  turnId?: string;
 }
 
-/**
- * Run one agentic turn against the workspace's default LLM.
- *
- * Returns the model's final text + token usage so the route handler
- * can persist a transcript / charge spend / surface the reply.
- */
 export async function runAgentTurn(
   input: RunAgentTurnInput,
 ): Promise<RunAgentTurnResult> {
@@ -117,6 +91,8 @@ export async function runAgentTurn(
   }
 
   const model = resolveModelForTier(resolved.config.provider, input.tier ?? "standard");
+  const streamEnabled = input.streamTrace ?? input.streamToPresence ?? false;
+  const turnId = randomUUID();
 
   const candidateTools: AgentTool[] = [];
   if (input.includeSaveMemory !== false) {
@@ -132,11 +108,6 @@ export async function runAgentTurn(
   }
   if (input.extraTools) candidateTools.push(...input.extraTools);
 
-  // DASH-23: enforce the agent's integration allowlist before the
-  // provider sees the tool list. Built-in tools (save_memory) pass
-  // through; integration-backed tools must match the agent's
-  // `allowed_integration_slugs` (NULL = inherit defaults, [] = no
-  // integrations, [...] = strict subset).
   const permissions = await loadAgentIntegrationPermissions({
     pool: input.pool,
     workspaceId: input.workspaceId,
@@ -147,34 +118,25 @@ export async function runAgentTurn(
 
   const systemPrompt = composeSystemPrompt(input, tools);
 
-  // Streaming token-preview wiring. Debounced to ~5/s so Redis
-  // traffic stays proportional to what humans can read in the pill.
   let lastPreview = "";
   let publishHandle: ReturnType<typeof setTimeout> | null = null;
-  function schedulePreviewPublish(): void {
+  function schedulePreviewPublish(runId?: string): void {
     if (publishHandle) return;
     publishHandle = setTimeout(() => {
       publishHandle = null;
       void publishAgentTokenPreview({
         workspaceId: input.workspaceId,
         agentId: input.agentId,
+        runId: runId ?? null,
         preview: lastPreview,
       });
     }, TOKEN_PREVIEW_PUBLISH_INTERVAL_MS);
   }
 
-  // HEL-145: providers that read `config.systemPrompt` use it as a
-  // dedicated system message (and, on Anthropic, mark it cacheable);
-  // providers that don't read it stay on the legacy "inline system
-  // prompt into the user message" path. The flag below decides which
-  // path runAgentTurn takes per call. As more providers wire up
-  // `systemPrompt` support (HEL-145 follow-ups), add them here.
   const providerName = resolved.config.provider;
   const providerSupportsSystemField =
     providerName === "anthropic" ||
     providerName === "openai" ||
-    // Every OpenAI-compatible endpoint also uses the system-role
-    // message convention via the shared openaiCompatible provider.
     providerName === "groq" ||
     providerName === "fireworks" ||
     providerName === "together" ||
@@ -185,6 +147,43 @@ export async function runAgentTurn(
     providerName === "localai" ||
     providerName === "opencode_zen";
 
+  let tracePublisher: AgentTracePublisher | null = null;
+  const shouldTrace = streamEnabled && Boolean(input.runId);
+
+  if (shouldTrace && input.runId) {
+    tracePublisher = new AgentTracePublisher({
+      workspaceId: input.workspaceId,
+      agentId: input.agentId,
+      runId: input.runId,
+      turnId,
+      provider: providerName,
+      model,
+    });
+    await tracePublisher.publish({
+      type: "turn.started",
+      at: new Date().toISOString(),
+    });
+  }
+
+  const handleTraceEvent = (event: AgentTraceEvent): void => {
+    if (!tracePublisher) return;
+    void (async () => {
+      const envelope = await tracePublisher!.publish(event);
+      await persistAgentTraceEvent(input.pool, envelope);
+    })();
+
+    if (
+      streamEnabled &&
+      event.type === "assistant.delta"
+    ) {
+      lastPreview = event.accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
+      schedulePreviewPublish(input.runId);
+    }
+  };
+
+  const nativeStream =
+    providerSupportsNativeAgentStream(providerName) || tools.length === 0;
+
   const provider = getProvider({
     provider: resolved.config.provider,
     model,
@@ -192,23 +191,17 @@ export async function runAgentTurn(
     requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
     tools: tools.length > 0 ? tools : undefined,
     systemPrompt: providerSupportsSystemField ? systemPrompt : undefined,
-    // Anthropic is the only provider that exposes explicit cache
-    // controls today (5-min ephemeral TTL). OpenAI's prompt cache
-    // is automatic; other providers ignore the flag.
     cacheSystemPrompt: providerName === "anthropic",
+    onTrace: shouldTrace && nativeStream ? handleTraceEvent : undefined,
     onText:
-      input.streamToPresence && tools.length === 0
+      streamEnabled && !shouldTrace
         ? (_delta, accumulated) => {
             lastPreview = accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
-            schedulePreviewPublish();
+            schedulePreviewPublish(input.runId);
           }
         : undefined,
   });
 
-  // When the provider supports a dedicated system field, send only the
-  // user prompt; the system is already on the request via config. For
-  // providers that don't, fall back to the legacy concatenation so
-  // those workspaces don't regress.
   const promptForProvider = providerSupportsSystemField
     ? input.userPrompt
     : `${systemPrompt}\n\n---\n\nUSER:\n${input.userPrompt}`;
@@ -216,6 +209,22 @@ export async function runAgentTurn(
   let response: LLMResponse;
   try {
     response = await provider(promptForProvider);
+
+    if (shouldTrace && tracePublisher && !nativeStream) {
+      emitTrace(handleTraceEvent, {
+        type: "assistant.delta",
+        delta: response.text,
+        accumulated: response.text,
+      });
+      const usage = response.usage ?? { promptTokens: 0, completionTokens: 0 };
+      await tracePublisher.publish({ type: "turn.completed", text: response.text, usage });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (tracePublisher) {
+      await tracePublisher.publish({ type: "turn.error", message });
+    }
+    throw err;
   } finally {
     if (publishHandle) {
       clearTimeout(publishHandle);
@@ -228,6 +237,7 @@ export async function runAgentTurn(
     usage: response.usage ?? { promptTokens: 0, completionTokens: 0 },
     provider: resolved.config.provider,
     model,
+    turnId: shouldTrace ? turnId : undefined,
   };
 }
 

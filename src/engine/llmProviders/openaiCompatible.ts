@@ -1,4 +1,12 @@
 import OpenAI from "openai";
+import type { AgentTraceCallback } from "../agentTrace/types";
+import { emitTrace, resolveTraceCallback } from "../agentTrace/emitCallbacks";
+import { previewToolOutput } from "../agentTrace/redact";
+import {
+  createOpenAIStreamAccumulators,
+  mapOpenAIStreamChunk,
+  resetOpenAIToolCallAccum,
+} from "./openaiStream";
 import {
   AgentTool,
   DEFAULT_LLM_REQUEST_TIMEOUT_MS,
@@ -110,7 +118,23 @@ export function createOpenAICompatibleProvider(
     // sites. JSON-mode (responseFormat) is intentionally not mixed
     // with the loop — they use the same tool primitive in opposite
     // ways.
+    const onTrace = resolveTraceCallback(config);
+
     if (config.tools && config.tools.length > 0 && !responseFormat) {
+      if (onTrace) {
+        return runOpenAIToolLoopStream({
+          client,
+          model: resolvedModel,
+          label: options.label,
+          prompt,
+          tools: config.tools,
+          maxIterations: config.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS,
+          systemPrompt: config.systemPrompt,
+          maxOutputTokens: config.maxOutputTokens,
+          onTrace,
+          buildMessages,
+        });
+      }
       return runOpenAIToolLoop({
         client,
         model: resolvedModel,
@@ -123,14 +147,13 @@ export function createOpenAICompatibleProvider(
       });
     }
 
-    // Streaming path: caller supplied an onText callback. Use the
+    // Streaming path: caller supplied onTrace / onText. Use the
     // chat-completions stream and accumulate text deltas across
     // chunks. Skipped when JSON-mode is in effect — structured
     // responses arrive as a single content blob, streaming the
     // delta-by-delta JSON isn't useful for the presence pill.
-    if (config.onText && !responseFormat) {
-      let accumulated = "";
-      const onText = config.onText;
+    if (onTrace && !responseFormat) {
+      const acc = createOpenAIStreamAccumulators();
       let promptTokens = 0;
       let completionTokens = 0;
       let cachedPromptTokens: number | undefined;
@@ -145,15 +168,7 @@ export function createOpenAICompatibleProvider(
             : {}),
         });
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta?.content ?? "";
-          if (delta) {
-            accumulated += delta;
-            try {
-              onText(delta, accumulated);
-            } catch {
-              // Stream-consumer errors must not abort the LLM call.
-            }
-          }
+          mapOpenAIStreamChunk(chunk, onTrace, acc);
           if (chunk.usage) {
             const buckets = extractOpenAICacheBucket(chunk.usage);
             promptTokens = buckets.promptTokens;
@@ -167,9 +182,15 @@ export function createOpenAICompatibleProvider(
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(`${options.label} API error: ${msg}`);
       }
+      const usage = { promptTokens, completionTokens, cachedPromptTokens };
+      emitTrace(onTrace, {
+        type: "turn.completed",
+        text: acc.assistantText,
+        usage,
+      });
       return {
-        text: accumulated,
-        usage: { promptTokens, completionTokens, cachedPromptTokens },
+        text: acc.assistantText,
+        usage,
       };
     }
 
@@ -248,6 +269,210 @@ function extractOpenAICacheBucket(
  * Endpoints without tools support (older Ollama, LocalAI) will 400;
  * the caller's catch surfaces the underlying provider error.
  */
+async function runOpenAIToolLoopStream(args: {
+  client: OpenAI;
+  model: string;
+  label: string;
+  prompt: string;
+  tools: AgentTool[];
+  maxIterations: number;
+  systemPrompt?: string;
+  maxOutputTokens?: number;
+  onTrace: AgentTraceCallback;
+  buildMessages: (
+    userPrompt: string,
+  ) => OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+}): Promise<LLMResponse> {
+  const toolsByName = new Map(args.tools.map((t) => [t.name, t]));
+  const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = args.tools.map(
+    (t) => ({
+      type: "function",
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.inputSchema,
+      },
+    }),
+  );
+
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] =
+    args.buildMessages(args.prompt);
+
+  let cumulativePromptTokens = 0;
+  let cumulativeCompletionTokens = 0;
+  let cumulativeCachedTokens = 0;
+
+  const finishUsage = (): LLMResponse["usage"] => ({
+    promptTokens: cumulativePromptTokens,
+    completionTokens: cumulativeCompletionTokens,
+    cachedPromptTokens:
+      cumulativeCachedTokens > 0 ? cumulativeCachedTokens : undefined,
+  });
+
+  for (let iteration = 0; iteration < args.maxIterations; iteration++) {
+    emitTrace(args.onTrace, { type: "iteration.started", iteration });
+    const acc = createOpenAIStreamAccumulators();
+    resetOpenAIToolCallAccum(acc);
+    let assistantMessage: OpenAI.Chat.Completions.ChatCompletionMessage | undefined;
+    try {
+      const stream = await args.client.chat.completions.create({
+        model: args.model,
+        messages,
+        tools: openaiTools,
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(typeof args.maxOutputTokens === "number"
+          ? { max_tokens: args.maxOutputTokens }
+          : {}),
+      });
+      for await (const chunk of stream) {
+        mapOpenAIStreamChunk(chunk, args.onTrace, acc);
+        if (chunk.usage) {
+          const buckets = extractOpenAICacheBucket(chunk.usage);
+          cumulativePromptTokens += buckets.promptTokens;
+          cumulativeCompletionTokens += chunk.usage.completion_tokens;
+          if (buckets.cachedPromptTokens !== undefined) {
+            cumulativeCachedTokens += buckets.cachedPromptTokens;
+          }
+        }
+      }
+      // Reconstruct assistant message from accumulated stream state.
+      const toolCalls: OpenAI.Chat.Completions.ChatCompletionMessageToolCall[] = [];
+      for (const entry of acc.toolCalls.values()) {
+        toolCalls.push({
+          id: entry.id,
+          type: "function",
+          function: {
+            name: entry.name,
+            arguments: entry.argumentsJson,
+          },
+        });
+      }
+      assistantMessage = {
+        role: "assistant",
+        content: acc.assistantText || null,
+        refusal: null,
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      emitTrace(args.onTrace, { type: "turn.error", message: msg });
+      throw new Error(`${args.label} API error: ${msg}`);
+    }
+
+    if (!assistantMessage) {
+      const usage = finishUsage()!;
+      emitTrace(args.onTrace, { type: "turn.completed", text: "", usage });
+      return { text: "", usage };
+    }
+
+    messages.push(assistantMessage);
+
+    if (!assistantMessage.tool_calls?.length) {
+      const text = assistantMessage.content ?? acc.assistantText;
+      const usage = finishUsage()!;
+      emitTrace(args.onTrace, { type: "turn.completed", text, usage });
+      return { text, usage };
+    }
+
+    const toolMessages = await Promise.all(
+      assistantMessage.tool_calls.map(async (call) => {
+        if (call.type !== "function") {
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool calls of type "${call.type}" are not supported.`,
+          };
+        }
+        const tool = toolsByName.get(call.function.name);
+        if (!tool) {
+          emitTrace(args.onTrace, {
+            type: "tool_call.failed",
+            callId: call.id,
+            name: call.function.name,
+            error: `Tool "${call.function.name}" is not registered.`,
+          });
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool "${call.function.name}" is not registered. Try another approach.`,
+          };
+        }
+        try {
+          const input = call.function.arguments
+            ? (JSON.parse(call.function.arguments) as Record<string, unknown>)
+            : {};
+          const result = await tool.handler(input);
+          emitTrace(args.onTrace, {
+            type: "tool_result",
+            callId: call.id,
+            name: call.function.name,
+            outputPreview: previewToolOutput(result),
+          });
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (handlerErr) {
+          const msg =
+            handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+          emitTrace(args.onTrace, {
+            type: "tool_call.failed",
+            callId: call.id,
+            name: call.function.name,
+            error: msg,
+          });
+          return {
+            role: "tool" as const,
+            tool_call_id: call.id,
+            content: `Tool "${call.function.name}" failed: ${msg}`,
+          };
+        }
+      }),
+    );
+
+    messages.push(...toolMessages);
+  }
+
+  try {
+    const finalTurn = await args.client.chat.completions.create({
+      model: args.model,
+      messages: [
+        ...messages,
+        {
+          role: "user",
+          content:
+            "Maximum tool iterations reached. Summarize what you accomplished and what's still pending in 1-3 sentences. Do not call any tools.",
+        },
+      ],
+      max_tokens:
+        typeof args.maxOutputTokens === "number" ? args.maxOutputTokens : 512,
+    });
+    if (finalTurn.usage) {
+      const buckets = extractOpenAICacheBucket(finalTurn.usage);
+      cumulativePromptTokens += buckets.promptTokens;
+      cumulativeCompletionTokens += finalTurn.usage.completion_tokens;
+      if (buckets.cachedPromptTokens !== undefined) {
+        cumulativeCachedTokens += buckets.cachedPromptTokens;
+      }
+    }
+    const text = finalTurn.choices[0]?.message?.content ?? "";
+    const usage = finishUsage()!;
+    const fullText = `${text}\n\n[interrupted: max iterations]`;
+    emitTrace(args.onTrace, { type: "turn.completed", text: fullText, usage });
+    return { text: fullText, usage };
+  } catch {
+    const usage = finishUsage()!;
+    emitTrace(args.onTrace, {
+      type: "turn.completed",
+      text: "[interrupted: max iterations]",
+      usage,
+    });
+    return { text: "[interrupted: max iterations]", usage };
+  }
+}
+
 async function runOpenAIToolLoop(args: {
   client: OpenAI;
   model: string;

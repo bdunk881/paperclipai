@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ObservabilityEvent } from "../api/observability";
 import { listRunsByStatus, retryRun } from "../api/runsApi";
 import type { WorkflowRun } from "../types/workflow";
+import { LiveAgentTracesPanel } from "../components/LiveAgentTracesPanel";
 import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -226,6 +227,7 @@ export default function AgentActivity() {
 
   return (
     <div className="af2-page">
+      {tab === "live" ? <LiveAgentTracesPanel /> : null}
       <div className="af2-page-head">
         <div>
           <div className="af2-eyebrow">Run · Live</div>

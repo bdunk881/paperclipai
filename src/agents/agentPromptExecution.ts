@@ -463,13 +463,14 @@ export async function executeAgentPrompt(
       workspaceId: input.workspaceId,
       userId: input.userId,
       agentId: input.agentId,
+      runId,
       agentName: agent.name,
       agentRoleKey: agent.role_key,
       systemPrompt,
       userPrompt,
       tier: input.llmTier ?? "standard",
       includeSaveMemory: true,
-      streamToPresence: true,
+      streamTrace: true,
     });
   } catch (err) {
     const message = (err as Error).message;

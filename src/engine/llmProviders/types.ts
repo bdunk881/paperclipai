@@ -2,6 +2,8 @@
  * Shared types for the LLM provider adapter layer.
  */
 
+import type { AgentTraceCallback } from "../agentTrace/types";
+
 export const PROVIDER_NAMES = [
   "openai",
   "anthropic",
@@ -129,6 +131,13 @@ export interface LLMProviderConfig {
    */
   requestTimeoutMs?: number;
   /**
+   * Optional live trace callback. Providers emit canonical
+   * `AgentTraceEvent` values (assistant deltas, tool calls, reasoning).
+   * Preferred over `onText` for agent turns.
+   */
+  onTrace?: AgentTraceCallback;
+  /**
+   * @deprecated Use `onTrace` — mapped from `assistant.delta` events.
    * Optional streaming callback. When set, the provider opens its
    * SDK's streaming endpoint and invokes `onText` with each incremental
    * delta. The returned LLMResponse still resolves with the full

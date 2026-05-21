@@ -85,6 +85,16 @@ import {
 } from "./workflowGraph";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { StepSetupCoach, buildStepSetupContext } from "../components/workflow/StepSetupCoach";
+import { WorkflowNextStepsStrip } from "../components/workflow/WorkflowNextStepsStrip";
+import { WorkflowSetupChecklistPanel } from "../components/workflow/WorkflowSetupChecklistPanel";
+import {
+  getWorkflowSuggestedNextSteps,
+  validateCronExpression,
+  validateIntervalMinutes,
+  type SuggestedNextStep,
+} from "./workflowStepSetup";
+import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
 
 const KIND_META: Record<
   StepKind,
@@ -285,30 +295,6 @@ function getTimezoneOptions(): string[] {
   return [...COMMON_TIMEZONES];
 }
 
-function validateCronExpression(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return "Invalid cron expression. Please check the syntax.";
-
-  const fields = trimmed.split(/\s+/);
-  if (fields.length !== 5) {
-    return "Invalid cron expression. Please check the syntax.";
-  }
-
-  const validField = /^(\*|\?|[\d*/,\-A-Z]+)$/i;
-  if (fields.some((field) => !validField.test(field))) {
-    return "Invalid cron expression. Please check the syntax.";
-  }
-
-  return null;
-}
-
-function validateIntervalMinutes(value: number | undefined): string | null {
-  if (!Number.isInteger(value) || (value ?? 0) <= 0) {
-    return "Interval must be a positive integer.";
-  }
-  return null;
-}
-
 function formatTime(hour: number, minute: number, timezone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
@@ -362,18 +348,6 @@ function describeCronExpression(cronExpression: string, timezone: string): strin
   }
 
   return `Runs on schedule ${cronExpression} (${timezone})`;
-}
-
-function buildStepFieldClass(options?: { mono?: boolean; hasError?: boolean; flashSuccess?: boolean }) {
-  return clsx(
-    "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 bg-af2-card text-af2-ink",
-    options?.mono && "font-mono",
-    options?.hasError
-      ? "border-af2-clay focus:ring-af2-clay/30"
-      : options?.flashSuccess
-        ? "border-af2-sage focus:ring-af2-clay/30 ring-2 ring-emerald-500/20"
-        : "border-af2-line-2 focus:ring-af2-clay/30",
-  );
 }
 
 function buildDefaultStep(kind: StepKind, id: string, position: XYPosition): WorkflowStep {
@@ -449,6 +423,16 @@ export default function WorkflowBuilder() {
     return params.get("popout") === "1";
   }, [location.search]);
 
+  const builderMode = useMemo((): WorkflowBuilderMode => {
+    const params = new URLSearchParams(location.search);
+    return params.get("mode") === "readonly" ? "readonly" : "edit";
+  }, [location.search]);
+  const isReadonlyBuilder = builderMode === "readonly";
+  const popoutFrom = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("from");
+  }, [location.search]);
+
   // HEL-188: the xyflow canvas + studio palette + inspector are not
   // usable on touch / narrow screens. Track the lg breakpoint (1024px)
   // so the render path can fork to a "desktop-only" fallback instead of
@@ -494,7 +478,6 @@ export default function WorkflowBuilder() {
   const [copilotModel, setCopilotModel] = useState("Auto");
   const [copilotLiveMessage, setCopilotLiveMessage] = useState("");
   const [consumedIncomingPrompt, setConsumedIncomingPrompt] = useState(false);
-  const [fieldFlashKey, setFieldFlashKey] = useState<string | null>(null);
   // HEL-27: Pro mode reveals the env panel + advanced inspector. The toggle
   // lives next to Save/Run in the header; the panel renders alongside the
   // existing inspector when on.
@@ -649,15 +632,6 @@ export default function WorkflowBuilder() {
     selectedStep?.kind === "cron_trigger"
       ? describeCronExpression(selectedStep.cronExpression ?? "", selectedStep.timezone ?? "UTC")
       : null;
-  const cronFlashKey = selectedStep ? `cron:${selectedStep.id}` : null;
-  const intervalFlashKey = selectedStep ? `interval:${selectedStep.id}` : null;
-
-  useEffect(() => {
-    if (!fieldFlashKey) return;
-    const timeout = window.setTimeout(() => setFieldFlashKey(null), 900);
-    return () => window.clearTimeout(timeout);
-  }, [fieldFlashKey]);
-
   // HEL-100 v2: fetch the most-recent runs for this template to feed the
   // canvas-bottom run-history strip. Skipped for unsaved drafts (no
   // templateId); fired again when the templateId loads from the URL.
@@ -978,10 +952,6 @@ export default function WorkflowBuilder() {
     }));
   }
 
-  function flashField(key: string) {
-    setFieldFlashKey(key);
-  }
-
   function removeStep(id: string) {
     setTemplate((t) => {
       const nextSteps = t.steps.filter((s) => s.id !== id);
@@ -1071,6 +1041,30 @@ export default function WorkflowBuilder() {
     });
   }, [template.steps]);
 
+  const stepSetupContext = useMemo(
+    () =>
+      buildStepSetupContext(
+        template,
+        flowEdges,
+        llmConfigs,
+        (kind) => KIND_META[kind]?.label ?? kind
+      ),
+    [template, flowEdges, llmConfigs]
+  );
+
+  const workflowNextSteps = useMemo(
+    () => getWorkflowSuggestedNextSteps(template, flowEdges, llmConfigs.length),
+    [template, flowEdges, llmConfigs.length]
+  );
+
+  useEffect(() => {
+    const stepId = new URLSearchParams(location.search).get("step");
+    if (!stepId) return;
+    if (template.steps.some((s) => s.id === stepId)) {
+      setSelectedStepId(stepId);
+    }
+  }, [location.search, template.steps]);
+
   const nodeTypes = useMemo(
     () =>
       ({
@@ -1078,6 +1072,45 @@ export default function WorkflowBuilder() {
       }) satisfies NodeTypes,
     []
   );
+
+  function focusCoachField(field: string) {
+    if (field === "canvas") {
+      setSelectedStepId(null);
+      return;
+    }
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-field="${field}"]`);
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      if (el instanceof HTMLElement) el.focus();
+    });
+  }
+
+  function handleSuggestedNextStep(next: SuggestedNextStep) {
+    if (next.action === "link" && next.href) {
+      navigate(next.href);
+      return;
+    }
+    if (next.action === "run_test") {
+      void handleRun();
+      return;
+    }
+    if (next.action === "add_step" && next.stepKind) {
+      addStep(next.stepKind);
+      return;
+    }
+    if (next.action === "copilot" && next.copilotPrompt) {
+      setCopilotInput(next.copilotPrompt);
+      setShowCopilot(true);
+      return;
+    }
+    if (next.action === "focus_field" && next.focusField) {
+      focusCoachField(next.focusField);
+      return;
+    }
+    if (next.action === "open_guidance") {
+      setShowHelp(true);
+    }
+  }
 
   function persistEdges(nextEdges: Edge[]) {
     setTemplate((t) => ({
@@ -1346,6 +1379,36 @@ export default function WorkflowBuilder() {
             {graphError}
           </div>
         )}
+        {(isBuilderPopout || isReadonlyBuilder) && (
+          <div className="border-b border-af2-mustard/25 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-ink-2 md:px-6">
+            {isReadonlyBuilder && (
+              <p>
+                Opened from a run{popoutFrom ? ` (${popoutFrom})` : ""} — view only on this screen.
+                {templateId && (
+                  <>
+                    {" "}
+                    <a
+                      href={`/builder/${templateId}`}
+                      className="font-semibold text-af2-clay underline"
+                    >
+                      Edit routine on desktop
+                    </a>
+                  </>
+                )}
+              </p>
+            )}
+            {isBuilderPopout && !isReadonlyBuilder && (
+              <p>Popout view — use the full Studio layout on desktop for the step palette.</p>
+            )}
+          </div>
+        )}
+        {template.steps.length > 0 && !selectedStep && (
+          <WorkflowNextStepsStrip
+            steps={workflowNextSteps}
+            templateName={template.name}
+            onAction={handleSuggestedNextStep}
+          />
+        )}
         {/* Header — HEL-100 v2 restyle: editorial chrome over the canvas.
             af2-page wrapper isn't used here because Studio is a full-bleed
             canvas tool; the top bar still adopts af2 button styles + eyebrow
@@ -1366,6 +1429,7 @@ export default function WorkflowBuilder() {
                 <input
                   className="af2-serif"
                   value={template.name}
+                  readOnly={isReadonlyBuilder}
                   onChange={(e) => setTemplate((t) => ({ ...t, name: e.target.value }))}
                   style={{
                     fontSize: 20,
@@ -1443,7 +1507,7 @@ export default function WorkflowBuilder() {
               {showCopilot ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
               Copilot
             </button>
-            <Tooltip content="Open setup guidance and best practices for this page">
+            <Tooltip content="Open a checklist of what to do next for this routine">
               <button
                 type="button"
                 onClick={() => setShowHelp(true)}
@@ -1451,12 +1515,13 @@ export default function WorkflowBuilder() {
                 style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
               >
                 <CircleHelp size={14} />
-                Guidance
+                Checklist
               </button>
             </Tooltip>
             <button
               type="button"
               onClick={() => setShowNLModal(true)}
+              disabled={isReadonlyBuilder}
               className="af2-btn af2-btn-sm"
               style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             >
@@ -1466,7 +1531,7 @@ export default function WorkflowBuilder() {
             <button
               type="button"
               onClick={() => void handleSave()}
-              disabled={saving}
+              disabled={saving || isReadonlyBuilder}
               className={clsx(
                 "af2-btn af2-btn-sm",
                 saved ? "af2-btn-clay" : undefined,
@@ -1484,7 +1549,7 @@ export default function WorkflowBuilder() {
             <button
               type="button"
               onClick={() => setShowDeployModal(true)}
-              disabled={template.steps.length === 0 || deployBusy}
+              disabled={template.steps.length === 0 || deployBusy || isReadonlyBuilder}
               aria-label="Deploy workflow as agent team"
               className="af2-btn af2-btn-sm"
               style={{
@@ -1500,7 +1565,7 @@ export default function WorkflowBuilder() {
             <button
               type="button"
               onClick={handleRun}
-              disabled={template.steps.length === 0}
+              disabled={template.steps.length === 0 || isReadonlyBuilder}
               className="af2-btn af2-btn-sm af2-btn-primary"
               style={{
                 display: "inline-flex",
@@ -1657,35 +1722,13 @@ export default function WorkflowBuilder() {
           data-testid="workflow-inspector-panel"
           className="workflow-studio-panel workflow-studio-inspector animate-slide-up absolute z-20 overflow-y-auto border-l border-af2-line bg-af2-card shadow-xl transition-[right,transform] duration-200"
         >
-          {/* HEL-100 v2 inspector header — mirrors AF2_Studio's
-              InspectorBasic / InspectorPro: eyebrow ("Selected node" +
-              " · Pro" when proMode is on) over a serif title (the
-              selected step's display name) and a muted subtitle (its
-              kind label). The editable Name field stays below in the
-              form. */}
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-af2-line">
-            <div className="min-w-0">
-              <div className="af2-eyebrow">
-                Selected node{proMode ? " · Pro" : ""}
-              </div>
-              <h3
-                className="font-af2-serif text-af2-ink"
-                style={{
-                  marginTop: 6,
-                  fontSize: 19,
-                  fontWeight: 500,
-                  letterSpacing: "-0.015em",
-                }}
-              >
-                <span className="block truncate">{selectedStep.name}</span>
-              </h3>
-              <p className="mt-1 text-[12.5px] text-af2-ink-3">
-                {KIND_META[selectedStep.kind]?.label ?? selectedStep.kind}
-              </p>
+          <div className="flex items-center justify-between gap-3 border-b border-af2-line px-5 py-3">
+            <div className="af2-eyebrow">
+              Step setup{proMode ? " · Pro" : ""}
             </div>
             <button
               onClick={() => setSelectedStepId(null)}
-              aria-label="Close step inspector"
+              aria-label="Close step setup"
               className="shrink-0 rounded p-1 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
             >
               <X size={16} />
@@ -1705,7 +1748,7 @@ export default function WorkflowBuilder() {
             >
               {(
                 [
-                  ["inspector", "Inspector"],
+                  ["inspector", "Setup"],
                   ["versions", "Versions"],
                   ["observability", "Observability"],
                 ] as const
@@ -1752,24 +1795,34 @@ export default function WorkflowBuilder() {
 
           <div
             className={clsx(
-              "p-5 space-y-5",
               proMode && proInspectorTab !== "inspector" ? "hidden" : "block"
             )}
             id={proMode ? "pro-inspector-panel-inspector" : undefined}
             role={proMode ? "tabpanel" : undefined}
           >
-            <Field label="Name">
-              <input
-                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
-                value={selectedStep.name}
-                onChange={(e) => updateStep(selectedStep.id, { name: e.target.value })}
-              />
-            </Field>
-
+            <StepSetupCoach
+              step={selectedStep}
+              setupContext={stepSetupContext}
+              readonly={isReadonlyBuilder}
+              proMode={proMode}
+              advancedExpandedDefault={proMode}
+              llmConfigs={llmConfigs}
+              llmConfigsLoading={llmConfigsLoading}
+              llmConfigsError={llmConfigsError}
+              timezoneOptions={timezoneOptions}
+              cronValidationError={cronValidationError}
+              cronPreview={cronPreview}
+              intervalValidationError={intervalValidationError}
+              onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
+              onFocusField={focusCoachField}
+              onSuggestedAction={handleSuggestedNextStep}
+              advancedContent={
+                <>
             <Field label="Kind">
               <select
                 className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
                 value={selectedStep.kind}
+                disabled={isReadonlyBuilder}
                 onChange={(e) =>
                   updateStep(selectedStep.id, { kind: e.target.value as StepKind })
                 }
@@ -1787,177 +1840,12 @@ export default function WorkflowBuilder() {
                 className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none bg-af2-card text-af2-ink"
                 rows={3}
                 value={selectedStep.description}
+                disabled={isReadonlyBuilder}
                 onChange={(e) =>
                   updateStep(selectedStep.id, { description: e.target.value })
                 }
               />
             </Field>
-
-            {selectedStep.kind === "llm" && (
-              <Field label="Prompt Template">
-                <textarea
-                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none font-mono text-xs"
-                  rows={5}
-                  placeholder="Use {{key}} for variable interpolation"
-                  value={selectedStep.promptTemplate ?? ""}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, { promptTemplate: e.target.value })
-                  }
-                />
-              </Field>
-            )}
-
-            {selectedStep.kind === "cron_trigger" && (
-              <>
-                <Field label="Cron Expression">
-                  <div>
-                    <input
-                      aria-label="Cron Expression"
-                      className={buildStepFieldClass({
-                        mono: true,
-                        hasError: !!cronValidationError,
-                        flashSuccess: fieldFlashKey === cronFlashKey,
-                      })}
-                      placeholder="0 9 * * 1"
-                      value={selectedStep.cronExpression ?? ""}
-                      onChange={(e) => {
-                        const cronExpression = e.target.value;
-                        updateStep(selectedStep.id, { cronExpression });
-                        if (!validateCronExpression(cronExpression)) {
-                          flashField(`cron:${selectedStep.id}`);
-                        }
-                      }}
-                    />
-                    <p className="mt-1 text-xs text-af2-ink-3">
-                      Standard crontab format.{" "}
-                      <a
-                        href="https://crontab.guru"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-medium underline hover:text-af2-clay"
-                      >
-                        Learn more
-                      </a>
-                    </p>
-                    {cronValidationError ? (
-                      <p className="mt-1 text-xs text-af2-clay">{cronValidationError}</p>
-                    ) : cronPreview ? (
-                      <p className="mt-1 text-xs text-af2-ink-4">{cronPreview}</p>
-                    ) : null}
-                  </div>
-                </Field>
-
-                <Field label="Timezone">
-                  <div>
-                    <input
-                      aria-label="Timezone"
-                      list="workflow-builder-timezones"
-                      className={buildStepFieldClass()}
-                      placeholder="UTC"
-                      value={selectedStep.timezone ?? "UTC"}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, { timezone: e.target.value || "UTC" })
-                      }
-                    />
-                    <datalist id="workflow-builder-timezones">
-                      {timezoneOptions.map((timezone) => (
-                        <option key={timezone} value={timezone} />
-                      ))}
-                    </datalist>
-                  </div>
-                </Field>
-              </>
-            )}
-
-            {selectedStep.kind === "interval_trigger" && (
-              <>
-                <Field label="Interval (Minutes)">
-                  <div>
-                    <input
-                      aria-label="Interval (Minutes)"
-                      type="number"
-                      min={1}
-                      className={buildStepFieldClass({
-                        hasError: !!intervalValidationError,
-                        flashSuccess: fieldFlashKey === intervalFlashKey,
-                      })}
-                      value={selectedStep.intervalMinutes ?? ""}
-                      onChange={(e) => {
-                        const rawValue = e.target.value;
-                        const intervalMinutes = rawValue === "" ? undefined : Number(rawValue);
-                        updateStep(selectedStep.id, { intervalMinutes });
-                        if (!validateIntervalMinutes(intervalMinutes)) {
-                          flashField(`interval:${selectedStep.id}`);
-                        }
-                      }}
-                    />
-                    <p className="mt-1 text-xs text-af2-ink-3">
-                      How often the workflow should execute.
-                    </p>
-                    {intervalValidationError && (
-                      <p className="mt-1 text-xs text-af2-clay">{intervalValidationError}</p>
-                    )}
-                  </div>
-                </Field>
-
-                <Field label="Timezone">
-                  <div>
-                    <input
-                      aria-label="Timezone"
-                      list="workflow-builder-timezones"
-                      className={buildStepFieldClass()}
-                      placeholder="UTC"
-                      value={selectedStep.timezone ?? "UTC"}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, { timezone: e.target.value || "UTC" })
-                      }
-                    />
-                    <datalist id="workflow-builder-timezones">
-                      {timezoneOptions.map((timezone) => (
-                        <option key={timezone} value={timezone} />
-                      ))}
-                    </datalist>
-                  </div>
-                </Field>
-              </>
-            )}
-
-            {selectedStep.kind === "llm" && (
-              <Field label="LLM Provider">
-                {llmConfigsLoading ? (
-                  <div className="w-full px-3 py-2 text-sm border border-af2-line rounded-lg text-af2-ink-4 bg-af2-paper-2">
-                    Loading providers…
-                  </div>
-                ) : llmConfigsError ? (
-                  <p className="text-xs text-af2-clay">{llmConfigsError}</p>
-                ) : llmConfigs.length === 0 ? (
-                  <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
-                    No LLM providers connected.{" "}
-                    <a href="/settings/llm-providers" className="underline font-medium hover:text-af2-mustard">
-                      Go to Settings
-                    </a>{" "}
-                    to add one.
-                  </div>
-                ) : (
-                  <select
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
-                    value={selectedStep.llmConfigId ?? ""}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        llmConfigId: e.target.value || undefined,
-                      })
-                    }
-                  >
-                    <option value="">Account default</option>
-                    {llmConfigs.map((cfg) => (
-                      <option key={cfg.id} value={cfg.id}>
-                        {cfg.label} ({cfg.provider} / {cfg.model})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </Field>
-            )}
 
             {selectedStep.kind === "condition" && (
               <Field label="Condition Expression">
@@ -1965,21 +1853,9 @@ export default function WorkflowBuilder() {
                   className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
                   placeholder='e.g. urgency === "high"'
                   value={selectedStep.condition ?? ""}
+                  disabled={isReadonlyBuilder}
                   onChange={(e) =>
                     updateStep(selectedStep.id, { condition: e.target.value })
-                  }
-                />
-              </Field>
-            )}
-
-            {selectedStep.kind === "action" && (
-              <Field label="Action Target">
-                <input
-                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                  placeholder="e.g. email.send"
-                  value={selectedStep.action ?? ""}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, { action: e.target.value })
                   }
                 />
               </Field>
@@ -2005,6 +1881,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="e.g. workflow-manager"
                     value={selectedStep.agentRoleKey ?? ""}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, { agentRoleKey: e.target.value })
                     }
@@ -2015,6 +1892,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="e.g. claude-sonnet-4-6"
                     value={selectedStep.agentModel ?? ""}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, { agentModel: e.target.value })
                     }
@@ -2026,6 +1904,7 @@ export default function WorkflowBuilder() {
                     rows={4}
                     placeholder="System instructions for this agent…"
                     value={selectedStep.agentInstructions ?? ""}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, { agentInstructions: e.target.value })
                     }
@@ -2036,6 +1915,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="paperclip, para-memory-files, security-review"
                     value={(selectedStep.agentSkills ?? []).join(", ")}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
                         agentSkills: e.target.value
@@ -2054,6 +1934,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="0"
                     value={selectedStep.agentBudgetMonthlyUsd ?? 0}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
                         agentBudgetMonthlyUsd: Number(e.target.value) || 0,
@@ -2065,6 +1946,7 @@ export default function WorkflowBuilder() {
                   <select
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
                     value={selectedStep.agentScheduleType ?? "manual"}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
                         agentScheduleType: e.target.value as WorkflowStep["agentScheduleType"],
@@ -2083,6 +1965,7 @@ export default function WorkflowBuilder() {
                       className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                       placeholder={selectedStep.agentScheduleType === "interval" ? "30" : "0 * * * *"}
                       value={selectedStep.agentScheduleValue ?? ""}
+                      disabled={isReadonlyBuilder}
                       onChange={(e) =>
                         updateStep(selectedStep.id, { agentScheduleValue: e.target.value })
                       }
@@ -2097,6 +1980,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="1"
                     value={selectedStep.subAgentSlots ?? 1}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, { subAgentSlots: parseInt(e.target.value, 10) || 1 })
                     }
@@ -2107,27 +1991,6 @@ export default function WorkflowBuilder() {
 
             {selectedStep.kind === "approval" && (
               <>
-                <Field label="Assignee (email or role)">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="e.g. manager@company.com"
-                    value={selectedStep.approvalAssignee ?? ""}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { approvalAssignee: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Approval Request Message">
-                  <textarea
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none"
-                    rows={3}
-                    placeholder="Please review and approve this step before continuing…"
-                    value={selectedStep.approvalMessage ?? ""}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { approvalMessage: e.target.value })
-                    }
-                  />
-                </Field>
                 <Field label="Timeout (minutes)">
                   <input
                     type="number"
@@ -2135,6 +1998,7 @@ export default function WorkflowBuilder() {
                     className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                     placeholder="60"
                     value={selectedStep.approvalTimeoutMinutes ?? 60}
+                    disabled={isReadonlyBuilder}
                     onChange={(e) =>
                       updateStep(selectedStep.id, {
                         approvalTimeoutMinutes: parseInt(e.target.value, 10) || 60,
@@ -2149,28 +2013,17 @@ export default function WorkflowBuilder() {
             )}
 
             {selectedStep.kind === "mcp" && (
-              <>
-                <Field label="Integration Server URL">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                    placeholder="https://mcp.example.com/sse"
-                    value={selectedStep.mcpServerUrl ?? ""}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Tool Name">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                    placeholder="e.g. search_web"
-                    value={selectedStep.mcpTool ?? ""}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { mcpTool: e.target.value })
-                    }
-                  />
-                </Field>
-              </>
+              <Field label="Integration Server URL">
+                <input
+                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
+                  placeholder="https://mcp.example.com/sse"
+                  value={selectedStep.mcpServerUrl ?? ""}
+                  disabled={isReadonlyBuilder}
+                  onChange={(e) =>
+                    updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
+                  }
+                />
+              </Field>
             )}
 
             {selectedStep.kind === "file_trigger" && (
@@ -2179,6 +2032,7 @@ export default function WorkflowBuilder() {
                   className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                   placeholder=".pdf, .png, .jpg, .mp3, .wav"
                   value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
+                  disabled={isReadonlyBuilder}
                   onChange={(e) =>
                     updateStep(selectedStep.id, {
                       acceptedFileTypes: e.target.value
@@ -2196,6 +2050,7 @@ export default function WorkflowBuilder() {
                 className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 placeholder="key1, key2"
                 value={selectedStep.inputKeys.join(", ")}
+                disabled={isReadonlyBuilder}
                 onChange={(e) =>
                   updateStep(selectedStep.id, {
                     inputKeys: e.target.value
@@ -2212,6 +2067,7 @@ export default function WorkflowBuilder() {
                 className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
                 placeholder="result1, result2"
                 value={selectedStep.outputKeys.join(", ")}
+                disabled={isReadonlyBuilder}
                 onChange={(e) =>
                   updateStep(selectedStep.id, {
                     outputKeys: e.target.value
@@ -2222,6 +2078,9 @@ export default function WorkflowBuilder() {
                 }
               />
             </Field>
+                </>
+              }
+            />
           </div>
         </div>
       )}
@@ -2259,7 +2118,13 @@ export default function WorkflowBuilder() {
         />
       )}
 
-      {showHelp && <WorkflowBuilderHelpPanel onClose={() => setShowHelp(false)} />}
+      {showHelp && (
+        <WorkflowSetupChecklistPanel
+          workflowSteps={workflowNextSteps}
+          onAction={handleSuggestedNextStep}
+          onClose={() => setShowHelp(false)}
+        />
+      )}
 
       {diffTargetVersionId && canonicalWorkflowId && (
         <VersionDiffModal
@@ -2275,73 +2140,6 @@ export default function WorkflowBuilder() {
   );
 }
 
-function WorkflowBuilderHelpPanel({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [onClose]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-af2-paper-3/35">
-      <button className="flex-1" onClick={onClose} aria-label="Close guidance" />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="Workflow guidance"
-        className="w-full max-w-md overflow-y-auto border-l border-af2-line bg-af2-card p-6 shadow-xl"
-      >
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-af2-clay">Workflow help</p>
-            <h2 className="mt-1 text-lg font-semibold text-af2-ink">Build and launch confidently</h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1.5 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
-            aria-label="Close guidance panel"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="space-y-4 text-sm text-af2-ink-2">
-          <section className="rounded-lg border border-af2-line bg-af2-paper-2 p-4">
-            <h3 className="font-medium text-af2-ink">Suggested flow</h3>
-            <p className="mt-1">Trigger -&gt; LLM -&gt; Condition/Transform -&gt; Action -&gt; Output.</p>
-          </section>
-
-          <section className="rounded-lg border border-af2-line p-4">
-            <h3 className="font-medium text-af2-ink">High-impact tips</h3>
-            <ul className="mt-2 space-y-1 text-af2-ink-3">
-              <li>Use clear step names so run logs are easy to debug.</li>
-              <li>Define input/output keys on each step to avoid brittle data passing.</li>
-              <li>Connect an LLM provider before testing any LLM step.</li>
-            </ul>
-          </section>
-
-          <section className="rounded-lg border border-af2-line p-4">
-            <h3 className="font-medium text-af2-ink">When runs fail</h3>
-            <ul className="mt-2 space-y-1 text-af2-ink-3">
-              <li>Validate the integration server URL and tool name for Integration steps.</li>
-              <li>Check approval timeout for long-running approvals.</li>
-              <li>Run from a smaller sample payload first, then scale.</li>
-            </ul>
-          </section>
-        </div>
-      </aside>
-    </div>
-  );
-}
 
 function NLWorkflowModal({
   onClose,

@@ -6,6 +6,7 @@ export function buildWorkflowBuilderRoute(
     popout?: boolean;
     mode?: WorkflowBuilderMode;
     from?: string;
+    stepId?: string;
   }
 ): string {
   const params = new URLSearchParams();
@@ -20,6 +21,10 @@ export function buildWorkflowBuilderRoute(
 
   if (options?.from) {
     params.set("from", options.from);
+  }
+
+  if (options?.stepId) {
+    params.set("step", options.stepId);
   }
 
   const query = params.toString();

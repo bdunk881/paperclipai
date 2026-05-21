@@ -47,13 +47,11 @@ test("each step card is visible and shows its kind label", async ({ page }) => {
   await expect(page.getByText(/llm/i).first()).toBeVisible({ timeout: 5000 });
 });
 
-test("clicking a step expands to show description", async ({ page }) => {
+test("clicking a step opens the setup coach", async ({ page }) => {
   await page.goto("/builder/tpl-support-bot");
-  // Fall back: just click the first step-kind label area
-  const firstStep = page.getByText(/trigger/i).first();
-  await firstStep.click();
-  await expect(page.getByRole("textbox").first()).toHaveValue(/customer support bot/i, { timeout: 5000 });
-  await expect(page.locator("textarea").first()).toHaveValue(/capture the incoming support request/i);
+  await page.getByText(/intake ticket/i).click();
+  await expect(page.getByTestId("step-setup-coach")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/setup this step/i)).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------

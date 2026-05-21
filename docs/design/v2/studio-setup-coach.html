@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AutoFlow — Studio Setup Coach (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  .demo-shell { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+  .demo-header { padding: 12px 20px; border-bottom: 1px solid var(--af2-line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--af2-paper); }
+  .demo-body { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+  .demo-canvas { position: relative; overflow: auto; background: var(--af2-paper-2); padding: 24px; }
+  .demo-coach { border-left: 1px solid var(--af2-line); background: var(--af2-card); overflow-y: auto; }
+  .demo-node { position: absolute; width: 200px; padding: 12px; cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+  .demo-node.sel { box-shadow: 0 0 0 2px var(--af2-clay), var(--af2-shadow-lg); border-color: var(--af2-clay) !important; }
+  .demo-edge { position: absolute; inset: 0; pointer-events: none; }
+  .coach-banner { padding: 10px 16px; background: rgba(184,134,44,0.12); border-bottom: 1px solid rgba(184,134,44,0.25); font-size: 12px; }
+  .readiness-bar { height: 4px; background: var(--af2-line); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .readiness-bar > span { display: block; height: 100%; background: var(--af2-sage); transition: width .2s; }
+  .check-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12.5px; }
+  .setup-card { border: 1px solid var(--af2-line); border-radius: var(--af2-radius-lg); padding: 14px; margin-bottom: 10px; background: var(--af2-paper-2); }
+  .preset-chip { display: inline-block; margin: 4px 6px 0 0; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--af2-line-2); font-size: 12px; cursor: pointer; background: var(--af2-card); }
+  .preset-chip:hover, .preset-chip.on { border-color: var(--af2-clay); background: var(--af2-clay-soft); }
+  .next-step { display: flex; align-items: center; gap: 8px; padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--af2-line); cursor: pointer; }
+  .next-step:last-child { border-bottom: 0; }
+  .toggle-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .toggle-row label { font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="demo-shell">
+  <header class="demo-header">
+    <div>
+      <div class="af2-eyebrow">Prototype · Setup Coach</div>
+      <div class="af2-h3" style="margin-top:4px">Customer support routine</div>
+    </div>
+    <span class="af2-spacer"></span>
+    <div class="toggle-row">
+      <label><input type="checkbox" id="toggle-popout"/> Popout banner</label>
+      <label><input type="checkbox" id="toggle-readonly"/> Read-only from run</label>
+    </div>
+  </header>
+  <div class="demo-body">
+    <div class="demo-canvas" id="canvas">
+      <svg class="demo-edge" width="900" height="400" viewBox="0 0 900 400">
+        <path d="M220,60 C280,60 280,60 340,60" stroke="var(--af2-ink-3)" stroke-width="1.4" fill="none" stroke-dasharray="4 4" opacity="0.55"/>
+        <path d="M540,60 C600,60 600,60 660,60" stroke="var(--af2-ink-3)" stroke-width="1.4" fill="none" stroke-dasharray="4 4" opacity="0.55"/>
+      </svg>
+      <div class="af2-card demo-node" data-id="trigger" style="left:40px;top:32px">
+        <div class="af2-muted" style="font-size:11px">When it starts</div>
+        <div style="font-weight:600;font-size:13px;margin-top:4px">New support ticket</div>
+      </div>
+      <div class="af2-card demo-node sel" data-id="llm" style="left:340px;top:32px">
+        <div class="af2-muted" style="font-size:11px">AI step</div>
+        <div style="font-weight:600;font-size:13px;margin-top:4px">Classify request</div>
+      </div>
+      <div class="af2-card demo-node" data-id="slack" style="left:660px;top:32px">
+        <div class="af2-muted" style="font-size:11px">Notify team</div>
+        <div style="font-weight:600;font-size:13px;margin-top:4px">Post to #support</div>
+      </div>
+    </div>
+    <aside class="demo-coach" id="coach"></aside>
+  </div>
+</div>
+
+<script>
+const COACH = {
+  trigger: {
+    title: "New support ticket",
+    subtitle: "Starts when someone submits a ticket or you click Run now.",
+    status: "ready",
+    readiness: { done: 3, total: 3 },
+    checks: [
+      { ok: true, label: "Named clearly" },
+      { ok: true, label: "Connected to the next step" },
+      { ok: true, label: "Sample data available for testing" },
+    ],
+    cards: [{ n: 1, t: 2, title: "How should this routine start?", body: "Pick manual run, a schedule, or an incoming webhook.", presets: ["Run on demand", "Every weekday 9am", "When form submitted"] }],
+    next: ["Add an AI step to sort incoming tickets", "Run a test with sample ticket"],
+  },
+  llm: {
+    title: "Classify request",
+    subtitle: "Figures out category and urgency so you can prioritize.",
+    status: "needs",
+    readiness: { done: 2, total: 4 },
+    checks: [
+      { ok: true, label: "Named clearly" },
+      { ok: false, label: "AI instructions written", fix: "Fix" },
+      { ok: false, label: "Model connected", fix: "Connect" },
+      { ok: true, label: "Receives data from previous step" },
+    ],
+    cards: [
+      { n: 1, t: 2, title: "What should the AI do?", body: "Describe the outcome in plain English.", presets: ["Classify urgency", "Summarize for manager", "Draft reply tone"] },
+      { n: 2, t: 2, title: "Which model?", body: "Uses your workspace default unless you pick one.", presets: [] },
+    ],
+    next: ["Connect a model in Settings", "Add \"Draft reply\" after this step", "Run test with sample ticket"],
+  },
+  slack: {
+    title: "Post to #support",
+    subtitle: "Sends a short update to your team channel when classification finishes.",
+    status: "needs",
+    readiness: { done: 1, total: 3 },
+    checks: [
+      { ok: true, label: "Named clearly" },
+      { ok: false, label: "Slack connected", fix: "Connect" },
+      { ok: false, label: "Channel chosen", fix: "Fix" },
+    ],
+    cards: [{ n: 1, t: 1, title: "Where should we notify?", body: "Pick Slack and the channel your team watches.", presets: ["#support", "#customer-success", "#ops-alerts"] }],
+    next: ["Connect Slack in Integrations", "Add approval before sending externally"],
+  },
+};
+
+let selected = "llm";
+let popout = false;
+let readonly = false;
+
+function renderCoach() {
+  const d = COACH[selected];
+  const pct = Math.round((d.readiness.done / d.readiness.total) * 100);
+  const statusLabel = d.status === "ready" ? "Ready" : "Needs setup";
+  const statusClass = d.status === "ready" ? "af2-pill-live" : "af2-pill-clay";
+
+  let banner = "";
+  if (popout) {
+    banner += `<div class="coach-banner">Opened from a run · <strong>Customer support routine</strong></div>`;
+  }
+  if (readonly) {
+    banner += `<div class="coach-banner" style="background:rgba(31,58,82,0.08)">View only — <button class="af2-btn af2-btn-sm" style="margin-left:8px">Edit on desktop</button></div>`;
+  }
+
+  const checks = d.checks.map(c => `
+    <div class="check-item">
+      <span style="color:${c.ok ? "var(--af2-sage)" : "var(--af2-clay)"}">${c.ok ? "✓" : "○"}</span>
+      <span style="flex:1">${c.label}</span>
+      ${c.fix ? `<button class="af2-btn af2-btn-sm">${c.fix}</button>` : ""}
+    </div>`).join("");
+
+  const cards = d.cards.map(c => `
+    <div class="setup-card">
+      <div class="af2-eyebrow">${c.n} of ${c.t} — ${c.title}</div>
+      <p class="af2-muted" style="font-size:12px;margin:8px 0 0">${c.body}</p>
+      ${c.presets.map(p => `<span class="preset-chip">${p}</span>`).join("")}
+      <textarea class="af2-input" style="width:100%;margin-top:10px;min-height:72px;font-size:13px" placeholder="Type your instructions…"></textarea>
+    </div>`).join("");
+
+  const next = d.next.map(n => `<div class="next-step">→ ${n}</div>`).join("");
+
+  document.getElementById("coach").innerHTML = `
+    ${banner}
+    <div style="padding:16px 18px">
+      <div class="af2-eyebrow">Setup this step</div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:8px">
+        <div>
+          <div class="af2-h3" style="font-size:19px">${d.title}</div>
+          <p class="af2-muted" style="font-size:12.5px;margin-top:6px;max-width:280px">${d.subtitle}</p>
+        </div>
+        <span class="af2-pill ${statusClass}">${statusLabel}</span>
+      </div>
+      <div style="margin-top:16px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span class="af2-eyebrow" style="margin:0">Readiness</span>
+          <span class="af2-mono af2-muted">${d.readiness.done}/${d.readiness.total}</span>
+        </div>
+        <div class="readiness-bar"><span style="width:${pct}%"></span></div>
+        <div style="margin-top:10px">${checks}</div>
+      </div>
+      <div style="margin-top:18px">${cards}</div>
+      <div style="margin-top:18px">
+        <div class="af2-eyebrow">Suggested next steps</div>
+        ${next}
+      </div>
+      <details style="margin-top:20px;font-size:12px">
+        <summary style="cursor:pointer;font-weight:500;color:var(--af2-ink-3)">Advanced (kind, I/O keys, description)</summary>
+        <p class="af2-muted" style="margin-top:8px">Technical fields hidden for operators — expand in Pro mode.</p>
+      </details>
+    </div>`;
+}
+
+document.querySelectorAll(".demo-node").forEach(el => {
+  el.addEventListener("click", () => {
+    selected = el.dataset.id;
+    document.querySelectorAll(".demo-node").forEach(n => n.classList.toggle("sel", n.dataset.id === selected));
+    renderCoach();
+  });
+});
+
+document.getElementById("toggle-popout").addEventListener("change", e => { popout = e.target.checked; renderCoach(); });
+document.getElementById("toggle-readonly").addEventListener("change", e => { readonly = e.target.checked; renderCoach(); });
+
+renderCoach();
+</script>
+</body>
+</html>

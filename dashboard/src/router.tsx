@@ -60,6 +60,7 @@ import TicketTeamView from "./pages/TicketTeamView";
 import Tickets from "./pages/Tickets";
 import Templates from "./pages/Templates";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
+import WorkflowBuilderSetupCoachDemo from "./pages/WorkflowBuilderSetupCoachDemo";
 import {
   buildCreateTicketPayload,
   type CreateTicketRouteActionData,
@@ -222,6 +223,9 @@ const routes: RouteObject[] = [
 
       // Build pillar
       { path: "builder", element: <WorkflowBuilder /> },
+      ...(import.meta.env.DEV
+        ? [{ path: "builder/demo/setup-coach", element: <WorkflowBuilderSetupCoachDemo /> }]
+        : []),
       { path: "builder/:templateId", element: <WorkflowBuilder /> },
       { path: "templates", element: <Templates /> },
       { path: "templates/:templateId", element: <WorkflowBuilder /> },

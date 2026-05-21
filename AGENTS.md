@@ -281,3 +281,39 @@ Heartbeat polling is too expensive. Each potential wake source (scheduled cron, 
 ## When this file is wrong
 
 If you (a future agent or contributor) find this file describes a flow that no longer matches reality, **fix the file in the same PR** as whatever change made it wrong. Drift in `AGENTS.md` is itself a P0 — it leads agents astray and the cost compounds.
+
+---
+
+## Cursor Cloud specific instructions
+
+### Services overview
+
+| Service | Directory | Start command | Port |
+|---------|-----------|---------------|------|
+| Backend API (Express + TS) | `/workspace` (root) | `AUTOFLOW_ALLOW_INMEMORY=true NODE_ENV=development npx ts-node --transpile-only src/index.ts` | 3000 |
+| Dashboard (Vite + React) | `/workspace/dashboard` | `npm run dev:no-secrets` | 5173 |
+
+The dashboard Vite dev server proxies `/api` requests to the backend at `localhost:3000`.
+
+### Running without external services
+
+The backend supports a **double-locked in-memory fallback** (HEL-80): set `AUTOFLOW_ALLOW_INMEMORY=true` + `NODE_ENV=development` (or `test`) to run without Postgres or Redis. This is sufficient for local development, tests, and CI. The in-memory store is never allowed in production.
+
+### Key gotchas
+
+- **`ts-node` requires `--transpile-only`**: The root `dev:no-secrets` script calls `ts-node src/index.ts`, but `ts-node` is not in production dependencies. After `npm install`, use `npx ts-node --transpile-only src/index.ts` to skip type-checking at startup (avoids TS7016 errors in passport typings that are harmless at runtime).
+- **Sentry warning is expected**: On startup without `SENTRY_DSN`, the backend logs `[sentry] SENTRY_DSN is unset`. This is safe to ignore in local/cloud dev.
+- **Dashboard requires no env vars for basic rendering**: Without `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, the dashboard renders the login page with a configuration warning. Auth flows require a real Supabase project.
+- **Port conflicts**: Both the dashboard and landing site default to port 5173. Only run one at a time, or override with `--port`.
+
+### Test commands
+
+| Scope | Command | Directory |
+|-------|---------|-----------|
+| Backend unit/integration | `npm test` | root |
+| Backend type-check | `npx tsc --noEmit` | root |
+| Dashboard unit | `npm test` | `dashboard/` |
+| Dashboard lint | `npm run lint` | `dashboard/` |
+| Dashboard type-check | `npm run type-check` | `dashboard/` |
+
+All backend tests use the in-memory fallback automatically (via `jest.env.cjs` which sets `AUTOFLOW_ALLOW_INMEMORY=true`).

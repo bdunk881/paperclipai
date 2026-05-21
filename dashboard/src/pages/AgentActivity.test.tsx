@@ -25,12 +25,14 @@ const accessModeMock = vi.fn();
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     accessMode: accessModeMock(),
+    getAccessToken: requireAccessTokenMock,
     requireAccessToken: requireAccessTokenMock,
   }),
 }));
 
 vi.mock("../api/observability", () => ({
   listObservabilityEvents: listObservabilityEventsMock,
+  streamObservabilityEvents: vi.fn(async () => {}),
 }));
 
 vi.mock("../api/runsApi", () => ({

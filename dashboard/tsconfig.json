@@ -17,7 +17,8 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@testing-library/react-original": ["node_modules/@testing-library/react"]
     },
     "types": ["node"]
   },

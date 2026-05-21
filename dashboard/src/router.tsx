@@ -68,6 +68,13 @@ import {
   type TicketDetailRouteData,
   type TicketsRouteData,
 } from "./routes/ticketRouteData";
+import {
+  activityLoader,
+  approvalsLoader,
+  budgetDashboardLoader,
+  homeLoader,
+  orgStructureLoader,
+} from "./router/loaders";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -219,7 +226,7 @@ const routes: RouteObject[] = [
       </PrivateRoute>
     ),
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, loader: homeLoader, element: <Dashboard /> },
 
       // Build pillar
       { path: "builder", element: <WorkflowBuilder /> },
@@ -231,7 +238,7 @@ const routes: RouteObject[] = [
       { path: "templates/:templateId", element: <WorkflowBuilder /> },
 
       // Run pillar
-      { path: "agents/activity", element: <AgentActivity /> },
+      { path: "agents/activity", loader: activityLoader, element: <AgentActivity /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
       // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
       // Linked from AgentTeamDetail and OrgStructure (via the agent card).
@@ -245,7 +252,7 @@ const routes: RouteObject[] = [
       // Must come BEFORE the catch-all `agents/:templateId` redirect
       // below or it'd get masked.
       { path: "agents/:agentId", element: <AgentDetail /> },
-      { path: "approvals", element: <Approvals /> },
+      { path: "approvals", loader: approvalsLoader, element: <Approvals /> },
       // DASH-46: Ask-the-CEO surface. Backend was live since HEL-92 but
       // no page consumed it (HEL-139 C3 + HEL-140 H3).
       { path: "escalations", element: <Escalations /> },
@@ -257,8 +264,8 @@ const routes: RouteObject[] = [
       // HEL-105: side-by-side review page for a drafted hiring plan.
       { path: "hire/plan/:missionId/:planId", element: <HiringPlanReview /> },
       { path: "missions/:missionId", element: <MissionDetail /> },
-      { path: "workspace/budget-dashboard", element: <BudgetDashboard /> },
-      { path: "workspace/org-structure", element: <OrgStructure /> },
+      { path: "workspace/budget-dashboard", loader: budgetDashboardLoader, element: <BudgetDashboard /> },
+      { path: "workspace/org-structure", loader: orgStructureLoader, element: <OrgStructure /> },
       { path: "team", element: <Navigate to="/workspace/org-structure" replace /> },
 
       // Connect pillar

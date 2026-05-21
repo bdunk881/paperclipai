@@ -1,8 +1,18 @@
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@testing-library/react": path.resolve(__dirname, "src/test/render.tsx"),
+      "@testing-library/react-original": path.resolve(
+        __dirname,
+        "node_modules/@testing-library/react",
+      ),
+    },
+  },
   define: {
     "process.env.NODE_ENV": '"test"',
   },

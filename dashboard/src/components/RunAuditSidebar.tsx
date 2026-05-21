@@ -472,10 +472,12 @@ export function RunAuditSidebar({
   if (!run) return null;
 
   const completedSteps = run.stepResults.filter((step) => step.status === "success").length;
+  const failedStep = run.stepResults.find((step) => step.status === "failure");
   const popoutHref = buildWorkflowBuilderRoute(run.templateId, {
     popout: true,
     mode: "readonly",
     from: "/history",
+    stepId: failedStep?.stepId,
   });
 
   async function handleConfirmReplay() {

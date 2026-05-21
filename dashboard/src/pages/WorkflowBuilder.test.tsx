@@ -114,16 +114,16 @@ beforeEach(() => {
 });
 
 describe("WorkflowBuilder", () => {
-  it("opens and closes the guidance panel", async () => {
+  it("opens and closes the routine checklist panel", async () => {
     renderBuilder();
 
     expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /guidance/i }));
-    expect(screen.getByText("Build and launch confidently")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /checklist/i }));
+    expect(screen.getByText("What to do next")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByText("Build and launch confidently")).toBeNull();
+    expect(screen.queryByText("What to do next")).toBeNull();
   });
 
   it("renders the v2 left palette rail with Triggers / Tools / Logic sections", async () => {
@@ -216,11 +216,13 @@ describe("WorkflowBuilder", () => {
     // HEL-100 v2 inspector chrome: the step name now appears both in
     // the node card (canvas) and in the inspector header's serif title.
     expect(screen.getAllByText("Agent Step").length).toBeGreaterThan(0);
-    expect(screen.getByText("Selected node")).toBeInTheDocument();
+    expect(screen.getByTestId("step-setup-coach")).toBeInTheDocument();
+    expect(screen.getByText("Setup this step")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/i }));
     expect(screen.getByPlaceholderText(/claude-sonnet-4-6/i)).toBeInTheDocument();
   });
 
-  it("inspector header flips to 'Selected node · Pro' when Pro mode is on", async () => {
+  it("inspector header shows Step setup · Pro when Pro mode is on", async () => {
     renderBuilder();
 
     expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
@@ -228,16 +230,14 @@ describe("WorkflowBuilder", () => {
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
 
-    // Inspector opens with the basic eyebrow.
-    expect(screen.getByText("Selected node")).toBeInTheDocument();
-    expect(screen.queryByText(/Selected node · Pro/)).toBeNull();
+    expect(screen.getByText("Step setup")).toBeInTheDocument();
+    expect(screen.queryByText(/Step setup · Pro/)).toBeNull();
 
-    // Toggle Pro mode on; the eyebrow gains the " · Pro" suffix.
     fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
-    expect(screen.getByText("Selected node · Pro")).toBeInTheDocument();
+    expect(screen.getByText("Step setup · Pro")).toBeInTheDocument();
   });
 
-  it("reveals Pro inspector tabs (Inspector / Versions / Observability) when Pro mode is on", async () => {
+  it("reveals Pro inspector tabs (Setup / Versions / Observability) when Pro mode is on", async () => {
     renderBuilder();
 
     expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
@@ -246,14 +246,14 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
 
     // No tabs visible before Pro mode is on.
-    expect(screen.queryByRole("tab", { name: /Inspector/i })).toBeNull();
+    expect(screen.queryByRole("tab", { name: /^Setup$/i })).toBeNull();
     expect(screen.queryByRole("tab", { name: /Versions/i })).toBeNull();
     expect(screen.queryByRole("tab", { name: /Observability/i })).toBeNull();
 
     // Toggle Pro mode on; tabs appear, Inspector is selected by default.
     fireEvent.click(screen.getByRole("button", { name: /Enable Pro mode/i }));
 
-    expect(screen.getByRole("tab", { name: /Inspector/i })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: /^Setup$/i })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -293,6 +293,26 @@ describe("WorkflowBuilder", () => {
     expect(screen.getByText(/Latency · p99/i)).toBeInTheDocument();
     expect(screen.getByText(/Cost · per run/i)).toBeInTheDocument();
     expect(screen.getByText(/Recent errors/i)).toBeInTheDocument();
+  });
+
+  it("shows workflow next steps strip when no step is selected", async () => {
+    const { getMockTemplate } = await import("../api/mockWorkflowData");
+    getTemplateMock.mockResolvedValue(getMockTemplate("tpl-support-bot"));
+
+    render(
+      <MemoryRouter initialEntries={["/builder/tpl-support-bot"]}>
+        <Routes>
+          <Route path="/builder/:templateId" element={<WorkflowBuilder />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await screen.findByText(/customer support bot/i);
+    expect(screen.getByTestId("workflow-next-steps-strip")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Intake ticket"));
+    expect(screen.getByTestId("step-setup-coach")).toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-next-steps-strip")).toBeNull();
   });
 
   it("uses the responsive Studio panel contract for inspector and Copilot", async () => {
@@ -355,11 +375,10 @@ describe("WorkflowBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
 
-    const cronField = screen.getByLabelText("Cron Expression");
+    const cronField = screen.getByPlaceholderText("0 9 * * 1-5");
     fireEvent.change(cronField, { target: { value: "0 9 * * 1" } });
 
     expect(screen.getByDisplayValue("UTC")).toBeInTheDocument();
-    expect(screen.getByText(/standard crontab format/i)).toBeInTheDocument();
     expect(screen.getByText("Runs every Monday at 9:00 AM UTC")).toBeInTheDocument();
   });
 
@@ -376,9 +395,9 @@ describe("WorkflowBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^cron trigger$/i }));
-    fireEvent.change(screen.getByLabelText("Cron Expression"), { target: { value: "bad cron" } });
+    fireEvent.change(screen.getByPlaceholderText("0 9 * * 1-5"), { target: { value: "bad cron" } });
 
-    expect(screen.getByText("Invalid cron expression. Please check the syntax.")).toBeInTheDocument();
+    expect(screen.getByText(/schedule format looks off/i)).toBeInTheDocument();
   });
 
   it("shows an error when interval minutes are not positive", async () => {
@@ -394,10 +413,11 @@ describe("WorkflowBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^interval trigger$/i }));
-    fireEvent.change(screen.getByLabelText("Interval (Minutes)"), { target: { value: "0" } });
+    fireEvent.change(document.querySelector('[data-field="intervalMinutes"]') as HTMLInputElement, {
+      target: { value: "0" },
+    });
 
-    expect(screen.getByText("Interval must be a positive integer.")).toBeInTheDocument();
-    expect(screen.getByText("How often the workflow should execute.")).toBeInTheDocument();
+    expect(screen.getByText(/minutes between runs/i)).toBeInTheDocument();
   });
 
   it("renders the template list inside a scrollable panel when templates are available", async () => {
@@ -541,6 +561,7 @@ describe("WorkflowBuilder", () => {
     openNodePalette();
     fireEvent.click(screen.getByRole("button", { name: /^file trigger$/i }));
 
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/i }));
     fireEvent.change(screen.getByPlaceholderText(/\.pdf, \.png, \.jpg, \.mp3, \.wav/i), {
       target: { value: ".csv, .pdf" },
     });

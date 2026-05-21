@@ -39,6 +39,7 @@ import Dashboard from "./pages/Dashboard";
 import LandingPage from "./pages/LandingPage";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import MCPIntegrations from "./pages/MCPIntegrations";
 import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
@@ -217,7 +218,7 @@ const routes: RouteObject[] = [
     ),
   },
   { path: "/signup", element: <Navigate to="/login?mode=signup" replace /> },
-  { path: "/reset-password", element: <Navigate to="/login?mode=reset" replace /> },
+  { path: "/reset-password", element: <ResetPassword /> },
   {
     path: "/",
     element: (

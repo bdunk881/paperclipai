@@ -20,6 +20,15 @@ async function startServer() {
     process.exit(1);
   }
 
+  const runtimeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+  const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+  if (!supabaseUrl && (runtimeEnv === "development" || runtimeEnv === "test")) {
+    console.warn(
+      "[auth] SUPABASE_URL is unset. Dashboard sign-in will succeed in the browser, but /api routes " +
+        "that require Bearer JWT verification will return 503 until SUPABASE_URL matches the dashboard project.",
+    );
+  }
+
   const [{ default: app }, { WORKFLOW_TEMPLATES }] = await Promise.all([
     import("./app"),
     import("./templates"),

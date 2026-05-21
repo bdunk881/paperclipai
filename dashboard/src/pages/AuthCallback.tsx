@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { writeStoredAuthUser } from "../auth/authStorage";
-import { getSupabaseStoredSession } from "../auth/supabaseAuth";
+import { getSupabaseStoredSession, isPasswordRecoveryFlow } from "../auth/supabaseAuth";
 
 function encodeErrorMessage(value: string): string {
   return encodeURIComponent(value).replace(/%20/g, "+");
@@ -14,9 +14,16 @@ export default function AuthCallback() {
   useEffect(() => {
     let cancelled = false;
 
+    const recoveryFlow = isPasswordRecoveryFlow();
+
     void getSupabaseStoredSession()
       .then((session) => {
         if (cancelled) {
+          return;
+        }
+
+        if (recoveryFlow) {
+          navigate("/reset-password", { replace: true });
           return;
         }
 

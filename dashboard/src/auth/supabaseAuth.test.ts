@@ -8,6 +8,8 @@ const mockAuthClient = {
   signInWithOtp: vi.fn(),
   signInWithOAuth: vi.fn(),
   signOut: vi.fn(),
+  resetPasswordForEmail: vi.fn(),
+  updateUser: vi.fn(),
   // HEL-76 follow-up: PKCE magic-link / OAuth callbacks need this to exchange
   // the `?code=...` query param for a session before getSession returns.
   exchangeCodeForSession: vi.fn(),
@@ -19,12 +21,12 @@ vi.mock("@supabase/supabase-js", () => ({
 
 import { createClient } from "@supabase/supabase-js";
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.resetModules();
   vi.unstubAllEnvs();
   vi.clearAllMocks();
-  // Reset cached client between tests
-  vi.resetModules();
+  const { resetSupabaseAuthExchangeStateForTests } = await import("./supabaseAuth");
+  resetSupabaseAuthExchangeStateForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -68,8 +70,27 @@ describe("getSupabaseClient", () => {
     expect(createClient).toHaveBeenCalledWith(
       "https://proj.supabase.co",
       "anon-key",
-      expect.objectContaining({ auth: expect.any(Object) })
+      expect.objectContaining({
+        auth: expect.objectContaining({
+          flowType: "pkce",
+          storageKey: "autoflow-supabase-auth",
+        }),
+      })
     );
+  });
+
+  it("uses a localStorage-backed auth storage adapter", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const { getSupabaseClient } = await import("./supabaseAuth");
+    getSupabaseClient();
+    const authConfig = vi.mocked(createClient).mock.calls.at(-1)?.[2] as {
+      auth?: { storage?: { setItem: (key: string, value: string) => void } };
+    };
+    authConfig.auth?.storage?.setItem("pkce-test", "verifier");
+    expect(setItem).toHaveBeenCalled();
+    setItem.mockRestore();
   });
 });
 
@@ -296,6 +317,92 @@ describe("getSupabaseStoredSession", () => {
     await expect(getSupabaseStoredSession()).rejects.toThrow(/Email link is invalid or expired/i);
 
     Object.defineProperty(window, "location", { writable: true, value: originalLocation });
+  });
+
+  it("deduplicates parallel exchangeCodeForSession calls for the same callback code", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        search: "?code=ABC",
+        href: "https://app.test/auth/callback?code=ABC",
+        origin: "https://app.test",
+        pathname: "/auth/callback",
+      },
+    });
+    const originalReplaceState = window.history.replaceState;
+    window.history.replaceState = vi.fn();
+
+    mockAuthClient.exchangeCodeForSession.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ data: {}, error: null }), 10);
+        }),
+    );
+    mockAuthClient.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+
+    const { getSupabaseStoredSession } = await import("./supabaseAuth");
+    await Promise.all([getSupabaseStoredSession(), getSupabaseStoredSession()]);
+
+    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, "location", { writable: true, value: originalLocation });
+    window.history.replaceState = originalReplaceState;
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendSupabasePasswordReset / updateSupabasePassword / helpers
+// ---------------------------------------------------------------------------
+describe("password recovery helpers", () => {
+  it("detects recovery type in the query string", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: {
+        ...originalLocation,
+        search: "?type=recovery&code=abc",
+        hash: "",
+      },
+    });
+    const { isPasswordRecoveryFlow } = await import("./supabaseAuth");
+    expect(isPasswordRecoveryFlow()).toBe(true);
+    Object.defineProperty(window, "location", { writable: true, value: originalLocation });
+  });
+
+  it("maps PKCE verifier errors to actionable copy", async () => {
+    const { mapSupabaseAuthError } = await import("./supabaseAuth");
+    expect(
+      mapSupabaseAuthError(new Error("PKCE code verifier not found in storage.")),
+    ).toMatch(/same browser/i);
+  });
+
+  it("sends resetPasswordForEmail with a reset-password redirect", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+    mockAuthClient.resetPasswordForEmail.mockResolvedValue({ error: null });
+    vi.stubGlobal("location", { origin: "http://localhost:5173" });
+    const { sendSupabasePasswordReset } = await import("./supabaseAuth");
+    await sendSupabasePasswordReset("user@example.com");
+    expect(mockAuthClient.resetPasswordForEmail).toHaveBeenCalledWith("user@example.com", {
+      redirectTo: "http://localhost:5173/reset-password",
+    });
+  });
+
+  it("updates the user password through Supabase", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+    mockAuthClient.updateUser.mockResolvedValue({ error: null });
+    const { updateSupabasePassword } = await import("./supabaseAuth");
+    await updateSupabasePassword("new-password-123");
+    expect(mockAuthClient.updateUser).toHaveBeenCalledWith({ password: "new-password-123" });
   });
 });
 

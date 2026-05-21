@@ -112,6 +112,8 @@ import {
   createStepResultsRoutes,
   createWakeEventsRoutes,
 } from "./canonical/canonicalReadRoutes";
+import { createWorkspaceSnapshotRoutes } from "./canonical/workspaceSnapshotRoutes";
+import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
@@ -769,6 +771,13 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   connectorConnectionsRoutes,
+);
+app.use(
+  "/api/workspace",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  createWorkspaceSnapshotRoutes(),
 );
 // HEL-167: user security settings. The actions are user-scoped, but they
 // write workspace audit events, so every authenticated workspace member gets
@@ -1923,6 +1932,10 @@ app.post("/api/approvals/:id/resolve", requireAuth, workspaceResolver, requireRo
   if (!ok) {
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
+  }
+  const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+  if (workspaceId) {
+    void invalidateWorkspaceCache(workspaceId, ["approvals", "home"]);
   }
   res.json({ success: true });
 }));

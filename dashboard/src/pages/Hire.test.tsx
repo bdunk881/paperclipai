@@ -263,7 +263,7 @@ describe("Hire page (HEL-23, v2)", () => {
     renderHire();
 
     const teamLink = await screen.findByRole("link", { name: /View team/i });
-    expect(teamLink).toHaveAttribute("href", "/team");
+    expect(teamLink).toHaveAttribute("href", "/workspace/org-structure?missionId=m-confirmed");
   });
 
   it("renders past missions returned by the API", async () => {

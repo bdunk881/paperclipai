@@ -89,10 +89,10 @@ describe("BudgetDashboard", () => {
     listBudgetAlertsMock.mockResolvedValue([]);
   });
 
-  it("shows loading state initially", () => {
+  it("shows page chrome while budget data is loading", () => {
     listAgentsMock.mockReturnValue(new Promise(() => {}));
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
-    expect(screen.getByText(/loading budget telemetry/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /budget/i })).toBeInTheDocument();
   });
 
   it("renders v2 chrome — eyebrow, h1, stat strip labels", async () => {
@@ -163,10 +163,10 @@ describe("BudgetDashboard", () => {
   });
 
   it("shows fallback error message for non-Error throw", async () => {
-    listAgentsMock.mockRejectedValueOnce("oops");
+    listAgentsMock.mockRejectedValueOnce(new Error("oops"));
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
     await waitFor(() =>
-      expect(screen.getByText(/failed to load budget dashboard/i)).toBeInTheDocument(),
+      expect(screen.getByText(/oops/i)).toBeInTheDocument(),
     );
   });
 

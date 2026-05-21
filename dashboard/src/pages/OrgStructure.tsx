@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { listAgents, type Agent } from "../api/agentApi";
-import {
-  getOrgGraph,
-  listBudgets,
-  type BudgetRow,
-  type OrgGraphAgent,
-} from "../api/canonicalApi";
-import { listMissions, type Mission } from "../api/missionsApi";
+import type { Agent } from "../api/agentApi";
+import type { Mission } from "../api/missionsApi";
+import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
+import { useBudgetsQuery } from "../hooks/queries/useBudgetsQuery";
+import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
+import { useOrgGraphQuery } from "../hooks/queries/useOrgGraphQuery";
 import { AddReportModal } from "../components/missions/AddReportModal";
-import { EmptyState, ErrorState, LoadingState } from "../components/UiStates";
+import { EmptyState, ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { AgentCardActions } from "../components/AgentCardActions";
@@ -338,18 +336,39 @@ function PodLead({
 }
 
 export default function OrgStructure() {
-  const { accessMode, getAccessToken } = useAuth();
+  useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const presence = useAgentPresence();
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [orgGraphAgents, setOrgGraphAgents] = useState<OrgGraphAgent[]>([]);
-  const [edges, setEdges] = useState<Array<{ managerAgentId: string; agentId: string }> | null>(
-    null,
-  );
-  const [budgets, setBudgets] = useState<Map<string, AgentSpendRow>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const agentsQuery = useAgentsQuery();
+  const missionsQuery = useMissionsQuery();
+  const orgGraphQuery = useOrgGraphQuery();
+  const budgetsQuery = useBudgetsQuery();
+  const agents = agentsQuery.data ?? [];
+  const missions = missionsQuery.data ?? [];
+  const orgGraphAgents = orgGraphQuery.data?.agents ?? [];
+  const edges = orgGraphQuery.data?.edges ?? null;
+  const budgets = useMemo(() => {
+    const budgetMap = new Map<string, AgentSpendRow>();
+    for (const row of budgetsQuery.data ?? []) {
+      if (row.scopeKind === "agent" && row.scopeId) {
+        budgetMap.set(row.scopeId, {
+          spentUsd: row.usedCents / 100,
+          monthlyUsd: row.capCents / 100,
+        });
+      }
+    }
+    return budgetMap;
+  }, [budgetsQuery.data]);
+  const loading =
+    (agentsQuery.isLoading || missionsQuery.isLoading) &&
+    !agentsQuery.data &&
+    !missionsQuery.data;
+  const error =
+    agentsQuery.error instanceof Error
+      ? agentsQuery.error.message
+      : missionsQuery.error instanceof Error
+        ? missionsQuery.error.message
+        : null;
   const [addReportLead, setAddReportLead] = useState<Agent | null>(null);
 
   const viewMode: TeamViewMode = parseViewMode(searchParams.get("view"));
@@ -374,51 +393,12 @@ export default function OrgStructure() {
     [searchParams, setSearchParams],
   );
 
-  const loadOrg = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = await getAccessToken();
-      if (accessMode === "preview" && !token) {
-        setAgents([]);
-        setMissions([]);
-        setOrgGraphAgents([]);
-        setEdges(null);
-        setBudgets(new Map());
-        return;
-      }
-      if (!token) throw new Error("Authentication session expired.");
-      const [nextAgents, nextMissions, orgGraph, budgetRows] = await Promise.all([
-        listAgents(token),
-        listMissions(token),
-        getOrgGraph(token).catch(() => ({ workspaceId: null, agents: [], edges: [] })),
-        listBudgets(token).catch(() => [] as BudgetRow[]),
-      ]);
-      setAgents(nextAgents);
-      setMissions(nextMissions);
-      setOrgGraphAgents(orgGraph.agents);
-      setEdges(orgGraph.edges);
-
-      const budgetMap = new Map<string, AgentSpendRow>();
-      for (const row of budgetRows) {
-        if (row.scopeKind === "agent" && row.scopeId) {
-          budgetMap.set(row.scopeId, {
-            spentUsd: row.usedCents / 100,
-            monthlyUsd: row.capCents / 100,
-          });
-        }
-      }
-      setBudgets(budgetMap);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to load org structure");
-    } finally {
-      setLoading(false);
-    }
-  }, [accessMode, getAccessToken]);
-
-  useEffect(() => {
-    void loadOrg();
-  }, [loadOrg]);
+  const refreshOrg = useCallback(() => {
+    void agentsQuery.refetch();
+    void missionsQuery.refetch();
+    void orgGraphQuery.refetch();
+    void budgetsQuery.refetch();
+  }, [agentsQuery, missionsQuery, orgGraphQuery, budgetsQuery]);
 
   const { selectedMissionId, selectedMission, scopeAllWorkspace } = useMemo(
     () => resolveMissionSelection(missions, missionIdParam),
@@ -483,18 +463,10 @@ export default function OrgStructure() {
     [filteredAgents],
   );
 
-  if (loading) {
+  if (error && !agents.length && !missions.length) {
     return (
       <div className="af2-page">
-        <LoadingState label="Mapping the org graph..." />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="af2-page">
-        <ErrorState title="Signal Lost" message={error} onRetry={() => void loadOrg()} />
+        <ErrorState title="Signal Lost" message={error} onRetry={refreshOrg} />
       </div>
     );
   }
@@ -511,7 +483,9 @@ export default function OrgStructure() {
           <h1 className="af2-h1" style={{ marginTop: 6 }}>
             Team
           </h1>
-          <div className="af2-page-head-meta">{pageMeta}</div>
+          <div className="af2-page-head-meta">
+            {loading ? <SkeletonBlock lines={1} /> : pageMeta}
+          </div>
         </div>
         <div className="af2-page-actions">
           <Link
@@ -655,7 +629,7 @@ export default function OrgStructure() {
             existingRoleKeys={existingRoleKeys}
             hiringPlanId={missionForReport.latestHiringPlanId}
             planConfirmed={planConfirmed}
-            onAdded={() => void loadOrg()}
+            onAdded={refreshOrg}
           />
         );
       })() : null}

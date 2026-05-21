@@ -29,6 +29,8 @@ vi.mock("../api/client", () => ({
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     user: { id: "user-123", email: "operator@example.com", name: "Operator" },
+    accessMode: "authenticated",
+    getAccessToken: requireAccessTokenMock,
     requireAccessToken: requireAccessTokenMock,
   }),
 }));

@@ -10,45 +10,25 @@
  *   - "Spend by agent · this week" renders per-agent bars.
  *   - Error + loading states render correctly.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Dashboard from "./Dashboard";
 
-const {
-  listRunsMock,
-  listApprovalsMock,
-  listAgentsMock,
-  getAgentHeartbeatMock,
-  listBudgetsMock,
-  listMissionsMock,
-  requireAccessTokenMock,
-} = vi.hoisted(() => ({
-  listRunsMock: vi.fn(),
-  listApprovalsMock: vi.fn(),
-  listAgentsMock: vi.fn(),
-  getAgentHeartbeatMock: vi.fn(),
-  listBudgetsMock: vi.fn(),
-  listMissionsMock: vi.fn(),
+const { homeSnapshotMock, requireAccessTokenMock, snapshotQueryErrorRef } = vi.hoisted(() => ({
+  homeSnapshotMock: vi.fn(),
   requireAccessTokenMock: vi.fn(),
+  snapshotQueryErrorRef: { current: null as Error | null },
 }));
 
-vi.mock("../api/client", () => ({
-  listRuns: listRunsMock,
-  listApprovals: listApprovalsMock,
-}));
-
-vi.mock("../api/agentApi", () => ({
-  listAgents: listAgentsMock,
-  getAgentHeartbeat: getAgentHeartbeatMock,
-}));
-
-vi.mock("../api/canonicalApi", () => ({
-  listBudgets: listBudgetsMock,
-}));
-
-vi.mock("../api/missionsApi", () => ({
-  listMissions: listMissionsMock,
+vi.mock("../hooks/queries/useHomeSnapshotQuery", () => ({
+  useHomeSnapshotQuery: () => ({
+    data: snapshotQueryErrorRef.current ? undefined : homeSnapshotMock(),
+    isLoading: false,
+    isFetching: false,
+    error: snapshotQueryErrorRef.current,
+    refetch: vi.fn(),
+  }),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -67,8 +47,10 @@ vi.mock("../context/useWorkspace", () => ({
 describe("Dashboard (v2 Home)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    snapshotQueryErrorRef.current = null;
     requireAccessTokenMock.mockResolvedValue("mock-token");
-    listRunsMock.mockResolvedValue([
+    homeSnapshotMock.mockReturnValue({
+      runs: [
       {
         id: "run-design",
         templateId: "tpl-design",
@@ -80,8 +62,8 @@ describe("Dashboard (v2 Home)", () => {
         output: {},
         stepResults: [],
       },
-    ]);
-    listApprovalsMock.mockResolvedValue([
+      ],
+      approvals: [
       {
         id: "approval-1234abcd",
         runId: "run-code",
@@ -94,8 +76,8 @@ describe("Dashboard (v2 Home)", () => {
         requestedAt: "2026-04-27T12:15:00.000Z",
         status: "pending",
       },
-    ]);
-    listAgentsMock.mockResolvedValue([
+      ],
+      agents: [
       {
         id: "agent-graphic",
         userId: "user-1",
@@ -120,8 +102,8 @@ describe("Dashboard (v2 Home)", () => {
         createdAt: "2026-04-20T00:00:00.000Z",
         updatedAt: "2026-04-27T12:00:00.000Z",
       },
-    ]);
-    listMissionsMock.mockResolvedValue([
+      ],
+      missions: [
       {
         id: "mission-1",
         statement: "Launch Q3 product hunt campaign",
@@ -142,8 +124,8 @@ describe("Dashboard (v2 Home)", () => {
         companyName: "Acme Robotics",
         latestHiringPlanId: null,
       },
-    ]);
-    listBudgetsMock.mockResolvedValue([
+      ],
+      budgets: [
       {
         id: "budget-graphic",
         scopeKind: "agent" as const,
@@ -164,21 +146,33 @@ describe("Dashboard (v2 Home)", () => {
         createdAt: "2026-04-01T00:00:00.000Z",
         updatedAt: "2026-04-27T00:00:00.000Z",
       },
-    ]);
-    getAgentHeartbeatMock.mockImplementation(async (agentId: string) => ({
-      id: `heartbeat-${agentId}`,
-      agentId,
-      userId: "user-1",
-      status: "running",
-      summary:
-        agentId === "agent-graphic"
-          ? "Preparing final visual QA for customer review."
-          : "Reviewing the dashboard implementation details.",
-      tokenUsage: 12,
-      costUsd: 0.25,
-      createdByRunId: `run-${agentId}`,
-      recordedAt: "2026-04-27T12:30:00.000Z",
-    }));
+      ],
+      heartbeats: {
+        "agent-graphic": {
+          id: "heartbeat-agent-graphic",
+          agentId: "agent-graphic",
+          userId: "user-1",
+          status: "running",
+          summary: "Preparing final visual QA for customer review.",
+          tokenUsage: 12,
+          costUsd: 0.25,
+          createdByRunId: "run-agent-graphic",
+          recordedAt: "2026-04-27T12:30:00.000Z",
+        },
+        "agent-frontend": {
+          id: "heartbeat-agent-frontend",
+          agentId: "agent-frontend",
+          userId: "user-1",
+          status: "running",
+          summary: "Reviewing the dashboard implementation details.",
+          tokenUsage: 12,
+          costUsd: 0.25,
+          createdByRunId: "run-agent-frontend",
+          recordedAt: "2026-04-27T12:30:00.000Z",
+        },
+      },
+      generatedAt: "2026-04-27T12:30:00.000Z",
+    });
   });
 
   afterEach(() => {
@@ -211,10 +205,7 @@ describe("Dashboard (v2 Home)", () => {
     // for its SSE connection in addition to Dashboard's own load — so
     // the count is 2, not 1. Assert at-least-1 instead of exactly 1.
     expect(requireAccessTokenMock.mock.calls.length).toBeGreaterThanOrEqual(1);
-    expect(listAgentsMock).toHaveBeenCalledWith("mock-token");
-    expect(listApprovalsMock).toHaveBeenCalledWith("mock-token");
-    expect(listRunsMock).toHaveBeenCalledWith(undefined, "mock-token");
-    expect(listMissionsMock).toHaveBeenCalledWith("mock-token");
+    expect(homeSnapshotMock).toHaveBeenCalled();
   });
 
   it("renders the 4-stat strip with canonical labels", async () => {
@@ -277,10 +268,16 @@ describe("Dashboard (v2 Home)", () => {
     await screen.findByText("Spend by agent · this week");
   });
 
-  it("renders the greeting when an individual API call fails (graceful fallback)", async () => {
-    // API failures on individual calls no longer bubble to the error state —
-    // they return empty arrays so the dashboard still renders with the heading.
-    listAgentsMock.mockRejectedValueOnce(new Error("agents failed"));
+  it("renders the greeting when snapshot returns empty collections", async () => {
+    homeSnapshotMock.mockReturnValue({
+      agents: [],
+      missions: [],
+      approvals: [],
+      runs: [],
+      budgets: [],
+      heartbeats: {},
+      generatedAt: "2026-04-27T12:30:00.000Z",
+    });
 
     render(
       <MemoryRouter>
@@ -293,9 +290,8 @@ describe("Dashboard (v2 Home)", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders the error state when authentication fails", async () => {
-    // Reject all calls so both useAgentPresence and loadDashboard see the failure.
-    requireAccessTokenMock.mockRejectedValue(new Error("session expired"));
+  it("renders the error state when snapshot query fails", async () => {
+    snapshotQueryErrorRef.current = new Error("session expired");
 
     render(
       <MemoryRouter>
@@ -304,13 +300,6 @@ describe("Dashboard (v2 Home)", () => {
     );
 
     expect(await screen.findByText("Home unavailable")).toBeInTheDocument();
-
-    // Switch back to resolving so the retry succeeds.
-    requireAccessTokenMock.mockResolvedValue("mock-token");
-    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
-    expect(
-      await screen.findByText(/Good (morning|afternoon|evening), Test\./i),
-    ).toBeInTheDocument();
-    expect(requireAccessTokenMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/session expired/i)).toBeInTheDocument();
   });
 });

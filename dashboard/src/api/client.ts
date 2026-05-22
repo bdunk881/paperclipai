@@ -614,13 +614,9 @@ export type ControlPlaneAgentLifecycleStatus = "active" | "paused" | "terminated
 export type ControlPlaneHeartbeatStatus = "queued" | "running" | "completed" | "blocked";
 export type ControlPlaneTaskStatus = "todo" | "in_progress" | "done" | "blocked";
 export type ControlPlaneTeamDeploymentMode = "workflow_runtime" | "continuous_agents";
-export type ControlPlaneAgentScheduleType = "manual" | "interval" | "cron";
-
-export interface ControlPlaneAgentSchedule {
-  type: ControlPlaneAgentScheduleType;
-  cronExpression?: string;
-  intervalMinutes?: number;
-}
+// HEL-142: ControlPlaneAgentScheduleType + ControlPlaneAgentSchedule retired
+// 2026-05-21. agents.schedule dropped (migration 057); scheduling lives in
+// routines (routines.schedule_cron + BullMQ).
 
 export interface ControlPlaneAgent {
   id: string;
@@ -634,7 +630,6 @@ export interface ControlPlaneAgent {
   instructions: string;
   budgetMonthlyUsd: number;
   reportingToAgentId?: string;
-  schedule: ControlPlaneAgentSchedule;
   status: ControlPlaneAgentLifecycleStatus;
   createdAt: string;
   updatedAt: string;

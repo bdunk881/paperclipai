@@ -450,20 +450,8 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
 }
 
-function normalizeSchedule(value: unknown): ControlPlaneAgent["schedule"] {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { type: "manual" };
-  }
-
-  const candidate = value as Record<string, unknown>;
-  if (candidate.type === "interval" && typeof candidate.intervalMinutes === "number") {
-    return { type: "interval", intervalMinutes: candidate.intervalMinutes };
-  }
-  if (candidate.type === "cron" && typeof candidate.cronExpression === "string") {
-    return { type: "cron", cronExpression: candidate.cronExpression };
-  }
-  return { type: "manual" };
-}
+// HEL-142: normalizeSchedule + agents.schedule retired 2026-05-21
+// (migration 057). Scheduling lives in routines exclusively.
 
 function requireWorkspaceIdForPersistence(workspaceId: string | undefined): string {
   if (!workspaceId?.trim()) {
@@ -1340,10 +1328,6 @@ function provisionStepAgent(input: {
     budgetMonthlyUsd: input.step.agentBudgetMonthlyUsd ?? input.budgetMonthlyUsd,
     reportingToAgentId: input.reportingToAgentId,
     skills: inferSkills(input.step),
-    schedule:
-      input.defaultIntervalMinutes && input.defaultIntervalMinutes > 0
-        ? { type: "interval", intervalMinutes: input.defaultIntervalMinutes }
-        : { type: "manual" },
     status: "active",
   });
 }
@@ -1498,7 +1482,6 @@ export const controlPlaneStore = {
           agentInput.budgetMonthlyUsd !== undefined ? agentInput.budgetMonthlyUsd : perAgentBudget,
         reportingToAgentId: undefined,
         skills: mergeSkills(roleTemplate.defaultSkills, agentInput.skills),
-        schedule: { type: "manual" },
         status: "active",
       });
     });
@@ -1973,7 +1956,6 @@ export const controlPlaneStore = {
       budgetMonthlyUsd: managerBudget,
       reportingToAgentId: undefined,
       skills: ["paperclip"],
-      schedule: { type: "manual" },
       status: "active",
     });
     provisionedAgents.push(manager);
@@ -2003,10 +1985,6 @@ export const controlPlaneStore = {
           budgetMonthlyUsd: workerBudgetPool,
           reportingToAgentId: manager.id,
           skills: ["paperclip"],
-          schedule:
-            input.defaultIntervalMinutes && input.defaultIntervalMinutes > 0
-              ? { type: "interval", intervalMinutes: input.defaultIntervalMinutes }
-              : { type: "manual" },
           status: "active",
         }),
       );

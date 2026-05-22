@@ -5,13 +5,9 @@ const BASE = getApiBasePath();
 export type ControlPlaneAgentStatus = "active" | "paused" | "terminated";
 export type ControlPlaneHeartbeatStatus = "queued" | "running" | "completed" | "blocked";
 export type ControlPlaneTaskStatus = "todo" | "in_progress" | "done" | "blocked";
-export type ControlPlaneScheduleType = "manual" | "interval" | "cron";
-
-export interface ControlPlaneSchedule {
-  type: ControlPlaneScheduleType;
-  cronExpression?: string;
-  intervalMinutes?: number;
-}
+// HEL-142: ControlPlaneScheduleType + ControlPlaneSchedule retired
+// 2026-05-21. agents.schedule dropped (migration 057); scheduling
+// lives in routines.
 
 export interface ControlPlaneTeam {
   id: string;
@@ -37,7 +33,6 @@ export interface ControlPlaneAgent {
   instructions: string;
   budgetMonthlyUsd: number;
   reportingToAgentId?: string;
-  schedule: ControlPlaneSchedule;
   status: ControlPlaneAgentStatus;
   createdAt: string;
   updatedAt: string;

@@ -21,7 +21,6 @@ import {
   AgentLifecycleStatus,
   BudgetAlertScope,
   ControlPlaneAgent,
-  ControlPlaneAgentSchedule,
   ControlPlaneBudgetAlert,
   ControlPlaneExecution,
   ControlPlaneExecutionStatus,
@@ -239,7 +238,6 @@ interface AgentRow {
   budget_monthly_usd: string | number;
   reporting_to_agent_id: string | null;
   skills: string[] | null;
-  schedule: ControlPlaneAgentSchedule | null;
   status: AgentLifecycleStatus;
   paused_by_company_lifecycle: boolean | null;
   current_execution_id: string | null;
@@ -438,10 +436,7 @@ function rowToAgent(row: AgentRow): ControlPlaneAgent {
   const budget = typeof row.budget_monthly_usd === "string"
     ? Number.parseFloat(row.budget_monthly_usd)
     : row.budget_monthly_usd;
-  const schedule: ControlPlaneAgentSchedule =
-    row.schedule && typeof row.schedule === "object" && !Array.isArray(row.schedule)
-      ? (row.schedule as ControlPlaneAgentSchedule)
-      : { type: "manual" };
+  // HEL-142: row.schedule retired; column dropped (migration 057).
   return {
     id: row.id,
     teamId: row.team_id,
@@ -455,7 +450,6 @@ function rowToAgent(row: AgentRow): ControlPlaneAgent {
     budgetMonthlyUsd: Number.isFinite(budget) ? Number(budget) : 0,
     reportingToAgentId: row.reporting_to_agent_id ?? undefined,
     skills: Array.isArray(row.skills) ? row.skills : [],
-    schedule,
     status: row.status,
     pausedByCompanyLifecycle: row.paused_by_company_lifecycle || undefined,
     currentExecutionId: row.current_execution_id ?? undefined,
@@ -713,15 +707,16 @@ async function upsertAgentRowInClient(
   agent: ControlPlaneAgent
 ): Promise<void> {
   await client.query(
+    // HEL-142: schedule column dropped (migration 057).
     `INSERT INTO agents (
        id, workspace_id, user_id, team_id, name, role_key, workflow_step_id, workflow_step_kind,
-       model, instructions, budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+       model, instructions, budget_monthly_usd, reporting_to_agent_id, skills,
        status, paused_by_company_lifecycle, current_execution_id, last_heartbeat_at,
        last_heartbeat_status, created_at, updated_at
      ) VALUES (
        $1, $2, $3, $4, $5, $6, $7, $8,
-       $9, $10, $11, $12, $13::jsonb, $14::jsonb,
-       $15, $16, $17, $18, $19, $20, $21
+       $9, $10, $11, $12, $13::jsonb,
+       $14, $15, $16, $17, $18, $19, $20
      )
      ON CONFLICT (id) DO UPDATE
        SET team_id = EXCLUDED.team_id,
@@ -734,7 +729,6 @@ async function upsertAgentRowInClient(
            budget_monthly_usd = EXCLUDED.budget_monthly_usd,
            reporting_to_agent_id = EXCLUDED.reporting_to_agent_id,
            skills = EXCLUDED.skills,
-           schedule = EXCLUDED.schedule,
            status = EXCLUDED.status,
            paused_by_company_lifecycle = EXCLUDED.paused_by_company_lifecycle,
            current_execution_id = EXCLUDED.current_execution_id,
@@ -755,7 +749,6 @@ async function upsertAgentRowInClient(
       agent.budgetMonthlyUsd,
       agent.reportingToAgentId ?? null,
       JSON.stringify(agent.skills),
-      JSON.stringify(agent.schedule),
       agent.status,
       agent.pausedByCompanyLifecycle ?? false,
       agent.currentExecutionId ?? null,
@@ -1787,7 +1780,7 @@ export const controlPlaneRepository = {
       const result = await client.query<AgentRow>(
         `SELECT id, workspace_id, team_id, user_id, name, role_key,
                 workflow_step_id, workflow_step_kind, model, instructions,
-                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                budget_monthly_usd, reporting_to_agent_id, skills,
                 status, paused_by_company_lifecycle, current_execution_id,
                 last_heartbeat_at, last_heartbeat_status,
                 created_at, updated_at
@@ -1835,7 +1828,7 @@ export const controlPlaneRepository = {
       const result = await client.query<AgentRow>(
         `SELECT id, workspace_id, team_id, user_id, name, role_key,
                 workflow_step_id, workflow_step_kind, model, instructions,
-                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                budget_monthly_usd, reporting_to_agent_id, skills,
                 status, paused_by_company_lifecycle, current_execution_id,
                 last_heartbeat_at, last_heartbeat_status,
                 created_at, updated_at
@@ -1872,7 +1865,7 @@ export const controlPlaneRepository = {
       const result = await client.query<AgentRow>(
         `SELECT id, workspace_id, team_id, user_id, name, role_key,
                 workflow_step_id, workflow_step_kind, model, instructions,
-                budget_monthly_usd, reporting_to_agent_id, skills, schedule,
+                budget_monthly_usd, reporting_to_agent_id, skills,
                 status, paused_by_company_lifecycle, current_execution_id,
                 last_heartbeat_at, last_heartbeat_status,
                 created_at, updated_at

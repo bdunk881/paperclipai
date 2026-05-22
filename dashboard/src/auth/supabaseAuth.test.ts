@@ -72,7 +72,9 @@ describe("getSupabaseClient", () => {
       "anon-key",
       expect.objectContaining({
         auth: expect.objectContaining({
-          flowType: "pkce",
+          // Implicit flow chosen for cross-device email recovery; see the
+          // dedicated regression test below for full rationale.
+          flowType: "implicit",
           storageKey: "autoflow-supabase-auth",
         }),
       })
@@ -93,16 +95,21 @@ describe("getSupabaseClient", () => {
     setItem.mockRestore();
   });
 
-  it("creates the client with detectSessionInUrl: false (lock-in for the recovery-loop fix)", async () => {
-    // Regression guard: with `detectSessionInUrl: true`, supabase-js
-    // auto-exchanges any `?code=` it sees at client construction time.
-    // Our `exchangeAuthCallbackCodeIfPresent()` ALSO calls
-    // `exchangeCodeForSession()` explicitly. PKCE codes are single-use,
-    // so the two calls race — one succeeds, the other throws
-    // `invalid_grant` / "code already used", which surfaces as a red
-    // error on /reset-password and loops the user back to the request
-    // form. Keep this false; our manual path is the single source of
-    // truth.
+  it("creates the client with flowType: implicit (lock-in for cross-device recovery fix)", async () => {
+    // Regression guard: PKCE flow requires the requesting browser's
+    // code_verifier to be present on the click side. Real users open
+    // password-reset emails on a different device or in a different
+    // browser; the verifier is missing; Supabase throws
+    // "invalid flow state, no valid flow state found"; the user
+    // loops on the /reset-password page. Implicit flow puts the
+    // access token directly in the URL hash — no verifier required,
+    // cross-device safe.
+    //
+    // If you flip this back to "pkce", you must also switch the
+    // recovery flow specifically to verifyOtp({ token_hash, type })
+    // and update the Supabase email template — otherwise password
+    // recovery breaks for any user not clicking the link in the same
+    // browser tab.
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
     vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
     const { getSupabaseClient } = await import("./supabaseAuth");
@@ -112,7 +119,8 @@ describe("getSupabaseClient", () => {
       expect.any(String),
       expect.objectContaining({
         auth: expect.objectContaining({
-          detectSessionInUrl: false,
+          flowType: "implicit",
+          detectSessionInUrl: true,
         }),
       })
     );

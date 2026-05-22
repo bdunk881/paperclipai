@@ -105,19 +105,36 @@ export function getSupabaseClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // Critical: `detectSessionInUrl: false`. With it true, supabase-js
-      // auto-exchanges any `?code=` it sees at client construction time.
-      // We ALSO call `exchangeCodeForSession()` explicitly from
-      // `exchangeAuthCallbackCodeIfPresent()` so we can dedupe via
-      // `codeExchangePromise`, surface errors deterministically, and
-      // strip URL params with confidence after the exchange completes.
-      // With both paths active, PKCE codes (single-use) hit a race:
-      // one call succeeds, the other throws `invalid_grant` / "code
-      // already used", which we surface to the user as an error on the
-      // /reset-password screen — they retry the email, get a fresh
-      // code, hit the same race, and loop.
-      detectSessionInUrl: false,
-      flowType: "pkce",
+      // `flowType: "implicit"` — chosen explicitly so that email-based
+      // auth flows (password recovery, magic link, signup confirm)
+      // work CROSS-DEVICE / CROSS-BROWSER / IN NEW TABS.
+      //
+      // The previous setting (`flowType: "pkce"`) requires the
+      // browser that requested the email to hold a `code_verifier` in
+      // localStorage; the browser that clicks the link must read the
+      // same verifier to exchange the `?code=` for a session. Real
+      // users open password-reset emails on a different device
+      // (laptop → phone) or in their email client's in-app browser,
+      // where the verifier is missing — Supabase throws
+      // "invalid flow state, no valid flow state found" and the
+      // /reset-password page bounces back to "Send recovery email,"
+      // creating an infinite loop. PKCE is the correct choice for
+      // server-rendered apps with a shared secret; SPAs lose nothing
+      // material by using implicit and gain cross-device email links.
+      //
+      // Trade-off: tokens travel in the URL hash on the redirect
+      // (visible in browser history). For our customer-zero stage
+      // this is acceptable. The long-term answer is to keep PKCE for
+      // sign-in/OAuth and switch recovery specifically to
+      // `verifyOtp({ token_hash, type: "recovery" })` — tracked as a
+      // follow-up ticket (see Linear).
+      //
+      // `detectSessionInUrl: true` is correct in implicit flow — the
+      // PKCE single-use-code race from the earlier iteration of this
+      // file does not apply here (there's no code to be exchanged,
+      // just an `#access_token=` hash to read).
+      detectSessionInUrl: true,
+      flowType: "implicit",
       storageKey: SUPABASE_STORAGE_KEY,
       storage: createLocalStorageAdapter(),
     },

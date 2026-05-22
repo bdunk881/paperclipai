@@ -105,7 +105,18 @@ export function getSupabaseClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      // Critical: `detectSessionInUrl: false`. With it true, supabase-js
+      // auto-exchanges any `?code=` it sees at client construction time.
+      // We ALSO call `exchangeCodeForSession()` explicitly from
+      // `exchangeAuthCallbackCodeIfPresent()` so we can dedupe via
+      // `codeExchangePromise`, surface errors deterministically, and
+      // strip URL params with confidence after the exchange completes.
+      // With both paths active, PKCE codes (single-use) hit a race:
+      // one call succeeds, the other throws `invalid_grant` / "code
+      // already used", which we surface to the user as an error on the
+      // /reset-password screen — they retry the email, get a fresh
+      // code, hit the same race, and loop.
+      detectSessionInUrl: false,
       flowType: "pkce",
       storageKey: SUPABASE_STORAGE_KEY,
       storage: createLocalStorageAdapter(),

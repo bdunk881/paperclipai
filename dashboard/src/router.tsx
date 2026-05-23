@@ -20,6 +20,7 @@ import {
 import { readStoredAuthUser } from "./auth/authStorage";
 import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import Layout from "./components/Layout";
+import RouteErrorBoundary from "./components/RouteErrorBoundary";
 import { useAuth } from "./context/AuthContext";
 import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
@@ -107,14 +108,30 @@ async function hydrateActorsFromAccessToken(accessToken?: string): Promise<void>
   });
 }
 
+// Mirror withTypedLoaderErrors in ./router/loaders.ts: convert rate-limit
+// errors thrown by API helpers into a thrown Response so RouteErrorBoundary
+// can recognize them via isRouteErrorResponse.
+async function withTypedLoaderErrors<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof Error && /rate.?limit|too many requests|\b429\b/i.test(err.message)) {
+      throw new Response(err.message, { status: 429, statusText: "Too Many Requests" });
+    }
+    throw err;
+  }
+}
+
 async function ticketsLoader(): Promise<TicketsRouteData> {
-  const session = await readCurrentAccessSession();
-  const accessToken = session?.accessToken;
-  const [result] = await Promise.all([
-    listTickets({}, accessToken),
-    hydrateActorsFromAccessToken(accessToken),
-  ]);
-  return result;
+  return withTypedLoaderErrors(async () => {
+    const session = await readCurrentAccessSession();
+    const accessToken = session?.accessToken;
+    const [result] = await Promise.all([
+      listTickets({}, accessToken),
+      hydrateActorsFromAccessToken(accessToken),
+    ]);
+    return result;
+  });
 }
 
 async function ticketDetailLoader({
@@ -122,17 +139,19 @@ async function ticketDetailLoader({
 }: {
   params: { ticketId?: string };
 }): Promise<TicketDetailRouteData> {
-  if (!params.ticketId) {
-    throw new Error("Ticket ID is required.");
-  }
+  return withTypedLoaderErrors(async () => {
+    if (!params.ticketId) {
+      throw new Response("Ticket ID is required.", { status: 404 });
+    }
 
-  const session = await readCurrentAccessSession();
-  const accessToken = session?.accessToken;
-  const [aggregate] = await Promise.all([
-    getTicket(params.ticketId, accessToken),
-    hydrateActorsFromAccessToken(accessToken),
-  ]);
-  return aggregate;
+    const session = await readCurrentAccessSession();
+    const accessToken = session?.accessToken;
+    const [aggregate] = await Promise.all([
+      getTicket(params.ticketId, accessToken),
+      hydrateActorsFromAccessToken(accessToken),
+    ]);
+    return aggregate;
+  });
 }
 
 async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTicketRouteActionData> {
@@ -206,11 +225,11 @@ function TicketDetailRoute() {
 }
 
 const routes: RouteObject[] = [
-  { path: "/waitlist", element: <LandingPage /> },
-  { path: "/checkout/success", element: <CheckoutSuccess /> },
-  { path: "/auth/callback", element: <AuthCallback /> },
-  { path: "/auth/confirm", element: <AuthConfirm /> },
-  { path: "/auth/social-callback", element: <SocialAuthCallback /> },
+  { path: "/waitlist", element: <LandingPage />, errorElement: <RouteErrorBoundary /> },
+  { path: "/checkout/success", element: <CheckoutSuccess />, errorElement: <RouteErrorBoundary /> },
+  { path: "/auth/callback", element: <AuthCallback />, errorElement: <RouteErrorBoundary /> },
+  { path: "/auth/confirm", element: <AuthConfirm />, errorElement: <RouteErrorBoundary /> },
+  { path: "/auth/social-callback", element: <SocialAuthCallback />, errorElement: <RouteErrorBoundary /> },
   {
     path: "/login",
     element: (
@@ -218,9 +237,10 @@ const routes: RouteObject[] = [
         <Login />
       </PublicRoute>
     ),
+    errorElement: <RouteErrorBoundary />,
   },
   { path: "/signup", element: <Navigate to="/login?mode=signup" replace /> },
-  { path: "/reset-password", element: <ResetPassword /> },
+  { path: "/reset-password", element: <ResetPassword />, errorElement: <RouteErrorBoundary /> },
   {
     path: "/",
     element: (
@@ -228,6 +248,7 @@ const routes: RouteObject[] = [
         <Layout />
       </PrivateRoute>
     ),
+    errorElement: <RouteErrorBoundary />,
     children: [
       { index: true, loader: homeLoader, element: <Dashboard /> },
 

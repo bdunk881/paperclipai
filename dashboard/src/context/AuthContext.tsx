@@ -15,6 +15,7 @@ import {
   sessionFromSupabaseSession,
   signOutSupabase,
 } from "../auth/supabaseAuth";
+import { fetchServerAuthSession, logoutServerAuthSession } from "../auth/serverEmailAuth";
 import { clearStoredActiveWorkspaceId } from "../workspaces/workspaceStorage";
 
 export interface User {
@@ -55,6 +56,19 @@ function sessionUser(session: StoredAuthSession | null, storedUser: StoredAuthUs
   }
 
   return null;
+}
+
+
+async function hydrateSupabaseClientSession(session: StoredAuthSession): Promise<void> {
+  const client = getSupabaseClient();
+  if (!client || !session.refreshToken) {
+    return;
+  }
+
+  await client.auth.setSession({
+    access_token: session.accessToken,
+    refresh_token: session.refreshToken,
+  });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -121,8 +135,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     let active = true;
 
-    void getSupabaseStoredSession()
-      .then((session) => {
+    void (async () => {
+      try {
+        const serverSession = await fetchServerAuthSession();
+        if (!active) {
+          return;
+        }
+
+        if (serverSession) {
+          await hydrateSupabaseClientSession(serverSession);
+          setStoredSession(serverSession);
+          writeStoredAuthUser(serverSession.user);
+          return;
+        }
+
+        const session = await getSupabaseStoredSession();
         if (!active) {
           return;
         }
@@ -131,10 +158,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (session?.user) {
           writeStoredAuthUser(session.user);
         }
-      })
-      .catch(() => {
+      } catch {
         // Preserve preview-mode user state when Supabase is unavailable.
-      });
+      }
+    })();
 
     const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       if (!active) {
@@ -164,6 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       : "anonymous";
 
   const logout = React.useCallback(() => {
+    void logoutServerAuthSession();
     if (storedSession?.authProvider === "supabase") {
       void signOutSupabase().catch(() => {
         // Local cleanup still runs below.
@@ -177,6 +205,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [storedSession]);
 
   const getAccessToken = React.useCallback(async (): Promise<string | null> => {
+    const serverSession = await fetchServerAuthSession().catch(() => null);
+    if (serverSession?.accessToken) {
+      setStoredSession(serverSession);
+      writeStoredAuthUser(serverSession.user);
+      return serverSession.accessToken;
+    }
+
     const refreshed = await getSupabaseStoredSession().catch(() => null);
     setStoredSession(refreshed);
 

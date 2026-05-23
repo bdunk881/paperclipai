@@ -15,6 +15,10 @@ const mockAuthClient = {
   exchangeCodeForSession: vi.fn(),
 };
 
+vi.mock("./serverEmailAuth", () => ({
+  getEmailAuthCallbackUrl: () => "https://api.test/api/auth/email/callback",
+}));
+
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({ auth: mockAuthClient })),
 }));
@@ -417,7 +421,7 @@ describe("password recovery helpers", () => {
     const { sendSupabasePasswordReset } = await import("./supabaseAuth");
     await sendSupabasePasswordReset("user@example.com");
     expect(mockAuthClient.resetPasswordForEmail).toHaveBeenCalledWith("user@example.com", {
-      redirectTo: "http://localhost:5173/reset-password",
+      redirectTo: "https://api.test/api/auth/email/callback",
     });
   });
 
@@ -507,6 +511,13 @@ describe("sendSupabaseMagicLink", () => {
     mockAuthClient.signInWithOtp.mockResolvedValue({ error: null });
     const { sendSupabaseMagicLink } = await import("./supabaseAuth");
     await expect(sendSupabaseMagicLink("a@b.com")).resolves.toBeUndefined();
+    expect(mockAuthClient.signInWithOtp).toHaveBeenCalledWith({
+      email: "a@b.com",
+      options: {
+        emailRedirectTo: "https://api.test/api/auth/email/callback",
+        shouldCreateUser: false,
+      },
+    });
   });
 });
 

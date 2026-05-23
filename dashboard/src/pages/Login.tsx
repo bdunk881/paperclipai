@@ -8,10 +8,12 @@ import {
   mapSupabaseAuthError,
   sendSupabaseMagicLink,
   signInWithSupabaseOAuth,
+
   signInWithSupabasePassword,
   signUpWithSupabasePassword,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
+import { verifyServerEmailOtp } from "../auth/serverEmailAuth";
 
 type AuthMode = "signin" | "signup" | "magic-link";
 
@@ -57,7 +59,7 @@ function cardCopy(mode: AuthMode): string {
     return "Start with a free workspace. Bring your own LLM keys, hire your first agents in minutes.";
   }
   if (mode === "magic-link") {
-    return "We'll send a one-time link to your inbox. Open it on this device to sign in.";
+    return "We'll email a sign-in link you can open on any device, plus a one-time code you can enter here.";
   }
   return "Sign in to your AutoFlow workspace.";
 }
@@ -77,6 +79,8 @@ export default function Login() {
   const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
   const [magicLinkEmail, setMagicLinkEmail] = useState("");
+  const [magicLinkOtp, setMagicLinkOtp] = useState("");
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeProvider, setActiveProvider] = useState<SupabaseOAuthProvider | null>(null);
   const [error, setError] = useState(
@@ -114,6 +118,8 @@ export default function Login() {
     setSearchParams(nextParams);
     setError("");
     setNotice("");
+    setMagicLinkSent(false);
+    setMagicLinkOtp("");
   }
 
   async function handleOAuth(provider: SupabaseOAuthProvider) {
@@ -202,7 +208,7 @@ export default function Login() {
   async function handleMagicLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!magicLinkEmail.trim()) {
-      triggerError("Enter the email address that should receive the magic link.");
+      triggerError("Enter the email address that should receive the sign-in email.");
       return;
     }
     if (!configured) {
@@ -216,8 +222,34 @@ export default function Login() {
 
     try {
       await sendSupabaseMagicLink(magicLinkEmail.trim());
-      setNotice("Magic link sent. Open the email on this device to complete sign-in.");
+      setMagicLinkSent(true);
+      setNotice("Sign-in email sent. Open the link on any device or enter the verification code below.");
       setBusy(false);
+    } catch (authError) {
+      setBusy(false);
+      triggerError(mapSupabaseAuthError(authError));
+    }
+  }
+
+  async function handleMagicLinkOtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!magicLinkEmail.trim() || !magicLinkOtp.trim()) {
+      triggerError("Enter your email and the verification code from the email.");
+      return;
+    }
+    if (!configured) {
+      triggerError("Supabase auth is not configured for this dashboard environment.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const session = await verifyServerEmailOtp(magicLinkEmail.trim(), magicLinkOtp.trim());
+      writeStoredAuthUser(session.user);
+      navigate("/", { replace: true });
     } catch (authError) {
       setBusy(false);
       triggerError(mapSupabaseAuthError(authError));
@@ -389,23 +421,45 @@ export default function Login() {
             ) : null}
 
             {mode === "magic-link" ? (
-              <form onSubmit={handleMagicLink} className="space-y-4 transition-all duration-300">
-                <Field label="Work email" delay={0}>
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    value={magicLinkEmail}
-                    onChange={(event) => setMagicLinkEmail(event.target.value)}
-                    disabled={isAnyBusy || !configured}
-                    className="auth-input"
-                    placeholder="operator@company.com"
-                  />
-                </Field>
-                <button type="submit" disabled={isAnyBusy || !configured} className="auth-primary-button mt-2">
-                  {busy ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
-                  {busy ? "Sending link..." : "Send magic link"}
-                </button>
-              </form>
+              <div className="space-y-4 transition-all duration-300">
+                <form onSubmit={handleMagicLink} className="space-y-4">
+                  <Field label="Work email" delay={0}>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      value={magicLinkEmail}
+                      onChange={(event) => setMagicLinkEmail(event.target.value)}
+                      disabled={isAnyBusy || !configured}
+                      className="auth-input"
+                      placeholder="operator@company.com"
+                    />
+                  </Field>
+                  <button type="submit" disabled={isAnyBusy || !configured} className="auth-primary-button mt-2">
+                    {busy ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
+                    {busy ? "Sending email..." : magicLinkSent ? "Resend sign-in email" : "Send sign-in email"}
+                  </button>
+                </form>
+                {magicLinkSent ? (
+                  <form onSubmit={handleMagicLinkOtp} className="space-y-4 border-t border-af2-line pt-4">
+                    <Field label="Verification code" delay={0}>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={magicLinkOtp}
+                        onChange={(event) => setMagicLinkOtp(event.target.value)}
+                        disabled={isAnyBusy || !configured}
+                        className="auth-input font-af2-mono tracking-widest"
+                        placeholder="123456"
+                      />
+                    </Field>
+                    <button type="submit" disabled={isAnyBusy || !configured} className="auth-primary-button mt-2">
+                      {busy ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                      {busy ? "Verifying..." : "Verify code"}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
             ) : null}
 
           <div className="mt-6 flex flex-wrap items-center gap-2 text-[11px] text-af2-ink-3">

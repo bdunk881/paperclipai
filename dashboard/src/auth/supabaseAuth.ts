@@ -1,5 +1,6 @@
 import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
 import type { StoredAuthSession } from "./authStorage";
+import { getEmailAuthCallbackUrl } from "./serverEmailAuth";
 
 export type SupabaseOAuthProvider = "google" | "github";
 
@@ -75,14 +76,6 @@ function authCallbackUrl(): string | undefined {
   }
 
   return `${window.location.origin}/auth/callback`;
-}
-
-function resetPasswordUrl(): string | undefined {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  return `${window.location.origin}/reset-password`;
 }
 
 export function isSupabaseAuthConfigured(): boolean {
@@ -323,7 +316,8 @@ export async function sendSupabaseMagicLink(email: string): Promise<void> {
   const { error } = await client.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: authCallbackUrl(),
+      emailRedirectTo: getEmailAuthCallbackUrl(),
+      shouldCreateUser: false,
     },
   });
 
@@ -334,7 +328,7 @@ export async function sendSupabaseMagicLink(email: string): Promise<void> {
 
 export async function sendSupabasePasswordReset(email: string): Promise<void> {
   const client = requireSupabaseClient();
-  const redirectTo = resetPasswordUrl();
+  const redirectTo = getEmailAuthCallbackUrl();
   const { error } = await client.auth.resetPasswordForEmail(email, {
     redirectTo,
   });

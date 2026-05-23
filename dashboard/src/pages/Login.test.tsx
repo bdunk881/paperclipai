@@ -7,6 +7,7 @@ const {
   signInWithSupabasePasswordMock,
   signUpWithSupabasePasswordMock,
   sendSupabaseMagicLinkMock,
+  verifyServerEmailOtpMock,
   signInWithSupabaseOAuthMock,
   isSupabaseAuthConfiguredMock,
   writeStoredAuthUserMock,
@@ -14,9 +15,14 @@ const {
   signInWithSupabasePasswordMock: vi.fn(),
   signUpWithSupabasePasswordMock: vi.fn(),
   sendSupabaseMagicLinkMock: vi.fn(),
+  verifyServerEmailOtpMock: vi.fn(),
   signInWithSupabaseOAuthMock: vi.fn(),
   isSupabaseAuthConfiguredMock: vi.fn(() => true),
   writeStoredAuthUserMock: vi.fn(),
+}));
+
+vi.mock("../auth/serverEmailAuth", () => ({
+  verifyServerEmailOtp: verifyServerEmailOtpMock,
 }));
 
 vi.mock("../auth/supabaseAuth", () => ({
@@ -167,7 +173,7 @@ describe("Login", () => {
     });
   });
 
-  it("sends a magic link from the dedicated mode", async () => {
+  it("sends a sign-in email from the dedicated mode", async () => {
     render(
       <MemoryRouter initialEntries={["/login?mode=magic-link"]}>
         <Routes>
@@ -179,11 +185,47 @@ describe("Login", () => {
     fireEvent.change(screen.getByLabelText("Work email"), {
       target: { value: "user@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send sign-in email" }));
 
     await waitFor(() => {
       expect(sendSupabaseMagicLinkMock).toHaveBeenCalledWith("user@example.com");
-      expect(screen.getByText(/magic link sent/i)).toBeInTheDocument();
+      expect(screen.getByText(/sign-in email sent/i)).toBeInTheDocument();
+    });
+  });
+
+  it("verifies an email OTP from the dedicated mode", async () => {
+    verifyServerEmailOtpMock.mockResolvedValue({
+      accessToken: "token",
+      expiresAt: Date.now() + 3600000,
+      user: { id: "u1", email: "user@example.com", name: "User" },
+      authProvider: "supabase",
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/login?mode=magic-link"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Work email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send sign-in email" }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("123456")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("123456"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Verify code" }));
+
+    await waitFor(() => {
+      expect(verifyServerEmailOtpMock).toHaveBeenCalledWith("user@example.com", "123456");
     });
   });
 });

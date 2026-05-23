@@ -29,6 +29,7 @@ import AgentDetail from "./pages/AgentDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
+import AuthConfirm from "./pages/AuthConfirm";
 import Escalations from "./pages/Escalations";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
@@ -208,6 +209,7 @@ const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage /> },
   { path: "/checkout/success", element: <CheckoutSuccess /> },
   { path: "/auth/callback", element: <AuthCallback /> },
+  { path: "/auth/confirm", element: <AuthConfirm /> },
   { path: "/auth/social-callback", element: <SocialAuthCallback /> },
   {
     path: "/login",

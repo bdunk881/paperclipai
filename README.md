@@ -84,7 +84,7 @@ infisical run --env=dev -- npm run dev
 
 Dashboard at `http://localhost:5173`. Vite proxies `/api` to the backend at `localhost:3000`.
 
-In Supabase Auth → URL configuration, allow `http://localhost:5173/auth/callback` and `http://localhost:5173/reset-password`.
+In Supabase Auth → URL configuration, allow dashboard OAuth callbacks and API email callbacks. See [`docs/auth/supabase-passwordless.md`](docs/auth/supabase-passwordless.md).
 
 ### Run via Docker (optional, for parity with prod)
 

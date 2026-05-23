@@ -62,6 +62,7 @@ import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
 import { asyncHandler } from "./middleware/asyncHandler";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
+import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
@@ -848,6 +849,7 @@ app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("a
 // ---------------------------------------------------------------------------
 
 app.use("/api/auth/social", authRouteRateLimiter, socialAuthRoutes);
+app.use("/api/auth", authRouteRateLimiter, passwordAuthRoutes);
 
 /** Returns the authenticated user's claims extracted from the auth token. */
 app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {

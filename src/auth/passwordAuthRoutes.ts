@@ -1,6 +1,7 @@
 import express, { type CookieOptions, type Request, type Response } from "express";
 import { createServerClient, type CookieMethodsServer } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = express.Router();
 
@@ -78,108 +79,120 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-router.post("/sign-up", async (req, res) => {
-  const client = resolveServerSupabase(req, res);
-  if (!client) {
-    notConfigured(res);
-    return;
-  }
+router.post(
+  "/sign-up",
+  asyncHandler(async (req, res) => {
+    const client = resolveServerSupabase(req, res);
+    if (!client) {
+      notConfigured(res);
+      return;
+    }
 
-  const body = (req.body ?? {}) as { email?: unknown; password?: unknown; name?: unknown };
-  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    badRequest(res, "email and password are required.");
-    return;
-  }
+    const body = (req.body ?? {}) as { email?: unknown; password?: unknown; name?: unknown };
+    if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
+      badRequest(res, "email and password are required.");
+      return;
+    }
 
-  const dashboardOrigin = resolveDashboardOrigin();
-  const fullName = isNonEmptyString(body.name) ? body.name.trim() : undefined;
+    const dashboardOrigin = resolveDashboardOrigin();
+    const fullName = isNonEmptyString(body.name) ? body.name.trim() : undefined;
 
-  const { data, error } = await client.auth.signUp({
-    email: body.email.trim(),
-    password: body.password,
-    options: {
-      emailRedirectTo: `${dashboardOrigin}/auth/confirm?next=/`,
-      data: fullName ? { full_name: fullName } : undefined,
-    },
-  });
+    const { data, error } = await client.auth.signUp({
+      email: body.email.trim(),
+      password: body.password,
+      options: {
+        emailRedirectTo: `${dashboardOrigin}/auth/confirm?next=/`,
+        data: fullName ? { full_name: fullName } : undefined,
+      },
+    });
 
-  if (error) {
-    badRequest(res, error.message);
-    return;
-  }
+    if (error) {
+      badRequest(res, error.message);
+      return;
+    }
 
-  res.status(200).json({
-    pendingConfirmation: !data.session,
-    user: data.user,
-  });
-});
+    res.status(200).json({
+      pendingConfirmation: !data.session,
+      user: data.user,
+    });
+  }),
+);
 
-router.post("/sign-in", async (req, res) => {
-  const client = resolveServerSupabase(req, res);
-  if (!client) {
-    notConfigured(res);
-    return;
-  }
+router.post(
+  "/sign-in",
+  asyncHandler(async (req, res) => {
+    const client = resolveServerSupabase(req, res);
+    if (!client) {
+      notConfigured(res);
+      return;
+    }
 
-  const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
-  if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
-    badRequest(res, "email and password are required.");
-    return;
-  }
+    const body = (req.body ?? {}) as { email?: unknown; password?: unknown };
+    if (!isNonEmptyString(body.email) || !isNonEmptyString(body.password)) {
+      badRequest(res, "email and password are required.");
+      return;
+    }
 
-  const { data, error } = await client.auth.signInWithPassword({
-    email: body.email.trim(),
-    password: body.password,
-  });
+    const { data, error } = await client.auth.signInWithPassword({
+      email: body.email.trim(),
+      password: body.password,
+    });
 
-  if (error) {
-    badRequest(res, error.message);
-    return;
-  }
+    if (error) {
+      badRequest(res, error.message);
+      return;
+    }
 
-  res.status(200).json({ user: data.user });
-});
+    res.status(200).json({ user: data.user });
+  }),
+);
 
-router.post("/sign-out", async (req, res) => {
-  const client = resolveServerSupabase(req, res);
-  if (!client) {
-    notConfigured(res);
-    return;
-  }
+router.post(
+  "/sign-out",
+  asyncHandler(async (req, res) => {
+    const client = resolveServerSupabase(req, res);
+    if (!client) {
+      notConfigured(res);
+      return;
+    }
 
-  const { error } = await client.auth.signOut({ scope: "local" });
-  if (error) {
-    badRequest(res, error.message);
-    return;
-  }
+    const { error } = await client.auth.signOut({ scope: "local" });
+    if (error) {
+      badRequest(res, error.message);
+      return;
+    }
 
-  res.status(204).end();
-});
+    res.status(204).end();
+  }),
+);
 
-router.post("/forgot-password", async (req, res) => {
-  const client = resolveServerSupabase(req, res);
-  if (!client) {
-    notConfigured(res);
-    return;
-  }
+router.post(
+  "/forgot-password",
+  asyncHandler(async (req, res) => {
+    const client = resolveServerSupabase(req, res);
+    if (!client) {
+      notConfigured(res);
+      return;
+    }
 
-  const body = (req.body ?? {}) as { email?: unknown };
-  if (!isNonEmptyString(body.email)) {
-    badRequest(res, "email is required.");
-    return;
-  }
+    const body = (req.body ?? {}) as { email?: unknown };
+    if (!isNonEmptyString(body.email)) {
+      badRequest(res, "email is required.");
+      return;
+    }
 
-  const dashboardOrigin = resolveDashboardOrigin();
-  const { error } = await client.auth.resetPasswordForEmail(body.email.trim(), {
-    redirectTo: `${dashboardOrigin}/reset-password`,
-  });
+    const dashboardOrigin = resolveDashboardOrigin();
+    const { error } = await client.auth.resetPasswordForEmail(body.email.trim(), {
+      redirectTo: `${dashboardOrigin}/reset-password`,
+    });
 
-  if (error) {
-    badRequest(res, error.message);
-    return;
-  }
+    if (error) {
+      badRequest(res, error.message);
+      return;
+    }
 
-  res.status(202).json({ ok: true });
-});
+    res.status(202).json({ ok: true });
+  }),
+);
 
 export default router;

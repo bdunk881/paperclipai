@@ -319,9 +319,7 @@ describe("getSupabaseStoredSession", () => {
     const { getSupabaseStoredSession } = await import("./supabaseAuth");
     const session = await getSupabaseStoredSession();
 
-    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith(
-      "https://app.test/auth/callback?code=ABC&state=xyz",
-    );
+    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith("ABC");
     expect(session?.accessToken).toBe("freshly-exchanged");
 
     Object.defineProperty(window, "location", { writable: true, value: originalLocation });
@@ -377,6 +375,12 @@ describe("getSupabaseStoredSession", () => {
     await Promise.all([getSupabaseStoredSession(), getSupabaseStoredSession()]);
 
     expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledTimes(1);
+    // Regression guard: supabase-js ships the argument verbatim as the
+    // `auth_code` POST field — must be the bare `?code=` value (a UUID
+    // from Supabase), NOT `window.location.href`. Passing the URL hits
+    // `flow_state_not_found` (404) at gotrue because the row's auth_code
+    // is just the UUID.
+    expect(mockAuthClient.exchangeCodeForSession).toHaveBeenCalledWith("ABC");
 
     Object.defineProperty(window, "location", { writable: true, value: originalLocation });
     window.history.replaceState = originalReplaceState;

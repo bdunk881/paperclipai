@@ -242,7 +242,14 @@ async function exchangeAuthCallbackCodeIfPresent(): Promise<void> {
 
   if (!codeExchangePromise) {
     codeExchangePromise = (async () => {
-      const { error: exchangeError } = await client.auth.exchangeCodeForSession(window.location.href);
+      // Pass the raw `?code=` value, NOT `window.location.href`. supabase-js's
+      // `_exchangeCodeForSession(authCode)` ships the argument verbatim as the
+      // `auth_code` field in the POST body (see auth-js GoTrueClient.js line
+      // 1478) — it does NOT parse a URL. If we pass the full URL, gotrue
+      // searches `auth.flow_state WHERE auth_code = '<full URL>'` and finds
+      // nothing → 404 `flow_state_not_found`. The fix is one line: send
+      // `code` (the UUID we already extracted above).
+      const { error: exchangeError } = await client.auth.exchangeCodeForSession(code);
       if (exchangeError) {
         throw new Error(exchangeError.message);
       }

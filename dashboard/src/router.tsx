@@ -439,3 +439,5 @@ function readStringArray(value: FormDataEntryValue | null): string[] {
     return [];
   }
 }
+
+// deploy-trigger: 2026-05-24T23:36:52Z — force clean rebuild

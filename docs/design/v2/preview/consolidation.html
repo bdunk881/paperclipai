@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>AutoFlow · UI Consolidation Preview</title>
+<title>AutoFlow · UI Consolidation Preview (merged plan v2)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -31,6 +31,7 @@
     --af2-radius: 6px;
     --af2-radius-lg: 12px;
     --af2-shadow: 0 1px 0 rgba(26,20,16,0.04), 0 6px 20px rgba(26,20,16,0.06);
+    --af2-shadow-lg: 0 1px 0 rgba(26,20,16,0.04), 0 18px 40px rgba(26,20,16,0.10);
     --af2-serif: "Fraunces","Iowan Old Style",Georgia,serif;
     --af2-sans: "Geist","Inter",ui-sans-serif,system-ui,sans-serif;
     --af2-mono: "JetBrains Mono","SFMono-Regular",ui-monospace,Menlo,monospace;
@@ -45,6 +46,8 @@
   }
   a { color: inherit; text-decoration: none; }
   button { font: inherit; cursor: pointer; }
+  code { font-family: var(--af2-mono); font-size: 0.9em; }
+  s { color: var(--af2-ink-4); }
 
   /* === Banner === */
   .preview-banner {
@@ -83,6 +86,7 @@
     padding: 4px 12px 4px 4px; background: rgba(26,20,16,0.06);
     color: var(--af2-ink-2); font-size: 12px; font-weight: 500;
     transition: background 0.15s, color 0.15s, border-color 0.15s;
+    position: relative;
   }
   .pro-pill .badge {
     width: 22px; height: 22px; border-radius: 999px;
@@ -94,6 +98,14 @@
     background: var(--af2-clay); color: #fff; border-color: var(--af2-clay);
   }
   body[data-pro="on"] .pro-pill .badge { background: #fff; color: var(--af2-clay); }
+  .pro-pill.locked { opacity: 0.55; cursor: not-allowed; }
+  .pro-pill .lock-tip {
+    display: none; position: absolute; top: 100%; right: 0; margin-top: 6px;
+    background: var(--af2-ink); color: var(--af2-paper);
+    padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 400;
+    white-space: nowrap; z-index: 50;
+  }
+  .pro-pill.locked:hover .lock-tip { display: block; }
 
   .ghost-btn {
     background: transparent; border: 1px solid var(--af2-line-2);
@@ -110,7 +122,7 @@
   }
 
   /* === Body grid === */
-  .body { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  .body { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; position: relative; }
   .sidebar {
     background: var(--af2-paper); border-right: 1px solid var(--af2-line);
     padding: 16px 12px 24px; overflow-y: auto;
@@ -134,12 +146,20 @@
     margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: 999px;
     background: var(--af2-clay); color: #fff; letter-spacing: 0.04em;
   }
-  .nav-divider { height: 1px; background: var(--af2-line); margin: 8px 8px; }
+  .nav-link .count {
+    margin-left: auto; font-size: 10px; padding: 1px 7px; border-radius: 999px;
+    background: var(--af2-line-2); color: var(--af2-ink-2); font-weight: 600;
+  }
+  .nav-link.active .count { background: rgba(246,241,231,0.2); color: var(--af2-paper); }
+  .nav-link.pro-shown { display: none; }
+  body[data-pro="on"] .nav-link.pro-shown { display: flex; }
+  .nav-link.pro-shown .new { background: var(--af2-ink-blue); }
 
   /* === Main === */
   main {
     padding: 28px 36px 48px; overflow-y: auto;
     background: var(--af2-paper);
+    position: relative;
   }
   .page-head { margin-bottom: 18px; }
   .eyebrow {
@@ -164,13 +184,13 @@
     background: transparent; border: 0; padding: 10px 14px;
     font-size: 13px; font-weight: 500; color: var(--af2-ink-3);
     border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: inline-flex; align-items: center; gap: 6px;
   }
   .tab:hover { color: var(--af2-ink); }
   .tab[aria-selected="true"] {
     color: var(--af2-ink); border-bottom-color: var(--af2-clay);
   }
   .tab .pro-chip {
-    display: inline-block; margin-left: 6px;
     font-size: 9px; padding: 1px 5px; border-radius: 3px;
     background: var(--af2-clay-soft); color: var(--af2-clay); letter-spacing: 0.04em;
   }
@@ -189,12 +209,16 @@
     margin: 0 0 4px; font-size: 18px;
   }
   .card .desc { color: var(--af2-ink-3); font-size: 13px; }
+  .card-list { padding: 0; }
+  .card-list h3 { padding: 14px 18px 4px; }
 
   .row {
-    display: grid; grid-template-columns: 120px 1.6fr 130px 90px 110px 130px;
+    display: grid; grid-template-columns: 110px 1.6fr 130px 90px 110px 130px;
     gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--af2-line);
-    align-items: center; font-size: 13px;
+    align-items: center; font-size: 13px; cursor: pointer;
+    transition: background 0.1s;
   }
+  .row:hover { background: var(--af2-paper-2); }
   .row:last-child { border-bottom: 0; }
   .row .id { font-family: var(--af2-mono); color: var(--af2-ink-3); font-size: 12px; }
   .row .actions { display: flex; gap: 6px; justify-content: flex-end; }
@@ -239,8 +263,7 @@
     padding: 12px 14px; border-bottom: 1px solid var(--af2-line);
     background: var(--af2-card);
   }
-  .int-row:first-of-type { border-top-left-radius: 6px; border-top-right-radius: 6px; }
-  .int-row:last-of-type { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; border-bottom: 1px solid var(--af2-line); }
+  .int-row:last-of-type { border-bottom: 1px solid var(--af2-line); }
   .int-logo {
     width: 36px; height: 36px; border-radius: 8px;
     background: var(--af2-paper-2); display: grid; place-items: center;
@@ -254,10 +277,13 @@
   body[data-pro="on"] .pro-only { display: block; }
   body[data-pro="on"] .pro-only.inline { display: inline-block; }
   body[data-pro="on"] .pro-only.flex { display: flex; }
-  body[data-pro="on"] .pro-only.grid { display: grid; }
-  body[data-pro="on"] .smb-only { opacity: 0.55; }
   body[data-pro="on"] .pro-tab { display: inline-flex; }
   .pro-tab { display: none; }
+  .smb-only { display: block; }
+  body[data-pro="on"] .smb-only { display: none; }
+  .pro-label { display: none; }
+  body[data-pro="on"] .pro-label { display: inline; }
+  body[data-pro="on"] .simple-label { display: none; }
 
   .pro-block {
     margin-top: 14px; padding: 14px 16px;
@@ -273,6 +299,7 @@
     font-family: var(--af2-mono); font-size: 11.5px;
     background: rgba(26,20,16,0.04); border-radius: 4px;
     padding: 10px 12px; margin: 6px 0 0; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-word;
   }
   .pro-banner {
     background: rgba(31,58,82,0.08); border: 1px solid rgba(31,58,82,0.18);
@@ -281,7 +308,7 @@
   }
   body[data-pro="on"] .pro-banner { display: none; }
 
-  /* === Before/after === */
+  /* === Stat grid === */
   .stat-grid {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
     margin: 14px 0 24px;
@@ -296,13 +323,13 @@
   .stat-num .from { color: var(--af2-ink-4); text-decoration: line-through; font-size: 18px; margin-right: 6px; }
   .stat-label { font-size: 12px; color: var(--af2-ink-3); margin-top: 4px; }
 
-  /* === Diff sidebar === */
+  /* === Compare overlay === */
   .compare {
     display: none; grid-template-columns: 1fr 1fr; gap: 18px;
-    margin: 24px 0;
+    padding: 24px 36px;
   }
   body[data-compare="on"] .compare { display: grid; }
-  body[data-compare="on"] .live-shell { display: none; }
+  body[data-compare="on"] .live-body { display: none; }
   .compare-pane {
     background: var(--af2-card); border: 1px solid var(--af2-line);
     border-radius: 10px; padding: 16px 14px;
@@ -330,10 +357,10 @@
   .mini-link.new { color: var(--af2-clay); font-weight: 500; }
   .mini-link.new::after { content: "NEW"; font-size: 8px; padding: 1px 5px; border-radius: 999px; background: var(--af2-clay); color:#fff; margin-left: auto; letter-spacing: 0.04em; }
 
-  /* === Activity feed === */
+  /* === Feed === */
   .feed-item {
-    display: grid; grid-template-columns: 110px 1fr;
-    padding: 10px 0; border-bottom: 1px dashed var(--af2-line);
+    display: grid; grid-template-columns: 90px 1fr;
+    padding: 8px 0; border-bottom: 1px dashed var(--af2-line);
     font-size: 13px; gap: 12px;
   }
   .feed-time { color: var(--af2-ink-4); font-family: var(--af2-mono); font-size: 11px; }
@@ -361,21 +388,60 @@
   }
 
   .desc-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
-  @media (max-width: 1080px) { .desc-grid, .stat-grid { grid-template-columns: 1fr 1fr; } }
+  .stat-grid-2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 18px; }
+  @media (max-width: 1080px) { .desc-grid, .stat-grid, .stat-grid-2 { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 760px) {
     .body { grid-template-columns: 1fr; }
     .sidebar { display: none; }
-    .stat-grid { grid-template-columns: 1fr; }
+    .stat-grid, .stat-grid-2 { grid-template-columns: 1fr; }
     .row { grid-template-columns: 1fr; }
+    .drawer { width: 100% !important; }
   }
 
-  /* Skip link */
+  /* === Skip link === */
   .skip {
     position: absolute; left: -9999px; top: 8px;
     background: var(--af2-ink); color: var(--af2-paper);
     padding: 8px 12px; border-radius: 6px; font-size: 12px;
   }
   .skip:focus { left: 8px; z-index: 999; }
+
+  /* === Drawer (Af2DetailDrawer) === */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(26,20,16,0.4);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 640px; max-width: 90vw;
+    background: var(--af2-card); border-left: 1px solid var(--af2-line);
+    box-shadow: -8px 0 32px rgba(26,20,16,0.12);
+    transform: translateX(100%); transition: transform 0.2s ease-out;
+    z-index: 41; display: flex; flex-direction: column;
+  }
+  body[data-drawer="on"] .drawer-overlay { opacity: 1; pointer-events: auto; }
+  body[data-drawer="on"] .drawer { transform: translateX(0); }
+
+  .drawer-head {
+    padding: 16px 22px; border-bottom: 1px solid var(--af2-line);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .drawer-head h2 {
+    font-family: var(--af2-serif); font-size: 22px; margin: 0; line-height: 1.1;
+  }
+  .drawer-head .eyebrow { margin: 0 0 4px; }
+  .drawer-close {
+    background: transparent; border: 1px solid var(--af2-line-2);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px;
+  }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 4px 22px 22px; }
+  .drawer-foot {
+    padding: 12px 22px; border-top: 1px solid var(--af2-line);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--af2-paper);
+  }
+  .drawer-foot .url { color: var(--af2-ink-4); font-family: var(--af2-mono); font-size: 11px; }
+  .drawer .tabs { margin: 14px 0 0; }
 </style>
 </head>
 <body>
@@ -383,51 +449,64 @@
 <a href="#main-content" class="skip">Skip to main content</a>
 
 <div class="preview-banner">
-  Planning preview · <b>not</b> production code · Use the <kbd>Pro mode</kbd> pill and sidebar to explore the consolidated IA
+  Merged plan v2 · Cursor + previous synthesis · Toggle <kbd>Pro mode</kbd> · click a list row to open a <kbd>drawer</kbd> · <kbd>Before vs after</kbd> for sidebar diff
 </div>
 
-<div class="shell live-shell">
+<div class="shell">
   <header class="topbar">
     <div class="topbar-logo">Auto<span>Flow</span></div>
 
     <div class="topbar-right">
       <input class="search" placeholder="Search agents, missions, workflows…" />
-      <button class="ghost-btn" id="compare-toggle" aria-pressed="false" onclick="toggleCompare()">
-        Before vs after
-      </button>
-      <button class="pro-pill" id="pro-toggle" aria-pressed="false" onclick="togglePro()" title="Reveals advanced fields, raw config, and developer surfaces">
+      <button class="ghost-btn" id="compare-toggle" aria-pressed="false" onclick="toggleCompare()">Before vs after</button>
+      <button class="ghost-btn" id="plan-toggle" aria-pressed="false" onclick="togglePlan()">Plan</button>
+      <button class="pro-pill" id="pro-toggle" aria-pressed="false" onclick="togglePro()" title="Reveals advanced fields, raw config, developer surfaces">
         <span class="badge">PRO</span>
         <span id="pro-label">Pro mode off</span>
+        <span class="lock-tip">Upgrade to Automate to unlock Pro mode</span>
       </button>
       <div class="avatar" aria-hidden="true">B</div>
     </div>
   </header>
 
-  <div class="body">
+  <div class="body live-body">
     <!-- =========================================================
-         New consolidated sidebar (10 entries, 4 pillars)
+         New consolidated sidebar (11 entries, 4 pillars)
+         Pro-only entries hidden until Pro is on.
          ========================================================= -->
     <aside class="sidebar" role="navigation" aria-label="Primary">
       <h2>Run</h2>
       <nav>
         <button class="nav-link" data-hub="home">  <span class="icon">⌂</span> Home</button>
-        <button class="nav-link" data-hub="missions"><span class="icon">◎</span> Missions</button>
-        <button class="nav-link active" data-hub="inbox"><span class="icon">✉</span> Inbox <span class="new">3 surfaces merged</span></button>
+        <button class="nav-link" data-hub="missions"><span class="icon">◎</span>
+          <span class="simple-label">Missions</span><span class="pro-label">Missions <span style="font-size:10px; opacity:0.6">(plans)</span></span>
+        </button>
+        <button class="nav-link" data-hub="assignments"><span class="icon">✉</span>
+          <span class="simple-label">Assignments</span><span class="pro-label">Mission assignments</span>
+          <span class="count">7</span>
+        </button>
+        <button class="nav-link active" data-hub="approvals"><span class="icon">✓</span>
+          <span class="simple-label">Approvals</span><span class="pro-label">Approvals &amp; escalations</span>
+          <span class="new">+ Escalations</span>
+        </button>
         <button class="nav-link" data-hub="activity"><span class="icon">≣</span> Activity</button>
       </nav>
 
       <h2>Workforce</h2>
       <nav>
-        <button class="nav-link" data-hub="team"><span class="icon">◌</span> Team</button>
-        <button class="nav-link" data-hub="agent"><span class="icon">●</span> Agent · Aaron</button>
+        <button class="nav-link" data-hub="team"><span class="icon">◌</span>
+          <span class="simple-label">Team</span><span class="pro-label">Org structure</span>
+        </button>
         <button class="nav-link" data-hub="hire"><span class="icon">+</span> Hire</button>
         <button class="nav-link" data-hub="budget"><span class="icon">$</span> Budget</button>
       </nav>
 
       <h2>Build</h2>
       <nav>
-        <button class="nav-link" data-hub="studio"><span class="icon">✱</span> Studio</button>
-        <button class="nav-link" data-hub="library"><span class="icon">▤</span> Library</button>
+        <button class="nav-link" data-hub="routines"><span class="icon">✱</span>
+          <span class="simple-label">Routines</span><span class="pro-label">Workflows &amp; routines</span>
+          <span class="new">Library + Studio</span>
+        </button>
       </nav>
 
       <h2>Connect</h2>
@@ -441,111 +520,71 @@
     <main id="main-content" tabindex="-1" aria-busy="false">
 
       <!-- =====================================================
-           INBOX HUB (replaces Tickets + Approvals + Escalations)
+           APPROVALS (absorbs Escalations as tab — Cursor's pick)
            ===================================================== -->
-      <section class="hub" data-hub="inbox">
+      <section class="hub" data-hub="approvals">
         <div class="page-head">
-          <div class="eyebrow">Run · Inbox</div>
-          <h1 class="h1">What needs you today</h1>
-          <p class="meta">12 open items · <a href="#">Filter</a> · <a href="#">SLA settings</a> · was <s>/mission-assignments</s>, <s>/approvals</s>, <s>/escalations</s></p>
+          <div class="eyebrow">Run · Governance</div>
+          <h1 class="h1"><span class="simple-label">Approvals</span><span class="pro-label">Approvals &amp; escalations</span></h1>
+          <p class="meta">5 open items needing your stamp · was <s>/approvals</s> + <s>/escalations</s></p>
         </div>
 
-        <div class="pro-banner">SMB default · Toggle <b>Pro mode</b> in the topbar to reveal raw payloads, policy traces, and full LLM traces.</div>
+        <div class="pro-banner">SMB default · Toggle <b>Pro mode</b> to reveal policy traces, per-approval spend, and full LLM traces.</div>
 
         <div class="tabs" role="tablist">
-          <button class="tab" role="tab" aria-selected="true" data-panel="inbox-assignments">Assignments <span class="pill mustard" style="margin-left:6px">7</span></button>
-          <button class="tab" role="tab" aria-selected="false" data-panel="inbox-approvals">Approvals <span class="pill clay" style="margin-left:6px">3</span></button>
-          <button class="tab" role="tab" aria-selected="false" data-panel="inbox-escalations">Escalations <span class="pill plum" style="margin-left:6px">2</span></button>
+          <button class="tab" role="tab" aria-selected="true" data-panel="apv-approvals">Approvals <span class="pill clay" style="margin-left:4px">3</span></button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="apv-escalations">
+            <span class="simple-label">Escalations</span><span class="pro-label">Escalated to leadership</span>
+            <span class="pill plum" style="margin-left:4px">2</span>
+          </button>
         </div>
 
-        <div class="panel" role="tabpanel" id="inbox-assignments">
-          <div class="subtabs" role="tablist" aria-label="Assignments view">
-            <button class="subtab" aria-selected="true">Queue</button>
-            <button class="subtab" aria-selected="false">SLA</button>
-            <button class="subtab" aria-selected="false">By team</button>
-          </div>
-
-          <div class="card" style="padding:0">
-            <div class="row" style="background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--af2-ink-3)">
-              <div>Ticket</div><div>Request</div><div>Agent</div><div>Risk</div><div>Cost</div><div></div>
-            </div>
-            <div class="row">
-              <div class="id">TKT-2041</div>
-              <div><b>Approve Q3 contract</b> with Acme Robotics<br><span style="color:var(--af2-ink-3); font-size:12px">$48,000 · 3y term · MSA exception</span></div>
-              <div><span class="pill dot sage">Aaron · Sales</span></div>
-              <div><span class="pill clay">high</span></div>
-              <div>$0.14</div>
-              <div class="actions"><button class="btn">Open</button></div>
-            </div>
-            <div class="row">
-              <div class="id">TKT-2039</div>
-              <div><b>Post launch announcement</b> to LinkedIn<br><span style="color:var(--af2-ink-3); font-size:12px">Public post · draft attached</span></div>
-              <div><span class="pill dot sage">Mira · Marketing</span></div>
-              <div><span class="pill mustard">medium</span></div>
-              <div>$0.02</div>
-              <div class="actions"><button class="btn">Open</button></div>
-            </div>
-            <div class="row">
-              <div class="id">TKT-2036</div>
-              <div><b>Add column to invoices table</b><br><span style="color:var(--af2-ink-3); font-size:12px">Schema change · destructive · review SQL</span></div>
-              <div><span class="pill dot sage">Eli · Engineering</span></div>
-              <div><span class="pill clay">high</span></div>
-              <div>$0.31</div>
-              <div class="actions"><button class="btn">Open</button></div>
-            </div>
-          </div>
-
-          <div class="pro-only pro-block">
-            <div class="label">Pro · Raw ticket payload</div>
-            <pre>{
-  "id": "TKT-2041",
-  "workspace_id": "ws_01H7Z…",
-  "primary_actor": { "type": "agent", "id": "agt_aaron", "tier": "standard" },
-  "policy_match": "spend_above_threshold &gt;= $25,000",
-  "external_sync": { "linear": "HEL-3204" }
-}</pre>
-            <div class="label" style="margin-top:14px">Pro · Saved filter JSON</div>
-            <pre>filter = (priority in ['high']) and (agent.team = 'sales') and (cost &gt; 0.10)</pre>
-          </div>
-        </div>
-
-        <div class="panel" role="tabpanel" id="inbox-approvals" hidden>
-          <div class="card" style="padding:0">
+        <div class="panel" role="tabpanel" id="apv-approvals">
+          <div class="card card-list" style="padding:0">
             <div class="row" style="background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--af2-ink-3)">
               <div>Approval</div><div>Action</div><div>Agent</div><div>Tier</div><div>Spend</div><div></div>
             </div>
-            <div class="row">
+            <div class="row" onclick="openDrawer('ticket', 'APR-118')">
               <div class="id">APR-118</div>
-              <div><b>Send pricing email</b> to inbound lead</div>
+              <div><b>Send pricing email</b> to inbound lead<br><span style="color:var(--af2-ink-3); font-size:12px">Acme Robotics · Q3 RFP</span></div>
               <div><span class="pill dot sage">Mira</span></div>
               <div><span class="pill plum">customer-facing</span></div>
               <div>—</div>
-              <div class="actions"><button class="btn ghost">Reject</button><button class="btn primary">Approve</button></div>
+              <div class="actions"><button class="btn ghost" onclick="event.stopPropagation()">Reject</button><button class="btn primary" onclick="event.stopPropagation()">Approve</button></div>
             </div>
-            <div class="row">
+            <div class="row" onclick="openDrawer('ticket', 'APR-117')">
               <div class="id">APR-117</div>
-              <div><b>Merge PR #482</b> to <code>main</code></div>
+              <div><b>Merge PR #482</b> to <code>main</code><br><span style="color:var(--af2-ink-3); font-size:12px">3 files · invoices schema</span></div>
               <div><span class="pill dot sage">Eli</span></div>
               <div><span class="pill plum">prod-deploy</span></div>
               <div>$0.04</div>
-              <div class="actions"><button class="btn ghost">Reject</button><button class="btn primary">Approve</button></div>
+              <div class="actions"><button class="btn ghost" onclick="event.stopPropagation()">Reject</button><button class="btn primary" onclick="event.stopPropagation()">Approve</button></div>
+            </div>
+            <div class="row" onclick="openDrawer('ticket', 'APR-116')">
+              <div class="id">APR-116</div>
+              <div><b>Post launch announcement</b> to LinkedIn<br><span style="color:var(--af2-ink-3); font-size:12px">Public post · draft attached</span></div>
+              <div><span class="pill dot sage">Mira</span></div>
+              <div><span class="pill plum">public-post</span></div>
+              <div>$0.02</div>
+              <div class="actions"><button class="btn ghost" onclick="event.stopPropagation()">Reject</button><button class="btn primary" onclick="event.stopPropagation()">Approve</button></div>
             </div>
           </div>
 
           <div class="pro-only pro-block">
             <div class="label">Pro · Policy trace for APR-118</div>
             <pre>matched: customer_facing_comms → require_approval
-reason: action_type=email_send AND recipient.is_customer=true
-policy_id: pol_01HE…  source: workspace_default</pre>
+reason:  action_type=email_send AND recipient.is_customer=true
+policy:  pol_01HE…  source: workspace_default
+spend_rollup: $0.087 (12,481 tok @ claude-opus-4-7)</pre>
           </div>
         </div>
 
-        <div class="panel" role="tabpanel" id="inbox-escalations" hidden>
+        <div class="panel" role="tabpanel" id="apv-escalations" hidden>
           <div class="card">
             <h3>Aaron asked: "Should I push back on Acme's 90-day payment terms?"</h3>
             <p class="desc">2 hours ago · escalated after policy rule <code>contract_exception</code> matched</p>
-            <p style="margin-top:14px">Aaron summarized: Acme wants Net-90; our standard is Net-30. Cashflow impact ~$24k float. Aaron's recommendation: counter at Net-45 with a 1% early-pay discount.</p>
-            <div style="display:flex; gap:8px; margin-top:14px">
+            <p style="margin-top:12px">Aaron summarized: Acme wants Net-90; our standard is Net-30. Cashflow impact ~$24k float. Aaron's recommendation: counter at Net-45 with a 1% early-pay discount.</p>
+            <div style="display:flex; gap:8px; margin-top:12px">
               <button class="btn">Reply with guidance</button>
               <button class="btn primary">Approve recommendation</button>
             </div>
@@ -561,7 +600,62 @@ retrieved memory: 4 items (instructions + 2 episodes + 1 knowledge)</pre>
       </section>
 
       <!-- =====================================================
-           CONNECT HUB (Integrations + Models + MCP + Health)
+           ASSIGNMENTS (kept top-level per Cursor / AGENTS.md)
+           ===================================================== -->
+      <section class="hub" data-hub="assignments" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Run · Work</div>
+          <h1 class="h1"><span class="simple-label">Assignments</span><span class="pro-label">Mission assignments (agent tasks)</span></h1>
+          <p class="meta">7 open · 2 awaiting reply · was /mission-assignments + /sla + /team</p>
+        </div>
+
+        <div class="subtabs" role="tablist" aria-label="Assignments view">
+          <button class="subtab" aria-selected="true">Queue</button>
+          <button class="subtab pro-tab" aria-selected="false">SLA</button>
+          <button class="subtab pro-tab" aria-selected="false">By team</button>
+        </div>
+        <div class="pro-only" style="font-size:11px; color:var(--af2-ink-blue); margin-bottom:10px">
+          ▸ SLA &amp; By-team sub-views now appear here (used to be top-level routes <code>/mission-assignments/sla</code> &amp; <code>/team</code>).
+        </div>
+
+        <div class="card card-list" style="padding:0">
+          <div class="row" style="background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--af2-ink-3)">
+            <div>Ticket</div><div>Request</div><div>Agent</div><div>Risk</div><div>Cost</div><div></div>
+          </div>
+          <div class="row" onclick="openDrawer('ticket', 'TKT-2041')">
+            <div class="id">TKT-2041</div>
+            <div><b>Approve Q3 contract</b> with Acme Robotics<br><span style="color:var(--af2-ink-3); font-size:12px">$48,000 · 3y term · MSA exception</span></div>
+            <div><span class="pill dot sage">Aaron · Sales</span></div>
+            <div><span class="pill clay">high</span></div>
+            <div>$0.14</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+          <div class="row" onclick="openDrawer('ticket', 'TKT-2039')">
+            <div class="id">TKT-2039</div>
+            <div><b>Post launch announcement</b><br><span style="color:var(--af2-ink-3); font-size:12px">Public post · draft attached</span></div>
+            <div><span class="pill dot sage">Mira · Marketing</span></div>
+            <div><span class="pill mustard">medium</span></div>
+            <div>$0.02</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+          <div class="row" onclick="openDrawer('ticket', 'TKT-2036')">
+            <div class="id">TKT-2036</div>
+            <div><b>Add column to invoices table</b><br><span style="color:var(--af2-ink-3); font-size:12px">Schema change · destructive · review SQL</span></div>
+            <div><span class="pill dot sage">Eli · Engineering</span></div>
+            <div><span class="pill clay">high</span></div>
+            <div>$0.31</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+        </div>
+
+        <div class="pro-only pro-block">
+          <div class="label">Pro · Saved filter JSON</div>
+          <pre>filter = (priority in ['high']) and (agent.team = 'sales') and (cost &gt; 0.10)</pre>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           CONNECT HUB (4→1, my plan stays)
            ===================================================== -->
       <section class="hub" data-hub="connect" hidden>
         <div class="page-head">
@@ -570,11 +664,13 @@ retrieved memory: 4 items (instructions + 2 episodes + 1 knowledge)</pre>
           <p class="meta">14 connected · 2 need attention · was <s>/integrations/mcp</s>, <s>/integrations/health</s>, <s>/settings/mcp-servers</s>, <s>/settings/llm-providers</s></p>
         </div>
 
-        <div class="pro-banner">SMB default · Pro mode adds tabs for <b>MCP Servers</b> and full <b>Health</b> ops, plus raw key fields per provider.</div>
+        <div class="pro-banner">SMB default · Pro mode adds <b>MCP Servers</b> + <b>Health</b> tabs and raw key fields per provider.</div>
 
         <div class="tabs" role="tablist">
           <button class="tab" role="tab" aria-selected="true" data-panel="connect-int">Integrations</button>
-          <button class="tab" role="tab" aria-selected="false" data-panel="connect-models">Models</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="connect-models">
+            <span class="simple-label">Models</span><span class="pro-label">LLM providers</span>
+          </button>
           <button class="tab pro-tab" role="tab" aria-selected="false" data-panel="connect-mcp">MCP Servers<span class="pro-chip">PRO</span></button>
           <button class="tab pro-tab" role="tab" aria-selected="false" data-panel="connect-health">Health<span class="pro-chip">PRO</span></button>
         </div>
@@ -612,22 +708,6 @@ retrieved memory: 4 items (instructions + 2 episodes + 1 knowledge)</pre>
             </div>
           </div>
 
-          <div class="int-cat">Code &amp; ops</div>
-          <div>
-            <div class="int-row">
-              <div class="int-logo">G</div>
-              <div><div class="int-name">GitHub</div><div class="int-desc">Issues · PRs · Actions</div></div>
-              <span class="pill dot sage">connected</span>
-              <button class="btn">Manage</button>
-            </div>
-            <div class="int-row">
-              <div class="int-logo">L</div>
-              <div><div class="int-name">Linear</div><div class="int-desc">Issues · projects</div></div>
-              <span class="pill dot sage">connected</span>
-              <button class="btn">Manage</button>
-            </div>
-          </div>
-
           <div class="pro-only pro-block">
             <div class="label">Pro · HubSpot raw config</div>
             <pre>client_id:     hs_pub_8f3a…
@@ -642,9 +722,8 @@ webhook_url:   https://api.helloautoflow.com/webhooks/hubspot</pre>
             <h3>Anthropic</h3>
             <div class="desc">Powers <b>large</b> tier · sk-ant-…RyZ4 · last used 2 min ago</div>
             <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
-
             <div class="pro-only pro-block">
-              <div class="label">Pro · Routing override</div>
+              <div class="label">Pro · Tier routing override</div>
               <pre>tier_routing:
   small:      openai/gpt-4o-mini
   medium:     anthropic/claude-haiku-4-5
@@ -658,16 +737,12 @@ base_url:     https://api.anthropic.com</pre>
             <div class="desc">Powers <b>small</b> tier · sk-…aB12 · last used 14s ago</div>
             <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
           </div>
-          <div class="card smb-only" style="text-align:center">
-            <button class="btn primary">+ Add provider</button>
-            <div class="desc" style="margin-top:6px">Google · Mistral · Bedrock · custom OpenAI-compatible</div>
-          </div>
         </div>
 
         <div class="panel" role="tabpanel" id="connect-mcp" hidden>
           <div class="card">
             <h3>Custom MCP servers</h3>
-            <p class="desc">Bring your own MCP server (stdio or HTTP). These show up as tools your agents can call.</p>
+            <p class="desc">Bring your own MCP server (stdio or HTTP). These become tools your agents can call.</p>
             <div class="card" style="margin-top:12px">
               <b>Notion MCP</b> · https://mcp.notion.example<br>
               <span class="pill dot sage">healthy</span> · 14 tools available
@@ -683,7 +758,7 @@ exposed_tools: [pages.search, blocks.append, db.query, …]</pre>
         </div>
 
         <div class="panel" role="tabpanel" id="connect-health" hidden>
-          <div class="card" style="padding:0">
+          <div class="card card-list" style="padding:0">
             <div class="row" style="grid-template-columns: 1fr 130px 110px 110px 110px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
               <div>Connector</div><div>Status</div><div>Last poll</div><div>Errors 24h</div><div></div>
             </div>
@@ -706,13 +781,13 @@ exposed_tools: [pages.search, blocks.append, db.query, …]</pre>
       </section>
 
       <!-- =====================================================
-           MEMORY HUB
+           MEMORY HUB (2→1)
            ===================================================== -->
       <section class="hub" data-hub="memory" hidden>
         <div class="page-head">
           <div class="eyebrow">Connect · Memory</div>
           <h1 class="h1">Memory</h1>
-          <p class="meta">Personal preferences + workspace knowledge in one place · was <s>/memory</s>, <s>/settings/memory</s></p>
+          <p class="meta">Personal preferences + workspace knowledge · was <s>/memory</s>, <s>/settings/memory</s></p>
         </div>
 
         <div class="tabs" role="tablist">
@@ -766,103 +841,221 @@ status: ready  last_reindex: 2026-04-15
       </section>
 
       <!-- =====================================================
-           AGENT DETAIL HUB
+           ROUTINES HUB (Library + Studio merge — Cursor)
            ===================================================== -->
-      <section class="hub" data-hub="agent" hidden>
+      <section class="hub" data-hub="routines" hidden>
         <div class="page-head">
-          <div class="eyebrow">Workforce · Team</div>
-          <h1 class="h1">Aaron Chen <span style="color:var(--af2-ink-3); font-size:18px">· Sales</span></h1>
-          <p class="meta"><span class="pill dot sage">active</span> · Manager: <b>Mira</b> · Tier: <b>standard</b> · was <s>/agents/:id</s>, <s>/agents/:id/job</s>, <s>/agents/:id/standing-tasks</s></p>
+          <div class="eyebrow">Build</div>
+          <h1 class="h1"><span class="simple-label">Routines</span><span class="pro-label">Workflows &amp; routines</span></h1>
+          <p class="meta">Build · run · schedule · was <s>/templates</s>, <s>/builder</s> · glossary: "Routine" replaces "Template" in copy</p>
         </div>
 
         <div class="tabs" role="tablist">
-          <button class="tab" role="tab" aria-selected="true" data-panel="agent-overview">Overview</button>
-          <button class="tab" role="tab" aria-selected="false" data-panel="agent-job">Job description</button>
-          <button class="tab" role="tab" aria-selected="false" data-panel="agent-tasks">Standing tasks</button>
+          <button class="tab" role="tab" aria-selected="true" data-panel="rou-mine">Mine</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="rou-lib">Library</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="rou-studio">Open in Studio →</button>
         </div>
 
-        <div class="panel" role="tabpanel" id="agent-overview">
-          <div class="desc-grid">
-            <div class="card">
-              <h3>What Aaron is working on</h3>
-              <div class="feed-item"><div class="feed-time">12s ago</div><div class="feed-msg">Drafting follow-up to <b>Acme Robotics</b></div></div>
-              <div class="feed-item"><div class="feed-time">2m ago</div><div class="feed-msg">Logged call in HubSpot · <b>Globex</b></div></div>
-              <div class="feed-item"><div class="feed-time">11m ago</div><div class="feed-msg">Awaiting approval on contract terms · <b>TKT-2041</b></div></div>
+        <div class="panel" role="tabpanel" id="rou-mine">
+          <div class="card card-list" style="padding:0">
+            <div class="row" style="grid-template-columns: 1fr 120px 100px 130px 120px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
+              <div>Routine</div><div>Owner</div><div>Status</div><div>Last run</div><div></div>
             </div>
-            <div class="card">
-              <h3>Quick facts</h3>
-              <div style="font-size:13px; color:var(--af2-ink-2); line-height:1.9">
-                <div>Tools: <b>HubSpot · Gmail · Slack</b></div>
-                <div>Budget: <b>$45.20 / $200.00</b> this month</div>
-                <div>Approvals required: <b>contracts, public posts</b></div>
-                <div>Memory shared with: <b>Mira (manager), Sales team</b></div>
-              </div>
-
-              <div class="pro-only pro-block">
-                <div class="label">Pro · Agent config</div>
-                <pre>id: agt_aaron
-model_tier_override: { large: anthropic/claude-opus-4-7 }
-tool_allowlist: [hubspot.*, gmail.send, slack.dm]
-budget_per_step_cents: 5000
-triage_policy_id: pol_aaron_tri…</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel" role="tabpanel" id="agent-job" hidden>
-          <div class="card">
-            <h3>Job description</h3>
-            <p class="desc smb-only">Plain-English what Aaron does, edited via wizard.</p>
-            <p style="margin-top:12px">Aaron is a sales SDR. He follows up on inbound demo requests within 30 minutes, qualifies the lead with 3 questions, books a meeting if qualified, and hands off to a human AE for closing. He never quotes pricing without approval and never sends contracts.</p>
-            <button class="btn" style="margin-top:10px">Edit with wizard</button>
-
-            <div class="pro-only pro-block">
-              <div class="label">Pro · System prompt (raw)</div>
-              <pre>You are Aaron, a B2B sales SDR for AutoFlow.
-
-# Rules
-- Reply to inbound demo requests within 30 minutes.
-- Qualify with the BANT questions defined in workspace knowledge `sales/bant`.
-- Never quote pricing; route price questions to an approval ticket.
-…</pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel" role="tabpanel" id="agent-tasks" hidden>
-          <div class="card" style="padding:0">
-            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
-              <div>Routine</div><div>Schedule</div><div>Last run</div><div>Status</div><div></div>
-            </div>
-            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px">
-              <div><b>Follow up on stale leads</b></div>
-              <div>Every 2h</div>
+            <div class="row" style="grid-template-columns: 1fr 120px 100px 130px 120px">
+              <div><b>Follow up on stale leads</b><br><span style="color:var(--af2-ink-3); font-size:12px">Aaron · every 2h</span></div>
+              <div>Aaron</div>
+              <div><span class="pill dot sage">live</span></div>
               <div class="id">8m ago</div>
-              <div><span class="pill dot sage">enabled</span></div>
-              <div class="actions"><button class="btn">Edit</button></div>
+              <div class="actions"><button class="btn">Open</button></div>
             </div>
-            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px">
-              <div><b>Weekly pipeline digest</b></div>
-              <div>Mon 9am</div>
+            <div class="row" style="grid-template-columns: 1fr 120px 100px 130px 120px">
+              <div><b>Weekly pipeline digest</b><br><span style="color:var(--af2-ink-3); font-size:12px">Mira · Mon 9am</span></div>
+              <div>Mira</div>
+              <div><span class="pill dot sage">live</span></div>
               <div class="id">2d ago</div>
-              <div><span class="pill dot sage">enabled</span></div>
-              <div class="actions"><button class="btn">Edit</button></div>
+              <div class="actions"><button class="btn">Open</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="rou-lib" hidden>
+          <div class="stat-grid-2">
+            <div class="card"><h3>Inbound lead triage</h3><div class="desc">Slack · HubSpot · qualify with BANT · 8 forks</div><button class="btn primary" style="margin-top:8px">Use template</button></div>
+            <div class="card"><h3>Weekly content digest</h3><div class="desc">Pull metrics · summarize · post to Slack · 12 forks</div><button class="btn primary" style="margin-top:8px">Use template</button></div>
+            <div class="card"><h3>Support triage</h3><div class="desc">Intercom · classify · route to agent · 6 forks</div><button class="btn primary" style="margin-top:8px">Use template</button></div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="rou-studio" hidden>
+          <div class="card">
+            <h3>Open in Studio</h3>
+            <p class="desc">Studio is the full graph editor with copilot, version diffs, and run history. Pro mode unlocks the env panel and observability tabs.</p>
+            <button class="btn primary" style="margin-top:10px">Launch Studio</button>
+            <div class="pro-only pro-block">
+              <div class="label">Pro · Studio inspector tabs</div>
+              <pre>inspector  |  versions  |  observability  |  env</pre>
+              <div style="font-size:11px; color:var(--af2-ink-blue); margin-top:6px">Studio's local Pro toggle now mirrors the global one — no more reset-on-navigation.</div>
             </div>
           </div>
         </div>
       </section>
 
       <!-- =====================================================
-           SETTINGS (slimmer)
+           HOME (trimmed per Cursor — no duplicate tables)
+           ===================================================== -->
+      <section class="hub" data-hub="home" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Run</div>
+          <h1 class="h1">Today</h1>
+          <p class="meta">Acme Robotics · Tuesday · what your agents did and what needs you</p>
+        </div>
+
+        <div class="stat-grid">
+          <div class="card"><div class="stat-num">5</div><div class="stat-label">approvals waiting</div></div>
+          <div class="card"><div class="stat-num">7</div><div class="stat-label">assignments open</div></div>
+          <div class="card"><div class="stat-num">$4.18</div><div class="stat-label">spent today</div></div>
+          <div class="card"><div class="stat-num">2</div><div class="stat-label">missions in flight</div></div>
+        </div>
+
+        <div class="desc-grid">
+          <div class="card">
+            <h3>Needs your stamp</h3>
+            <p class="desc">Top 3 — <a href="#" onclick="navigate('approvals'); return false">all approvals →</a></p>
+            <div class="feed-item"><div class="feed-time">APR-118</div><div class="feed-msg"><b>Mira</b> · pricing email to Acme</div></div>
+            <div class="feed-item"><div class="feed-time">APR-117</div><div class="feed-msg"><b>Eli</b> · merge PR #482</div></div>
+            <div class="feed-item"><div class="feed-time">APR-116</div><div class="feed-msg"><b>Mira</b> · LinkedIn launch post</div></div>
+            <div class="pro-only" style="font-size:11px; color:var(--af2-ink-blue); margin-top:8px">▸ Pro: full approvals list moved here used to crowd Home; now lives at /approvals.</div>
+          </div>
+          <div class="card">
+            <h3>Active missions</h3>
+            <p class="desc">2 in flight — <a href="#" onclick="navigate('missions'); return false">all missions →</a></p>
+            <div class="feed-item"><div class="feed-time">M-04</div><div class="feed-msg"><b>Book 5 demos this week</b> · 3/5 · on track</div></div>
+            <div class="feed-item"><div class="feed-time">M-05</div><div class="feed-msg"><b>Launch v2 features</b> · 8/12 · at risk</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Room</h3>
+          <p class="desc">Top 4 agents — <a href="#" onclick="navigate('team'); return false">team →</a></p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px">
+            <span class="pill dot sage">Aaron · Sales · drafting</span>
+            <span class="pill dot sage">Mira · Marketing · idle</span>
+            <span class="pill dot sage">Eli · Engineering · running tests</span>
+            <span class="pill dot mustard">Sage · Support · awaiting reply</span>
+          </div>
+        </div>
+
+        <div class="pro-only pro-block">
+          <div class="label">What changed</div>
+          <pre>BEFORE: Home duplicated Missions table (full rows), Team table (heartbeat detail),
+        Spend per-agent bars — same data shown 3x across nav.
+
+AFTER:  Home is now a command-center: 4 KPIs + top-3 approvals + top-2 missions +
+        4-agent room. "All →" links to the canonical owner page.</pre>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           HIRE (intake-only — past missions removed per Cursor)
+           ===================================================== -->
+      <section class="hub" data-hub="hire" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Workforce</div>
+          <h1 class="h1">Hire</h1>
+          <p class="meta">Describe a mission · we'll draft a hiring plan · was Hire.tsx + duplicate "Past missions" list</p>
+        </div>
+
+        <div class="card">
+          <h3>What should your new team do?</h3>
+          <label class="field">Mission statement<textarea rows="4" placeholder="e.g. Book 5 qualified product demos this week from inbound and warm outbound."></textarea></label>
+          <button class="btn primary">Draft hiring plan</button>
+        </div>
+        <p class="meta" style="margin-top:8px">
+          Looking for an old draft? Past missions live on <a href="#" onclick="navigate('missions'); return false">/mission-state</a> now.
+        </p>
+      </section>
+
+      <!-- =====================================================
+           TEAM (drawer-from-list demo lives here)
+           ===================================================== -->
+      <section class="hub" data-hub="team" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Workforce</div>
+          <h1 class="h1"><span class="simple-label">Team</span><span class="pro-label">Org structure</span></h1>
+          <p class="meta">4 agents · click a row to open the agent drawer · full route <code>/agents/:id</code> still works for deep links</p>
+        </div>
+
+        <div class="card card-list" style="padding:0">
+          <div class="row" style="grid-template-columns: 60px 1fr 130px 130px 100px 110px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
+            <div></div><div>Agent</div><div>Tier</div><div>Status</div><div>Budget</div><div></div>
+          </div>
+          <div class="row" style="grid-template-columns: 60px 1fr 130px 130px 100px 110px" onclick="openDrawer('agent', 'aaron')">
+            <div class="avatar" style="width:32px; height:32px; font-size:12px">A</div>
+            <div><b>Aaron Chen</b><br><span style="color:var(--af2-ink-3); font-size:12px">Sales SDR · manager: Mira</span></div>
+            <div><span class="pill">standard</span></div>
+            <div><span class="pill dot sage">active</span></div>
+            <div>$45 / $200</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+          <div class="row" style="grid-template-columns: 60px 1fr 130px 130px 100px 110px" onclick="openDrawer('agent', 'mira')">
+            <div class="avatar" style="width:32px; height:32px; font-size:12px">M</div>
+            <div><b>Mira Patel</b><br><span style="color:var(--af2-ink-3); font-size:12px">Marketing Manager · reports to Brad</span></div>
+            <div><span class="pill">power</span></div>
+            <div><span class="pill dot sage">active</span></div>
+            <div>$112 / $500</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+          <div class="row" style="grid-template-columns: 60px 1fr 130px 130px 100px 110px" onclick="openDrawer('agent', 'eli')">
+            <div class="avatar" style="width:32px; height:32px; font-size:12px">E</div>
+            <div><b>Eli Park</b><br><span style="color:var(--af2-ink-3); font-size:12px">Eng · reports to Brad</span></div>
+            <div><span class="pill">power</span></div>
+            <div><span class="pill dot mustard">awaiting approval</span></div>
+            <div>$88 / $400</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+        </div>
+
+        <p class="meta" style="margin-top:14px">Old paths <code>/agents/:id/job</code> and <code>/agents/:id/standing-tasks</code> still resolve and open the drawer pre-focused on the right tab.</p>
+      </section>
+
+      <!-- =====================================================
+           MISSIONS (drawer pattern repeats)
+           ===================================================== -->
+      <section class="hub" data-hub="missions" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Run</div>
+          <h1 class="h1">Missions</h1>
+          <p class="meta">3 active · 4 done · click a row to open the mission drawer</p>
+        </div>
+        <div class="card card-list" style="padding:0">
+          <div class="row" style="grid-template-columns: 80px 1fr 100px 130px 110px 100px" onclick="openDrawer('mission', 'M-04')">
+            <div class="id">M-04</div>
+            <div><b>Book 5 demos this week</b><br><span style="color:var(--af2-ink-3); font-size:12px">3/5 booked · Aaron + Mira</span></div>
+            <div><span class="pill dot sage">on track</span></div>
+            <div class="id">started 3d ago</div>
+            <div>$24.10</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+          <div class="row" style="grid-template-columns: 80px 1fr 100px 130px 110px 100px" onclick="openDrawer('mission', 'M-05')">
+            <div class="id">M-05</div>
+            <div><b>Launch v2 features</b><br><span style="color:var(--af2-ink-3); font-size:12px">8/12 tasks · Eli</span></div>
+            <div><span class="pill dot mustard">at risk</span></div>
+            <div class="id">started 6d ago</div>
+            <div>$118.22</div>
+            <div class="actions"><button class="btn">Open</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           SETTINGS (slim) + Budget + Activity stubs
            ===================================================== -->
       <section class="hub" data-hub="settings" hidden>
         <div class="page-head">
           <div class="eyebrow">Connect · Workspace</div>
           <h1 class="h1">Settings</h1>
-          <p class="meta">Acme Robotics · Automate plan · 12 seats · Credentials now live on <a href="#" data-jump="connect">/connect</a></p>
+          <p class="meta">Acme Robotics · Automate plan · 12 seats · Credentials moved to <a href="#" onclick="navigate('connect'); return false">/connect</a></p>
         </div>
-
         <div class="tabs" role="tablist">
           <button class="tab" role="tab" aria-selected="true" data-panel="set-general">General</button>
           <button class="tab" role="tab" aria-selected="false" data-panel="set-members">Members</button>
@@ -879,13 +1072,18 @@ triage_policy_id: pol_aaron_tri…</pre>
             <label class="field">Name<input value="Acme Robotics" /></label>
             <label class="field">Mission<textarea rows="2">Sell project-management software to design agencies, signing 5 new logos a month.</textarea></label>
             <label class="field">Timezone<select><option>America/New_York</option></select></label>
+            <label class="field" style="border-top:1px solid var(--af2-line); padding-top:14px">
+              Experience mode
+              <select><option>Simple — clean UI for everyday operators</option><option>Pro — show raw config, APIs, advanced tools</option></select>
+              <div style="font-size:11px; color:var(--af2-ink-3); margin-top:4px">Also toggleable via the topbar pill. Persists per workspace.</div>
+            </label>
 
             <div class="pro-only pro-block">
               <div class="label">Pro · Raw workspace</div>
               <pre>workspace_id:        ws_01H7Z4FYM6PTW…
 plan_tier:           automate
 lifecycle_status:    active
-feature_flags:       [v2_studio, inbox_unified, pro_mode]</pre>
+feature_flags:       [v2_studio, pro_mode, drawer_detail]</pre>
             </div>
           </div>
         </div>
@@ -893,7 +1091,7 @@ feature_flags:       [v2_studio, inbox_unified, pro_mode]</pre>
         <div class="panel" role="tabpanel" id="set-credentials" hidden>
           <div class="card">
             <h3>Credentials moved to /connect</h3>
-            <p class="desc">Every API key, OAuth credential, MCP token, and LLM provider key now lives on the <a href="#" data-jump="connect" style="color:var(--af2-clay)"><b>Connections</b></a> page so you can see "what's connected, what's stale" in one scan.</p>
+            <p class="desc">Every API key, OAuth credential, MCP token, and LLM provider key now lives on the <a href="#" onclick="navigate('connect'); return false" style="color:var(--af2-clay)"><b>Connections</b></a> page.</p>
             <button class="btn primary" style="margin-top:10px" onclick="navigate('connect')">Open Connections</button>
           </div>
         </div>
@@ -903,7 +1101,6 @@ feature_flags:       [v2_studio, inbox_unified, pro_mode]</pre>
             <h3>API keys</h3>
             <p class="desc">For programmatic access to your workspace.</p>
             <button class="btn primary" style="margin-top:10px">Create API key</button>
-
             <div class="pro-only pro-block">
               <div class="label">Pro · Webhook signing secret &amp; curl</div>
               <pre>signing_secret: whsec_AbCdEf… (rotate)
@@ -921,59 +1118,38 @@ curl -X POST https://api.helloautoflow.com/v1/missions \
         <div class="panel" role="tabpanel" id="set-billing" hidden><div class="card"><h3>Billing</h3><p class="desc">Automate · $99/mo · next invoice 2026-06-12</p></div></div>
       </section>
 
-      <!-- =====================================================
-           ACTIVITY (kept; unified feed)
-           ===================================================== -->
+      <section class="hub" data-hub="budget" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Budget</h1></div><div class="card"><h3>This month</h3><p class="desc">$148.40 / $1,000.00 spent · alerts at 80%</p></div></section>
       <section class="hub" data-hub="activity" hidden>
-        <div class="page-head">
-          <div class="eyebrow">Run · Activity</div>
-          <h1 class="h1">Activity</h1>
-          <p class="meta">Workspace-wide append-only feed · merged with audit log + run history</p>
-        </div>
+        <div class="page-head"><div class="eyebrow">Run</div><h1 class="h1">Activity</h1><p class="meta">Workspace-wide append-only feed</p></div>
         <div class="card">
           <div class="feed-item"><div class="feed-time">15:14:02</div><div class="feed-msg"><b>Mira</b> drafted post for Slack #marketing</div></div>
-          <div class="feed-item"><div class="feed-time">15:13:47</div><div class="feed-msg"><b>Aaron</b> escalated TKT-2041 to human (contract exception)</div></div>
+          <div class="feed-item"><div class="feed-time">15:13:47</div><div class="feed-msg"><b>Aaron</b> escalated TKT-2041 to human</div></div>
           <div class="feed-item"><div class="feed-time">15:11:09</div><div class="feed-msg"><b>routine.followup_stale_leads</b> ran (8 leads, $0.41)</div></div>
-          <div class="feed-item"><div class="feed-time">15:08:33</div><div class="feed-msg"><b>brad@…</b> approved APR-117 (merge PR #482)</div></div>
         </div>
-
         <div class="pro-only pro-block">
-          <div class="label">Pro · Filter by event type</div>
+          <div class="label">Pro · Filter</div>
           <pre>event_type in [agent.action, approval.resolved, routine.completed, audit.*]
-agent.id = agt_aaron
 since = 2026-05-23T00:00:00Z</pre>
         </div>
       </section>
 
-      <!-- Stubs for the other nav items so clicks don't dead-end -->
-      <section class="hub" data-hub="home" hidden>
-        <div class="page-head"><div class="eyebrow">Run</div><h1 class="h1">Home</h1><p class="meta">Mission state · what your agents did today · what needs you next</p></div>
-        <div class="card"><h3>Today</h3><p class="desc">3 approvals waiting · 7 assignments · 2 escalations · $4.18 spent</p>
-          <button class="btn primary" style="margin-top:10px" onclick="navigate('inbox')">Open Inbox</button>
-        </div>
-      </section>
-      <section class="hub" data-hub="missions" hidden><div class="page-head"><div class="eyebrow">Run</div><h1 class="h1">Missions</h1></div><div class="card"><h3>Active missions</h3><p class="desc">2 in flight · 1 paused · 4 done</p></div></section>
-      <section class="hub" data-hub="team" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Team</h1></div><div class="card"><h3>Org chart</h3><p class="desc">4 agents · Mira manages Aaron · Eli reports to brad@</p></div></section>
-      <section class="hub" data-hub="hire" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Hire</h1></div><div class="card"><h3>Describe a new mission</h3><p class="desc">We'll draft a hiring plan for you.</p></div></section>
-      <section class="hub" data-hub="budget" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Budget</h1></div><div class="card"><h3>This month</h3><p class="desc">$148.40 / $1,000.00 spent · alerts at 80%</p></div></section>
-      <section class="hub" data-hub="studio" hidden><div class="page-head"><div class="eyebrow">Build</div><h1 class="h1">Studio</h1></div><div class="card"><h3>Workflow builder</h3><p class="desc">(Already has Pro mode — now syncs with the global toggle.)</p></div></section>
-      <section class="hub" data-hub="library" hidden><div class="page-head"><div class="eyebrow">Build</div><h1 class="h1">Library</h1></div><div class="card"><h3>Templates</h3><p class="desc">12 starter workflows + 6 from your workspace</p></div></section>
-
     </main>
   </div>
 
-  <!-- Compare overlay -->
-  <div class="compare" style="padding: 0 36px">
+  <!-- =====================================================
+       Compare overlay (before vs after sidebar)
+       ===================================================== -->
+  <div class="compare">
     <div class="compare-pane">
       <h3>Before</h3>
-      <p>14 sidebar entries · 9 settings sub-routes · 5 inbox-style pages · 4 credential pages</p>
+      <p>14 sidebar entries · 9 settings sub-routes · 5 governance pages · 4 credential pages · 3 separate agent routes</p>
       <div class="mini-nav">
         <div class="mini-section">Run</div>
         <div class="mini-link"><span class="icon">⌂</span>Home</div>
         <div class="mini-link"><span class="icon">◎</span>Missions</div>
-        <div class="mini-link merged"><span class="icon">✉</span>Assignments → Inbox</div>
-        <div class="mini-link merged"><span class="icon">✓</span>Approvals → Inbox</div>
-        <div class="mini-link merged"><span class="icon">!</span>Escalations → Inbox</div>
+        <div class="mini-link"><span class="icon">✉</span>Assignments</div>
+        <div class="mini-link merged"><span class="icon">✓</span>Approvals · absorbs Escalations</div>
+        <div class="mini-link removed"><span class="icon">!</span>Escalations</div>
         <div class="mini-link"><span class="icon">≣</span>Activity</div>
 
         <div class="mini-section">Workforce</div>
@@ -982,27 +1158,29 @@ since = 2026-05-23T00:00:00Z</pre>
         <div class="mini-link"><span class="icon">$</span>Budget</div>
 
         <div class="mini-section">Build</div>
-        <div class="mini-link"><span class="icon">✱</span>Studio</div>
-        <div class="mini-link"><span class="icon">▤</span>Library</div>
+        <div class="mini-link merged"><span class="icon">✱</span>Studio · merge with Library</div>
+        <div class="mini-link removed"><span class="icon">▤</span>Library</div>
 
         <div class="mini-section">Connect</div>
-        <div class="mini-link merged"><span class="icon">⌬</span>Integrations → Connections</div>
-        <div class="mini-link merged"><span class="icon">✦</span>Models → Connections</div>
+        <div class="mini-link merged"><span class="icon">⌬</span>Integrations · merge with Health, MCP, Models</div>
+        <div class="mini-link removed"><span class="icon">✦</span>Models</div>
         <div class="mini-link"><span class="icon">⚙</span>Settings</div>
       </div>
       <div style="margin-top:14px; font-size:12px; color:var(--af2-ink-3)">
-        + sub-routes: /settings/llm-providers, /settings/mcp-servers, /settings/memory, /integrations/health, /mission-assignments/sla, /mission-assignments/team, /agents/:id/job, /agents/:id/standing-tasks
+        + duplicate sub-routes: /settings/llm-providers, /settings/mcp-servers, /settings/memory, /integrations/health, /mission-assignments/sla, /mission-assignments/team, /agents/:id/job, /agents/:id/standing-tasks, /agents/team/:id, /missions/:id<br>
+        + dead code: OnboardingWizard.tsx (unmounted), AgentTeamDetail.tsx (no inbound links)
       </div>
     </div>
 
     <div class="compare-pane">
       <h3>After</h3>
-      <p>10 sidebar entries · settings slim · 1 Inbox · 1 Connections · 1 Memory · agent tabs · workspace-wide Pro mode</p>
+      <p>11 sidebar entries · settings slim · 1 Connections · 1 Memory · 1 Routines · drawer-first detail · workspace-wide Pro mode</p>
       <div class="mini-nav">
         <div class="mini-section">Run</div>
         <div class="mini-link"><span class="icon">⌂</span>Home</div>
         <div class="mini-link"><span class="icon">◎</span>Missions</div>
-        <div class="mini-link new"><span class="icon">✉</span>Inbox</div>
+        <div class="mini-link"><span class="icon">✉</span>Assignments</div>
+        <div class="mini-link new"><span class="icon">✓</span>Approvals (+ Escalations tab)</div>
         <div class="mini-link"><span class="icon">≣</span>Activity</div>
 
         <div class="mini-section">Workforce</div>
@@ -1011,8 +1189,7 @@ since = 2026-05-23T00:00:00Z</pre>
         <div class="mini-link"><span class="icon">$</span>Budget</div>
 
         <div class="mini-section">Build</div>
-        <div class="mini-link"><span class="icon">✱</span>Studio</div>
-        <div class="mini-link"><span class="icon">▤</span>Library</div>
+        <div class="mini-link new"><span class="icon">✱</span>Routines</div>
 
         <div class="mini-section">Connect</div>
         <div class="mini-link new"><span class="icon">⌬</span>Connections</div>
@@ -1020,17 +1197,143 @@ since = 2026-05-23T00:00:00Z</pre>
         <div class="mini-link"><span class="icon">⚙</span>Settings</div>
       </div>
       <div style="margin-top:14px; font-size:12px; color:var(--af2-ink-3)">
-        Old URLs redirect into new tabs via <code>?tab=…</code>. Every bookmark still resolves.
+        Old URLs redirect into the right tab via <code>?tab=…</code> · detail routes preserved alongside drawers · 90-day redirect window
       </div>
     </div>
   </div>
 
+  <!-- =====================================================
+       Stats footer
+       ===================================================== -->
   <div style="padding: 4px 36px 36px">
     <div class="stat-grid">
-      <div class="stat-card"><div class="stat-num"><span class="from">14</span>10</div><div class="stat-label">sidebar entries</div></div>
-      <div class="stat-card"><div class="stat-num"><span class="from">5</span>1</div><div class="stat-label">human-gating surfaces</div></div>
-      <div class="stat-card"><div class="stat-num"><span class="from">4</span>1</div><div class="stat-label">credential surfaces</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">14</span>11</div><div class="stat-label">sidebar entries</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">4</span>1</div><div class="stat-label">credential surfaces (→ /connect)</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">2</span>1</div><div class="stat-label">memory pages (→ /memory)</div></div>
       <div class="stat-card"><div class="stat-num"><span class="from">9</span>4</div><div class="stat-label">settings sub-routes</div></div>
+    </div>
+  </div>
+
+  <!-- =====================================================
+       Drawer (Af2DetailDrawer demo)
+       ===================================================== -->
+  <div class="drawer-overlay" onclick="closeDrawer()"></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="Detail drawer">
+    <div class="drawer-head">
+      <div>
+        <div class="eyebrow" id="drawer-eyebrow">Workforce · Agent</div>
+        <h2 id="drawer-title">Aaron Chen</h2>
+      </div>
+      <button class="drawer-close" onclick="closeDrawer()" aria-label="Close">Esc · Close</button>
+    </div>
+
+    <div class="tabs" role="tablist" style="padding: 0 22px">
+      <button class="tab drawer-tab" role="tab" aria-selected="true" data-drawer-panel="dr-overview">Overview</button>
+      <button class="tab drawer-tab" role="tab" aria-selected="false" data-drawer-panel="dr-job">Job description</button>
+      <button class="tab drawer-tab" role="tab" aria-selected="false" data-drawer-panel="dr-tasks">Standing tasks</button>
+      <button class="tab drawer-tab" role="tab" aria-selected="false" data-drawer-panel="dr-budget">Budget</button>
+    </div>
+
+    <div class="drawer-body">
+      <div class="panel" id="dr-overview" role="tabpanel">
+        <div class="card" style="margin-top:14px">
+          <h3 id="drawer-name">Aaron Chen · <span style="color:var(--af2-ink-3); font-weight:400">Sales SDR</span></h3>
+          <div style="margin:10px 0"><span class="pill dot sage">active</span> · drafting follow-up · 12s ago</div>
+          <div style="font-size:13px; color:var(--af2-ink-2); line-height:1.9">
+            <div>Manager: <b>Mira Patel</b></div>
+            <div>Tools: <b>HubSpot · Gmail · Slack</b></div>
+            <div>Budget: <b>$45.20 / $200.00</b> this month</div>
+            <div>Approvals required: <b>contracts, public posts</b></div>
+          </div>
+        </div>
+        <div class="pro-only pro-block">
+          <div class="label">Pro · Agent config</div>
+          <pre>id: agt_aaron
+tier_overrides: { large: anthropic/claude-opus-4-7 }
+tool_allowlist: [hubspot.*, gmail.send, slack.dm]
+triage_policy:  pol_aaron_tri…
+budget_per_step_cents: 5000</pre>
+        </div>
+      </div>
+
+      <div class="panel" id="dr-job" role="tabpanel" hidden>
+        <div class="card" style="margin-top:14px">
+          <h3>Job description</h3>
+          <p class="desc smb-only">Plain-English what Aaron does, edited via wizard.</p>
+          <p style="margin-top:10px">Aaron is a sales SDR. He follows up on inbound demo requests within 30 minutes, qualifies the lead with 3 BANT questions, books a meeting if qualified, and hands off to a human AE for closing. He never quotes pricing without approval and never sends contracts.</p>
+          <button class="btn" style="margin-top:10px">Edit with wizard</button>
+          <div class="pro-only pro-block">
+            <div class="label">Pro · System prompt (raw)</div>
+            <pre>You are Aaron, a B2B sales SDR for AutoFlow.
+# Rules
+- Reply to inbound demo requests within 30 minutes.
+- Qualify with the BANT questions in `sales/bant`.
+- Never quote pricing; route price questions to an approval.
+…</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="dr-tasks" role="tabpanel" hidden>
+        <div class="card card-list" style="padding:0; margin-top:14px">
+          <div class="row" style="grid-template-columns: 1fr 100px 100px 90px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
+            <div>Routine</div><div>Schedule</div><div>Status</div><div></div>
+          </div>
+          <div class="row" style="grid-template-columns: 1fr 100px 100px 90px">
+            <div><b>Follow up stale leads</b></div>
+            <div>Every 2h</div>
+            <div><span class="pill dot sage">on</span></div>
+            <div class="actions"><button class="btn">Edit</button></div>
+          </div>
+          <div class="row" style="grid-template-columns: 1fr 100px 100px 90px">
+            <div><b>Weekly pipeline digest</b></div>
+            <div>Mon 9am</div>
+            <div><span class="pill dot sage">on</span></div>
+            <div class="actions"><button class="btn">Edit</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="dr-budget" role="tabpanel" hidden>
+        <div class="card" style="margin-top:14px">
+          <h3>Budget</h3>
+          <p class="desc">$45.20 / $200.00 this month · alerts at 80%</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="drawer-foot">
+      <span class="url" id="drawer-url">?drawer=agent&amp;id=aaron · also at /agents/aaron</span>
+      <a href="#" class="btn" onclick="event.preventDefault(); closeDrawer(); alert('Would navigate to full route /agents/aaron')">Open full page →</a>
+    </div>
+  </aside>
+
+  <!-- =====================================================
+       Plan overlay (text plan from the markdown)
+       ===================================================== -->
+  <div id="plan-overlay" style="display:none; position:fixed; inset:0; background:rgba(26,20,16,0.5); z-index:60" onclick="togglePlan()">
+    <div style="position:absolute; top:5%; left:50%; transform:translateX(-50%); width:min(880px,92vw); max-height:90vh; overflow:auto; background:var(--af2-card); border-radius:10px; padding:24px 32px" onclick="event.stopPropagation()">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+        <div>
+          <div class="eyebrow">Final plan</div>
+          <h2 style="font-family:var(--af2-serif); margin:4px 0 0">UI consolidation · drawer detail · Pro mode</h2>
+        </div>
+        <button class="btn" onclick="togglePlan()">Close</button>
+      </div>
+      <h3 style="font-family:var(--af2-serif)">Order of operations</h3>
+      <ul style="line-height:1.7">
+        <li><b>PR 1 — Foundation:</b> Af2Tabs · Af2DetailDrawer · ExperienceModeContext + useExperienceCopy · topbar Pro pill · skip link + landmarks + ARIA · migration 058_user_profile_preferences.sql · profile-routes GET/PATCH /api/user/preferences · WorkflowBuilder + StepSetupCoach migrated to context.</li>
+        <li><b>PR A — Quick wins:</b> Memory merge · Approvals/Escalations tabs · Home trim · Hire dedupe · delete OnboardingWizard + AgentTeamDetail · drop duplicate Models nav.</li>
+        <li><b>PR B — Connections + Routines:</b> /connect 4-tab hub · /routines Library+Studio merge.</li>
+        <li><b>PR C — Detail drawers:</b> agent/mission/ticket drawers on OrgStructure/MissionState/Tickets · full routes preserved.</li>
+        <li><b>PR D — Settings slim + Pro reveals tail.</b></li>
+      </ul>
+      <h3 style="font-family:var(--af2-serif)">Best of both plans</h3>
+      <ul style="line-height:1.7">
+        <li>From Cursor: <b>Assignments stays top-level</b> · Approvals absorbs Escalations only · Home/Hire trim · OnboardingWizard + AgentTeamDetail deletion · Library+Studio → Routines · drawer-first detail UX · useExperienceCopy SMB↔Pro label hook · entitlement tie-in (optional).</li>
+        <li>From previous synthesis: <b>full /connect hub</b> (4 credentials → 1) · server-side preference on user_profiles.preferences JSONB · Af2Tabs primitive with proper ARIA · concrete Pro reveals per page.</li>
+      </ul>
+      <p style="font-size:12px; color:var(--af2-ink-3)">Full plan file: <code>/root/.claude/plans/separate-parts-of-our-smooth-diffie.md</code></p>
     </div>
   </div>
 </div>
@@ -1054,45 +1357,55 @@ since = 2026-05-23T00:00:00Z</pre>
     document.getElementById("compare-toggle").setAttribute("aria-pressed", on ? "false" : "true");
   }
 
+  /* === Plan overlay === */
+  function togglePlan() {
+    const el = document.getElementById("plan-overlay");
+    el.style.display = el.style.display === "none" ? "block" : "none";
+    document.getElementById("plan-toggle").setAttribute("aria-pressed", el.style.display === "block");
+  }
+
   /* === Sidebar navigation === */
   function navigate(hub) {
+    closeDrawer();
     document.querySelectorAll(".nav-link").forEach((n) => {
       n.classList.toggle("active", n.dataset.hub === hub);
     });
     document.querySelectorAll(".hub").forEach((s) => {
       s.hidden = s.dataset.hub !== hub;
     });
-    const main = document.getElementById("main-content");
-    main.focus({ preventScroll: false });
+    document.getElementById("main-content").focus({ preventScroll: false });
   }
   document.querySelectorAll(".nav-link").forEach((n) =>
     n.addEventListener("click", () => navigate(n.dataset.hub))
   );
-  document.querySelectorAll("[data-jump]").forEach((a) =>
-    a.addEventListener("click", (e) => { e.preventDefault(); navigate(a.dataset.jump); })
-  );
 
-  /* === Tabs (within each hub) === */
-  document.querySelectorAll('.tabs').forEach((tablist) => {
-    const tabs = [...tablist.querySelectorAll('.tab')];
-    tabs.forEach((tab, idx) => {
-      tab.addEventListener('click', () => activate(tab));
-      tab.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowRight') tabs[(idx + 1) % tabs.length].focus();
-        if (e.key === 'ArrowLeft')  tabs[(idx - 1 + tabs.length) % tabs.length].focus();
-        if (e.key === 'Home')       tabs[0].focus();
-        if (e.key === 'End')        tabs[tabs.length - 1].focus();
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(document.activeElement); }
+  /* === Tabs (hub-level and drawer-level) === */
+  function bindTabs(scope) {
+    scope.querySelectorAll('.tabs').forEach((tablist) => {
+      const tabs = [...tablist.querySelectorAll(':scope > .tab, :scope > .drawer-tab, :scope > [role="tab"]')];
+      if (!tabs.length) return;
+      tabs.forEach((tab, idx) => {
+        tab.addEventListener('click', () => activate(tab));
+        tab.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowRight') tabs[(idx + 1) % tabs.length].focus();
+          if (e.key === 'ArrowLeft')  tabs[(idx - 1 + tabs.length) % tabs.length].focus();
+          if (e.key === 'Home')       tabs[0].focus();
+          if (e.key === 'End')        tabs[tabs.length - 1].focus();
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(document.activeElement); }
+        });
       });
+      function activate(target) {
+        tabs.forEach((t) => t.setAttribute('aria-selected', t === target ? 'true' : 'false'));
+        const panelId = target.dataset.panel || target.dataset.drawerPanel;
+        if (!panelId) return;
+        const root = tablist.closest('.drawer') || tablist.parentElement;
+        root.querySelectorAll('[role="tabpanel"]').forEach((p) => {
+          p.hidden = p.id !== panelId;
+        });
+      }
     });
-    function activate(target) {
-      tabs.forEach((t) => t.setAttribute('aria-selected', t === target ? 'true' : 'false'));
-      const panelId = target.dataset.panel;
-      tablist.parentElement.querySelectorAll(':scope > [role="tabpanel"]').forEach((p) => {
-        p.hidden = p.id !== panelId;
-      });
-    }
-  });
+  }
+  bindTabs(document);
 
   /* === Sub-tabs === */
   document.querySelectorAll('.subtabs').forEach((bar) => {
@@ -1102,6 +1415,55 @@ since = 2026-05-23T00:00:00Z</pre>
         tabs.forEach((t) => t.setAttribute('aria-selected', t === tab ? 'true' : 'false'));
       });
     });
+  });
+
+  /* === Drawer === */
+  const DRAWER_META = {
+    agent: {
+      eyebrow: 'Workforce · Agent',
+      records: {
+        aaron: { name: 'Aaron Chen · Sales SDR', url: '/agents/aaron' },
+        mira:  { name: 'Mira Patel · Marketing Manager', url: '/agents/mira' },
+        eli:   { name: 'Eli Park · Engineering', url: '/agents/eli' },
+      },
+    },
+    mission: {
+      eyebrow: 'Run · Mission',
+      records: {
+        'M-04': { name: 'Book 5 demos this week', url: '/missions/M-04' },
+        'M-05': { name: 'Launch v2 features',      url: '/missions/M-05' },
+      },
+    },
+    ticket: {
+      eyebrow: 'Run · Assignment',
+      records: {
+        'TKT-2041': { name: 'Approve Q3 contract · Acme', url: '/mission-assignments/TKT-2041' },
+        'TKT-2039': { name: 'Post launch announcement',    url: '/mission-assignments/TKT-2039' },
+        'TKT-2036': { name: 'Add column to invoices table', url: '/mission-assignments/TKT-2036' },
+        'APR-118':  { name: 'Send pricing email to lead',   url: '/approvals/APR-118' },
+        'APR-117':  { name: 'Merge PR #482 to main',         url: '/approvals/APR-117' },
+        'APR-116':  { name: 'Post launch announcement',      url: '/approvals/APR-116' },
+      },
+    },
+  };
+
+  let lastFocused = null;
+  function openDrawer(kind, id) {
+    const meta = DRAWER_META[kind]; if (!meta) return;
+    const rec = meta.records[id] || { name: id, url: '/' + kind + '/' + id };
+    document.getElementById('drawer-eyebrow').textContent = meta.eyebrow;
+    document.getElementById('drawer-title').textContent = rec.name;
+    document.getElementById('drawer-url').textContent = '?drawer=' + kind + '&id=' + id + ' · also at ' + rec.url;
+    lastFocused = document.activeElement;
+    document.body.dataset.drawer = 'on';
+    document.querySelector('.drawer').focus();
+  }
+  function closeDrawer() {
+    document.body.dataset.drawer = 'off';
+    if (lastFocused) lastFocused.focus();
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.dataset.drawer === 'on') closeDrawer();
   });
 </script>
 </body>

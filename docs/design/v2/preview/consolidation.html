@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en" data-af2-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AutoFlow · UI Consolidation Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;500&family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --af2-paper: #f6f1e7;
+    --af2-paper-2: #ede5d3;
+    --af2-paper-3: #e3d9c2;
+    --af2-card: #ffffff;
+    --af2-ink: #1a1410;
+    --af2-ink-2: #3a2f25;
+    --af2-ink-3: #6b5a48;
+    --af2-ink-4: #94836e;
+    --af2-line: rgba(26,20,16,0.10);
+    --af2-line-2: rgba(26,20,16,0.18);
+    --af2-clay: #c2502b;
+    --af2-clay-2: #d96239;
+    --af2-clay-soft: #f0c8b8;
+    --af2-sage: #4a6b4a;
+    --af2-sage-2: #6b8e6b;
+    --af2-mustard: #b8862c;
+    --af2-mustard-2: #d49e3e;
+    --af2-plum: #5d3a5e;
+    --af2-ink-blue: #1f3a52;
+    --af2-radius: 6px;
+    --af2-radius-lg: 12px;
+    --af2-shadow: 0 1px 0 rgba(26,20,16,0.04), 0 6px 20px rgba(26,20,16,0.06);
+    --af2-serif: "Fraunces","Iowan Old Style",Georgia,serif;
+    --af2-sans: "Geist","Inter",ui-sans-serif,system-ui,sans-serif;
+    --af2-mono: "JetBrains Mono","SFMono-Regular",ui-monospace,Menlo,monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100vh; }
+  body {
+    font: 14px/1.5 var(--af2-sans);
+    background: var(--af2-paper);
+    color: var(--af2-ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; cursor: pointer; }
+
+  /* === Banner === */
+  .preview-banner {
+    background: var(--af2-ink); color: var(--af2-paper);
+    padding: 8px 16px; font-size: 12px; text-align: center;
+    letter-spacing: 0.04em;
+  }
+  .preview-banner b { color: var(--af2-clay-2); }
+  .preview-banner kbd {
+    background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 4px; padding: 1px 6px; font-family: var(--af2-mono); font-size: 11px;
+  }
+
+  /* === Shell === */
+  .shell { display: flex; flex-direction: column; min-height: calc(100vh - 32px); }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px; background: var(--af2-paper);
+    border-bottom: 1px solid var(--af2-line);
+    position: sticky; top: 0; z-index: 30;
+  }
+  .topbar-logo { font-family: var(--af2-serif); font-size: 22px; letter-spacing: -0.02em; }
+  .topbar-logo span { color: var(--af2-clay); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+
+  .search {
+    background: var(--af2-card); border: 1px solid var(--af2-line);
+    border-radius: 999px; padding: 6px 14px; font-size: 13px;
+    color: var(--af2-ink-3); width: 240px;
+  }
+
+  .pro-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--af2-line-2); border-radius: 999px;
+    padding: 4px 12px 4px 4px; background: rgba(26,20,16,0.06);
+    color: var(--af2-ink-2); font-size: 12px; font-weight: 500;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .pro-pill .badge {
+    width: 22px; height: 22px; border-radius: 999px;
+    background: var(--af2-card); color: var(--af2-ink);
+    display: grid; place-items: center; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  body[data-pro="on"] .pro-pill {
+    background: var(--af2-clay); color: #fff; border-color: var(--af2-clay);
+  }
+  body[data-pro="on"] .pro-pill .badge { background: #fff; color: var(--af2-clay); }
+
+  .ghost-btn {
+    background: transparent; border: 1px solid var(--af2-line-2);
+    border-radius: 6px; padding: 5px 10px; color: var(--af2-ink-2);
+    font-size: 12px;
+  }
+  .ghost-btn:hover { background: var(--af2-paper-2); }
+  .ghost-btn[aria-pressed="true"] { background: var(--af2-ink); color: var(--af2-paper); border-color: var(--af2-ink); }
+
+  .avatar {
+    width: 32px; height: 32px; border-radius: 999px;
+    background: linear-gradient(135deg, var(--af2-clay), var(--af2-mustard));
+    color: #fff; display: grid; place-items: center; font-weight: 700;
+  }
+
+  /* === Body grid === */
+  .body { flex: 1; display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+  .sidebar {
+    background: var(--af2-paper); border-right: 1px solid var(--af2-line);
+    padding: 16px 12px 24px; overflow-y: auto;
+  }
+  .sidebar h2 {
+    font: 500 10.5px/1 var(--af2-sans);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--af2-ink-4); padding: 12px 12px 6px; margin: 0;
+  }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; padding: 0 4px; }
+  .nav-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 6px;
+    font-size: 13px; font-weight: 500; color: var(--af2-ink-2);
+    border: 0; background: transparent; text-align: left;
+  }
+  .nav-link:hover { background: var(--af2-paper-2); color: var(--af2-ink); }
+  .nav-link.active { background: var(--af2-ink); color: var(--af2-paper); }
+  .nav-link .icon { width: 18px; height: 18px; display: inline-grid; place-items: center; font-size: 14px; }
+  .nav-link .new {
+    margin-left: auto; font-size: 9px; padding: 1px 6px; border-radius: 999px;
+    background: var(--af2-clay); color: #fff; letter-spacing: 0.04em;
+  }
+  .nav-divider { height: 1px; background: var(--af2-line); margin: 8px 8px; }
+
+  /* === Main === */
+  main {
+    padding: 28px 36px 48px; overflow-y: auto;
+    background: var(--af2-paper);
+  }
+  .page-head { margin-bottom: 18px; }
+  .eyebrow {
+    font: 500 10.5px/1 var(--af2-sans);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--af2-ink-3); margin-bottom: 6px;
+  }
+  .h1 {
+    font-family: var(--af2-serif); font-weight: 400;
+    font-size: 38px; line-height: 1.05; letter-spacing: -0.02em;
+    margin: 0 0 6px;
+  }
+  .meta { color: var(--af2-ink-3); font-size: 13px; }
+  .meta a { color: var(--af2-clay); border-bottom: 1px dotted var(--af2-clay-soft); }
+
+  /* === Tabs === */
+  .tabs {
+    display: flex; gap: 4px; border-bottom: 1px solid var(--af2-line);
+    margin: 18px 0 0;
+  }
+  .tab {
+    background: transparent; border: 0; padding: 10px 14px;
+    font-size: 13px; font-weight: 500; color: var(--af2-ink-3);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--af2-ink); }
+  .tab[aria-selected="true"] {
+    color: var(--af2-ink); border-bottom-color: var(--af2-clay);
+  }
+  .tab .pro-chip {
+    display: inline-block; margin-left: 6px;
+    font-size: 9px; padding: 1px 5px; border-radius: 3px;
+    background: var(--af2-clay-soft); color: var(--af2-clay); letter-spacing: 0.04em;
+  }
+
+  .panel { padding: 20px 0; }
+  .panel[hidden] { display: none; }
+
+  /* === Cards === */
+  .card {
+    background: var(--af2-card); border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius); padding: 18px;
+    box-shadow: var(--af2-shadow); margin-bottom: 14px;
+  }
+  .card h3 {
+    font-family: var(--af2-serif); font-weight: 500; letter-spacing: -0.01em;
+    margin: 0 0 4px; font-size: 18px;
+  }
+  .card .desc { color: var(--af2-ink-3); font-size: 13px; }
+
+  .row {
+    display: grid; grid-template-columns: 120px 1.6fr 130px 90px 110px 130px;
+    gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--af2-line);
+    align-items: center; font-size: 13px;
+  }
+  .row:last-child { border-bottom: 0; }
+  .row .id { font-family: var(--af2-mono); color: var(--af2-ink-3); font-size: 12px; }
+  .row .actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--af2-line-2); border-radius: 999px;
+    padding: 2px 9px; font-size: 11px; font-weight: 500;
+    background: var(--af2-card); color: var(--af2-ink-2);
+  }
+  .pill.dot::before {
+    content: ""; width: 6px; height: 6px; border-radius: 999px;
+    background: var(--af2-ink-3); display: inline-block;
+  }
+  .pill.sage { color: var(--af2-sage); border-color: rgba(74,107,74,0.4); }
+  .pill.sage::before { background: var(--af2-sage); }
+  .pill.mustard { color: var(--af2-mustard); border-color: rgba(184,134,44,0.4); }
+  .pill.mustard::before { background: var(--af2-mustard); }
+  .pill.clay { color: var(--af2-clay); border-color: rgba(194,80,43,0.4); }
+  .pill.clay::before { background: var(--af2-clay); }
+  .pill.plum { color: var(--af2-plum); border-color: rgba(93,58,94,0.4); }
+  .pill.plum::before { background: var(--af2-plum); }
+
+  .btn {
+    background: var(--af2-card); border: 1px solid var(--af2-line-2);
+    border-radius: 6px; padding: 5px 11px; font-size: 12px; color: var(--af2-ink-2);
+  }
+  .btn:hover { background: var(--af2-paper-2); }
+  .btn.primary { background: var(--af2-clay); color: #fff; border-color: var(--af2-clay); }
+  .btn.primary:hover { background: var(--af2-clay-2); }
+  .btn.ghost { background: transparent; }
+
+  /* === Integration list === */
+  .int-cat {
+    font: 500 11px/1 var(--af2-sans);
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--af2-ink-4); margin: 18px 4px 8px;
+  }
+  .int-row {
+    display: grid; grid-template-columns: 36px 1fr auto auto;
+    gap: 14px; align-items: center;
+    padding: 12px 14px; border-bottom: 1px solid var(--af2-line);
+    background: var(--af2-card);
+  }
+  .int-row:first-of-type { border-top-left-radius: 6px; border-top-right-radius: 6px; }
+  .int-row:last-of-type { border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; border-bottom: 1px solid var(--af2-line); }
+  .int-logo {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: var(--af2-paper-2); display: grid; place-items: center;
+    font-weight: 700; color: var(--af2-ink-2);
+  }
+  .int-name { font-weight: 500; }
+  .int-desc { font-size: 12px; color: var(--af2-ink-3); }
+
+  /* === Pro mode reveal === */
+  .pro-only { display: none; }
+  body[data-pro="on"] .pro-only { display: block; }
+  body[data-pro="on"] .pro-only.inline { display: inline-block; }
+  body[data-pro="on"] .pro-only.flex { display: flex; }
+  body[data-pro="on"] .pro-only.grid { display: grid; }
+  body[data-pro="on"] .smb-only { opacity: 0.55; }
+  body[data-pro="on"] .pro-tab { display: inline-flex; }
+  .pro-tab { display: none; }
+
+  .pro-block {
+    margin-top: 14px; padding: 14px 16px;
+    background: rgba(31,58,82,0.06);
+    border: 1px dashed var(--af2-ink-blue);
+    border-radius: 8px;
+  }
+  .pro-block .label {
+    font: 500 10px/1 var(--af2-sans); text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--af2-ink-blue); margin-bottom: 8px;
+  }
+  .pro-block pre {
+    font-family: var(--af2-mono); font-size: 11.5px;
+    background: rgba(26,20,16,0.04); border-radius: 4px;
+    padding: 10px 12px; margin: 6px 0 0; overflow-x: auto;
+  }
+  .pro-banner {
+    background: rgba(31,58,82,0.08); border: 1px solid rgba(31,58,82,0.18);
+    color: var(--af2-ink-blue); padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; margin-bottom: 14px;
+  }
+  body[data-pro="on"] .pro-banner { display: none; }
+
+  /* === Before/after === */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin: 14px 0 24px;
+  }
+  .stat-card {
+    background: var(--af2-card); border: 1px solid var(--af2-line);
+    border-radius: 8px; padding: 14px;
+  }
+  .stat-num {
+    font-family: var(--af2-serif); font-size: 28px; line-height: 1; color: var(--af2-ink);
+  }
+  .stat-num .from { color: var(--af2-ink-4); text-decoration: line-through; font-size: 18px; margin-right: 6px; }
+  .stat-label { font-size: 12px; color: var(--af2-ink-3); margin-top: 4px; }
+
+  /* === Diff sidebar === */
+  .compare {
+    display: none; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin: 24px 0;
+  }
+  body[data-compare="on"] .compare { display: grid; }
+  body[data-compare="on"] .live-shell { display: none; }
+  .compare-pane {
+    background: var(--af2-card); border: 1px solid var(--af2-line);
+    border-radius: 10px; padding: 16px 14px;
+  }
+  .compare-pane h3 {
+    font-family: var(--af2-serif); font-size: 18px; margin: 0 0 4px;
+  }
+  .compare-pane p { font-size: 12px; color: var(--af2-ink-3); margin: 0 0 12px; }
+  .mini-nav {
+    background: var(--af2-paper); border: 1px solid var(--af2-line);
+    border-radius: 8px; padding: 10px 6px;
+  }
+  .mini-section {
+    font: 500 9px/1 var(--af2-sans); text-transform: uppercase;
+    letter-spacing: 0.14em; color: var(--af2-ink-4); padding: 8px 10px 4px;
+  }
+  .mini-link {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; font-size: 12px; color: var(--af2-ink-2);
+    border-radius: 4px;
+  }
+  .mini-link .icon { width: 14px; opacity: 0.8; }
+  .mini-link.removed { text-decoration: line-through; color: var(--af2-ink-4); opacity: 0.7; }
+  .mini-link.merged { color: var(--af2-clay); font-weight: 500; }
+  .mini-link.new { color: var(--af2-clay); font-weight: 500; }
+  .mini-link.new::after { content: "NEW"; font-size: 8px; padding: 1px 5px; border-radius: 999px; background: var(--af2-clay); color:#fff; margin-left: auto; letter-spacing: 0.04em; }
+
+  /* === Activity feed === */
+  .feed-item {
+    display: grid; grid-template-columns: 110px 1fr;
+    padding: 10px 0; border-bottom: 1px dashed var(--af2-line);
+    font-size: 13px; gap: 12px;
+  }
+  .feed-time { color: var(--af2-ink-4); font-family: var(--af2-mono); font-size: 11px; }
+  .feed-msg b { color: var(--af2-ink); }
+
+  /* === Sub-tabs === */
+  .subtabs {
+    display: inline-flex; gap: 0;
+    background: var(--af2-paper-2); border-radius: 6px; padding: 3px;
+    margin-bottom: 14px;
+  }
+  .subtab {
+    background: transparent; border: 0; padding: 4px 12px;
+    border-radius: 4px; font-size: 12px; color: var(--af2-ink-3); font-weight: 500;
+  }
+  .subtab[aria-selected="true"] { background: var(--af2-card); color: var(--af2-ink); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+
+  /* === Form === */
+  label.field { display: block; margin-bottom: 12px; font-size: 12px; color: var(--af2-ink-3); }
+  label.field input, label.field select, label.field textarea {
+    display: block; width: 100%; margin-top: 5px;
+    border: 1px solid var(--af2-line-2); border-radius: 6px;
+    padding: 8px 10px; background: var(--af2-card);
+    font: inherit; color: var(--af2-ink);
+  }
+
+  .desc-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+  @media (max-width: 1080px) { .desc-grid, .stat-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 760px) {
+    .body { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .stat-grid { grid-template-columns: 1fr; }
+    .row { grid-template-columns: 1fr; }
+  }
+
+  /* Skip link */
+  .skip {
+    position: absolute; left: -9999px; top: 8px;
+    background: var(--af2-ink); color: var(--af2-paper);
+    padding: 8px 12px; border-radius: 6px; font-size: 12px;
+  }
+  .skip:focus { left: 8px; z-index: 999; }
+</style>
+</head>
+<body>
+
+<a href="#main-content" class="skip">Skip to main content</a>
+
+<div class="preview-banner">
+  Planning preview · <b>not</b> production code · Use the <kbd>Pro mode</kbd> pill and sidebar to explore the consolidated IA
+</div>
+
+<div class="shell live-shell">
+  <header class="topbar">
+    <div class="topbar-logo">Auto<span>Flow</span></div>
+
+    <div class="topbar-right">
+      <input class="search" placeholder="Search agents, missions, workflows…" />
+      <button class="ghost-btn" id="compare-toggle" aria-pressed="false" onclick="toggleCompare()">
+        Before vs after
+      </button>
+      <button class="pro-pill" id="pro-toggle" aria-pressed="false" onclick="togglePro()" title="Reveals advanced fields, raw config, and developer surfaces">
+        <span class="badge">PRO</span>
+        <span id="pro-label">Pro mode off</span>
+      </button>
+      <div class="avatar" aria-hidden="true">B</div>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- =========================================================
+         New consolidated sidebar (10 entries, 4 pillars)
+         ========================================================= -->
+    <aside class="sidebar" role="navigation" aria-label="Primary">
+      <h2>Run</h2>
+      <nav>
+        <button class="nav-link" data-hub="home">  <span class="icon">⌂</span> Home</button>
+        <button class="nav-link" data-hub="missions"><span class="icon">◎</span> Missions</button>
+        <button class="nav-link active" data-hub="inbox"><span class="icon">✉</span> Inbox <span class="new">3 surfaces merged</span></button>
+        <button class="nav-link" data-hub="activity"><span class="icon">≣</span> Activity</button>
+      </nav>
+
+      <h2>Workforce</h2>
+      <nav>
+        <button class="nav-link" data-hub="team"><span class="icon">◌</span> Team</button>
+        <button class="nav-link" data-hub="agent"><span class="icon">●</span> Agent · Aaron</button>
+        <button class="nav-link" data-hub="hire"><span class="icon">+</span> Hire</button>
+        <button class="nav-link" data-hub="budget"><span class="icon">$</span> Budget</button>
+      </nav>
+
+      <h2>Build</h2>
+      <nav>
+        <button class="nav-link" data-hub="studio"><span class="icon">✱</span> Studio</button>
+        <button class="nav-link" data-hub="library"><span class="icon">▤</span> Library</button>
+      </nav>
+
+      <h2>Connect</h2>
+      <nav>
+        <button class="nav-link" data-hub="connect"><span class="icon">⌬</span> Connections <span class="new">4→1</span></button>
+        <button class="nav-link" data-hub="memory"><span class="icon">∎</span> Memory <span class="new">2→1</span></button>
+        <button class="nav-link" data-hub="settings"><span class="icon">⚙</span> Settings</button>
+      </nav>
+    </aside>
+
+    <main id="main-content" tabindex="-1" aria-busy="false">
+
+      <!-- =====================================================
+           INBOX HUB (replaces Tickets + Approvals + Escalations)
+           ===================================================== -->
+      <section class="hub" data-hub="inbox">
+        <div class="page-head">
+          <div class="eyebrow">Run · Inbox</div>
+          <h1 class="h1">What needs you today</h1>
+          <p class="meta">12 open items · <a href="#">Filter</a> · <a href="#">SLA settings</a> · was <s>/mission-assignments</s>, <s>/approvals</s>, <s>/escalations</s></p>
+        </div>
+
+        <div class="pro-banner">SMB default · Toggle <b>Pro mode</b> in the topbar to reveal raw payloads, policy traces, and full LLM traces.</div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-panel="inbox-assignments">Assignments <span class="pill mustard" style="margin-left:6px">7</span></button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="inbox-approvals">Approvals <span class="pill clay" style="margin-left:6px">3</span></button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="inbox-escalations">Escalations <span class="pill plum" style="margin-left:6px">2</span></button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="inbox-assignments">
+          <div class="subtabs" role="tablist" aria-label="Assignments view">
+            <button class="subtab" aria-selected="true">Queue</button>
+            <button class="subtab" aria-selected="false">SLA</button>
+            <button class="subtab" aria-selected="false">By team</button>
+          </div>
+
+          <div class="card" style="padding:0">
+            <div class="row" style="background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--af2-ink-3)">
+              <div>Ticket</div><div>Request</div><div>Agent</div><div>Risk</div><div>Cost</div><div></div>
+            </div>
+            <div class="row">
+              <div class="id">TKT-2041</div>
+              <div><b>Approve Q3 contract</b> with Acme Robotics<br><span style="color:var(--af2-ink-3); font-size:12px">$48,000 · 3y term · MSA exception</span></div>
+              <div><span class="pill dot sage">Aaron · Sales</span></div>
+              <div><span class="pill clay">high</span></div>
+              <div>$0.14</div>
+              <div class="actions"><button class="btn">Open</button></div>
+            </div>
+            <div class="row">
+              <div class="id">TKT-2039</div>
+              <div><b>Post launch announcement</b> to LinkedIn<br><span style="color:var(--af2-ink-3); font-size:12px">Public post · draft attached</span></div>
+              <div><span class="pill dot sage">Mira · Marketing</span></div>
+              <div><span class="pill mustard">medium</span></div>
+              <div>$0.02</div>
+              <div class="actions"><button class="btn">Open</button></div>
+            </div>
+            <div class="row">
+              <div class="id">TKT-2036</div>
+              <div><b>Add column to invoices table</b><br><span style="color:var(--af2-ink-3); font-size:12px">Schema change · destructive · review SQL</span></div>
+              <div><span class="pill dot sage">Eli · Engineering</span></div>
+              <div><span class="pill clay">high</span></div>
+              <div>$0.31</div>
+              <div class="actions"><button class="btn">Open</button></div>
+            </div>
+          </div>
+
+          <div class="pro-only pro-block">
+            <div class="label">Pro · Raw ticket payload</div>
+            <pre>{
+  "id": "TKT-2041",
+  "workspace_id": "ws_01H7Z…",
+  "primary_actor": { "type": "agent", "id": "agt_aaron", "tier": "standard" },
+  "policy_match": "spend_above_threshold &gt;= $25,000",
+  "external_sync": { "linear": "HEL-3204" }
+}</pre>
+            <div class="label" style="margin-top:14px">Pro · Saved filter JSON</div>
+            <pre>filter = (priority in ['high']) and (agent.team = 'sales') and (cost &gt; 0.10)</pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="inbox-approvals" hidden>
+          <div class="card" style="padding:0">
+            <div class="row" style="background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--af2-ink-3)">
+              <div>Approval</div><div>Action</div><div>Agent</div><div>Tier</div><div>Spend</div><div></div>
+            </div>
+            <div class="row">
+              <div class="id">APR-118</div>
+              <div><b>Send pricing email</b> to inbound lead</div>
+              <div><span class="pill dot sage">Mira</span></div>
+              <div><span class="pill plum">customer-facing</span></div>
+              <div>—</div>
+              <div class="actions"><button class="btn ghost">Reject</button><button class="btn primary">Approve</button></div>
+            </div>
+            <div class="row">
+              <div class="id">APR-117</div>
+              <div><b>Merge PR #482</b> to <code>main</code></div>
+              <div><span class="pill dot sage">Eli</span></div>
+              <div><span class="pill plum">prod-deploy</span></div>
+              <div>$0.04</div>
+              <div class="actions"><button class="btn ghost">Reject</button><button class="btn primary">Approve</button></div>
+            </div>
+          </div>
+
+          <div class="pro-only pro-block">
+            <div class="label">Pro · Policy trace for APR-118</div>
+            <pre>matched: customer_facing_comms → require_approval
+reason: action_type=email_send AND recipient.is_customer=true
+policy_id: pol_01HE…  source: workspace_default</pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="inbox-escalations" hidden>
+          <div class="card">
+            <h3>Aaron asked: "Should I push back on Acme's 90-day payment terms?"</h3>
+            <p class="desc">2 hours ago · escalated after policy rule <code>contract_exception</code> matched</p>
+            <p style="margin-top:14px">Aaron summarized: Acme wants Net-90; our standard is Net-30. Cashflow impact ~$24k float. Aaron's recommendation: counter at Net-45 with a 1% early-pay discount.</p>
+            <div style="display:flex; gap:8px; margin-top:14px">
+              <button class="btn">Reply with guidance</button>
+              <button class="btn primary">Approve recommendation</button>
+            </div>
+
+            <div class="pro-only pro-block">
+              <div class="label">Pro · LLM trace</div>
+              <pre>tier: large  model: claude-opus-4-7  tokens: 12,481  cost: $0.087
+tools: [hubspot.get_company, stripe.get_terms, search_knowledge]
+retrieved memory: 4 items (instructions + 2 episodes + 1 knowledge)</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           CONNECT HUB (Integrations + Models + MCP + Health)
+           ===================================================== -->
+      <section class="hub" data-hub="connect" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Connect</div>
+          <h1 class="h1">Connections</h1>
+          <p class="meta">14 connected · 2 need attention · was <s>/integrations/mcp</s>, <s>/integrations/health</s>, <s>/settings/mcp-servers</s>, <s>/settings/llm-providers</s></p>
+        </div>
+
+        <div class="pro-banner">SMB default · Pro mode adds tabs for <b>MCP Servers</b> and full <b>Health</b> ops, plus raw key fields per provider.</div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-panel="connect-int">Integrations</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="connect-models">Models</button>
+          <button class="tab pro-tab" role="tab" aria-selected="false" data-panel="connect-mcp">MCP Servers<span class="pro-chip">PRO</span></button>
+          <button class="tab pro-tab" role="tab" aria-selected="false" data-panel="connect-health">Health<span class="pro-chip">PRO</span></button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="connect-int">
+          <div class="int-cat">CRM &amp; sales</div>
+          <div>
+            <div class="int-row">
+              <div class="int-logo">H</div>
+              <div><div class="int-name">HubSpot</div><div class="int-desc">Contacts · Companies · Deals</div></div>
+              <span class="pill dot sage">connected</span>
+              <button class="btn">Manage</button>
+            </div>
+            <div class="int-row">
+              <div class="int-logo">S</div>
+              <div><div class="int-name">Salesforce</div><div class="int-desc">Lead routing · Opportunity sync</div></div>
+              <span class="pill">not connected</span>
+              <button class="btn primary">Connect</button>
+            </div>
+          </div>
+
+          <div class="int-cat">Messaging</div>
+          <div>
+            <div class="int-row">
+              <div class="int-logo">#</div>
+              <div><div class="int-name">Slack</div><div class="int-desc">Channels · DMs · approvals</div></div>
+              <span class="pill dot sage">connected</span>
+              <button class="btn">Manage</button>
+            </div>
+            <div class="int-row">
+              <div class="int-logo">@</div>
+              <div><div class="int-name">Gmail</div><div class="int-desc">Send · draft · labels</div></div>
+              <span class="pill dot clay">auth failed</span>
+              <button class="btn primary">Reconnect</button>
+            </div>
+          </div>
+
+          <div class="int-cat">Code &amp; ops</div>
+          <div>
+            <div class="int-row">
+              <div class="int-logo">G</div>
+              <div><div class="int-name">GitHub</div><div class="int-desc">Issues · PRs · Actions</div></div>
+              <span class="pill dot sage">connected</span>
+              <button class="btn">Manage</button>
+            </div>
+            <div class="int-row">
+              <div class="int-logo">L</div>
+              <div><div class="int-name">Linear</div><div class="int-desc">Issues · projects</div></div>
+              <span class="pill dot sage">connected</span>
+              <button class="btn">Manage</button>
+            </div>
+          </div>
+
+          <div class="pro-only pro-block">
+            <div class="label">Pro · HubSpot raw config</div>
+            <pre>client_id:     hs_pub_8f3a…
+client_secret: ********  (set 2026-04-12)
+scopes:        contacts.read,deals.write,owners.read
+webhook_url:   https://api.helloautoflow.com/webhooks/hubspot</pre>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="connect-models" hidden>
+          <div class="card">
+            <h3>Anthropic</h3>
+            <div class="desc">Powers <b>large</b> tier · sk-ant-…RyZ4 · last used 2 min ago</div>
+            <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
+
+            <div class="pro-only pro-block">
+              <div class="label">Pro · Routing override</div>
+              <pre>tier_routing:
+  small:      openai/gpt-4o-mini
+  medium:     anthropic/claude-haiku-4-5
+  large:      anthropic/claude-opus-4-7
+  embeddings: openai/text-embedding-3-small
+base_url:     https://api.anthropic.com</pre>
+            </div>
+          </div>
+          <div class="card">
+            <h3>OpenAI</h3>
+            <div class="desc">Powers <b>small</b> tier · sk-…aB12 · last used 14s ago</div>
+            <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
+          </div>
+          <div class="card smb-only" style="text-align:center">
+            <button class="btn primary">+ Add provider</button>
+            <div class="desc" style="margin-top:6px">Google · Mistral · Bedrock · custom OpenAI-compatible</div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="connect-mcp" hidden>
+          <div class="card">
+            <h3>Custom MCP servers</h3>
+            <p class="desc">Bring your own MCP server (stdio or HTTP). These show up as tools your agents can call.</p>
+            <div class="card" style="margin-top:12px">
+              <b>Notion MCP</b> · https://mcp.notion.example<br>
+              <span class="pill dot sage">healthy</span> · 14 tools available
+            </div>
+            <div class="pro-only pro-block">
+              <div class="label">Pro · Server config</div>
+              <pre>transport: http
+auth: bearer (NOTION_MCP_TOKEN)
+last_handshake: 2026-05-23T19:14:02Z
+exposed_tools: [pages.search, blocks.append, db.query, …]</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="connect-health" hidden>
+          <div class="card" style="padding:0">
+            <div class="row" style="grid-template-columns: 1fr 130px 110px 110px 110px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
+              <div>Connector</div><div>Status</div><div>Last poll</div><div>Errors 24h</div><div></div>
+            </div>
+            <div class="row" style="grid-template-columns: 1fr 130px 110px 110px 110px">
+              <div><b>HubSpot</b><br><span class="id">conn_01H7Z…</span></div>
+              <div><span class="pill dot sage">healthy</span></div>
+              <div class="id">12s ago</div>
+              <div>0</div>
+              <div class="actions"><button class="btn">Logs</button></div>
+            </div>
+            <div class="row" style="grid-template-columns: 1fr 130px 110px 110px 110px">
+              <div><b>Gmail</b><br><span class="id">conn_01H7K…</span></div>
+              <div><span class="pill dot clay">auth_failed</span></div>
+              <div class="id">3h ago</div>
+              <div>47</div>
+              <div class="actions"><button class="btn primary">Reconnect</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           MEMORY HUB
+           ===================================================== -->
+      <section class="hub" data-hub="memory" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Connect · Memory</div>
+          <h1 class="h1">Memory</h1>
+          <p class="meta">Personal preferences + workspace knowledge in one place · was <s>/memory</s>, <s>/settings/memory</s></p>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-panel="mem-personal">Personal</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="mem-workspace">Workspace</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="mem-personal">
+          <div class="card">
+            <h3>Your preferences</h3>
+            <p class="desc">Things AutoFlow remembers about how <b>you</b> like to work. Visible only to your account.</p>
+            <ul style="margin-top:10px; color:var(--af2-ink-2); font-size:13px">
+              <li>You prefer Slack DMs for ticket pings (not email).</li>
+              <li>You like agents to draft contracts in formal voice.</li>
+              <li>You work in <code>America/New_York</code>.</li>
+            </ul>
+            <button class="btn" style="margin-top:10px">Edit preferences</button>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="mem-workspace" hidden>
+          <div class="desc-grid">
+            <div class="card">
+              <h3>Workspace instructions</h3>
+              <p class="desc">Always-on prompt steering for every agent in this workspace.</p>
+              <textarea rows="6" style="width:100%; margin-top:10px; border:1px solid var(--af2-line); border-radius:6px; padding:10px; font:inherit">We sell B2B project management software to design agencies.
+Default tone: warm, direct, never salesy.
+Don't quote pricing without sign-off from a human approver.</textarea>
+              <button class="btn primary" style="margin-top:8px">Save</button>
+            </div>
+            <div class="card">
+              <h3>Knowledge items <span class="pill" style="margin-left:6px">28</span></h3>
+              <p class="desc">Documents and notes the agents can look up.</p>
+              <ul style="margin-top:10px; font-size:13px; color:var(--af2-ink-2)">
+                <li>Brand voice guide · uploaded 2026-04-02</li>
+                <li>Q2 OKRs · uploaded 2026-04-15</li>
+                <li>ICP definition · synthesized 2026-04-20</li>
+              </ul>
+              <button class="btn" style="margin-top:8px">Add knowledge</button>
+
+              <div class="pro-only pro-block">
+                <div class="label">Pro · Vector inspector</div>
+                <pre>knowledge_id: kn_01HE…
+chunks: 47  dim: 1536  model: text-embedding-3-small
+status: ready  last_reindex: 2026-04-15
+[ Re-embed ] [ Inspect chunks ] [ Export ]</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           AGENT DETAIL HUB
+           ===================================================== -->
+      <section class="hub" data-hub="agent" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Workforce · Team</div>
+          <h1 class="h1">Aaron Chen <span style="color:var(--af2-ink-3); font-size:18px">· Sales</span></h1>
+          <p class="meta"><span class="pill dot sage">active</span> · Manager: <b>Mira</b> · Tier: <b>standard</b> · was <s>/agents/:id</s>, <s>/agents/:id/job</s>, <s>/agents/:id/standing-tasks</s></p>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-panel="agent-overview">Overview</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="agent-job">Job description</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="agent-tasks">Standing tasks</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="agent-overview">
+          <div class="desc-grid">
+            <div class="card">
+              <h3>What Aaron is working on</h3>
+              <div class="feed-item"><div class="feed-time">12s ago</div><div class="feed-msg">Drafting follow-up to <b>Acme Robotics</b></div></div>
+              <div class="feed-item"><div class="feed-time">2m ago</div><div class="feed-msg">Logged call in HubSpot · <b>Globex</b></div></div>
+              <div class="feed-item"><div class="feed-time">11m ago</div><div class="feed-msg">Awaiting approval on contract terms · <b>TKT-2041</b></div></div>
+            </div>
+            <div class="card">
+              <h3>Quick facts</h3>
+              <div style="font-size:13px; color:var(--af2-ink-2); line-height:1.9">
+                <div>Tools: <b>HubSpot · Gmail · Slack</b></div>
+                <div>Budget: <b>$45.20 / $200.00</b> this month</div>
+                <div>Approvals required: <b>contracts, public posts</b></div>
+                <div>Memory shared with: <b>Mira (manager), Sales team</b></div>
+              </div>
+
+              <div class="pro-only pro-block">
+                <div class="label">Pro · Agent config</div>
+                <pre>id: agt_aaron
+model_tier_override: { large: anthropic/claude-opus-4-7 }
+tool_allowlist: [hubspot.*, gmail.send, slack.dm]
+budget_per_step_cents: 5000
+triage_policy_id: pol_aaron_tri…</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="agent-job" hidden>
+          <div class="card">
+            <h3>Job description</h3>
+            <p class="desc smb-only">Plain-English what Aaron does, edited via wizard.</p>
+            <p style="margin-top:12px">Aaron is a sales SDR. He follows up on inbound demo requests within 30 minutes, qualifies the lead with 3 questions, books a meeting if qualified, and hands off to a human AE for closing. He never quotes pricing without approval and never sends contracts.</p>
+            <button class="btn" style="margin-top:10px">Edit with wizard</button>
+
+            <div class="pro-only pro-block">
+              <div class="label">Pro · System prompt (raw)</div>
+              <pre>You are Aaron, a B2B sales SDR for AutoFlow.
+
+# Rules
+- Reply to inbound demo requests within 30 minutes.
+- Qualify with the BANT questions defined in workspace knowledge `sales/bant`.
+- Never quote pricing; route price questions to an approval ticket.
+…</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="agent-tasks" hidden>
+          <div class="card" style="padding:0">
+            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px; background:var(--af2-paper-2); font-size:11px; text-transform:uppercase; letter-spacing:0.1em">
+              <div>Routine</div><div>Schedule</div><div>Last run</div><div>Status</div><div></div>
+            </div>
+            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px">
+              <div><b>Follow up on stale leads</b></div>
+              <div>Every 2h</div>
+              <div class="id">8m ago</div>
+              <div><span class="pill dot sage">enabled</span></div>
+              <div class="actions"><button class="btn">Edit</button></div>
+            </div>
+            <div class="row" style="grid-template-columns: 1fr 120px 130px 120px 120px">
+              <div><b>Weekly pipeline digest</b></div>
+              <div>Mon 9am</div>
+              <div class="id">2d ago</div>
+              <div><span class="pill dot sage">enabled</span></div>
+              <div class="actions"><button class="btn">Edit</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           SETTINGS (slimmer)
+           ===================================================== -->
+      <section class="hub" data-hub="settings" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Connect · Workspace</div>
+          <h1 class="h1">Settings</h1>
+          <p class="meta">Acme Robotics · Automate plan · 12 seats · Credentials now live on <a href="#" data-jump="connect">/connect</a></p>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="true" data-panel="set-general">General</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-members">Members</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-policies">Policies</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-security">Security</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-billing">Billing</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-credentials">Credentials</button>
+          <button class="tab" role="tab" aria-selected="false" data-panel="set-api">API</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="set-general">
+          <div class="card">
+            <h3>Workspace</h3>
+            <label class="field">Name<input value="Acme Robotics" /></label>
+            <label class="field">Mission<textarea rows="2">Sell project-management software to design agencies, signing 5 new logos a month.</textarea></label>
+            <label class="field">Timezone<select><option>America/New_York</option></select></label>
+
+            <div class="pro-only pro-block">
+              <div class="label">Pro · Raw workspace</div>
+              <pre>workspace_id:        ws_01H7Z4FYM6PTW…
+plan_tier:           automate
+lifecycle_status:    active
+feature_flags:       [v2_studio, inbox_unified, pro_mode]</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="set-credentials" hidden>
+          <div class="card">
+            <h3>Credentials moved to /connect</h3>
+            <p class="desc">Every API key, OAuth credential, MCP token, and LLM provider key now lives on the <a href="#" data-jump="connect" style="color:var(--af2-clay)"><b>Connections</b></a> page so you can see "what's connected, what's stale" in one scan.</p>
+            <button class="btn primary" style="margin-top:10px" onclick="navigate('connect')">Open Connections</button>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="set-api" hidden>
+          <div class="card">
+            <h3>API keys</h3>
+            <p class="desc">For programmatic access to your workspace.</p>
+            <button class="btn primary" style="margin-top:10px">Create API key</button>
+
+            <div class="pro-only pro-block">
+              <div class="label">Pro · Webhook signing secret &amp; curl</div>
+              <pre>signing_secret: whsec_AbCdEf… (rotate)
+
+curl -X POST https://api.helloautoflow.com/v1/missions \
+  -H "Authorization: Bearer $AUTOFLOW_API_KEY" \
+  -d '{"statement": "Book 5 new demos this week"}'</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" role="tabpanel" id="set-members" hidden><div class="card"><h3>Members</h3><p class="desc">12 members · 1 owner · 2 admins · 9 operators</p></div></div>
+        <div class="panel" role="tabpanel" id="set-policies" hidden><div class="card"><h3>Approval policies</h3><p class="desc">Tier-based rules for when an agent action requires human sign-off.</p></div></div>
+        <div class="panel" role="tabpanel" id="set-security" hidden><div class="card"><h3>Security</h3><p class="desc">SSO · audit retention · session timeout</p></div></div>
+        <div class="panel" role="tabpanel" id="set-billing" hidden><div class="card"><h3>Billing</h3><p class="desc">Automate · $99/mo · next invoice 2026-06-12</p></div></div>
+      </section>
+
+      <!-- =====================================================
+           ACTIVITY (kept; unified feed)
+           ===================================================== -->
+      <section class="hub" data-hub="activity" hidden>
+        <div class="page-head">
+          <div class="eyebrow">Run · Activity</div>
+          <h1 class="h1">Activity</h1>
+          <p class="meta">Workspace-wide append-only feed · merged with audit log + run history</p>
+        </div>
+        <div class="card">
+          <div class="feed-item"><div class="feed-time">15:14:02</div><div class="feed-msg"><b>Mira</b> drafted post for Slack #marketing</div></div>
+          <div class="feed-item"><div class="feed-time">15:13:47</div><div class="feed-msg"><b>Aaron</b> escalated TKT-2041 to human (contract exception)</div></div>
+          <div class="feed-item"><div class="feed-time">15:11:09</div><div class="feed-msg"><b>routine.followup_stale_leads</b> ran (8 leads, $0.41)</div></div>
+          <div class="feed-item"><div class="feed-time">15:08:33</div><div class="feed-msg"><b>brad@…</b> approved APR-117 (merge PR #482)</div></div>
+        </div>
+
+        <div class="pro-only pro-block">
+          <div class="label">Pro · Filter by event type</div>
+          <pre>event_type in [agent.action, approval.resolved, routine.completed, audit.*]
+agent.id = agt_aaron
+since = 2026-05-23T00:00:00Z</pre>
+        </div>
+      </section>
+
+      <!-- Stubs for the other nav items so clicks don't dead-end -->
+      <section class="hub" data-hub="home" hidden>
+        <div class="page-head"><div class="eyebrow">Run</div><h1 class="h1">Home</h1><p class="meta">Mission state · what your agents did today · what needs you next</p></div>
+        <div class="card"><h3>Today</h3><p class="desc">3 approvals waiting · 7 assignments · 2 escalations · $4.18 spent</p>
+          <button class="btn primary" style="margin-top:10px" onclick="navigate('inbox')">Open Inbox</button>
+        </div>
+      </section>
+      <section class="hub" data-hub="missions" hidden><div class="page-head"><div class="eyebrow">Run</div><h1 class="h1">Missions</h1></div><div class="card"><h3>Active missions</h3><p class="desc">2 in flight · 1 paused · 4 done</p></div></section>
+      <section class="hub" data-hub="team" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Team</h1></div><div class="card"><h3>Org chart</h3><p class="desc">4 agents · Mira manages Aaron · Eli reports to brad@</p></div></section>
+      <section class="hub" data-hub="hire" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Hire</h1></div><div class="card"><h3>Describe a new mission</h3><p class="desc">We'll draft a hiring plan for you.</p></div></section>
+      <section class="hub" data-hub="budget" hidden><div class="page-head"><div class="eyebrow">Workforce</div><h1 class="h1">Budget</h1></div><div class="card"><h3>This month</h3><p class="desc">$148.40 / $1,000.00 spent · alerts at 80%</p></div></section>
+      <section class="hub" data-hub="studio" hidden><div class="page-head"><div class="eyebrow">Build</div><h1 class="h1">Studio</h1></div><div class="card"><h3>Workflow builder</h3><p class="desc">(Already has Pro mode — now syncs with the global toggle.)</p></div></section>
+      <section class="hub" data-hub="library" hidden><div class="page-head"><div class="eyebrow">Build</div><h1 class="h1">Library</h1></div><div class="card"><h3>Templates</h3><p class="desc">12 starter workflows + 6 from your workspace</p></div></section>
+
+    </main>
+  </div>
+
+  <!-- Compare overlay -->
+  <div class="compare" style="padding: 0 36px">
+    <div class="compare-pane">
+      <h3>Before</h3>
+      <p>14 sidebar entries · 9 settings sub-routes · 5 inbox-style pages · 4 credential pages</p>
+      <div class="mini-nav">
+        <div class="mini-section">Run</div>
+        <div class="mini-link"><span class="icon">⌂</span>Home</div>
+        <div class="mini-link"><span class="icon">◎</span>Missions</div>
+        <div class="mini-link merged"><span class="icon">✉</span>Assignments → Inbox</div>
+        <div class="mini-link merged"><span class="icon">✓</span>Approvals → Inbox</div>
+        <div class="mini-link merged"><span class="icon">!</span>Escalations → Inbox</div>
+        <div class="mini-link"><span class="icon">≣</span>Activity</div>
+
+        <div class="mini-section">Workforce</div>
+        <div class="mini-link"><span class="icon">◌</span>Team</div>
+        <div class="mini-link"><span class="icon">+</span>Hire</div>
+        <div class="mini-link"><span class="icon">$</span>Budget</div>
+
+        <div class="mini-section">Build</div>
+        <div class="mini-link"><span class="icon">✱</span>Studio</div>
+        <div class="mini-link"><span class="icon">▤</span>Library</div>
+
+        <div class="mini-section">Connect</div>
+        <div class="mini-link merged"><span class="icon">⌬</span>Integrations → Connections</div>
+        <div class="mini-link merged"><span class="icon">✦</span>Models → Connections</div>
+        <div class="mini-link"><span class="icon">⚙</span>Settings</div>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--af2-ink-3)">
+        + sub-routes: /settings/llm-providers, /settings/mcp-servers, /settings/memory, /integrations/health, /mission-assignments/sla, /mission-assignments/team, /agents/:id/job, /agents/:id/standing-tasks
+      </div>
+    </div>
+
+    <div class="compare-pane">
+      <h3>After</h3>
+      <p>10 sidebar entries · settings slim · 1 Inbox · 1 Connections · 1 Memory · agent tabs · workspace-wide Pro mode</p>
+      <div class="mini-nav">
+        <div class="mini-section">Run</div>
+        <div class="mini-link"><span class="icon">⌂</span>Home</div>
+        <div class="mini-link"><span class="icon">◎</span>Missions</div>
+        <div class="mini-link new"><span class="icon">✉</span>Inbox</div>
+        <div class="mini-link"><span class="icon">≣</span>Activity</div>
+
+        <div class="mini-section">Workforce</div>
+        <div class="mini-link"><span class="icon">◌</span>Team</div>
+        <div class="mini-link"><span class="icon">+</span>Hire</div>
+        <div class="mini-link"><span class="icon">$</span>Budget</div>
+
+        <div class="mini-section">Build</div>
+        <div class="mini-link"><span class="icon">✱</span>Studio</div>
+        <div class="mini-link"><span class="icon">▤</span>Library</div>
+
+        <div class="mini-section">Connect</div>
+        <div class="mini-link new"><span class="icon">⌬</span>Connections</div>
+        <div class="mini-link new"><span class="icon">∎</span>Memory</div>
+        <div class="mini-link"><span class="icon">⚙</span>Settings</div>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--af2-ink-3)">
+        Old URLs redirect into new tabs via <code>?tab=…</code>. Every bookmark still resolves.
+      </div>
+    </div>
+  </div>
+
+  <div style="padding: 4px 36px 36px">
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-num"><span class="from">14</span>10</div><div class="stat-label">sidebar entries</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">5</span>1</div><div class="stat-label">human-gating surfaces</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">4</span>1</div><div class="stat-label">credential surfaces</div></div>
+      <div class="stat-card"><div class="stat-num"><span class="from">9</span>4</div><div class="stat-label">settings sub-routes</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* === Pro Mode === */
+  function togglePro() {
+    const body = document.body;
+    const on = body.dataset.pro === "on";
+    body.dataset.pro = on ? "off" : "on";
+    const btn = document.getElementById("pro-toggle");
+    btn.setAttribute("aria-pressed", on ? "false" : "true");
+    document.getElementById("pro-label").textContent = on ? "Pro mode off" : "Pro mode on";
+  }
+
+  /* === Compare overlay === */
+  function toggleCompare() {
+    const body = document.body;
+    const on = body.dataset.compare === "on";
+    body.dataset.compare = on ? "off" : "on";
+    document.getElementById("compare-toggle").setAttribute("aria-pressed", on ? "false" : "true");
+  }
+
+  /* === Sidebar navigation === */
+  function navigate(hub) {
+    document.querySelectorAll(".nav-link").forEach((n) => {
+      n.classList.toggle("active", n.dataset.hub === hub);
+    });
+    document.querySelectorAll(".hub").forEach((s) => {
+      s.hidden = s.dataset.hub !== hub;
+    });
+    const main = document.getElementById("main-content");
+    main.focus({ preventScroll: false });
+  }
+  document.querySelectorAll(".nav-link").forEach((n) =>
+    n.addEventListener("click", () => navigate(n.dataset.hub))
+  );
+  document.querySelectorAll("[data-jump]").forEach((a) =>
+    a.addEventListener("click", (e) => { e.preventDefault(); navigate(a.dataset.jump); })
+  );
+
+  /* === Tabs (within each hub) === */
+  document.querySelectorAll('.tabs').forEach((tablist) => {
+    const tabs = [...tablist.querySelectorAll('.tab')];
+    tabs.forEach((tab, idx) => {
+      tab.addEventListener('click', () => activate(tab));
+      tab.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight') tabs[(idx + 1) % tabs.length].focus();
+        if (e.key === 'ArrowLeft')  tabs[(idx - 1 + tabs.length) % tabs.length].focus();
+        if (e.key === 'Home')       tabs[0].focus();
+        if (e.key === 'End')        tabs[tabs.length - 1].focus();
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(document.activeElement); }
+      });
+    });
+    function activate(target) {
+      tabs.forEach((t) => t.setAttribute('aria-selected', t === target ? 'true' : 'false'));
+      const panelId = target.dataset.panel;
+      tablist.parentElement.querySelectorAll(':scope > [role="tabpanel"]').forEach((p) => {
+        p.hidden = p.id !== panelId;
+      });
+    }
+  });
+
+  /* === Sub-tabs === */
+  document.querySelectorAll('.subtabs').forEach((bar) => {
+    const tabs = [...bar.querySelectorAll('.subtab')];
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.setAttribute('aria-selected', t === tab ? 'true' : 'false'));
+      });
+    });
+  });
+</script>
+</body>
+</html>

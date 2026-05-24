@@ -111,14 +111,14 @@ describe("POST /api/missions (HEL-23 create)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when the statement exceeds 4000 characters", async () => {
+  it("returns 400 when the statement exceeds 50000 characters", async () => {
     const app = buildApp({
       sub: "user-1",
       workspaceId: "11111111-1111-4111-8111-111111111111",
     });
     const res = await request(app)
       .post("/api/missions")
-      .send({ statement: "a".repeat(4001) });
+      .send({ statement: "a".repeat(50_001) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/too long/i);
   });

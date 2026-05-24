@@ -1773,16 +1773,24 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
     return;
   }
 
-  const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
   const provider = getProvider({
     provider: resolved.config.provider,
-    model: assemblyModel,
+    model: resolved.config.model,
     apiKey: resolved.apiKey,
+    responseFormat: { type: "json_object" },
+    maxOutputTokens: 8192,
   });
 
   let rawText: string;
   try {
-    rawText = (await provider(buildTeamAssemblyPrompt(parsedRequest.data))).text;
+    rawText = (
+      await provider(
+        buildTeamAssemblyPrompt({
+          ...parsedRequest.data,
+          roleLibrary: parsedRequest.data.roleLibrary ?? [],
+        }),
+      )
+    ).text;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `LLM call failed: ${msg}` });

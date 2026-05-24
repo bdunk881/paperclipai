@@ -23,13 +23,15 @@ import {
   deleteMission,
   getHiringPlan,
   confirmHiringPlan,
-  addLibraryRoles,
+  generateHiringPlan,
+  patchHiringPlanSelection,
   type HiringPlanResponse,
-  type HiringPlan,
   type StaffingRecommendation,
   type StarterJobDescription,
 } from "../api/missionsApi";
-import { LibraryRolePicker } from "../components/missions/LibraryRolePicker";
+import { getConnectorHealth } from "../api/client";
+import { listLLMConfigs } from "../api/client";
+import { AgentToolChips, type ConnectorHealthByKey } from "../components/missions/AgentToolChips";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
 
 type PageState =
@@ -55,10 +57,37 @@ function ModelTierBadge({ tier }: { tier: string }) {
   );
 }
 
-function AgentCard({ agent }: { agent: StaffingRecommendation }) {
+function AgentCard({
+  agent,
+  selected,
+  onToggle,
+  connectorHealth,
+  disabled,
+}: {
+  agent: StaffingRecommendation;
+  selected: boolean;
+  onToggle: () => void;
+  connectorHealth: ConnectorHealthByKey;
+  disabled?: boolean;
+}) {
   return (
-    <div className="af2-card" style={{ padding: 16 }}>
+    <div
+      className="af2-card"
+      style={{
+        padding: 16,
+        opacity: selected ? 1 : 0.55,
+        borderColor: selected ? undefined : "var(--af2-line-2)",
+      }}
+    >
       <div className="af2-row" style={{ alignItems: "flex-start", gap: 8 }}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={onToggle}
+          disabled={disabled}
+          aria-label={`Include ${agent.title}`}
+          style={{ marginTop: 4 }}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className="af2-row" style={{ gap: 8, flexWrap: "wrap" }}>
             <span className="af2-serif" style={{ fontSize: 14, fontWeight: 600 }}>
@@ -74,8 +103,24 @@ function AgentCard({ agent }: { agent: StaffingRecommendation }) {
           <p className="af2-muted" style={{ marginTop: 4, fontSize: 12, lineHeight: 1.5 }}>
             {agent.mandate}
           </p>
+          {agent.justification ? (
+            <p className="af2-muted-2" style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.55 }}>
+              {agent.justification}
+            </p>
+          ) : null}
         </div>
       </div>
+      {agent.skills.length > 0 ? (
+        <div style={{ marginTop: 10 }}>
+          <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
+            Skills
+          </div>
+          <p className="af2-muted" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+            {agent.skills.join(" · ")}
+          </p>
+        </div>
+      ) : null}
+      <AgentToolChips tools={agent.tools} connectorHealth={connectorHealth} />
       {agent.kpis.length > 0 ? (
         <div style={{ marginTop: 10 }}>
           <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
@@ -90,6 +135,16 @@ function AgentCard({ agent }: { agent: StaffingRecommendation }) {
           </ul>
         </div>
       ) : null}
+      {agent.provisioningInstructions ? (
+        <div style={{ marginTop: 10 }}>
+          <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
+            Day-one brief
+          </div>
+          <p className="af2-muted" style={{ fontSize: 12, lineHeight: 1.55, margin: 0 }}>
+            {agent.provisioningInstructions}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -98,7 +153,7 @@ export default function HiringPlanReview() {
   // Route shape: /hire/plan/:missionId/:planId. The missionId is kept in the
   // URL for breadcrumb context + back-links, but the API calls below key
   // off planId only — that's the canonical lookup id post-HEL-25.
-  const { planId } = useParams<{ missionId: string; planId: string }>();
+  const { missionId, planId } = useParams<{ missionId: string; planId: string }>();
   const { requireAccessToken } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -113,6 +168,10 @@ export default function HiringPlanReview() {
     Array<{ agentId: string; agentName: string; routineId: string; routineName: string }>
   >([]);
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [includedRoleKeys, setIncludedRoleKeys] = useState<Set<string>>(new Set());
+  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthByKey>({});
+  const [regenerating, setRegenerating] = useState(false);
+  const [selectionWarning, setSelectionWarning] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!planId) return;
@@ -120,8 +179,23 @@ export default function HiringPlanReview() {
     setError(null);
     try {
       const token = await requireAccessToken();
-      const data = await getHiringPlan(planId, token);
+      const [data, health] = await Promise.all([
+        getHiringPlan(planId, token),
+        getConnectorHealth(token).catch(() => ({ connectors: [] })),
+      ]);
       setPlan(data);
+      const healthMap: ConnectorHealthByKey = {};
+      for (const record of health.connectors ?? []) {
+        healthMap[record.connectorKey] = {
+          state: record.state,
+          connectorName: record.connectorName,
+        };
+      }
+      setConnectorHealth(healthMap);
+      const keys =
+        data.plan.selection?.includedRoleKeys ??
+        data.plan.provisioningPlan.agents.map((a) => a.roleKey);
+      setIncludedRoleKeys(new Set(keys));
       // A fresh load (post-navigation) doesn't carry the seeded-routines
       // payload — those only return on the confirm POST. Clear so we don't
       // show a stale CTA list from a previous confirm.
@@ -137,13 +211,37 @@ export default function HiringPlanReview() {
     void load();
   }, [load]);
 
+  function toggleAgent(roleKey: string) {
+    setIncludedRoleKeys((current) => {
+      const next = new Set(current);
+      if (next.has(roleKey)) next.delete(roleKey);
+      else next.add(roleKey);
+      return next;
+    });
+    setSelectionWarning(null);
+  }
+
+  async function persistSelection(keys: string[]) {
+    if (!planId) return;
+    const token = await requireAccessToken();
+    const { plan: updated } = await patchHiringPlanSelection(planId, keys, token);
+    setPlan((prev) => (prev ? { ...prev, plan: updated } : prev));
+  }
+
   async function handleConfirm() {
     if (!planId) return;
+    const selected = Array.from(includedRoleKeys);
+    if (selected.length === 0) {
+      setSelectionWarning("Select at least one agent to provision.");
+      return;
+    }
     setPageState("confirming");
     setError(null);
+    setSelectionWarning(null);
     try {
       const token = await requireAccessToken();
-      const confirmed = await confirmHiringPlan(planId, token);
+      await persistSelection(selected);
+      const confirmed = await confirmHiringPlan(planId, token, selected);
       setPageState("confirmed");
       // Refresh plan data so the confirmed state is reflected.
       const refreshed = await getHiringPlan(planId, token);
@@ -194,14 +292,34 @@ export default function HiringPlanReview() {
     }
   }
 
-  function handleRolesAdded(updatedPlan: HiringPlan) {
-    setPlan((prev) => (prev ? { ...prev, plan: updatedPlan } : prev));
+  async function handleRegenerate() {
+    if (!missionId || !planId) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const token = await requireAccessToken();
+      const configs = await listLLMConfigs(token).catch(() => []);
+      const llmConfigId =
+        plan?.plan.generationMeta?.llmConfigId ??
+        configs.find((c) => c.isDefault)?.id ??
+        configs[0]?.id;
+      if (!llmConfigId) {
+        throw new Error("Connect a model in Settings before regenerating.");
+      }
+      const generated = await generateHiringPlan(missionId, token, { llmConfigId });
+      navigate(`/hire/plan/${missionId}/${generated.hiringPlanId}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to regenerate plan";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setRegenerating(false);
+    }
   }
 
   const agents = plan?.plan.provisioningPlan.agents ?? [];
-  const executives = plan?.plan.orgChart.executives ?? [];
-  const operators = plan?.plan.orgChart.operators ?? [];
-  const existingRoleKeys = new Set(agents.map((a) => a.roleKey));
+  const selectedCount = agents.filter((a) => includedRoleKeys.has(a.roleKey)).length;
+  const generationMeta = plan?.plan.generationMeta;
 
   return (
     <div className="af2-page text-af2-ink" style={{ maxWidth: 1200 }}>
@@ -215,7 +333,23 @@ export default function HiringPlanReview() {
             {plan?.plan.summary ?? "Review the generated org plan and confirm to provision agents."}
           </div>
         </div>
-        <div className="af2-page-actions">
+        <div className="af2-page-actions af2-row" style={{ gap: 8 }}>
+          {generationMeta ? (
+            <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+              Generated with {generationMeta.provider} / {generationMeta.model}
+            </span>
+          ) : null}
+          {!plan?.acceptedAt ? (
+            <button
+              type="button"
+              className="af2-btn af2-btn-sm"
+              disabled={regenerating || pageState === "confirming"}
+              onClick={() => void handleRegenerate()}
+            >
+              {regenerating ? <Loader2 size={12} className="animate-spin" /> : null}
+              Regenerate plan
+            </button>
+          ) : null}
           <Link
             to="/hire"
             className="af2-btn af2-btn-ghost af2-btn-sm"
@@ -302,7 +436,10 @@ export default function HiringPlanReview() {
               <div className="af2-eyebrow" style={{ marginBottom: 10 }}>
                 Plan — {plan.plan.provisioningPlan.teamName}
               </div>
-              <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--af2-ink-2)" }}>
+              <p style={{ fontSize: 14, lineHeight: 1.7, color: "var(--af2-ink-2)", marginBottom: 10 }}>
+                {plan.plan.summary}
+              </p>
+              <p style={{ fontSize: 13, lineHeight: 1.65, color: "var(--af2-ink-3)" }}>
                 {plan.plan.rationale}
               </p>
               <div
@@ -343,8 +480,7 @@ export default function HiringPlanReview() {
                 <div className="af2-row" style={{ gap: 8, marginTop: 4 }}>
                   <span className="af2-mono af2-muted-2" style={{ fontSize: 12 }}>
                     <Users size={12} style={{ display: "inline", marginRight: 4 }} />
-                    {executives.length} executive{executives.length !== 1 ? "s" : ""} ·{" "}
-                    {operators.length} operator{operators.length !== 1 ? "s" : ""}
+                    {selectedCount} of {agents.length} selected for provisioning
                   </span>
                 </div>
               </div>
@@ -359,7 +495,14 @@ export default function HiringPlanReview() {
                 }}
               >
                 {agents.map((agent) => (
-                  <AgentCard key={agent.roleKey} agent={agent} />
+                  <AgentCard
+                    key={agent.roleKey}
+                    agent={agent}
+                    selected={includedRoleKeys.has(agent.roleKey)}
+                    onToggle={() => toggleAgent(agent.roleKey)}
+                    connectorHealth={connectorHealth}
+                    disabled={Boolean(plan.acceptedAt)}
+                  />
                 ))}
               </div>
             ) : (
@@ -367,20 +510,10 @@ export default function HiringPlanReview() {
             )}
           </div>
 
-          {/* HEL-138: pre-built role picker — only shown before the plan is confirmed. */}
-          {!plan.acceptedAt ? (
-            <LibraryRolePicker
-              eyebrow="+ Add a pre-built role to this team"
-              disabledRoleKeys={existingRoleKeys}
-              onConfirm={async (roleKeys) => {
-                const token = await requireAccessToken();
-                const { plan: updated } = await addLibraryRoles(plan.id, roleKeys, token);
-                handleRolesAdded(updated);
-                toast.success(
-                  `${roleKeys.length} role${roleKeys.length === 1 ? "" : "s"} added to team.`,
-                );
-              }}
-            />
+          {selectionWarning ? (
+            <p className="af2-muted" style={{ color: "var(--af2-clay)", fontSize: 13 }}>
+              {selectionWarning}
+            </p>
           ) : null}
 
           {/* UX-4: preview the starter Job Descriptions that the
@@ -424,8 +557,8 @@ export default function HiringPlanReview() {
           ) : (
             <div className="af2-card" style={{ padding: "18px 22px" }}>
               <p style={{ fontSize: 14, color: "var(--af2-ink-2)", marginBottom: 14 }}>
-                Confirming will provision {agents.length} agent
-                {agents.length !== 1 ? "s" : ""} and wire up the reporting structure. This cannot
+                Confirming will provision {selectedCount} selected agent
+                {selectedCount !== 1 ? "s" : ""} and wire up the reporting structure. This cannot
                 be undone from this screen.
               </p>
               <div className="af2-row" style={{ gap: 10 }}>
@@ -468,7 +601,9 @@ export default function HiringPlanReview() {
                   type="button"
                   onClick={() => void handleConfirm()}
                   disabled={
-                    pageState === "confirming" || pageState === "discarding"
+                    pageState === "confirming" ||
+                    pageState === "discarding" ||
+                    selectedCount === 0
                   }
                   className="af2-btn af2-btn-clay"
                   style={{

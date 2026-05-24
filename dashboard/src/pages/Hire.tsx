@@ -38,10 +38,10 @@ import { teamLinkForMission } from "../lib/missionNavigation";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
-const STATEMENT_MAX = 4000;
+type ContextPillKey = keyof MissionMetadata;
 
-const STRUCTURED_FIELDS: Array<{
-  key: keyof MissionMetadata;
+const CONTEXT_PILLS: Array<{
+  key: ContextPillKey;
   label: string;
   placeholder: string;
 }> = [
@@ -74,18 +74,35 @@ function formatRelative(iso: string): string {
  * only required field) and give each structured prompt a smaller bump.
  * Returns a [0, 1] number; the surrounding copy switches at thresholds.
  */
-function computeReadiness(statement: string, metadata: MissionMetadata): number {
+function computeReadiness(
+  statement: string,
+  metadata: MissionMetadata,
+  enabledPills: Set<ContextPillKey>,
+): number {
   const trimmed = statement.trim();
   if (trimmed.length === 0) return 0;
   const statementScore = Math.min(trimmed.length / 80, 1) * 0.6;
-  const filled = [
-    metadata.industry,
-    metadata.targetCustomer,
-    metadata.successMetric,
-    metadata.runway,
-  ].filter((v) => (v ?? "").trim().length > 0).length;
-  const metadataScore = (filled / 4) * 0.4;
+  const pillKeys = CONTEXT_PILLS.map((p) => p.key);
+  const enabledCount = pillKeys.filter((key) => enabledPills.has(key)).length;
+  const filled = pillKeys.filter(
+    (key) => enabledPills.has(key) && (metadata[key] ?? "").trim().length > 0,
+  ).length;
+  const metadataScore =
+    enabledCount === 0 ? 0 : (filled / enabledCount) * 0.4;
   return Math.min(1, Number((statementScore + metadataScore).toFixed(2)));
+}
+
+function buildMetadataForSubmit(
+  metadata: MissionMetadata,
+  enabledPills: Set<ContextPillKey>,
+): MissionMetadata {
+  const out: MissionMetadata = {};
+  for (const { key } of CONTEXT_PILLS) {
+    if (!enabledPills.has(key)) continue;
+    const value = metadata[key]?.trim();
+    if (value) out[key] = value;
+  }
+  return out;
 }
 
 function readinessLabel(score: number): string {
@@ -119,10 +136,50 @@ export default function Hire() {
   // doesn't fill out the whole form and then bounce off an error.
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[] | null>(null);
   const [llmConfigError, setLlmConfigError] = useState<string | null>(null);
-  const [hostedFreeAvailable, setHostedFreeAvailable] = useState(false);
-  const hasLLM = (llmConfigs?.length ?? 0) > 0;
-  const canUseLlm = hasLLM || hostedFreeAvailable;
+  const [hostedFreeCatalog, setHostedFreeCatalog] = useState<
+    Awaited<ReturnType<typeof getHostedFreeCatalog>> | null
+  >(null);
+  const [enabledPills, setEnabledPills] = useState<Set<ContextPillKey>>(new Set());
+  const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(null);
+  const [regeneratingMissionId, setRegeneratingMissionId] = useState<string | null>(null);
+
+  const modelOptions = useMemo(() => {
+    const opts: Array<{ id: string; label: string; detail: string }> = [];
+    for (const cfg of llmConfigs ?? []) {
+      opts.push({
+        id: cfg.id,
+        label: cfg.label,
+        detail: `${cfg.provider} · ${cfg.model}${cfg.isDefault ? " · default" : ""}`,
+      });
+    }
+    if (opts.length === 0 && hostedFreeCatalog) {
+      for (const provider of hostedFreeCatalog.providers) {
+        if (!provider.available) continue;
+        opts.push({
+          id: `hosted-free:${provider.id}`,
+          label: provider.label,
+          detail: `${provider.provider} · ${provider.modelId} · AutoFlow hosted`,
+        });
+      }
+    }
+    return opts;
+  }, [llmConfigs, hostedFreeCatalog]);
+
+  const hasLLM = modelOptions.length > 0;
+  const canUseLlm = hasLLM;
   const llmCheckLoading = llmConfigs === null && llmConfigError === null;
+
+  useEffect(() => {
+    if (modelOptions.length === 0) {
+      setSelectedLlmConfigId(null);
+      return;
+    }
+    setSelectedLlmConfigId((prev) => {
+      if (prev && modelOptions.some((o) => o.id === prev)) return prev;
+      const defaultCfg = llmConfigs?.find((c) => c.isDefault);
+      return defaultCfg?.id ?? modelOptions[0]?.id ?? null;
+    });
+  }, [modelOptions, llmConfigs]);
 
   async function handleDelete(mission: Mission): Promise<void> {
     setDiscarding(true);
@@ -174,13 +231,13 @@ export default function Hire() {
         ]);
         if (!cancelled) {
           setLlmConfigs(list);
-          setHostedFreeAvailable((hosted?.providers.length ?? 0) > 0);
+          setHostedFreeCatalog(hosted);
         }
       } catch (err) {
         if (!cancelled) {
           setLlmConfigError(err instanceof Error ? err.message : "Failed to check LLM models");
           setLlmConfigs([]);
-          setHostedFreeAvailable(false);
+          setHostedFreeCatalog(null);
         }
       }
     })();
@@ -195,15 +252,47 @@ export default function Hire() {
   // Generate is gated on LLM credentials. Save-as-draft stays available so a
   // user without a model can still capture mission ideas now and generate
   // later once they connect a provider.
-  const canGenerate = trimmedStatement.length > 0 && !isBusy && canUseLlm && !llmCheckLoading;
-  const charactersLeft = STATEMENT_MAX - statement.length;
+  const canGenerate =
+    trimmedStatement.length > 0 &&
+    !isBusy &&
+    canUseLlm &&
+    !llmCheckLoading &&
+    Boolean(selectedLlmConfigId);
   const readiness = useMemo(
-    () => computeReadiness(statement, metadata),
-    [statement, metadata],
+    () => computeReadiness(statement, metadata, enabledPills),
+    [statement, metadata, enabledPills],
   );
+
+  function togglePill(key: ContextPillKey) {
+    setEnabledPills((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   function updateMetadata<K extends keyof MissionMetadata>(key: K, value: string) {
     setMetadata((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleRegenerateMission(mission: Mission): Promise<void> {
+    if (!selectedLlmConfigId) {
+      toast.error("Select a connected model before regenerating.");
+      return;
+    }
+    setRegeneratingMissionId(mission.id);
+    try {
+      const token = await requireAccessToken();
+      const plan = await generateHiringPlan(mission.id, token, {
+        llmConfigId: selectedLlmConfigId,
+      });
+      navigate(`/hire/plan/${mission.id}/${plan.hiringPlanId}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to regenerate plan");
+    } finally {
+      setRegeneratingMissionId(null);
+    }
   }
 
   async function handleSave(generateAfter: boolean): Promise<void> {
@@ -219,14 +308,19 @@ export default function Hire() {
     try {
       const token = await requireAccessToken();
       const created = await createMission(
-        { statement: trimmedStatement, metadata: scrubEmptyMetadata(metadata) },
+        {
+          statement: trimmedStatement,
+          metadata: buildMetadataForSubmit(metadata, enabledPills),
+        },
         token,
       );
       setMissions((current) => [created, ...current]);
 
       if (generateAfter) {
         try {
-          const plan = await generateHiringPlan(created.id, token);
+          const plan = await generateHiringPlan(created.id, token, {
+            llmConfigId: selectedLlmConfigId ?? undefined,
+          });
           // HEL-105: jump straight to the side-by-side review page so the
           // user can scan mission ↔ plan ↔ agents in one screen before
           // confirming. The Hire page deliberately doesn't render the
@@ -250,6 +344,7 @@ export default function Hire() {
 
       setStatement("");
       setMetadata({});
+      setEnabledPills(new Set());
       void refreshMissions();
       setSubmitState("idle");
     } catch (err) {
@@ -359,7 +454,7 @@ export default function Hire() {
           id="mission-statement"
           className="af2-input"
           value={statement}
-          onChange={(e) => setStatement(e.target.value.slice(0, STATEMENT_MAX))}
+          onChange={(e) => setStatement(e.target.value)}
           placeholder="Launch the Acme R-7 robotic arm to industrial buyers in North America by Q4."
           rows={3}
           style={{
@@ -372,25 +467,28 @@ export default function Hire() {
           }}
           disabled={isBusy}
         />
-        <div
-          className="af2-muted-2"
-          style={{ marginTop: 4, fontSize: 11, textAlign: "right" }}
-        >
-          {charactersLeft} of {STATEMENT_MAX} characters left
-        </div>
-
-        {/* Optional structured prompts. Compact two-column layout so the
-            card matches the v2 reference's airy single-card feel. */}
-        <div
-          style={{
-            marginTop: 16,
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 12,
-          }}
-        >
-          {STRUCTURED_FIELDS.map((field) => (
-            <div key={field.key}>
+        <div style={{ marginTop: 16 }}>
+          <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
+            Optional context
+          </div>
+          <div className="af2-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {CONTEXT_PILLS.map((pill) => {
+              const active = enabledPills.has(pill.key);
+              return (
+                <button
+                  key={pill.key}
+                  type="button"
+                  className={active ? "af2-btn af2-btn-clay af2-btn-sm" : "af2-btn af2-btn-sm"}
+                  onClick={() => togglePill(pill.key)}
+                  disabled={isBusy}
+                >
+                  {pill.label}
+                </button>
+              );
+            })}
+          </div>
+          {CONTEXT_PILLS.filter((pill) => enabledPills.has(pill.key)).map((field) => (
+            <div key={field.key} style={{ marginBottom: 10 }}>
               <label htmlFor={`metadata-${field.key}`} className="af2-eyebrow">
                 {field.label}
               </label>
@@ -407,6 +505,28 @@ export default function Hire() {
             </div>
           ))}
         </div>
+
+        {modelOptions.length > 0 ? (
+          <div style={{ marginTop: 16 }}>
+            <label htmlFor="hire-llm-model" className="af2-eyebrow">
+              Model for plan generation
+            </label>
+            <select
+              id="hire-llm-model"
+              className="af2-input"
+              value={selectedLlmConfigId ?? ""}
+              onChange={(e) => setSelectedLlmConfigId(e.target.value || null)}
+              disabled={isBusy}
+              style={{ width: "100%", marginTop: 6 }}
+            >
+              {modelOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label} — {opt.detail}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         {/* Readiness pill + actions row, mirroring the v2 footer pattern. */}
         <div className="af2-row" style={{ marginTop: 16, gap: 10 }}>
@@ -564,7 +684,15 @@ export default function Hire() {
               <span className="af2-muted" style={{ fontSize: 11.5 }}>
                 {mission.status}
               </span>
-              <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  textAlign: "right",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  alignItems: "flex-end",
+                }}
+              >
                 {mission.latestHiringPlanId ? (
                   mission.status === "active" ? (
                     <Link
@@ -575,18 +703,35 @@ export default function Hire() {
                       View team
                     </Link>
                   ) : (
-                    <Link
-                      to={`/hire/plan/${mission.id}/${mission.latestHiringPlanId}`}
-                      className="af2-btn af2-btn-sm af2-btn-clay"
-                      style={{
-                        textDecoration: "none",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      Review plan
-                    </Link>
+                    <>
+                      <Link
+                        to={`/hire/plan/${mission.id}/${mission.latestHiringPlanId}`}
+                        className="af2-btn af2-btn-sm af2-btn-clay"
+                        style={{
+                          textDecoration: "none",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        Review plan
+                      </Link>
+                      <button
+                        type="button"
+                        className="af2-btn af2-btn-sm"
+                        disabled={
+                          regeneratingMissionId === mission.id ||
+                          !selectedLlmConfigId ||
+                          isBusy
+                        }
+                        onClick={() => void handleRegenerateMission(mission)}
+                      >
+                        {regeneratingMissionId === mission.id ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : null}
+                        Regenerate
+                      </button>
+                    </>
                   )
                 ) : null}
               </div>

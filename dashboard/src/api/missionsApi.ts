@@ -36,11 +36,8 @@ export interface MissionCreateInput {
   metadata?: MissionMetadata;
 }
 
-export interface GeneratedPlanResponse {
-  hiringPlanId: string;
-  missionId: string;
-  schemaVersion: number;
-  plan: unknown;
+export interface GenerateHiringPlanOptions {
+  llmConfigId?: string;
 }
 
 function buildHeaders(accessToken: string, extra?: HeadersInit): HeadersInit {
@@ -190,12 +187,16 @@ const GENERATE_PLAN_TIMEOUT_MS = 90_000;
 export async function generateHiringPlan(
   missionId: string,
   accessToken: string,
+  options: GenerateHiringPlanOptions = {},
 ): Promise<GeneratedPlanResponse> {
   const response = await trackedFetch(
     `${BASE}/missions/${encodeURIComponent(missionId)}/generate-plan`,
     {
       method: "POST",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        options.llmConfigId ? { llmConfigId: options.llmConfigId } : {},
+      ),
     },
     { timeoutMs: GENERATE_PLAN_TIMEOUT_MS },
   );
@@ -243,12 +244,16 @@ export interface ConfirmHiringPlanResponse {
 export async function confirmHiringPlan(
   hiringPlanId: string,
   accessToken: string,
+  includedRoleKeys?: string[],
 ): Promise<ConfirmHiringPlanResponse> {
   const response = await trackedFetch(
     `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/confirm`,
     {
       method: "POST",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        includedRoleKeys && includedRoleKeys.length > 0 ? { includedRoleKeys } : {},
+      ),
     },
   );
   return parseJsonOrError<ConfirmHiringPlanResponse>(
@@ -314,6 +319,27 @@ export interface HiringPlan {
     day60: PhasePlan;
     day90: PhasePlan;
   };
+  selection?: {
+    includedRoleKeys: string[];
+  };
+  generationMeta?: {
+    provider: string;
+    model: string;
+    llmConfigId: string | null;
+  };
+}
+
+export interface GeneratedPlanResponse {
+  hiringPlanId: string;
+  missionId: string;
+  schemaVersion: number;
+  plan: HiringPlan;
+  costCents?: number;
+  provider?: string;
+  model?: string;
+  llmConfigId?: string | null;
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 /**
@@ -361,49 +387,21 @@ export async function getHiringPlan(
   );
 }
 
-// ---------------------------------------------------------------------------
-// HEL-138: role library + add-library-roles endpoints.
-// ---------------------------------------------------------------------------
-
-export interface RoleLibraryEntry {
-  roleKey: string;
-  title: string;
-  roleType: "executive" | "operator";
-  department: string;
-  mandate: string;
-  defaultReportsToRoleKey: string | null | undefined;
-  defaultSkills: readonly string[];
-  defaultTools: readonly string[];
-  defaultModelTier: "lite" | "standard" | "power";
-  hiringSignals: readonly string[];
-}
-
-export async function getRoleLibrary(accessToken: string): Promise<RoleLibraryEntry[]> {
-  const response = await trackedFetch(`${BASE}/hiring-plans/role-library`, {
-    headers: buildHeaders(accessToken),
-  });
-  const payload = await parseJsonOrError<{ roles: RoleLibraryEntry[] }>(
-    response,
-    `Failed to fetch role library: ${response.status}`,
-  );
-  return payload.roles;
-}
-
-export async function addLibraryRoles(
+export async function patchHiringPlanSelection(
   hiringPlanId: string,
-  roleKeys: string[],
+  includedRoleKeys: string[],
   accessToken: string,
 ): Promise<{ plan: HiringPlan }> {
   const response = await trackedFetch(
-    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/add-library-roles`,
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/draft`,
     {
-      method: "POST",
+      method: "PATCH",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ roleKeys }),
+      body: JSON.stringify({ includedRoleKeys }),
     },
   );
   return parseJsonOrError<{ plan: HiringPlan }>(
     response,
-    `Failed to add library roles: ${response.status}`,
+    `Failed to update hiring plan selection: ${response.status}`,
   );
 }

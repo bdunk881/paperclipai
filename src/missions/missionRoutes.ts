@@ -36,18 +36,21 @@ import {
   type TeamAssemblyResult,
 } from "../goals/teamAssembly";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
+import { listConnectorHealth } from "../connectors/health";
 import { computeHiringPlanCostCents } from "./hiringPlanCost";
 import { recordHiringPlanCost } from "./hiringPlanCostWriter";
 import { ensureUserProfileExists } from "../user/profileStore";
-import {
-  buildResolvedFromHostedFree,
-  getDefaultHostedFreeProvider,
-  resolveHostedFreeApiKey,
-} from "../hostedFreeModels/providers";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { registerMissionTeamRoutes } from "./missionTeamRoutes";
+import {
+  attachDefaultSelection,
+  type HiringPlanDraft,
+} from "./hiringPlanDraft";
+import { resolveHiringPlanLlm } from "./resolveHiringPlanLlm";
+
+/** Abuse guard — missions.statement is unbounded text in Postgres. */
+const MAX_STATEMENT_LENGTH = 50_000;
 
 export interface MissionRow {
   id: string;
@@ -79,7 +82,6 @@ export interface MissionListItem {
   latestHiringPlanId: string | null;
 }
 
-const MAX_STATEMENT_LENGTH = 4000;
 const MAX_METADATA_FIELD_LENGTH = 280;
 
 function trimMetadataField(value: unknown): string | undefined {
@@ -182,7 +184,10 @@ async function loadMissionScopedToWorkspace(
  * should design roles from the goal. Other callers may pass a library
  * explicitly when they want vocabulary reference material.
  */
-export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(
+  mission: MissionRow,
+  connectedToolSlugs: string[] = [],
+): TeamAssemblyRequest {
   const metadata = sanitizeMetadata(mission.metadata);
 
   const constraints: string[] = [];
@@ -216,6 +221,7 @@ export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssembl
       planReadinessThreshold: 0.6,
     },
     roleLibrary: [],
+    connectedToolSlugs,
   };
 }
 
@@ -223,7 +229,7 @@ async function persistHiringPlanDraft(
   pool: Pool,
   workspaceId: string,
   missionId: string,
-  draft: TeamAssemblyResult,
+  draft: HiringPlanDraft,
 ): Promise<string> {
   const id = randomUUID();
   await withWorkspaceContext(
@@ -797,40 +803,42 @@ export function createMissionRoutes(
       return;
     }
 
-    let resolved = await llmConfigStore.getDecryptedDefault(userId);
-    if (!resolved) {
-      const hostedFree = getDefaultHostedFreeProvider();
-      const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
-      if (hostedFree && hostedFreeKey) {
-        resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
-      }
-    }
-    if (!resolved) {
+    const body = req.body as { llmConfigId?: unknown };
+    const requestedLlmConfigId =
+      typeof body?.llmConfigId === "string" && body.llmConfigId.trim().length > 0
+        ? body.llmConfigId.trim()
+        : undefined;
+
+    const llmChoice = await resolveHiringPlanLlm(userId, requestedLlmConfigId);
+    if (!llmChoice) {
       res.status(422).json({
-        error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+        error: requestedLlmConfigId
+          ? "LLM configuration not found or unavailable. Choose a connected model in Settings."
+          : "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
       });
       return;
     }
 
-    const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
+    const { resolved, llmConfigId, assemblyModel } = llmChoice;
     const provider = getProvider({
       provider: resolved.config.provider,
       model: assemblyModel,
       apiKey: resolved.apiKey,
-      // Ask the provider for native JSON-mode output. The team-assembly
-      // prompt was the original trigger for the Mistral "Sure! Here's
-      // the plan:\n```json\n…```" 502 — switching to json_object mode
-      // forces clean JSON on every provider that supports it (OpenAI,
-      // Anthropic via forced tool-use, Mistral, Gemini, Groq, Fireworks,
-      // Together, xAI, DeepSeek, Perplexity, Ollama, LocalAI, OpenCode
-      // Zen). Providers without native mode (Bedrock, Vertex AI, Cohere)
-      // ignore the hint; the Tier 1 chatty-tolerant extractor catches
-      // their output downstream. The full zod schema still validates the
-      // shape after extraction, so type-safety is preserved.
       responseFormat: { type: "json_object" },
+      maxOutputTokens: 8192,
     });
 
-    const request = teamAssemblyRequestFromMission(mission);
+    let connectedToolSlugs: string[] = [];
+    try {
+      const health = await listConnectorHealth(userId);
+      connectedToolSlugs = health
+        .filter((record) => record.state === "healthy")
+        .map((record) => record.connectorKey);
+    } catch {
+      connectedToolSlugs = [];
+    }
+
+    const request = teamAssemblyRequestFromMission(mission, connectedToolSlugs);
     // HEL-74: wrap the LLM call so we can capture wall time + token usage
     // and emit a step_results row regardless of parse success/failure.
     //
@@ -901,9 +909,15 @@ export function createMissionRoutes(
     }
     const llmDurationMs = Date.now() - llmStartedAtMs;
 
-    let plan: TeamAssemblyResult;
+    let plan: HiringPlanDraft;
     try {
-      plan = parseTeamAssemblyResponse(rawText);
+      const parsed = parseTeamAssemblyResponse(rawText);
+      plan = attachDefaultSelection(parsed);
+      plan.generationMeta = {
+        provider: resolved.config.provider,
+        model: assemblyModel,
+        llmConfigId,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[missions] plan parse failed: ${msg}`);
@@ -977,6 +991,11 @@ export function createMissionRoutes(
       schemaVersion: TEAM_ASSEMBLY_SCHEMA_VERSION,
       plan,
       costCents: costResult.costCents,
+      provider: resolved.config.provider,
+      model: assemblyModel,
+      llmConfigId,
+      promptTokens,
+      completionTokens,
     });
   }));
 

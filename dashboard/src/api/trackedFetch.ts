@@ -34,6 +34,16 @@ function recordRetryAfter(headers: Headers): void {
   cachedCooldownReason = `Rate limit cooldown for ${cappedMs / 1000}s`;
 }
 
+/**
+ * Seconds remaining on the global rate-limit cooldown, or 0 if none. Surfaced
+ * so the route-level error boundary can show an accurate countdown instead
+ * of a generic "try again later".
+ */
+export function getRateLimitCooldownSeconds(): number {
+  const remaining = cooldownUntilMs - Date.now();
+  return remaining > 0 ? Math.ceil(remaining / 1000) : 0;
+}
+
 function makeCooldownResponse(): Response {
   return new Response(
     JSON.stringify({ error: cachedCooldownReason ?? "Rate limit cooldown" }),

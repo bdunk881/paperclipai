@@ -10,8 +10,11 @@
 
 import { getApiBasePath } from "./baseUrl";
 import { trackedFetch } from "./trackedFetch";
+import type { TeamAssemblyRoleLibraryEntry } from "./client";
 
 const BASE = getApiBasePath();
+
+export type RoleLibraryEntry = TeamAssemblyRoleLibraryEntry;
 
 export interface MissionMetadata {
   industry?: string;
@@ -59,6 +62,17 @@ async function parseJsonOrError<T>(response: Response, fallback: string): Promis
     throw new Error(detail ? `${base}: ${detail}` : base);
   }
   return response.json() as Promise<T>;
+}
+
+export async function getRoleLibrary(accessToken: string): Promise<RoleLibraryEntry[]> {
+  const response = await trackedFetch(`${BASE}/role-library`, {
+    headers: buildHeaders(accessToken),
+  });
+  const payload = await parseJsonOrError<{ roleLibrary: RoleLibraryEntry[] }>(
+    response,
+    `Failed to fetch role library: ${response.status}`,
+  );
+  return payload.roleLibrary;
 }
 
 export async function listMissions(accessToken: string): Promise<Mission[]> {

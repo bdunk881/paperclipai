@@ -105,6 +105,7 @@ import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
 import profileRoutes from "./user/profileRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
+import { roleLibraryRoutes } from "./missions/roleLibraryRoutes";
 import { createActivityRoutes } from "./activity/activityRoutes";
 import {
   createBudgetsRoutes,
@@ -710,6 +711,10 @@ app.use("/api/user", requireAuth, profileRoutes);
 // here would re-block the cheap GET list endpoint that the dashboard
 // polls on Hire + MissionState page loads.
 app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionRoutes);
+// Static role-library lookup consumed by LibraryRolePicker on Hire/Mission
+// surfaces. No workspace data — just the canonical DEFAULT_ROLE_LIBRARY —
+// but we still gate behind the same admin/developer role as missions.
+app.use("/api/role-library", requireAuth, workspaceResolver, requireRole("admin", "developer"), roleLibraryRoutes);
 // HEL-25: hiring-plan confirm uses the same auth + workspace + role gate.
 // requireRole gates this to admin/developer so a billing-only seat can't
 // provision agents that incur LLM cost.

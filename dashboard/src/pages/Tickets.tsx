@@ -20,29 +20,30 @@
  */
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import {
   collectKnownActors,
   createTicket,
   getTicketActorProfile,
   hydrateTicketActorProfiles,
-  listTickets,
   normalizeTicketSlaState,
   type TicketActorRef,
   type TicketPriority,
-  type TicketRecord,
   type TicketSlaStateLike,
   type TicketStatus,
 } from "../api/tickets";
-import { listAgents } from "../api/agentApi";
-import { listMissions, type Mission } from "../api/missionsApi";
+import type { Mission } from "../api/missionsApi";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
+import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
+import { useTicketsQuery } from "../hooks/queries/useTicketsQuery";
+import { queryKeys } from "../lib/queryKeys";
 import {
   buildCreateTicketPayload,
   type CreateTicketRouteActionData,
   type CreateTicketRouteActionPayload,
-  type TicketsRouteData,
 } from "../routes/ticketRouteData";
 import {
   TicketActorChip,
@@ -86,7 +87,6 @@ const EMPTY_FORM = {
 };
 
 type TicketsProps = {
-  initialData?: TicketsRouteData;
   routeAction?: {
     data?: CreateTicketRouteActionData;
     state: "idle" | "submitting" | "loading";
@@ -94,23 +94,21 @@ type TicketsProps = {
   };
 };
 
-export default function Tickets({ initialData, routeAction }: TicketsProps = {}) {
+export default function Tickets({ routeAction }: TicketsProps = {}) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getAccessToken, user } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
-  const [tickets, setTickets] = useState<TicketRecord[]>(
-    () => initialData?.tickets ?? [],
-  );
-  const [availableActors, setAvailableActors] = useState<TicketActorRef[]>(() =>
-    initialData ? collectKnownActors(initialData.tickets) : [],
-  );
-  const [missions, setMissions] = useState<Mission[]>([]);
-  const [loading, setLoading] = useState(() => initialData == null);
-  const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<"api" | "mock" | null>(
-    () => initialData?.source ?? null,
-  );
+  const ticketsQuery = useTicketsQuery();
+  const agentsQuery = useAgentsQuery();
+  const [createOpen, setCreateOpen] = useState(false);
+  const missionsQuery = useMissionsQuery({ enabled: createOpen });
+  const tickets = ticketsQuery.data?.tickets ?? [];
+  const source = ticketsQuery.data?.source ?? null;
+  const loading = ticketsQuery.isLoading && !ticketsQuery.data;
+  const error =
+    ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
   const [integrationWarnings, setIntegrationWarnings] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => {
     const value = searchParams.get("status");
@@ -131,72 +129,34 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
       : "all";
   });
   const [query, setQuery] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
   const [formState, setFormState] = useState(EMPTY_FORM);
   const [validationError, setValidationError] = useState<string | null>(null);
   const submitting = routeAction ? routeAction.state !== "idle" : false;
-
-  const loadTickets = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const accessToken = (await getAccessToken()) ?? undefined;
-      const [response, agents, missionsList] = await Promise.all([
-        listTickets({ workspaceId: activeWorkspaceId ?? undefined }, accessToken),
-        accessToken ? listAgents(accessToken).catch(() => []) : Promise.resolve([]),
-        accessToken ? listMissions(accessToken).catch(() => []) : Promise.resolve([]),
-      ]);
-
-      hydrateTicketActorProfiles({ agents, user });
-
-      const actorSeed: TicketActorRef[] = [];
-      if (user) {
-        actorSeed.push({ type: "user", id: user.id });
-      }
-      for (const agent of agents) {
-        actorSeed.push({ type: "agent", id: agent.id });
-      }
-
-      setTickets(response.tickets);
-      setAvailableActors(collectKnownActors(response.tickets, actorSeed));
-      setMissions(missionsList);
-      setSource(response.source);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load assignments");
-    } finally {
-      setLoading(false);
-    }
-  }, [activeWorkspaceId, getAccessToken, user]);
+  const missions = missionsQuery.data ?? [];
 
   useEffect(() => {
-    if (!initialData) {
-      void loadTickets();
-    } else {
-      // Loader supplies tickets but not actor display names — hydrate from agents roster.
-      void (async () => {
-        const accessToken = (await getAccessToken()) ?? undefined;
-        if (!accessToken) return;
-        try {
-          const [agents, m] = await Promise.all([
-            listAgents(accessToken).catch(() => []),
-            listMissions(accessToken).catch(() => []),
-          ]);
-          hydrateTicketActorProfiles({ agents, user });
-          const actorSeed: TicketActorRef[] = [];
-          if (user) {
-            actorSeed.push({ type: "user", id: user.id });
-          }
-          for (const agent of agents) {
-            actorSeed.push({ type: "agent", id: agent.id });
-          }
-          setAvailableActors(collectKnownActors(initialData.tickets, actorSeed));
-          setMissions(m);
-        } catch {
-          // Soft-fail — mission picker stays empty rather than breaking the page.
-        }
-      })();
+    if (agentsQuery.data) {
+      hydrateTicketActorProfiles({ agents: agentsQuery.data, user });
     }
-  }, [getAccessToken, initialData, loadTickets, user]);
+  }, [agentsQuery.data, user]);
+
+  const actorSeed = useMemo(() => {
+    const seed: TicketActorRef[] = [];
+    if (user) {
+      seed.push({ type: "user", id: user.id });
+    }
+    for (const agent of agentsQuery.data ?? []) {
+      seed.push({ type: "agent", id: agent.id });
+    }
+    return seed;
+  }, [agentsQuery.data, user]);
+
+  const refreshTickets = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.tickets(activeWorkspaceId),
+    });
+  }, [activeWorkspaceId, queryClient]);
 
   useEffect(() => {
     const actionData = routeAction?.data;
@@ -208,13 +168,16 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
     }
 
     setIntegrationWarnings(actionData.integrationWarnings);
-    setSource(actionData.source);
-    setTickets((current) => [actionData.aggregate.ticket, ...current]);
+    if (activeWorkspaceId) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tickets(activeWorkspaceId),
+      });
+    }
     setCreateOpen(false);
     setFormState(EMPTY_FORM);
     setValidationError(null);
-    navigate(`/tickets/${actionData.aggregate.ticket.id}`);
-  }, [navigate, routeAction?.data]);
+    navigate(`/mission-assignments/${actionData.aggregate.ticket.id}`);
+  }, [activeWorkspaceId, navigate, queryClient, routeAction?.data]);
 
   // Note: we *don't* sync URL → state on every searchParams change.
   // Earlier this effect read `?status=`/`?priority=`/`?sla=` from
@@ -240,8 +203,8 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
   );
 
   const actorOptions = useMemo(
-    () => collectKnownActors(tickets, availableActors),
-    [availableActors, tickets],
+    () => collectKnownActors(tickets, actorSeed),
+    [actorSeed, tickets],
   );
 
   const filteredTickets = useMemo(() => {
@@ -324,11 +287,14 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
         accessToken,
       );
       setIntegrationWarnings(created.integrationWarnings);
-      setSource(created.source);
-      setTickets((current) => [created.ticket, ...current]);
+      if (activeWorkspaceId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.tickets(activeWorkspaceId),
+        });
+      }
       setCreateOpen(false);
       setFormState(EMPTY_FORM);
-      navigate(`/tickets/${created.ticket.id}`);
+      navigate(`/mission-assignments/${created.ticket.id}`);
     } catch (submitError) {
       setValidationError(
         submitError instanceof Error ? submitError.message : "Unable to create assignment.",
@@ -447,9 +413,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
 
           <button
             type="button"
-            onClick={() => {
-              void loadTickets();
-            }}
+            onClick={refreshTickets}
             className="af2-btn af2-btn-sm"
             style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
             aria-label="Refresh assignments"
@@ -533,7 +497,7 @@ export default function Tickets({ initialData, routeAction }: TicketsProps = {})
           {filteredTickets.map((ticket, idx) => (
             <Link
               key={ticket.id}
-              to={`/tickets/${ticket.id}`}
+              to={`/mission-assignments/${ticket.id}`}
               className="af2-list-row"
               style={{
                 gridTemplateColumns:

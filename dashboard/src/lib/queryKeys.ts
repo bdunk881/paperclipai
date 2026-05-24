@@ -12,4 +12,5 @@ export const queryKeys = {
   budgets: (id: string) => ["workspace", id, "budgets"] as const,
   entitlements: (id: string) => ["workspace", id, "entitlements"] as const,
   observability: (id: string, tab: string) => ["workspace", id, "observability", tab] as const,
+  tickets: (id: string) => ["workspace", id, "tickets"] as const,
 };

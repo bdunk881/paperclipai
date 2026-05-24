@@ -248,7 +248,7 @@ function mapTicketRow(row: TicketRow): TicketRecord {
     workspaceId: row.workspace_id,
     parentId: row.parent_id ?? undefined,
     title: row.title,
-    description: row.description,
+    description: row.description ?? "",
     creatorId: row.creator_id,
     status: row.status,
     priority: row.priority,
@@ -260,6 +260,12 @@ function mapTicketRow(row: TicketRow): TicketRecord {
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
+}
+
+function mapTicketListRow(row: Omit<TicketRow, "description"> & { description?: string | null }): TicketRecord {
+  const ticket = mapTicketRow({ ...row, description: row.description ?? "" } as TicketRow);
+  ticket.description = "";
+  return ticket;
 }
 
 function mapAssignmentRow(row: Record<string, unknown>): TicketAssignee {
@@ -1117,7 +1123,11 @@ export const ticketStore = {
             : true
         )
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-        .map(cloneTicket);
+        .map((ticket) => {
+          const cloned = cloneTicket(ticket);
+          cloned.description = "";
+          return cloned;
+        });
     }
 
     const workspaceContext = requireWorkspaceContext(context);
@@ -1125,7 +1135,7 @@ export const ticketStore = {
     return withWorkspaceContext(getPostgresPool(), workspaceContext, async (client) => {
       const result = await client.query(
         `
-          SELECT DISTINCT t.id, t.workspace_id, t.parent_id, t.title, t.description, t.creator_id, t.status, t.priority,
+          SELECT DISTINCT t.id, t.workspace_id, t.parent_id, t.title, t.creator_id, t.status, t.priority,
                  t.sla_state, t.due_date, t.resolved_at, t.tags_json, t.created_at, t.updated_at
           FROM tickets t
           LEFT JOIN ticket_assignments ta ON ta.ticket_id = t.id
@@ -1147,7 +1157,7 @@ export const ticketStore = {
         ]
       );
 
-      const tickets = (result.rows as TicketRow[]).map(mapTicketRow);
+      const tickets = (result.rows as Omit<TicketRow, "description">[]).map(mapTicketListRow);
       const assignmentMap = await loadAssignments(tickets.map((ticket) => ticket.id), client);
       return tickets.map((ticket) => {
         ticket.assignees = assignmentMap.get(ticket.id) ?? [];

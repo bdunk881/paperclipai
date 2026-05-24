@@ -142,7 +142,7 @@ export default function AgentActivity() {
   const [now, setNow] = useState<number>(() => Date.now());
   const [streamLive, setStreamLive] = useState(true);
 
-  const eventsQuery = useObservabilityQuery(tab === "failed" ? "all" : tab);
+  const eventsQuery = useObservabilityQuery();
   const events = eventsQuery.data ?? [];
   const loading = eventsQuery.isLoading && tab !== "failed" && !eventsQuery.data;
 

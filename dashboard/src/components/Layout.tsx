@@ -1,4 +1,4 @@
-import { type ElementType, useMemo, useState } from "react";
+import { type ElementType, useEffect, useMemo, useState } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Home,
@@ -92,6 +92,14 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [pendingPath, setPendingPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingPath(null);
+  }, [location.pathname]);
+
+  const isNavigating =
+    pendingPath !== null && pendingPath !== location.pathname;
   const isBuilderPopout = useMemo(() => {
     if (!location.pathname.startsWith("/builder")) {
       return false;
@@ -140,25 +148,38 @@ export default function Layout() {
               {section.title}
             </p>
             <div className="space-y-1">
-              {section.items.map(({ to, icon: Icon, label, end }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={end}
-                  onClick={closeNav}
-                  className={({ isActive }) =>
-                    clsx(
-                      "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-af2-ink text-af2-paper"
-                        : "text-af2-ink-2 hover:bg-af2-paper-2 hover:text-af2-ink"
-                    )
-                  }
-                >
-                  <Icon size={18} />
-                  {label}
-                </NavLink>
-              ))}
+              {section.items.map(({ to, icon: Icon, label, end }) => {
+                const isPendingTarget = isNavigating && pendingPath === to;
+                return (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    onClick={(event) => {
+                      if (isNavigating) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setPendingPath(to);
+                      closeNav();
+                    }}
+                    aria-disabled={isNavigating || undefined}
+                    className={({ isActive }) =>
+                      clsx(
+                        "flex items-center gap-3 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                        isNavigating && "pointer-events-none opacity-60",
+                        isPendingTarget && "animate-pulse",
+                        isActive
+                          ? "bg-af2-ink text-af2-paper"
+                          : "text-af2-ink-2 hover:bg-af2-paper-2 hover:text-af2-ink"
+                      )
+                    }
+                  >
+                    <Icon size={18} />
+                    {label}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         ))}
@@ -188,6 +209,15 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen flex-col bg-af2-paper text-af2-ink transition-colors duration-200">
+      {isNavigating ? (
+        <div
+          role="progressbar"
+          aria-label="Loading page"
+          className="fixed left-0 right-0 top-0 z-50 h-0.5 overflow-hidden bg-af2-line"
+        >
+          <div className="h-full w-1/3 animate-pulse bg-af2-clay" />
+        </div>
+      ) : null}
       <AppTopbar leading={mobileNavToggle} />
 
       <div className="relative flex flex-1 overflow-hidden">

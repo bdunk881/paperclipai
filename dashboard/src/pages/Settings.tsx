@@ -355,24 +355,31 @@ export default function Settings() {
           message={error}
           onRetry={() => void loadSettings()}
         />
-      ) : activeTab === "general" ? (
-        <GeneralTab
-          workspaceName={workspaceName}
-          missionStatement={missionStatement}
-          policies={policies}
-          onEditPolicy={(policy) => setEditingPolicy(policy)}
-          requireAccessToken={requireAccessToken}
-        />
-      ) : activeTab === "credentials" ? (
-        <CredentialsTab requireAccessToken={requireAccessToken} />
-      ) : activeTab === "billing" ? (
-        <BillingTab
-          subscription={subscription}
-          requireAccessToken={requireAccessToken}
-          onSubscriptionChange={setSubscription}
-        />
       ) : (
-        <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
+        <>
+          <div hidden={activeTab !== "general"}>
+            <GeneralTab
+              workspaceName={workspaceName}
+              missionStatement={missionStatement}
+              policies={policies}
+              onEditPolicy={(policy) => setEditingPolicy(policy)}
+              requireAccessToken={requireAccessToken}
+            />
+          </div>
+          <div hidden={activeTab !== "credentials"}>
+            <CredentialsTab requireAccessToken={requireAccessToken} />
+          </div>
+          <div hidden={activeTab !== "billing"}>
+            <BillingTab
+              subscription={subscription}
+              requireAccessToken={requireAccessToken}
+              onSubscriptionChange={setSubscription}
+            />
+          </div>
+          <div hidden={activeTab === "general" || activeTab === "credentials" || activeTab === "billing"}>
+            <HubTab tabKey={activeTab} onJumpToGeneral={() => setActiveTab("general")} />
+          </div>
+        </>
       )}
 
       {editingPolicy ? (

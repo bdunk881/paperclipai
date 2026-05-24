@@ -21,7 +21,7 @@ export function useObservabilityStream(enabled: boolean): void {
   const { accessMode } = useAuth();
   const resolveAccessToken = useResolveAccessToken();
   const { activeWorkspaceId } = useWorkspace();
-  const tabKey = "live";
+  const tabKey = "feed";
 
   useEffect(() => {
     if (!enabled || !activeWorkspaceId || accessMode === "preview") {

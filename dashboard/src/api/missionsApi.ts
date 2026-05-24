@@ -16,11 +16,23 @@ const BASE = getApiBasePath();
 
 export type RoleLibraryEntry = TeamAssemblyRoleLibraryEntry;
 
+/**
+ * HEL-211 — owner-defined free-form context pills surfaced on the Hire page
+ * alongside the four canonical fields. Each entry is serialised into the
+ * team-assembly prompt as `${label}: ${value}` after the canonical
+ * fields so the LLM has the same weight of signal.
+ */
+export interface MissionCustomContextEntry {
+  label: string;
+  value: string;
+}
+
 export interface MissionMetadata {
   industry?: string;
   targetCustomer?: string;
   successMetric?: string;
   runway?: string;
+  customContext?: MissionCustomContextEntry[];
 }
 
 export interface Mission {

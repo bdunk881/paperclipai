@@ -163,7 +163,7 @@ async function loadCanonicalAgents(
     id: string;
     userId: string;
     name: string;
-    /** HEL-210: nullable owner-defined alias; UI falls back to `name`. */
+    /** HEL-210/HEL-211: nullable owner-defined alias; UI falls back to `name`. */
     displayName: string | null;
     description: string | null;
     roleKey: string;
@@ -190,7 +190,7 @@ async function loadCanonicalAgents(
     user_id: string;
     team_id: string;
     name: string;
-    // HEL-210: nullable owner-defined alias surfaced as the primary
+    // HEL-210/HEL-211: nullable owner-defined alias surfaced as the primary
     // line on org/agent views. Falls back to `name` when null.
     display_name: string | null;
     role_key: string;
@@ -214,8 +214,7 @@ async function loadCanonicalAgents(
     async (client) => {
       const result = await client.query<AgentRow>(
         `SELECT a.id, a.workspace_id, a.user_id, a.team_id, a.name,
-                a.display_name,
-                a.role_key, a.model, a.instructions, a.budget_monthly_usd,
+                a.display_name, a.role_key, a.model, a.instructions, a.budget_monthly_usd,
                 a.reporting_to_agent_id, a.metadata, a.status, a.last_heartbeat_at,
                 a.created_at, a.updated_at,
                 t.name AS team_name, t.description AS team_description
@@ -591,14 +590,22 @@ router.get("/:id/token-usage", asyncHandler<WorkspaceAwareRequest>(async (req, r
 // ---------------------------------------------------------------------------
 // PATCH /api/agents/:id (HEL-190 — edit agent)
 //
-// Accepts partial `{ name?, status?, budgetMonthlyUsd?, instructions? }`.
-// `status` accepts the canonical DB enum ("active" | "paused" |
-// "terminated"); the dashboard maps to its presentation vocabulary
-// (idle/running/paused/error) at render time. Use DELETE to soft-terminate.
+// Accepts partial `{ name?, displayName?, status?, budgetMonthlyUsd?,
+// instructions? }`. `status` accepts the canonical DB enum ("active" |
+// "paused" | "terminated"); the dashboard maps to its presentation
+// vocabulary (idle/running/paused/error) at render time. Use DELETE to
+// soft-terminate.
+//
+// HEL-211: `displayName` is the owner-supplied friendly handle stored in
+// `agents.display_name` (migration 059). Empty string clears it back to
+// NULL so the org list falls back to `name` (the LLM-generated role
+// title). Accepts both `displayName` (dashboard idiom) and the
+// snake_case `display_name` (db column) for caller convenience.
 // ---------------------------------------------------------------------------
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VALID_STATUSES = new Set(["active", "paused", "terminated"]);
 const MAX_NAME_LENGTH = 120;
+const MAX_DISPLAY_NAME_LENGTH = 120;
 const MAX_INSTRUCTIONS_LENGTH = 8000;
 const MAX_BUDGET_USD = 100_000;
 
@@ -619,6 +626,8 @@ router.patch("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
 
   const body = req.body as {
     name?: unknown;
+    displayName?: unknown;
+    display_name?: unknown;
     status?: unknown;
     budgetMonthlyUsd?: unknown;
     instructions?: unknown;
@@ -643,6 +652,36 @@ router.patch("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     }
     args.push(trimmed);
     sets.push(`name = $${args.length}`);
+  }
+
+  // HEL-211: accept either camelCase (`displayName`, dashboard idiom)
+  // or snake_case (`display_name`, db column name) for caller forgiveness.
+  const rawDisplayName =
+    body?.displayName !== undefined ? body.displayName : body?.display_name;
+  if (rawDisplayName !== undefined) {
+    if (rawDisplayName === null) {
+      args.push(null);
+      sets.push(`display_name = $${args.length}`);
+    } else if (typeof rawDisplayName !== "string") {
+      res.status(400).json({ error: "displayName must be a string or null" });
+      return;
+    } else {
+      const trimmed = rawDisplayName.trim();
+      if (!trimmed) {
+        // Empty string clears the display name back to NULL so the org
+        // list falls back to `name` (the LLM-generated role title).
+        args.push(null);
+        sets.push(`display_name = $${args.length}`);
+      } else if (trimmed.length > MAX_DISPLAY_NAME_LENGTH) {
+        res.status(400).json({
+          error: `displayName too long (max ${MAX_DISPLAY_NAME_LENGTH})`,
+        });
+        return;
+      } else {
+        args.push(trimmed);
+        sets.push(`display_name = $${args.length}`);
+      }
+    }
   }
 
   if (body?.status !== undefined) {

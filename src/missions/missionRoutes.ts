@@ -64,12 +64,27 @@ export interface MissionRow {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * HEL-211 — owner-defined free-form context pills surfaced on the Hire page
+ * alongside the four canonical fields. Each entry is serialised into the
+ * team-assembly prompt as `${label}: ${value}` after the canonical
+ * fields so the LLM has the same weight of signal.
+ */
+export interface MissionCustomContextEntry {
+  label: string;
+  value: string;
+}
+
 export interface MissionMetadata {
   industry?: string;
   targetCustomer?: string;
   successMetric?: string;
   runway?: string;
+  customContext?: MissionCustomContextEntry[];
 }
+
+const MAX_CUSTOM_CONTEXT_ENTRIES = 12;
+const MAX_CUSTOM_CONTEXT_LABEL_LENGTH = 64;
 
 export interface MissionListItem {
   id: string;
@@ -93,6 +108,36 @@ function trimMetadataField(value: unknown): string | undefined {
     : trimmed;
 }
 
+function trimCustomContextLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > MAX_CUSTOM_CONTEXT_LABEL_LENGTH
+    ? trimmed.slice(0, MAX_CUSTOM_CONTEXT_LABEL_LENGTH)
+    : trimmed;
+}
+
+/**
+ * HEL-211 — coerce arbitrary input into a vetted list of owner-defined
+ * context entries. Drops entries with an empty label *or* value (both
+ * halves are load-bearing for the prompt template) and caps the list
+ * length so a malicious / runaway client can't blow up the prompt.
+ */
+function sanitizeCustomContext(input: unknown): MissionCustomContextEntry[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const entries: MissionCustomContextEntry[] = [];
+  for (const raw of input) {
+    if (entries.length >= MAX_CUSTOM_CONTEXT_ENTRIES) break;
+    if (!raw || typeof raw !== "object") continue;
+    const candidate = raw as Record<string, unknown>;
+    const label = trimCustomContextLabel(candidate.label);
+    const value = trimMetadataField(candidate.value);
+    if (!label || !value) continue;
+    entries.push({ label, value });
+  }
+  return entries.length > 0 ? entries : undefined;
+}
+
 function sanitizeMetadata(input: unknown): MissionMetadata {
   if (!input || typeof input !== "object") return {};
   const raw = input as Record<string, unknown>;
@@ -105,6 +150,8 @@ function sanitizeMetadata(input: unknown): MissionMetadata {
   if (successMetric) out.successMetric = successMetric;
   const runway = trimMetadataField(raw.runway);
   if (runway) out.runway = runway;
+  const customContext = sanitizeCustomContext(raw.customContext);
+  if (customContext) out.customContext = customContext;
   return out;
 }
 
@@ -206,6 +253,14 @@ export function teamAssemblyRequestFromMission(
     summaryLines.push(`Success metric: ${metadata.successMetric}`);
   }
   if (metadata.runway) summaryLines.push(`Budget / runway: ${metadata.runway}`);
+  // HEL-211: serialise the owner-defined free-form pills after the
+  // canonical fields. Same `${label}: ${value}` shape so the LLM
+  // treats them with the same weight as the structured prompts.
+  if (metadata.customContext && metadata.customContext.length > 0) {
+    for (const entry of metadata.customContext) {
+      summaryLines.push(`${entry.label}: ${entry.value}`);
+    }
+  }
 
   return {
     companyName: mission.company_name ?? undefined,

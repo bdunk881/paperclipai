@@ -54,6 +54,9 @@ import { ErrorState } from "../components/UiStates";
 import { Af2PageHead } from "../components/af2";
 import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { CostPredictor } from "../components/pro/CostPredictor";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
 

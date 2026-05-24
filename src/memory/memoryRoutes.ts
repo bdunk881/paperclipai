@@ -127,6 +127,51 @@ router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
+// HEL-214 / PR J scaffold — GET /api/memory/episodes?as_of=ISO_DATE
+//
+// TODO: HEL-214 wire real implementation. Pro Mode's EpisodeScrubber
+// surfaces episodes (run + activity bundles) at a chosen timestamp; the
+// real handler will roll up `episodes` + `runs` against the as_of cursor.
+// Today we return a small synthetic list so the slider plumbing renders.
+// ---------------------------------------------------------------------------
+
+router.get("/episodes", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = resolveUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user is required" });
+    return;
+  }
+
+  const asOfRaw = typeof req.query.as_of === "string" ? req.query.as_of : null;
+  const asOf = asOfRaw ? new Date(asOfRaw) : new Date();
+  if (Number.isNaN(asOf.getTime())) {
+    res.status(400).json({ error: "as_of must be a valid ISO date string" });
+    return;
+  }
+
+  const baseMs = asOf.getTime();
+  res.json({
+    asOf: asOf.toISOString(),
+    episodes: [
+      {
+        id: "ep_scaffold_1",
+        label: "Onboarding sync - Marketing pod",
+        startedAt: new Date(baseMs - 2 * 60 * 60 * 1000).toISOString(),
+        endedAt: new Date(baseMs - 60 * 60 * 1000).toISOString(),
+        agentId: "ag_demo_marketing_lead",
+      },
+      {
+        id: "ep_scaffold_2",
+        label: "Mission planning - refinement",
+        startedAt: new Date(baseMs - 30 * 60 * 1000).toISOString(),
+        endedAt: null,
+        agentId: "ag_demo_strategist",
+      },
+    ],
+  });
+}));
+
+// ---------------------------------------------------------------------------
 // DELETE /api/memory/:id — delete entry
 // ---------------------------------------------------------------------------
 

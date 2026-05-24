@@ -26,6 +26,10 @@ import { missionLinkTo } from "../lib/missionNavigation";
 import { useToast } from "../components/ToastProvider";
 import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+// HEL-214 / PR J: Pro Mode actionable reveals.
+import { ProReveal } from "../components/pro/ProReveal";
+import { PayloadReplay } from "../components/pro/PayloadReplay";
+import { MissionPromptEditor } from "../components/pro/MissionPromptEditor";
 import { useWorkspace } from "../context/useWorkspace";
 import { queryKeys } from "../lib/queryKeys";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
@@ -563,6 +567,18 @@ export default function MissionState() {
           onStopped={() => void refreshAfterMutation()}
         />
       ) : null}
+      <ProReveal
+        label="Mission prompt sandbox"
+        description="Edit the team-assembly prompt and re-run it in a sandbox."
+      >
+        <MissionPromptEditor />
+      </ProReveal>
+      <ProReveal
+        label="Assignment payload replay"
+        description="Re-fire the latest assignment payload after editing it."
+      >
+        <PayloadReplay />
+      </ProReveal>
     </div>
   );
 }

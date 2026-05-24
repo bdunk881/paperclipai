@@ -1268,5 +1268,33 @@ export function createMissionRoutes(
 
   registerMissionTeamRoutes(router, pool);
 
+  // -------------------------------------------------------------------------
+  // HEL-214 / PR J scaffold — POST /api/missions/:missionId/team-assembly/sandbox
+  //
+  // TODO: HEL-214 wire real implementation. Pro Mode's MissionPromptEditor
+  // re-runs team assembly with a hand-edited prompt; today we return a
+  // synthetic plan so the UI flow is reviewable.
+  // -------------------------------------------------------------------------
+  router.post(
+    "/:missionId/team-assembly/sandbox",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const body = (req.body ?? {}) as { prompt?: unknown };
+      const prompt =
+        typeof body.prompt === "string" ? body.prompt : "<no prompt>";
+      res.status(200).json({
+        missionId: req.params.missionId,
+        echoedPrompt: prompt,
+        plan: {
+          roles: [
+            { roleKey: "founder", title: "Founder", reportsTo: null },
+            { roleKey: "marketing_lead", title: "Marketing Lead", reportsTo: "founder" },
+            { roleKey: "growth_associate", title: "Growth Associate", reportsTo: "marketing_lead" },
+          ],
+          rationale: "Scaffold plan. Real implementation arrives in a follow-up.",
+        },
+      });
+    }),
+  );
+
   return router;
 }

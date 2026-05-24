@@ -48,6 +48,9 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { StepDebugger } from "../components/pro/StepDebugger";
 import {
   createTemplate,
   deployWorkflowAsTeam,
@@ -2203,6 +2206,12 @@ export default function WorkflowBuilder() {
           onClose={() => setDiffTargetVersionId(null)}
         />
       )}
+      <ProReveal
+        label="Step debugger"
+        description="Run the routine paused, inspect IO, mutate, and resume."
+      >
+        <StepDebugger />
+      </ProReveal>
     </div>
   );
 }

@@ -249,6 +249,42 @@ export interface BudgetRow {
 
 export function createBudgetsRoutes(pool: Pool): Router {
   const router = Router();
+
+  // -------------------------------------------------------------------------
+  // HEL-214 / PR J scaffold — POST /api/budgets/predict
+  //
+  // TODO: HEL-214 wire real implementation. Pro Mode's CostPredictor reveal
+  // sketches a mission + agent count + duration and asks for an expected
+  // spend range. Real cost prediction will reuse the same model rate card
+  // step_results uses; for now we return a static range so the UI can be
+  // styled end-to-end.
+  // -------------------------------------------------------------------------
+  router.post(
+    "/predict",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const body = (req.body ?? {}) as {
+        statement?: unknown;
+        agents?: unknown;
+        durationDays?: unknown;
+      };
+      const agents = typeof body.agents === "number" ? body.agents : 1;
+      const days = typeof body.durationDays === "number" ? body.durationDays : 7;
+      // Static-ish formula: $1.50 per agent-day mid, 0.4x low, 2.5x high.
+      const mid = Math.round(agents * days * 150);
+      res.status(200).json({
+        lowCents: Math.max(50, Math.round(mid * 0.4)),
+        midCents: mid,
+        highCents: Math.round(mid * 2.5),
+        notes: "Scaffold response. Real predictor arrives in a follow-up.",
+        echo: {
+          statement: typeof body.statement === "string" ? body.statement : null,
+          agents,
+          durationDays: days,
+        },
+      });
+    }),
+  );
+
   router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const ctx = requireAuthCtx(req, res);
     if (!ctx) return;

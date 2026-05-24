@@ -10,6 +10,9 @@ import { AddReportModal } from "../components/missions/AddReportModal";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
 import { EmptyState, ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { ToolCallSandbox } from "../components/pro/ToolCallSandbox";
 import { useToast } from "../components/ToastProvider";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { AgentCardActions } from "../components/AgentCardActions";
@@ -912,6 +915,12 @@ export default function OrgStructure() {
           </Af2RowDrawer>
         );
       })()}
+      <ProReveal
+        label="Tool-call sandbox"
+        description="Pick a tool from an agent's allowlist and fire it with synthetic input."
+      >
+        <ToolCallSandbox />
+      </ProReveal>
     </div>
   );
 }

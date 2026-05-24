@@ -26,6 +26,10 @@ import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
+// HEL-214 / PR J: Pro Mode actionable reveal scaffolds.
+import approvalRuleDebugRoutes from "./approvals/ruleDebugRoutes";
+import missionAssignmentReplayRoutes from "./missions/missionAssignmentReplayRoutes";
+import hireTemplateRoutes from "./missions/hireTemplateRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
 import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
@@ -949,6 +953,12 @@ app.use(
 app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
 app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);
+// HEL-214 / PR J: Pro Mode actionable reveal scaffolds. Each route is a
+// placeholder shape (echoes / static results); the real implementations are
+// follow-ups so the dashboard UI can ship today.
+app.use("/api/approval-rules", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalRuleDebugRoutes);
+app.use("/api/mission-assignments", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionAssignmentReplayRoutes);
+app.use("/api/hire", requireAuth, workspaceResolver, requireRole("admin", "developer"), hireTemplateRoutes);
 
 // (HEL-118 canonical-reads mounts live in the earlier block alongside their
 // requireRole(...ALL_MEMBER_ROLES) gates; do not re-mount here.)

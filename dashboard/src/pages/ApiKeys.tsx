@@ -16,6 +16,9 @@ import {
   type ApiKeySecretResponse,
 } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { ApiExplorer } from "../components/pro/ApiExplorer";
 
 function formatDate(value: string | null): string {
   if (!value) return "Never";
@@ -270,6 +273,12 @@ export default function ApiKeys() {
           </form>
         </aside>
       </div>
+      <ProReveal
+        label="API explorer"
+        description="Generate a scoped token and copy ready-to-run curl + JS snippets."
+      >
+        <ApiExplorer />
+      </ProReveal>
     </div>
   );
 }

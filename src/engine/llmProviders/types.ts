@@ -306,83 +306,135 @@ export interface LLMResponse {
 /** Callable returned by getProvider — takes a prompt and returns an LLMResponse */
 export type LLMProvider = (prompt: string) => Promise<LLMResponse>;
 
-/** Available models per provider — used by frontend dropdowns */
+/**
+ * Available models per provider — used by frontend dropdowns. Refreshed
+ * 2026-05-23 to the latest production-stable model IDs for each provider's
+ * public API. First entry of each list is treated as the default in the
+ * dashboard connect form.
+ *
+ * Notes on selection:
+ *   - OpenAI: GPT-5.5 is the current frontier; GPT-5.4 family is the
+ *     production workhorse; o3 / o4-mini cover reasoning workloads; the
+ *     older 5 / 5-mini / 5-nano family stays in the list as cheaper
+ *     alternatives.
+ *   - Anthropic: Opus 4.7 is the current top model; Sonnet 4.6 and Haiku 4.5
+ *     remain the working tier (per Anthropic deprecations table 2026-05).
+ *   - Gemini: 3.5 Flash is GA (2026-05-19), 3.1 Flash-Lite is GA (2026-05-07),
+ *     3.1 Pro is still preview, so 2.5 Pro stays as the recommended large.
+ *   - Mistral: Large 3 / Medium 3.5 / Small 4 family, accessed via -latest
+ *     aliases per Mistral's docs.
+ *   - Bedrock: stable Nova family (Premier / Pro / Lite / Micro). Nova 2
+ *     Lite + Nova 2 Pro Preview are GA in Bedrock but the exact model IDs
+ *     vary by region, so we keep the v1 lineup here.
+ *   - Vertex AI: stable Gemini 2.5 + Claude 4.x IDs.
+ *   - Groq: Llama 4 Maverick/Scout day-zero models plus the GPT-OSS family.
+ *   - Cohere: Command A+ (2026-05) is the new MoE flagship.
+ *   - Perplexity: legacy sonar-reasoning was retired 2025-12, replaced by
+ *     sonar-reasoning-pro; sonar-deep-research is the new long-form mode.
+ *   - xAI: Grok 4.3 redirects everything older (post 2026-05-15 retirement);
+ *     grok-build-0.1 is the agentic-coding replacement for grok-code-fast-1.
+ *   - DeepSeek: V4 Pro / Flash (1M context) replace V3.x. The legacy
+ *     deepseek-chat / deepseek-reasoner names retire 2026-07-24.
+ */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   openai: [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "o3",
+    "o4-mini",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
   ],
   anthropic: [
-    "claude-opus-4-6",
+    "claude-opus-4-7",
     "claude-sonnet-4-6",
-    "claude-haiku-4-5-20251001",
+    "claude-haiku-4-5",
+    "claude-opus-4-6",
   ],
   gemini: [
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
   ],
   mistral: [
     "mistral-large-latest",
+    "mistral-medium-latest",
     "mistral-small-latest",
-    "open-mistral-7b",
+    "codestral-latest",
   ],
   bedrock: [
-    "amazon.nova-micro-v1:0",
-    "amazon.nova-lite-v1:0",
+    "amazon.nova-premier-v1:0",
     "amazon.nova-pro-v1:0",
+    "amazon.nova-lite-v1:0",
+    "amazon.nova-micro-v1:0",
   ],
   "vertex-ai": [
-    "gemini-1.5-flash-002",
-    "gemini-1.5-pro-002",
-    "claude-3-5-sonnet-v2@20241022",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash",
+    "claude-sonnet-4-6",
   ],
   groq: [
-    "llama-3.1-8b-instant",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
   ],
   fireworks: [
-    "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    "accounts/fireworks/models/llama-v3p1-70b-instruct",
+    "accounts/fireworks/models/llama4-maverick-instruct-basic",
+    "accounts/fireworks/models/llama4-scout-instruct-basic",
+    "accounts/fireworks/models/llama-v3p3-70b-instruct",
     "accounts/fireworks/models/deepseek-r1",
+    "accounts/fireworks/models/deepseek-v3",
   ],
   together: [
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "deepseek-ai/DeepSeek-V3",
     "deepseek-ai/DeepSeek-R1",
   ],
   ollama: [
+    "llama3.3:70b",
     "llama3.2",
-    "llama3.1:70b",
     "deepseek-r1:14b",
+    "qwen2.5:14b",
   ],
   localai: [
-    "llama-3.2-3b-instruct",
+    "llama-3.3-70b-instruct",
     "llama-3.1-8b-instruct",
-    "llama-3.1-70b-instruct",
+    "llama-3.2-3b-instruct",
   ],
   cohere: [
-    "command-r7b-12-2024",
-    "command-r-plus-08-2024",
+    "command-a-plus-05-2026",
+    "command-a-reasoning-08-2025",
     "command-a-03-2025",
+    "command-r-plus-08-2024",
   ],
   perplexity: [
-    "sonar",
     "sonar-pro",
     "sonar-reasoning-pro",
+    "sonar-deep-research",
+    "sonar",
   ],
   xai: [
-    "grok-2-1212",
-    "grok-3-mini-beta",
-    "grok-3-beta",
+    "grok-4.3",
+    "grok-4.3-latest",
+    "grok-build-0.1",
   ],
   deepseek: [
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
     "deepseek-chat",
     "deepseek-reasoner",
-    "deepseek-coder",
   ],
   opencode_zen: [
     "big-pickle",

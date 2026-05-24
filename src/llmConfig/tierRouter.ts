@@ -69,31 +69,33 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   anthropic: {
     small: "claude-haiku-4-5-20251001",
     medium: "claude-sonnet-4-6",
-    large: "claude-opus-4-6",
+    large: "claude-opus-4-7",
     vision: "claude-sonnet-4-6",
   },
   openai: {
-    small: "gpt-4o-mini",
-    medium: "gpt-4o",
-    large: "gpt-4o",
+    small: "gpt-5.4-nano",
+    medium: "gpt-5.4",
+    large: "gpt-5.5",
     embeddings: "text-embedding-3-small",
-    vision: "gpt-4o",
+    vision: "gpt-5.5",
   },
   gemini: {
-    small: "gemini-1.5-flash",
-    medium: "gemini-1.5-pro",
-    large: "gemini-1.5-pro",
-    vision: "gemini-1.5-pro",
+    small: "gemini-3.1-flash-lite",
+    medium: "gemini-3.5-flash",
+    large: "gemini-2.5-pro",
+    vision: "gemini-3.5-flash",
   },
   mistral: {
     small: "mistral-small-latest",
-    medium: "mistral-large-latest",
+    medium: "mistral-medium-latest",
     large: "mistral-large-latest",
+    vision: "mistral-large-latest",
   },
   bedrock: {
     small: "amazon.nova-micro-v1:0",
     medium: "amazon.nova-lite-v1:0",
-    large: "amazon.nova-pro-v1:0",
+    large: "amazon.nova-premier-v1:0",
+    vision: "amazon.nova-pro-v1:0",
   },
   "vertex-ai": {},
   groq: {},
@@ -104,7 +106,11 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   cohere: { embeddings: "embed-english-v3.0" },
   perplexity: {},
   xai: {},
-  deepseek: {},
+  deepseek: {
+    small: "deepseek-v4-flash",
+    medium: "deepseek-v4-flash",
+    large: "deepseek-v4-pro",
+  },
   // Hosted-free fallback provider (PR B.1). The engine doesn't go
   // through tier routing for hosted-free — it pins to the catalog's
   // modelId in src/hostedFreeModels/providers.ts — so we leave the
@@ -118,10 +124,11 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  * cheaper. Not exact $/1M; just a relative ordering.
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
-  gemini: 1, // 1.5-flash ≈ $0.075/1M in
-  openai: 2, // 4o-mini ≈ $0.15/1M in
-  mistral: 3, // small ≈ $0.10/1M
-  anthropic: 4, // haiku ≈ $1/1M
+  gemini: 1, // gemini-3.1-flash-lite ≈ $0.25/1M in
+  openai: 2, // gpt-5.4-nano ≈ $0.20/1M in (Gemini's flash-lite is cheaper
+  //          and wins on recommendation priority + multimodal coverage)
+  mistral: 3, // mistral-small (v4) ≈ $0.10/1M
+  anthropic: 4, // claude-haiku-4-5 ≈ $1/1M
   groq: 1.5,
   deepseek: 1.2,
   fireworks: 1.8,

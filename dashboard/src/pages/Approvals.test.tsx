@@ -24,6 +24,15 @@ const requireAccessTokenMock = vi.fn();
 vi.mock("../api/client", () => ({
   listApprovals: listApprovalsMock,
   resolveApproval: resolveApprovalMock,
+  getHitlCompanyState: vi.fn().mockResolvedValue({ askCeoRequests: [] }),
+  createHitlAskCeoRequest: vi.fn(),
+}));
+
+vi.mock("../api/trackedFetch", () => ({
+  trackedFetch: vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ policies: [], actionTypes: [], modes: [], total: 0 }),
+  }),
 }));
 
 vi.mock("../context/AuthContext", () => ({

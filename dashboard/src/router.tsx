@@ -1,9 +1,8 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   createBrowserRouter,
   Navigate,
   RouterProvider,
-  useFetcher,
   useLoaderData,
   useParams,
   type ActionFunctionArgs,
@@ -21,17 +20,16 @@ import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import Layout from "./components/Layout";
 import RouteErrorBoundary from "./components/RouteErrorBoundary";
 import { useAuth } from "./context/AuthContext";
-import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
 import AgentDetail from "./pages/AgentDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
+import Assignments from "./pages/Assignments";
 import AuthCallback from "./pages/AuthCallback";
 import AuthConfirm from "./pages/AuthConfirm";
 import EnvVars from "./pages/EnvVars";
-import Escalations from "./pages/Escalations";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import Hire from "./pages/Hire";
@@ -61,10 +59,7 @@ import Billing from "./pages/Billing";
 import SocialAuthCallback from "./pages/SocialAuthCallback";
 import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
-import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
-import TicketTeamView from "./pages/TicketTeamView";
-import Tickets from "./pages/Tickets";
 import Templates from "./pages/Templates";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import WorkflowBuilderSetupCoachDemo from "./pages/WorkflowBuilderSetupCoachDemo";
@@ -178,37 +173,6 @@ async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTic
   }
 }
 
-function TicketsRoute() {
-  const fetcher = useFetcher<CreateTicketRouteActionData>();
-
-  const submit = useCallback(
-    (payload: CreateTicketRouteActionPayload) => {
-      const formData = new FormData();
-      formData.set("title", payload.title);
-      formData.set("description", payload.description);
-      formData.set("priority", payload.priority);
-      formData.set("primaryActorKey", payload.primaryActorKey);
-      formData.set("collaboratorKeys", JSON.stringify(payload.collaboratorKeys));
-      formData.set("dueDate", payload.dueDate);
-      formData.set("tags", payload.tags);
-      formData.set("workspaceId", payload.workspaceId ?? "");
-      formData.set("externalSyncRequested", String(payload.externalSyncRequested));
-      fetcher.submit(formData, { method: "post" });
-    },
-    [fetcher]
-  );
-
-  return (
-    <Tickets
-      routeAction={{
-        data: fetcher.data,
-        state: fetcher.state,
-        submit,
-      }}
-    />
-  );
-}
-
 function TicketDetailRoute() {
   const initialData = useLoaderData() as TicketDetailRouteData;
   return <TicketDetail initialData={initialData} />;
@@ -252,7 +216,10 @@ const routes: RouteObject[] = [
       { path: "templates/:templateId", element: <WorkflowBuilder /> },
 
       // Run pillar
-      { path: "agents/activity", loader: activityLoader, element: <AgentActivity /> },
+      // HEL-204 PR A: /agents/activity merged into Assignments → Activity tab.
+      // Loader still pre-warms the observability cache so the tab renders
+      // instantly when the redirect lands.
+      { path: "agents/activity", loader: activityLoader, element: <Navigate to="/assignments?tab=activity" replace /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
       // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
       // Linked from AgentTeamDetail and OrgStructure (via the agent card).
@@ -267,9 +234,12 @@ const routes: RouteObject[] = [
       // below or it'd get masked.
       { path: "agents/:agentId", element: <AgentDetail /> },
       { path: "approvals", loader: approvalsLoader, element: <Approvals /> },
-      // DASH-46: Ask-the-CEO surface. Backend was live since HEL-92 but
-      // no page consumed it (HEL-139 C3 + HEL-140 H3).
-      { path: "escalations", element: <Escalations /> },
+      // HEL-204 PR A: Escalations merged into Approvals as a Queue sub-tab.
+      // Old /escalations bookmarks land on the unified queue.
+      { path: "escalations", element: <Navigate to="/approvals?tab=queue" replace /> },
+      // HEL-204 PR A: Approval policies moved off Settings into the
+      // Approvals → Policies sub-tab.
+      { path: "settings/approvals", element: <Navigate to="/approvals?tab=policies" replace /> },
       { path: "mission-state", element: <MissionState /> },
 
       // Workforce pillar
@@ -332,14 +302,22 @@ const routes: RouteObject[] = [
       { path: "settings/notifications", element: <NotificationsSettings /> },
       { path: "settings/mission-assignment-sla", element: <TicketSlaSettings /> },
 
+      // HEL-204 PR A: unified Assignments hub with sub-tabs
+      // (Queue · By mission · SLA · Activity · By team). Replaces the
+      // tab-less /mission-assignments queue plus /agents/activity and
+      // /settings/mission-assignment-sla surfaces. The ticket-detail and
+      // actor routes still live under /mission-assignments for now since
+      // those are detail panels rather than hub sub-tabs.
+      { path: "assignments", loader: ticketsLoader, action: ticketsAction, element: <Assignments /> },
+
       // Mission assignments subsystem (HITL) — formerly "Tickets". Reachable
       // from Approvals. The pages cross-link each other; old /tickets* URLs
       // redirect into here so bookmarks / shared links keep working.
-      { path: "mission-assignments", loader: ticketsLoader, action: ticketsAction, element: <TicketsRoute /> },
+      { path: "mission-assignments", element: <Navigate to="/assignments" replace /> },
       { path: "mission-assignments/:ticketId", loader: ticketDetailLoader, element: <TicketDetailRoute /> },
       { path: "mission-assignments/actors/:actorType/:actorId", element: <TicketActorView /> },
-      { path: "mission-assignments/sla", element: <TicketSlaDashboard /> },
-      { path: "mission-assignments/team", element: <TicketTeamView /> },
+      { path: "mission-assignments/sla", element: <Navigate to="/assignments?tab=sla" replace /> },
+      { path: "mission-assignments/team", element: <Navigate to="/assignments?tab=team" replace /> },
 
       // Backwards-compat redirects for old /tickets* URLs.
       { path: "tickets", element: <Navigate to="/mission-assignments" replace /> },

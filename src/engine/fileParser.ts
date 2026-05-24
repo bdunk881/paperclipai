@@ -74,7 +74,7 @@ async function parseImage(
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4o",
+    model: "gpt-5.5",
     messages: [
       {
         role: "user",
@@ -90,7 +90,7 @@ async function parseImage(
         ],
       },
     ],
-    max_tokens: 1024,
+    max_completion_tokens: 1024,
   });
 
   return response.choices[0]?.message?.content ?? "[No description returned]";

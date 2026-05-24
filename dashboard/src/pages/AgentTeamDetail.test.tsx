@@ -133,7 +133,8 @@ describe("AgentTeamDetail", () => {
     await waitFor(() => {
       expect(screen.getByText("Beta Agent")).toBeInTheDocument();
       expect(screen.getByText("Fix bug")).toBeInTheDocument();
-      expect(screen.getByText("15 min")).toBeInTheDocument();
+      expect(screen.getByText("running")).toBeInTheDocument();
+      expect(screen.getByText("Workflow step")).toBeInTheDocument();
     });
   });
 
@@ -159,18 +160,21 @@ describe("AgentTeamDetail", () => {
     await waitFor(() => expect(screen.getByText("no heartbeat")).toBeInTheDocument());
   });
 
-  it("renders cron schedule format", async () => {
+  it("renders workflow step metric (schedule UI removed per HEL-142)", async () => {
     const agent = makeAgent({ schedule: { type: "cron", cronExpression: "0 9 * * *" } });
     getControlPlaneTeamMock.mockResolvedValueOnce(makeDetail({ agents: [agent] }));
     renderPage();
-    await waitFor(() => expect(screen.getByText("0 9 * * *")).toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
+      expect(screen.getByText("Workflow step")).toBeInTheDocument();
+    });
   });
 
-  it("renders cron fallback when cronExpression is absent", async () => {
+  it("still renders agent card when schedule is cron without expression (HEL-142)", async () => {
     const agent = makeAgent({ schedule: { type: "cron" } });
     getControlPlaneTeamMock.mockResolvedValueOnce(makeDetail({ agents: [agent] }));
     renderPage();
-    await waitFor(() => expect(screen.getByText("cron")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Alpha Agent")).toBeInTheDocument());
   });
 
   it("shows completed heartbeat status", async () => {

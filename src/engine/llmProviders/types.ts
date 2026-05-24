@@ -99,7 +99,7 @@ export type ResponseFormat =
  * ("Mistral API error: Request timed out: TimeoutError" on /hire).
  *
  * 120s is comfortably above observed p99 for the heaviest call site
- * across providers (mistral-large-latest, claude-opus, gpt-4o on the
+ * across providers (mistral-large-latest, claude-opus-4-7, gpt-5.5 on the
  * team-assembly prompt) while still keeping a hung backend from
  * spinning forever. Callers can override per call via
  * LLMProviderConfig.requestTimeoutMs — useful for cheap classification
@@ -309,20 +309,23 @@ export type LLMProvider = (prompt: string) => Promise<LLMResponse>;
 /** Available models per provider — used by frontend dropdowns */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4-nano",
+    "gpt-5",
     "gpt-4o",
     "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
   ],
   anthropic: [
+    "claude-opus-4-7",
     "claude-opus-4-6",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
   ],
   gemini: [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
   ],
   mistral: [
     "mistral-large-latest",
@@ -330,19 +333,24 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
     "open-mistral-7b",
   ],
   bedrock: [
-    "amazon.nova-micro-v1:0",
-    "amazon.nova-lite-v1:0",
+    "anthropic.claude-opus-4-7",
+    "anthropic.claude-sonnet-4-6",
+    "amazon.nova-premier-v1:0",
     "amazon.nova-pro-v1:0",
+    "amazon.nova-lite-v1:0",
+    "amazon.nova-micro-v1:0",
   ],
   "vertex-ai": [
-    "gemini-1.5-flash-002",
-    "gemini-1.5-pro-002",
-    "claude-3-5-sonnet-v2@20241022",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-001",
   ],
   groq: [
-    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
     "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
+    "llama-3.1-8b-instant",
   ],
   fireworks: [
     "accounts/fireworks/models/llama-v3p1-8b-instruct",

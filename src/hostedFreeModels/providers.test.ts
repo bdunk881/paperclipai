@@ -31,8 +31,8 @@ describe("hostedFreeModels/providers", () => {
       expect(HOSTED_FREE_PROVIDERS.map((p) => p.tier)).toEqual([1, 2, 3]);
     });
 
-    it("default is Tier 2 (Groq 8B), not Tier 1 (Big Pickle) — Tier 1 trains on prompts", () => {
-      expect(DEFAULT_HOSTED_FREE_PROVIDER_ID).toBe("groq_llama_31_8b");
+    it("default is Tier 2 (Groq Llama 4 Scout), not Tier 1 (Big Pickle) — Tier 1 trains on prompts", () => {
+      expect(DEFAULT_HOSTED_FREE_PROVIDER_ID).toBe("groq_llama_4_scout");
       const def = getHostedFreeProviderById(DEFAULT_HOSTED_FREE_PROVIDER_ID);
       expect(def?.tier).toBe(2);
       expect(def?.warnings).toEqual([]);
@@ -56,19 +56,19 @@ describe("hostedFreeModels/providers", () => {
 
   describe("resolveHostedFreeApiKey", () => {
     it("returns null when the env var is unset", () => {
-      const tier2 = getHostedFreeProviderById("groq_llama_31_8b")!;
+      const tier2 = getHostedFreeProviderById("groq_llama_4_scout")!;
       expect(resolveHostedFreeApiKey(tier2)).toBeNull();
     });
 
     it("returns null when the env var is empty / whitespace", () => {
       process.env.GROQ_API_KEY = "   ";
-      const tier2 = getHostedFreeProviderById("groq_llama_31_8b")!;
+      const tier2 = getHostedFreeProviderById("groq_llama_4_scout")!;
       expect(resolveHostedFreeApiKey(tier2)).toBeNull();
     });
 
     it("returns the trimmed value when set", () => {
       process.env.GROQ_API_KEY = "  gsk-test-1234  ";
-      const tier2 = getHostedFreeProviderById("groq_llama_31_8b")!;
+      const tier2 = getHostedFreeProviderById("groq_llama_4_scout")!;
       expect(resolveHostedFreeApiKey(tier2)).toBe("gsk-test-1234");
     });
   });
@@ -88,13 +88,13 @@ describe("hostedFreeModels/providers", () => {
 
   describe("buildResolvedFromHostedFree", () => {
     it("synthesizes a DecryptedLLMConfig-shaped object that the engine can pass to getProvider()", () => {
-      const tier2 = getHostedFreeProviderById("groq_llama_31_8b")!;
+      const tier2 = getHostedFreeProviderById("groq_llama_4_scout")!;
       const resolved = buildResolvedFromHostedFree(tier2, "gsk-fake");
       expect(resolved.config.provider).toBe("groq");
-      expect(resolved.config.model).toBe("llama-3.1-8b-instant");
+      expect(resolved.config.model).toBe("meta-llama/llama-4-scout-17b-16e-instruct");
       expect(resolved.apiKey).toBe("gsk-fake");
       expect(resolved.credentials.apiKey).toBe("gsk-fake");
-      expect(resolved.config.id).toBe("hosted-free:groq_llama_31_8b");
+      expect(resolved.config.id).toBe("hosted-free:groq_llama_4_scout");
     });
   });
 });

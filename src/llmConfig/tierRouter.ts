@@ -60,8 +60,8 @@ export type TierMatrix = Partial<Record<TierKey, TierBinding>>;
  *
  * Order of preference when multiple providers are connected:
  *   - small      → cheapest small-tier model across connected providers
- *   - medium     → best balance (Sonnet/4.1/Gemini-Pro tier)
- *   - large      → best reasoning (Opus/GPT-5/Gemini-Ultra tier)
+ *   - medium     → best balance (Sonnet / GPT-5.5 / Gemini 2.5 Pro tier)
+ *   - large      → best reasoning (Opus 4.7 / GPT-5.5 / Gemini 2.5 Pro tier)
  *   - embeddings → OpenAI text-embedding-3-small if available; else Voyage if Anthropic; else provider-native
  *   - vision     → first vision-capable medium-tier model among connected providers
  */
@@ -69,21 +69,21 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   anthropic: {
     small: "claude-haiku-4-5-20251001",
     medium: "claude-sonnet-4-6",
-    large: "claude-opus-4-6",
+    large: "claude-opus-4-7",
     vision: "claude-sonnet-4-6",
   },
   openai: {
-    small: "gpt-4o-mini",
-    medium: "gpt-4o",
-    large: "gpt-4o",
+    small: "gpt-5.4-nano",
+    medium: "gpt-5.5",
+    large: "gpt-5.5",
     embeddings: "text-embedding-3-small",
-    vision: "gpt-4o",
+    vision: "gpt-5.5",
   },
   gemini: {
-    small: "gemini-1.5-flash",
-    medium: "gemini-1.5-pro",
-    large: "gemini-1.5-pro",
-    vision: "gemini-1.5-pro",
+    small: "gemini-2.5-flash",
+    medium: "gemini-2.5-pro",
+    large: "gemini-2.5-pro",
+    vision: "gemini-2.5-pro",
   },
   mistral: {
     small: "mistral-small-latest",
@@ -92,8 +92,9 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   },
   bedrock: {
     small: "amazon.nova-micro-v1:0",
-    medium: "amazon.nova-lite-v1:0",
-    large: "amazon.nova-pro-v1:0",
+    medium: "amazon.nova-pro-v1:0",
+    large: "amazon.nova-premier-v1:0",
+    vision: "amazon.nova-lite-v1:0",
   },
   "vertex-ai": {},
   groq: {},
@@ -119,7 +120,7 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
   gemini: 1, // 1.5-flash ≈ $0.075/1M in
-  openai: 2, // 4o-mini ≈ $0.15/1M in
+  openai: 2, // GPT-5.4 nano — low $/1M, slots between Gemini Flash and Haiku
   mistral: 3, // small ≈ $0.10/1M
   anthropic: 4, // haiku ≈ $1/1M
   groq: 1.5,

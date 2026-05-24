@@ -85,7 +85,7 @@ describe("Hire page (HEL-23, v2)", () => {
         id: "cfg-1",
         label: "OpenAI",
         provider: "openai",
-        model: "gpt-4o",
+        model: "gpt-5.5",
         isDefault: true,
         apiKeyMasked: "sk-…",
         createdAt: "2026-05-01T00:00:00Z",

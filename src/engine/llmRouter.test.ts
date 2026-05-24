@@ -140,11 +140,11 @@ describe("resolveModelForTier", () => {
   });
 
   it("returns the power model for anthropic power tier", () => {
-    expect(resolveModelForTier("anthropic", "power")).toBe("claude-opus-4-6");
+    expect(resolveModelForTier("anthropic", "power")).toBe("claude-opus-4-7");
   });
 
-  it("returns gpt-4o-mini for openai lite tier", () => {
-    expect(resolveModelForTier("openai", "lite")).toBe("gpt-4o-mini");
+  it("returns gpt-5.4-nano for openai lite tier", () => {
+    expect(resolveModelForTier("openai", "lite")).toBe("gpt-5.4-nano");
   });
 
   it("returns a cheaper model for lite than for power (anthropic)", () => {
@@ -191,10 +191,10 @@ describe("estimateCost", () => {
     expect(haikuCost).toBeLessThan(sonnetCost);
   });
 
-  it("gpt-4o-mini is cheaper than gpt-4o", () => {
-    const miniCost = estimateCost("gpt-4o-mini", 1000, 500);
-    const fullCost = estimateCost("gpt-4o", 1000, 500);
-    expect(miniCost).toBeLessThan(fullCost);
+  it("gpt-5.4-nano is cheaper than gpt-5.5", () => {
+    const nanoCost = estimateCost("gpt-5.4-nano", 1000, 500);
+    const flagshipCost = estimateCost("gpt-5.5", 1000, 500);
+    expect(nanoCost).toBeLessThan(flagshipCost);
   });
 
   it("returns 0 when token counts are 0", () => {

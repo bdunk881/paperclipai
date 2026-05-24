@@ -97,7 +97,7 @@ describe("handleLlm", () => {
       userId: TEST_USER,
       provider: "openai",
       label: "Test",
-      model: "gpt-4o",
+      model: "gpt-5.5",
       credentials: { apiKey: "sk-test-1234-5678" },
     });
     llmConfigStore.setDefault(cfg.id, TEST_USER);
@@ -268,7 +268,7 @@ describe("handleLlm", () => {
       expect(getProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           provider: "groq",
-          model: "llama-3.1-8b-instant",
+          model: "meta-llama/llama-4-scout-17b-16e-instruct",
           apiKey: "gsk-test-fallback",
         })
       );
@@ -352,7 +352,7 @@ describe("handleLlm", () => {
     expect(entry.selectedTier).toBe("lite");
     expect(entry.confidenceScore).toBeGreaterThanOrEqual(0);
     expect(entry.confidenceScore).toBeLessThanOrEqual(1);
-    expect(entry.modelId).toBe("gpt-4o-mini");
+    expect(entry.modelId).toBe("gpt-5.4-nano");
     expect(entry.features).toBeDefined();
   });
 });

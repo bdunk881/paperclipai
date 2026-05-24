@@ -97,7 +97,7 @@ describe("Dashboard (v2 Home)", () => {
         instructions: "",
         status: "running",
         budgetMonthlyUsd: 240,
-        model: "claude-opus-4-6",
+        model: "claude-opus-4-7",
         metadata: { teamName: "Engineering" },
         createdAt: "2026-04-20T00:00:00.000Z",
         updatedAt: "2026-04-27T12:00:00.000Z",

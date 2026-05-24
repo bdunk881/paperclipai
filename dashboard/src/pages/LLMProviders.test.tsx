@@ -14,7 +14,7 @@ vi.mock("../api/client", () => ({
   setDefaultLLMConfig: (...args: unknown[]) => setDefaultLLMConfigMock(...args),
   deleteLLMConfig: (...args: unknown[]) => deleteLLMConfigMock(...args),
   PROVIDER_MODELS: {
-    openai: ["gpt-4o", "gpt-4o-mini"],
+    openai: ["gpt-5.5", "gpt-5.4-nano"],
     anthropic: ["claude-sonnet-4-6"],
     gemini: ["gemini-2.0-flash"],
     mistral: ["mistral-large-latest"],
@@ -39,7 +39,7 @@ function makeConfig(overrides: Partial<Record<string, unknown>> = {}) {
     id: "cfg-1",
     label: "Primary OpenAI",
     provider: "openai",
-    model: "gpt-4o",
+    model: "gpt-5.5",
     isDefault: true,
     apiKeyMasked: "sk-...1234",
     createdAt: "2026-04-22T00:00:00.000Z",
@@ -121,7 +121,7 @@ describe("LLMProviders", () => {
         {
           label: "Team OpenAI",
           provider: "openai",
-          model: "gpt-4o",
+          model: "gpt-5.5",
           apiKey: "sk-test-key",
         },
         "token-123"
@@ -258,7 +258,7 @@ describe("LLMProviders", () => {
     it("renders the catalog cards + usage badge when the API returns a catalog", async () => {
       listLLMConfigsMock.mockResolvedValue([]);
       getHostedFreeCatalogMock.mockResolvedValue({
-        defaultProviderId: "groq_llama_31_8b",
+        defaultProviderId: "groq_llama_4_scout",
         providers: [
           {
             id: "opencode_zen_big_pickle",
@@ -275,23 +275,23 @@ describe("LLMProviders", () => {
             isDefault: false,
           },
           {
-            id: "groq_llama_31_8b",
+            id: "groq_llama_4_scout",
             tier: 2,
-            label: "Free Fast (Llama 3.1 8B)",
-            description: "Llama 3.1 8B on Groq.",
+            label: "Free Fast (Llama 4 Scout)",
+            description: "Meta Llama 4 Scout 17B on Groq.",
             provider: "groq",
-            modelId: "llama-3.1-8b-instant",
+            modelId: "meta-llama/llama-4-scout-17b-16e-instruct",
             warnings: [],
             available: true,
             isDefault: true,
           },
           {
-            id: "groq_llama_33_70b",
+            id: "groq_gpt_oss_120b",
             tier: 3,
-            label: "Free Smart (Llama 3.3 70B)",
-            description: "Llama 3.3 70B on Groq.",
+            label: "Free Smart (GPT OSS 120B)",
+            description: "OpenAI GPT OSS 120B on Groq.",
             provider: "groq",
-            modelId: "llama-3.3-70b-versatile",
+            modelId: "openai/gpt-oss-120b",
             warnings: [],
             available: true,
             isDefault: false,
@@ -316,8 +316,8 @@ describe("LLMProviders", () => {
       ).toBeInTheDocument();
       // All 3 tier labels surface.
       expect(screen.getByText("AutoFlow Free Beta")).toBeInTheDocument();
-      expect(screen.getByText("Free Fast (Llama 3.1 8B)")).toBeInTheDocument();
-      expect(screen.getByText("Free Smart (Llama 3.3 70B)")).toBeInTheDocument();
+      expect(screen.getByText("Free Fast (Llama 4 Scout)")).toBeInTheDocument();
+      expect(screen.getByText("Free Smart (GPT OSS 120B)")).toBeInTheDocument();
       // Big Pickle's training-on-data disclosure surfaces.
       expect(
         screen.getByText(/prompts may be used to train this model/i),
@@ -348,15 +348,15 @@ describe("LLMProviders", () => {
     it("surfaces the 'hit the cap' message when usage.exceeded is true", async () => {
       listLLMConfigsMock.mockResolvedValue([]);
       getHostedFreeCatalogMock.mockResolvedValue({
-        defaultProviderId: "groq_llama_31_8b",
+        defaultProviderId: "groq_llama_4_scout",
         providers: [
           {
-            id: "groq_llama_31_8b",
+            id: "groq_llama_4_scout",
             tier: 2,
-            label: "Free Fast (Llama 3.1 8B)",
-            description: "Llama 3.1 8B on Groq.",
+            label: "Free Fast (Llama 4 Scout)",
+            description: "Meta Llama 4 Scout 17B on Groq.",
             provider: "groq",
-            modelId: "llama-3.1-8b-instant",
+            modelId: "meta-llama/llama-4-scout-17b-16e-instruct",
             warnings: [],
             available: true,
             isDefault: true,

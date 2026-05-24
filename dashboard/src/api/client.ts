@@ -36,11 +36,21 @@ export type ProviderName =
 
 /** Available models per provider — mirrors PROVIDER_MODELS from the backend */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  openai: ["gpt-5.5", "gpt-5.5-pro", "gpt-5.4-nano", "gpt-5", "gpt-4o", "gpt-4o-mini"],
+  anthropic: [
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+  ],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
   mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
-  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  groq: [
+    "openai/gpt-oss-120b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+  ],
   fireworks: [
     "accounts/fireworks/models/llama-v3p1-8b-instruct",
     "accounts/fireworks/models/llama-v3p1-70b-instruct",
@@ -58,11 +68,14 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   xai: ["grok-2-1212", "grok-2-vision-1212", "grok-beta"],
   deepseek: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"],
   bedrock: [
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "meta.llama3-1-70b-instruct-v1:0",
+    "anthropic.claude-opus-4-7",
+    "anthropic.claude-sonnet-4-6",
+    "amazon.nova-premier-v1:0",
     "amazon.nova-pro-v1:0",
+    "amazon.nova-lite-v1:0",
+    "amazon.nova-micro-v1:0",
   ],
-  "vertex-ai": ["gemini-2.0-flash-001", "gemini-1.5-pro-002", "claude-3-5-sonnet-v2@20241022"],
+  "vertex-ai": ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash-001"],
 };
 
 /** A saved LLM provider config (API key stored server-side, never returned) */

@@ -12,12 +12,12 @@
  *   (per OpenCode Zen's docs). User-facing disclosure of this trade-off
  *   lands with PR B.3.
  *
- * Tier 2 — Llama 3.1 8B (Groq)
+ * Tier 2 — Llama 4 Scout (Groq)
  *   Fast, privacy-respecting (Groq does not train on customer data).
  *   Default tier for new Explore workspaces.
  *
- * Tier 3 — Llama 3.3 70B (Groq)
- *   Slower, capable, same privacy guarantees as Tier 2.
+ * Tier 3 — GPT OSS 120B (Groq)
+ *   Heavier reasoning headroom; same privacy guarantees as Tier 2.
  *
  * Per-workspace daily token caps + the workspace-level tier preference
  * are PR B.2 / B.3 — this module just ships the static catalog + the
@@ -71,24 +71,24 @@ export const HOSTED_FREE_PROVIDERS: HostedFreeProvider[] = [
     ],
   },
   {
-    id: "groq_llama_31_8b",
+    id: "groq_llama_4_scout",
     tier: 2,
-    label: "Free Fast (Llama 3.1 8B)",
+    label: "Free Fast (Llama 4 Scout)",
     description:
-      "Llama 3.1 8B on Groq. Fast inference; Groq doesn't train on customer data.",
+      "Meta Llama 4 Scout 17B on Groq. Fast inference; Groq doesn't train on customer data.",
     provider: "groq",
-    modelId: "llama-3.1-8b-instant",
+    modelId: "meta-llama/llama-4-scout-17b-16e-instruct",
     apiKeyEnvVar: "GROQ_API_KEY",
     warnings: [],
   },
   {
-    id: "groq_llama_33_70b",
+    id: "groq_gpt_oss_120b",
     tier: 3,
-    label: "Free Smart (Llama 3.3 70B)",
+    label: "Free Smart (GPT OSS 120B)",
     description:
-      "Llama 3.3 70B on Groq. Slower, more capable; same privacy as Tier 2.",
+      "OpenAI GPT OSS 120B on Groq. More capable for longer reasoning; same privacy as Tier 2.",
     provider: "groq",
-    modelId: "llama-3.3-70b-versatile",
+    modelId: "openai/gpt-oss-120b",
     apiKeyEnvVar: "GROQ_API_KEY",
     warnings: [],
   },
@@ -100,7 +100,7 @@ export const HOSTED_FREE_PROVIDERS: HostedFreeProvider[] = [
  * on prompts — opting users into that needs explicit consent (PR B.3),
  * not silent default routing.
  */
-export const DEFAULT_HOSTED_FREE_PROVIDER_ID = "groq_llama_31_8b";
+export const DEFAULT_HOSTED_FREE_PROVIDER_ID = "groq_llama_4_scout";
 
 export function getHostedFreeProviderById(
   id: string,

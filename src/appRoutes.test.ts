@@ -526,7 +526,11 @@ describe("POST /api/workflows/generate", () => {
     expect(mockGetProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "mistral",
-        model: "mistral-large-latest",
+        // Workflow generation classifies as the "standard" tier, which for
+        // Mistral now routes to mistral-medium-latest (Mistral Medium 3.5).
+        // The configured mistral-large-latest is only used for the "power"
+        // tier on long/complex prompts.
+        model: "mistral-medium-latest",
         apiKey: "mistral-key-1234",
       })
     );

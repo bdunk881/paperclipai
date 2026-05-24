@@ -57,7 +57,10 @@ function tierFallback(model: string): RateEntry {
   if (lc.includes("gpt-5.5-pro")) {
     return { promptPer1k: 0.03, completionPer1k: 0.18 };
   }
-  if (lc.includes("opus") || lc.includes("gpt-5.5")) {
+  if (lc.includes("opus")) {
+    return { promptPer1k: 0.005, completionPer1k: 0.025 };
+  }
+  if (lc.includes("gpt-5.5")) {
     return { promptPer1k: 0.005, completionPer1k: 0.03 };
   }
   if (lc.includes("sonnet") || lc.includes("gpt-5.4") || lc.includes("gpt-5")) {

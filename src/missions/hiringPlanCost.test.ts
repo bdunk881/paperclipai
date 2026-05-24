@@ -61,16 +61,16 @@ describe("computeHiringPlanCostCents (HEL-74)", () => {
   });
 
   it("uses opus tier fallback for an unlisted Opus model", () => {
-    // claude-opus-4: tier fallback matches "opus" → $0.005/$0.03 rate.
+    // claude-opus-4: tier fallback matches "opus" → $0.005/$0.025 rate.
     const result = computeHiringPlanCostCents({
       provider: "anthropic",
       model: "claude-opus-4",
       promptTokens: 1000,
       completionTokens: 1000,
     });
-    // 1000 prompt × $0.005/1k = $0.005. 1000 completion × $0.03/1k = $0.03.
-    // Total $0.035 → 4¢.
-    expect(result.costCents).toBe(4);
+    // 1000 prompt × $0.005/1k = $0.005. 1000 completion × $0.025/1k = $0.025.
+    // Total $0.03 → 3¢.
+    expect(result.costCents).toBe(3);
     expect(result.matched).toBe(false);
   });
 

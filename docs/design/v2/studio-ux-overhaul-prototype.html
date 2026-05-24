@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>AutoFlow — Studio UX Overhaul (prototype)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+<style>
+  /* ── Shell ─────────────────────────────────────────────── */
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  .proto-banner {
+    padding: 10px 20px;
+    background: linear-gradient(90deg, rgba(194,80,43,0.12), rgba(93,58,94,0.10));
+    border-bottom: 1px solid var(--af2-line);
+    font-size: 12.5px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .proto-banner strong { color: var(--af2-clay); }
+  .proto-shell { display: grid; grid-template-rows: auto auto 1fr; height: calc(100vh - 44px); }
+
+  /* ── Studio header ───────────────────────────────────── */
+  .studio-header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; border-bottom: 1px solid var(--af2-line);
+    background: var(--af2-paper);
+  }
+  .studio-header .title { font-family: var(--af2-serif); font-size: 20px; font-weight: 500; }
+  .studio-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .studio-actions .af2-btn-primary { background: var(--af2-clay); color: #fff; border-color: var(--af2-clay); }
+
+  /* ── Main grid ───────────────────────────────────────── */
+  .studio-body {
+    display: grid;
+    grid-template-columns: 240px 1fr 380px;
+    min-height: 0;
+    background: var(--af2-paper-2);
+  }
+  .studio-body.assistant-open { grid-template-columns: 240px 1fr 380px 340px; }
+
+  /* ── Palette ─────────────────────────────────────────── */
+  .palette {
+    border-right: 1px solid var(--af2-line);
+    background: var(--af2-paper);
+    overflow-y: auto;
+    padding: 16px 12px;
+  }
+  .palette-section { margin-bottom: 20px; }
+  .palette-section h3 {
+    font: 500 11px/1 var(--af2-sans);
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--af2-ink-3); margin: 0 0 8px 4px;
+  }
+  .palette-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    width: 100%; text-align: left;
+    padding: 10px; margin-bottom: 6px;
+    border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius-lg);
+    background: var(--af2-card);
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .palette-item:hover { border-color: var(--af2-line-2); box-shadow: var(--af2-shadow); }
+  .palette-item.active { border-color: var(--af2-clay); box-shadow: 0 0 0 1px var(--af2-clay); }
+  .palette-icon {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: grid; place-items: center; font-size: 13px; flex-shrink: 0;
+    border: 1px solid var(--af2-line);
+  }
+  .palette-item .label { font-size: 13px; font-weight: 600; color: var(--af2-ink); }
+  .palette-item .sub { font-size: 11px; color: var(--af2-ink-4); line-height: 1.35; margin-top: 2px; }
+
+  /* ── Canvas ──────────────────────────────────────────── */
+  .canvas-wrap { position: relative; overflow: auto; min-height: 0; }
+  .canvas-inner { position: relative; width: 1100px; height: 520px; margin: 24px; }
+  .canvas-node {
+    position: absolute; width: 196px;
+    padding: 12px 14px; cursor: pointer;
+    border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius-lg);
+    background: var(--af2-card);
+    box-shadow: var(--af2-shadow);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .canvas-node:hover { border-color: var(--af2-line-2); }
+  .canvas-node.sel { border-color: var(--af2-clay); box-shadow: 0 0 0 2px var(--af2-clay), var(--af2-shadow-lg); }
+  .canvas-node .kind { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--af2-ink-4); }
+  .canvas-node .name { font-size: 13px; font-weight: 600; margin-top: 4px; }
+  .canvas-node .hint { font-size: 11px; color: var(--af2-ink-4); margin-top: 4px; line-height: 1.3; }
+  .canvas-edges { position: absolute; inset: 0; pointer-events: none; }
+
+  /* ── Inspector ───────────────────────────────────────── */
+  .inspector {
+    border-left: 1px solid var(--af2-line);
+    background: var(--af2-card);
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .inspector-head { padding: 16px 18px 0; }
+  .readiness-bar { height: 4px; background: var(--af2-line); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .readiness-bar > span { display: block; height: 100%; background: var(--af2-sage); transition: width .25s; }
+  .check-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12px; }
+  .setup-card {
+    border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius-lg);
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: var(--af2-paper-2);
+  }
+  .setup-card .card-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--af2-ink-4); }
+  .setup-card h4 { font-size: 14px; font-weight: 600; margin: 6px 0 4px; }
+  .setup-card .hint { font-size: 12px; color: var(--af2-ink-4); margin-bottom: 10px; line-height: 1.4; }
+  .chip {
+    display: inline-block; margin: 0 6px 6px 0; padding: 6px 12px;
+    border-radius: 999px; border: 1px solid var(--af2-line-2);
+    font-size: 12px; cursor: pointer; background: var(--af2-card);
+    transition: border-color .12s, background .12s;
+  }
+  .chip:hover, .chip.on { border-color: var(--af2-clay); background: var(--af2-clay-soft); }
+  .field { margin-top: 10px; }
+  .field label { display: block; font-size: 11px; font-weight: 500; color: var(--af2-ink-3); margin-bottom: 4px; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 8px 10px; font-size: 13px;
+    border: 1px solid var(--af2-line-2); border-radius: var(--af2-radius);
+    background: var(--af2-card); color: var(--af2-ink); font-family: var(--af2-sans);
+  }
+  .field textarea { min-height: 72px; resize: vertical; }
+  .field.mono input { font-family: var(--af2-mono); font-size: 12px; }
+  .info-banner {
+    padding: 10px 12px; border-radius: var(--af2-radius);
+    font-size: 12px; line-height: 1.45; margin-bottom: 10px;
+    border: 1px solid rgba(74,107,74,0.25); background: rgba(74,107,74,0.08); color: var(--af2-sage);
+  }
+  .warn-banner {
+    padding: 10px 12px; border-radius: var(--af2-radius);
+    font-size: 12px; line-height: 1.45; margin-bottom: 10px;
+    border: 1px solid rgba(184,134,44,0.3); background: rgba(184,134,44,0.1); color: var(--af2-mustard);
+  }
+  .data-flow {
+    padding: 10px 12px; border-radius: var(--af2-radius);
+    background: var(--af2-card); border: 1px dashed var(--af2-line-2);
+    font-size: 12px; margin-top: 8px;
+  }
+  .data-flow code { font-family: var(--af2-mono); font-size: 11px; color: var(--af2-ink-blue); }
+  .integration-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius); margin-bottom: 6px; background: var(--af2-card);
+  }
+  .integration-row .logo { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 11px; }
+  .integration-row .meta { flex: 1; }
+  .integration-row .meta .n { font-size: 13px; font-weight: 600; }
+  .integration-row .meta .d { font-size: 11px; color: var(--af2-ink-4); }
+  .next-step { display: flex; gap: 8px; padding: 8px 0; font-size: 12.5px; border-bottom: 1px solid var(--af2-line); cursor: pointer; color: var(--af2-ink-2); }
+  .next-step:hover { color: var(--af2-clay); }
+  .next-step:last-child { border-bottom: 0; }
+
+  /* ── Assistant panel ─────────────────────────────────── */
+  .assistant {
+    border-left: 1px solid var(--af2-line);
+    background: var(--af2-paper);
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .assistant-tabs { display: flex; border-bottom: 1px solid var(--af2-line); }
+  .assistant-tabs button {
+    flex: 1; padding: 10px 8px; border: 0; background: transparent;
+    font-size: 12px; font-weight: 600; color: var(--af2-ink-4); cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .assistant-tabs button.on { color: var(--af2-clay); border-bottom-color: var(--af2-clay); }
+  .assistant-body { flex: 1; overflow-y: auto; padding: 14px; }
+  .chat-bubble {
+    padding: 10px 12px; border-radius: var(--af2-radius-lg);
+    font-size: 13px; line-height: 1.45; margin-bottom: 10px; max-width: 95%;
+  }
+  .chat-bubble.user { background: var(--af2-clay-soft); margin-left: auto; border: 1px solid rgba(194,80,43,0.2); }
+  .chat-bubble.ai { background: var(--af2-card); border: 1px solid var(--af2-line); }
+  .assistant-input {
+    padding: 12px; border-top: 1px solid var(--af2-line); background: var(--af2-card);
+  }
+  .assistant-input textarea {
+    width: 100%; min-height: 64px; padding: 10px; font-size: 13px;
+    border: 1px solid var(--af2-line-2); border-radius: var(--af2-radius);
+    resize: none; font-family: var(--af2-sans);
+  }
+
+  /* ── Modal ───────────────────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(26,20,16,0.55); backdrop-filter: blur(2px);
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    width: 100%; max-width: 920px; max-height: 90vh; overflow: hidden;
+    background: var(--af2-card); border-radius: var(--af2-radius-lg);
+    box-shadow: var(--af2-shadow-lg); display: grid; grid-template-rows: auto 1fr auto;
+  }
+  .modal-head { padding: 20px 24px; border-bottom: 1px solid var(--af2-line); }
+  .modal-body { overflow-y: auto; padding: 0; display: grid; grid-template-columns: 1.1fr 0.9fr; }
+  .modal-foot { padding: 16px 24px; border-top: 1px solid var(--af2-line); display: flex; gap: 10px; justify-content: flex-end; }
+  .agent-card {
+    padding: 14px 16px; border: 1px solid var(--af2-line);
+    border-radius: var(--af2-radius-lg); margin-bottom: 8px; background: var(--af2-paper-2);
+  }
+  .agent-card.manager { border-color: rgba(194,80,43,0.35); background: rgba(194,80,43,0.08); }
+  .path-picker { display: flex; gap: 8px; margin-bottom: 16px; }
+  .path-picker button {
+    flex: 1; padding: 12px; border: 1px solid var(--af2-line-2); border-radius: var(--af2-radius-lg);
+    background: var(--af2-card); cursor: pointer; text-align: left;
+  }
+  .path-picker button.on { border-color: var(--af2-clay); background: var(--af2-clay-soft); }
+  .path-picker .t { font-weight: 600; font-size: 13px; }
+  .path-picker .d { font-size: 11px; color: var(--af2-ink-4); margin-top: 4px; }
+
+  /* tone chips */
+  .tone-mustard { background: rgba(184,134,44,0.12); color: var(--af2-mustard); }
+  .tone-sage { background: rgba(74,107,74,0.12); color: var(--af2-sage); }
+  .tone-clay { background: rgba(194,80,43,0.12); color: var(--af2-clay); }
+  .tone-plum { background: rgba(93,58,94,0.12); color: var(--af2-plum); }
+  .tone-blue { background: rgba(31,58,82,0.12); color: var(--af2-ink-blue); }
+
+  @media (max-width: 1100px) {
+    .studio-body { grid-template-columns: 200px 1fr 320px; }
+    .studio-body.assistant-open { grid-template-columns: 200px 1fr 300px; }
+    .assistant { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="proto-banner">
+  <strong>Prototype</strong> — Studio UX overhaul mockup. Click palette items or canvas nodes to preview guided setup. Toggle <em>Studio assistant</em> and open <em>Launch team</em> to see merged flows.
+  <span style="margin-left:auto;color:var(--af2-ink-4)">Open locally: <code class="af2-mono">docs/design/v2/studio-ux-overhaul-prototype.html</code></span>
+</div>
+
+<div class="proto-shell">
+  <header class="studio-header">
+    <div>
+      <div class="af2-eyebrow">Build · Studio</div>
+      <div class="title">Customer support routine</div>
+    </div>
+    <span class="af2-pill" style="margin-left:8px">draft · v3</span>
+    <div class="studio-actions">
+      <button class="af2-btn af2-btn-sm" id="btn-assistant">✦ Studio assistant</button>
+      <button class="af2-btn af2-btn-sm">Checklist</button>
+      <button class="af2-btn af2-btn-sm">Save</button>
+      <button class="af2-btn af2-btn-sm" id="btn-launch">Launch team ▾</button>
+      <button class="af2-btn af2-btn-sm af2-btn-primary">Run</button>
+    </div>
+  </header>
+
+  <div class="studio-body" id="studio-body">
+    <!-- LEFT: Palette with renamed labels -->
+    <aside class="palette" id="palette"></aside>
+
+    <!-- CENTER: Canvas -->
+    <div class="canvas-wrap">
+      <div class="canvas-inner" id="canvas">
+        <svg class="canvas-edges" width="1100" height="520" viewBox="0 0 1100 520" id="edges"></svg>
+      </div>
+    </div>
+
+    <!-- RIGHT: Inspector -->
+    <aside class="inspector" id="inspector"></aside>
+
+    <!-- FAR RIGHT: Merged assistant (optional) -->
+    <aside class="assistant" id="assistant" style="display:none">
+      <div style="padding:14px 16px 0">
+        <div class="af2-eyebrow">Studio assistant</div>
+        <p style="font-size:12px;color:var(--af2-ink-4);margin:4px 0 0">Build routines, ask questions, or fix the selected step — one place instead of Copilot + Generate.</p>
+      </div>
+      <div class="assistant-tabs">
+        <button class="on" data-tab="build">Build</button>
+        <button data-tab="ask">Ask</button>
+        <button data-tab="fix">Fix step</button>
+      </div>
+      <div class="assistant-body" id="assistant-body"></div>
+      <div class="assistant-input">
+        <textarea id="assistant-input" placeholder="Describe what you want this routine to do…"></textarea>
+        <button class="af2-btn af2-btn-sm af2-btn-primary" style="margin-top:8px;width:100%">Send</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- Launch team modal -->
+<div class="modal-backdrop" id="modal-launch">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="af2-eyebrow" style="color:var(--af2-sage)">Launch team</div>
+      <h2 class="af2-h3" style="margin:6px 0 0;font-size:22px">Turn this routine into agents that work for you</h2>
+      <p style="font-size:13px;color:var(--af2-ink-3);margin:8px 0 0;max-width:640px">Your manager agent orchestrates; each step becomes a worker with its own budget and schedule. Assignments and Activity will show their ongoing work.</p>
+    </div>
+    <div class="modal-body">
+      <div style="padding:20px 24px;border-right:1px solid var(--af2-line)">
+        <div class="path-picker">
+          <button class="on" id="path-from-routine">
+            <div class="t">From this routine</div>
+            <div class="d">Map each step → agent automatically</div>
+          </button>
+          <button id="path-standalone">
+            <div class="t">Create a team here</div>
+            <div class="d">Blank team — no link to Hire flow</div>
+          </button>
+        </div>
+        <div class="field">
+          <label>Describe what this team should do day-to-day</label>
+          <textarea placeholder="e.g. Monitor support inbox every hour, classify tickets, draft replies, and escalate urgent issues to Maya for approval.">Monitor support inbox, classify and draft replies, escalate urgent items.</textarea>
+        </div>
+        <div style="margin-top:16px">
+          <div class="af2-eyebrow">Team preview</div>
+          <div class="agent-card manager" style="margin-top:10px">
+            <div style="font-weight:600">Support routine Manager</div>
+            <div style="font-size:11px;color:var(--af2-clay);text-transform:uppercase;letter-spacing:.1em;margin-top:2px">Orchestrator · $24/mo</div>
+          </div>
+          <div class="agent-card"><div style="font-weight:600">Classify request</div><div style="font-size:11px;color:var(--af2-ink-4);margin-top:2px">Ask AI worker · every 30 min · $18/mo</div></div>
+          <div class="agent-card"><div style="font-weight:600">Send Slack update</div><div style="font-size:11px;color:var(--af2-ink-4);margin-top:2px">App action worker · on completion · $12/mo</div></div>
+        </div>
+      </div>
+      <form style="padding:20px 24px" onsubmit="return false">
+        <div class="af2-eyebrow">Launch settings</div>
+        <div class="field"><label>Team name</label><input value="Support routine Team"/></div>
+        <div class="field"><label>Monthly budget (USD)</label><input type="number" value="120"/></div>
+        <div class="field"><label>Default check-in interval (minutes)</label><input type="number" value="30"/></div>
+        <div class="info-banner" style="margin-top:14px">Scheduled starts will also create a <strong>Routine</strong> so agents run automatically — not just when you click Run.</div>
+      </form>
+    </div>
+    <div class="modal-foot">
+      <button class="af2-btn af2-btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="af2-btn af2-btn-sm af2-btn-primary">Confirm launch</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Step catalog: renamed labels + guided setup templates ── */
+const CATALOG = {
+  trigger: {
+    kind: "trigger", label: "Manual start", icon: "⚡", tone: "mustard",
+    subtitle: "Runs when you click Run or an app sends data here",
+    learn: "Use this when a person or another system kicks off the routine on demand. The description is for your team — it does not change runtime behavior.",
+    canvas: { x: 40, y: 80, name: "When ticket arrives" },
+  },
+  cron_trigger: {
+    kind: "cron_trigger", label: "Scheduled start", icon: "📅", tone: "sage",
+    subtitle: "Runs on a calendar schedule (Mon 9am, daily, etc.)",
+    learn: "In production, schedules run via Routines. This step documents intent and can auto-create a Routine when you launch a team.",
+    canvas: { x: 40, y: 200, name: "Every weekday 9am" },
+  },
+  interval_trigger: {
+    kind: "interval_trigger", label: "Repeating start", icon: "⏱", tone: "sage",
+    subtitle: "Runs every N minutes while the routine is active",
+    learn: "Good for inbox polling or periodic check-ins. Pair with Launch team to keep agents working autonomously.",
+    canvas: { x: 40, y: 320, name: "Every 15 minutes" },
+  },
+  file_trigger: {
+    kind: "file_trigger", label: "File upload start", icon: "📄", tone: "mustard",
+    subtitle: "Runs when someone uploads a PDF, image, or document",
+    learn: "At run time, the engine expects parsed file content. Configure accepted types here; users upload when they click Run.",
+    canvas: { x: 40, y: 440, name: "When PDF uploaded" },
+  },
+  llm: {
+    kind: "llm", label: "Ask AI", icon: "🧠", tone: "clay",
+    subtitle: "Have AI read prior data and write a response or decision",
+    learn: "Your prompt is sent to the model with {{variables}} from earlier steps. Pick a tier or specific model.",
+    canvas: { x: 300, y: 120, name: "Classify request" },
+  },
+  transform: {
+    kind: "transform", label: "Shape data", icon: "🔧", tone: "clay",
+    subtitle: "Rename, filter, or reformat fields before the next step",
+    learn: "Pick what to change — not just a description. Downstream steps only see the fields you pass through.",
+    canvas: { x: 300, y: 260, name: "Normalize fields" },
+  },
+  action: {
+    kind: "action", label: "App action", icon: "→", tone: "clay",
+    subtitle: "Do something in Slack, email, CRM, or another connected app",
+    learn: "Choose from registered actions or describe what you want — AI maps it to the right integration call.",
+    canvas: { x: 300, y: 400, name: "Send Slack update" },
+  },
+  mcp: {
+    kind: "mcp", label: "Connected app", icon: "🔌", tone: "blue",
+    subtitle: "Call a tool from a workspace integration you've connected",
+    learn: "Connect inline — no need to leave Studio. Then pick the tool and parameters.",
+    canvas: { x: 560, y: 120, name: "Post to Slack" },
+  },
+  agent: {
+    kind: "agent", label: "Assign to agent", icon: "🤖", tone: "clay",
+    subtitle: "Hand this work to a persistent agent on your team",
+    learn: "Pick an existing agent or create one. They run autonomously, respect budgets, and show up in Assignments + Activity.",
+    canvas: { x: 560, y: 260, name: "Escalate to Riley" },
+  },
+  condition: {
+    kind: "condition", label: "If / then", icon: "◆", tone: "mustard",
+    subtitle: "Send the routine down different paths based on a rule",
+    learn: "Build rules from upstream fields — not free-text descriptions. Yes/No paths appear on the canvas.",
+    canvas: { x: 560, y: 400, name: "Is it urgent?" },
+  },
+  approval: {
+    kind: "approval", label: "Human sign-off", icon: "✓", tone: "plum",
+    subtitle: "Pause until someone on your team approves or rejects",
+    learn: "Show approvers exactly what they're signing off on. Choose what happens after approve, reject, or timeout.",
+    canvas: { x: 820, y: 180, name: "Manager approval" },
+  },
+  output: {
+    kind: "output", label: "Deliver result", icon: "■", tone: "sage",
+    subtitle: "Package the final result for your team or downstream systems",
+    learn: "Pick which fields to deliver and where — Activity feed, Assignment, webhook, or return to caller.",
+    canvas: { x: 820, y: 340, name: "Deliver summary" },
+  },
+};
+
+const PALETTE_SECTIONS = [
+  { title: "When to start", kinds: ["trigger", "cron_trigger", "interval_trigger", "file_trigger"] },
+  { title: "What to do", kinds: ["llm", "transform", "action", "mcp", "agent"] },
+  { title: "Control flow", kinds: ["condition", "approval", "output"] },
+];
+
+/* Sample workflow on canvas */
+const WORKFLOW_NODES = [
+  { id: "n1", kind: "file_trigger" },
+  { id: "n2", kind: "llm" },
+  { id: "n3", kind: "condition" },
+  { id: "n4", kind: "approval" },
+  { id: "n5", kind: "action" },
+  { id: "n6", kind: "output" },
+];
+const WORKFLOW_EDGES = [["n1","n2"],["n2","n3"],["n3","n4"],["n3","n5"],["n4","n6"],["n5","n6"]];
+
+let selectedKind = "file_trigger";
+let assistantOpen = false;
+let assistantTab = "build";
+
+/* ── Render palette ── */
+function renderPalette() {
+  const el = document.getElementById("palette");
+  el.innerHTML = PALETTE_SECTIONS.map(sec => `
+    <div class="palette-section">
+      <h3>${sec.title} <span style="color:var(--af2-ink-4);font-weight:400">· ${sec.kinds.length}</span></h3>
+      ${sec.kinds.map(k => {
+        const c = CATALOG[k];
+        return `<button class="palette-item ${selectedKind === k ? "active" : ""}" data-kind="${k}" type="button">
+          <span class="palette-icon tone-${c.tone}">${c.icon}</span>
+          <span><div class="label">${c.label}</div><div class="sub">${c.subtitle}</div></span>
+        </button>`;
+      }).join("")}
+    </div>`).join("");
+
+  el.querySelectorAll(".palette-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedKind = btn.dataset.kind;
+      renderAll();
+    });
+  });
+}
+
+/* ── Render canvas ── */
+function renderCanvas() {
+  const canvas = document.getElementById("canvas");
+  canvas.querySelectorAll(".canvas-node").forEach(n => n.remove());
+
+  WORKFLOW_NODES.forEach(node => {
+    const c = CATALOG[node.kind];
+    const pos = c.canvas;
+    const div = document.createElement("div");
+    div.className = "canvas-node" + (node.kind === selectedKind ? " sel" : "");
+    div.style.left = pos.x + "px";
+    div.style.top = pos.y + "px";
+    div.dataset.kind = node.kind;
+    div.innerHTML = `
+      <div class="kind">${c.label}</div>
+      <div class="name">${c.canvas.name}</div>
+      <div class="hint">${c.subtitle.slice(0, 48)}…</div>`;
+    div.addEventListener("click", () => { selectedKind = node.kind; renderAll(); });
+    canvas.appendChild(div);
+  });
+
+  const lookup = Object.fromEntries(WORKFLOW_NODES.map(n => [n.id, CATALOG[n.kind].canvas]));
+  const ids = Object.fromEntries(WORKFLOW_NODES.map(n => [n.id, n]));
+  const paths = WORKFLOW_EDGES.map(([a,b]) => {
+    const A = lookup[a], B = lookup[b];
+    const x1 = A.x + 196, y1 = A.y + 36;
+    const x2 = B.x, y2 = B.y + 36;
+    const mx = (x1 + x2) / 2;
+    const isCond = ids[a]?.kind === "condition";
+    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" stroke="var(--af2-ink-3)" stroke-width="1.4" fill="none" stroke-dasharray="${isCond ? "0" : "4 4"}" opacity="0.5"/>
+      ${isCond ? `<text x="${mx}" y="${(y1+y2)/2 - 6}" font-size="10" fill="var(--af2-mustard)" text-anchor="middle">${b === "n4" ? "Yes" : "No"}</text>` : ""}`;
+  }).join("");
+  document.getElementById("edges").innerHTML = paths;
+}
+
+/* ── Guided setup per kind ── */
+function guidedSetup(kind) {
+  const cards = {
+    trigger: `
+      <div class="setup-card"><div class="card-eyebrow">1 of 2</div><h4>How will this routine start?</h4>
+        <p class="hint">Choose how people or systems kick this off. This controls Run behavior and webhooks — not just notes.</p>
+        <span class="chip on">Run button</span><span class="chip">Incoming webhook</span><span class="chip">Connected app event</span>
+        <div class="field"><label>Webhook URL (read-only after save)</label><input readonly value="https://api.helloautoflow.com/webhooks/tpl-support"/></div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">2 of 2</div><h4>Notes for your team (optional)</h4>
+        <p class="hint">Documentation only — helps teammates understand intent later.</p>
+        <textarea placeholder="When a customer emails support or we click Run from the dashboard…">When a customer emails support</textarea>
+      </div>`,
+
+    cron_trigger: `
+      <div class="warn-banner">⏱ To run automatically in production, a <strong>Routine</strong> uses this schedule. Launch team can create one for you.</div>
+      <div class="setup-card"><div class="card-eyebrow">1 of 1</div><h4>When should this run?</h4>
+        <span class="chip on">Every weekday at 9am</span><span class="chip">Every day at 9am</span><span class="chip">Every hour</span>
+        <div class="field mono"><label>Custom schedule</label><input value="0 9 * * 1-5"/></div>
+        <div class="field"><label>Timezone</label><select><option>America/New_York</option><option>UTC</option></select></div>
+        <p style="font-size:11px;color:var(--af2-sage);margin:8px 0 0">Preview: Mon–Fri at 9:00 AM Eastern</p>
+      </div>`,
+
+    interval_trigger: `
+      <div class="warn-banner">Repeating starts work best with a launched team + Routine so agents keep checking in.</div>
+      <div class="setup-card"><h4>How often should this run?</h4>
+        <span class="chip">Every 5 min</span><span class="chip on">Every 15 min</span><span class="chip">Every 30 min</span><span class="chip">Every 60 min</span>
+        <div class="field"><label>Custom interval (minutes)</label><input type="number" value="15"/></div>
+      </div>`,
+
+    file_trigger: `
+      <div class="setup-card"><div class="card-eyebrow">1 of 3</div><h4>What file types are accepted?</h4>
+        <p class="hint">When someone clicks Run, they'll upload a file matching these types. Content is parsed and passed to the next step.</p>
+        <span class="chip on">PDF</span><span class="chip on">PNG / JPG</span><span class="chip">CSV</span><span class="chip">DOCX</span>
+        <div class="field mono"><label>Custom extensions</label><input value=".pdf, .png, .jpg"/></div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">2 of 3</div><h4>Test with a sample file</h4>
+        <button class="af2-btn af2-btn-sm">Upload test file</button>
+        <p style="font-size:11px;color:var(--af2-ink-4);margin-top:8px">Simulates what happens at run time — no need to save first.</p>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">3 of 3</div><h4>Notes for your team</h4>
+        <textarea placeholder="Starts when a signed contract PDF is uploaded…">Starts when support attaches a screenshot or PDF</textarea>
+      </div>`,
+
+    llm: `
+      <div class="setup-card"><div class="card-eyebrow">1 of 3</div><h4>What should the AI do?</h4>
+        <span class="chip">Classify urgency</span><span class="chip on">Summarize ticket</span><span class="chip">Draft reply</span>
+        <textarea>Read the ticket subject and body. Return JSON with urgency (low/medium/high), topic, and a two-sentence summary.</textarea>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">2 of 3</div><h4>Which model?</h4>
+        <div class="field"><label>Tier / model</label>
+          <select><option>Standard — workspace default (Claude Sonnet)</option><option>Lite — fast & cheap</option><option>Power — complex reasoning</option><option>Custom BYOK…</option></select>
+        </div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">3 of 3</div><h4>AI will see this data from prior steps</h4>
+        <div class="data-flow">From <strong>File upload start</strong>: <code>filename</code>, <code>content</code>, <code>mimeType</code></div>
+      </div>`,
+
+    transform: `
+      <div class="setup-card"><h4>What kind of shaping?</h4>
+        <span class="chip">Pass through</span><span class="chip on">Pick fields</span><span class="chip">Rename / map</span><span class="chip">Lookup enrichment</span>
+      </div>
+      <div class="setup-card"><h4>Field mapping</h4>
+        <p class="hint">Drag or pick which upstream fields to keep and what to call them.</p>
+        <div class="field mono"><label>Keep</label><input value="urgency, topic, summary"/></div>
+        <div class="field mono"><label>Rename</label><input value="summary → customer_summary"/></div>
+      </div>`,
+
+    action: `
+      <div class="setup-card"><h4>Choose an action</h4>
+        <div class="field"><label>Category</label><select><option>All actions</option><option>Communication</option><option>CRM</option><option>Support</option></select></div>
+        <div class="field"><label>Action</label>
+          <select><option>Send a Slack notification</option><option>Draft a support reply</option><option>Send an email</option><option>Update HubSpot record</option></select>
+        </div>
+        <p class="hint">Or describe what you want:</p>
+        <textarea placeholder="Notify #support when urgency is high with the ticket summary…" style="min-height:48px"></textarea>
+        <button class="af2-btn af2-btn-sm" style="margin-top:6px">Suggest action with AI</button>
+      </div>
+      <div class="setup-card"><h4>Parameters</h4>
+        <div class="field"><label>Slack channel</label><select><option>#support</option><option>#customer-success</option></select></div>
+        <div class="field"><label>Message template</label><textarea rows="2">High urgency: {{summary}} — review in Assignments</textarea></div>
+      </div>`,
+
+    mcp: `
+      <div class="setup-card"><h4>Pick a connected app</h4>
+        <div class="integration-row"><span class="logo tone-blue" style="background:#4A154B;color:#fff">S</span><div class="meta"><div class="n">Slack</div><div class="d">Connected · 12 tools available</div></div><button class="af2-btn af2-btn-sm">Select</button></div>
+        <div class="integration-row"><span class="logo tone-clay" style="background:#FF7A59;color:#fff">H</span><div class="meta"><div class="n">HubSpot</div><div class="d">Not connected</div></div><button class="af2-btn af2-btn-sm af2-btn-primary">Connect</button></div>
+        <div class="integration-row"><span class="logo tone-mustard" style="background:#EA4335;color:#fff">G</span><div class="meta"><div class="n">Gmail</div><div class="d">Not connected</div></div><button class="af2-btn af2-btn-sm af2-btn-primary">Connect</button></div>
+        <p class="hint" style="margin-top:8px">Connect opens OAuth or API key here — you stay in Studio.</p>
+      </div>
+      <div class="setup-card"><h4>Which tool?</h4>
+        <div class="field"><label>Tool</label><select><option>post_message</option><option>list_channels</option><option>upload_file</option></select></div>
+      </div>`,
+
+    agent: `
+      <div class="setup-card"><div class="card-eyebrow">1 of 4</div><h4>Which agent should do this?</h4>
+        <div class="field"><label>Mission</label><select><option>Customer support mission</option><option>Sales outreach</option></select></div>
+        <div class="field"><label>Agent</label><select><option>Riley — Support specialist</option><option>Jordan — Escalation lead</option><option>+ Create new agent…</option></select></div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">2 of 4</div><h4>Task instructions</h4>
+        <textarea>Review the classified ticket. If urgency is high, open an Assignment and notify the human lead.</textarea>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">3 of 4</div><h4>Guardrails</h4>
+        <div class="data-flow">Budget: <strong>$40/mo</strong> · Model: Standard · Approvals: required for outbound email · Memory: shared workspace knowledge</div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">4 of 4</div><h4>What happens next</h4>
+        <p class="hint">Agent work appears in <strong>Assignments</strong>; all activity is logged in <strong>Activity</strong>.</p>
+      </div>`,
+
+    condition: `
+      <div class="setup-card"><h4>Build your rule</h4>
+        <p class="hint">Use fields from earlier steps — the routine splits into Yes / No paths on the canvas.</p>
+        <div style="display:grid;grid-template-columns:1fr auto 1fr auto;gap:8px;align-items:end">
+          <div class="field"><label>Field</label><select><option>urgency</option><option>topic</option><option>score</option></select></div>
+          <div class="field"><label>Op</label><select><option>equals</option><option>contains</option><option>≥</option></select></div>
+          <div class="field"><label>Value</label><input value="high"/></div>
+        </div>
+        <p style="font-size:11px;color:var(--af2-sage);margin-top:8px">Preview: IF urgency equals "high" → Manager approval · ELSE → Send Slack update</p>
+      </div>`,
+
+    approval: `
+      <div class="setup-card"><div class="card-eyebrow">1 of 4</div><h4>Who signs off?</h4>
+        <div class="field"><label>Approver</label><select><option>Maya Chen (Manager)</option><option>Anyone with Approver role</option></select></div>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">2 of 4</div><h4>What are they approving?</h4>
+        <p class="hint">Preview of upstream output:</p>
+        <div class="data-flow">AI summary + proposed reply draft from <strong>Classify request</strong></div>
+        <span class="chip on">Please review before we send this to the customer.</span>
+        <span class="chip">Approve spend before continuing.</span>
+        <span class="chip">Sign off on the outbound message below.</span>
+        <textarea rows="2">Please review the draft reply before we email the customer.</textarea>
+      </div>
+      <div class="setup-card"><div class="card-eyebrow">3 of 4</div><h4>After they decide</h4>
+        <div class="field"><label>If approved</label><select><option>Continue to Deliver result</option></select></div>
+        <div class="field"><label>If rejected</label><select><option>Stop run and notify creator</option></select></div>
+        <div class="field"><label>If timeout (48h)</label><select><option>Escalate to Jordan</option></select></div>
+      </div>`,
+
+    output: `
+      <div class="setup-card"><h4>Where should the result go?</h4>
+        <span class="chip on">Activity feed</span><span class="chip">New Assignment</span><span class="chip">Webhook</span><span class="chip">Return to caller</span>
+      </div>
+      <div class="setup-card"><h4>Include these fields</h4>
+        <span class="chip on">summary</span><span class="chip on">urgency</span><span class="chip">draft_reply</span><span class="chip">approval_status</span>
+      </div>
+      <div class="setup-card"><h4>Format</h4>
+        <div class="field"><label>Output format</label><select><option>Plain text summary</option><option>JSON</option><option>Email body</option></select></div>
+      </div>`,
+  };
+  return cards[kind] || "";
+}
+
+function renderInspector() {
+  const c = CATALOG[selectedKind];
+  const readiness = { file_trigger: [2,4], llm: [3,4], mcp: [1,3], agent: [2,4], condition: [1,3], approval: [2,4], action: [2,3] }[selectedKind] || [3,3];
+  const pct = Math.round((readiness[0] / readiness[1]) * 100);
+  const status = readiness[0] === readiness[1] ? "Ready" : "Needs setup";
+  const statusColor = readiness[0] === readiness[1] ? "var(--af2-sage)" : "var(--af2-mustard)";
+
+  document.getElementById("inspector").innerHTML = `
+    <div class="inspector-head">
+      <div class="af2-eyebrow">Setup this step</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:8px;gap:12px">
+        <div>
+          <div style="font-family:var(--af2-serif);font-size:19px;font-weight:500">${c.canvas.name}</div>
+          <p style="font-size:12px;color:var(--af2-ink-3);margin:6px 0 0;line-height:1.45">${c.subtitle}</p>
+        </div>
+        <span class="af2-pill" style="border-color:${statusColor};color:${statusColor};background:transparent">${status}</span>
+      </div>
+      <div class="info-banner" style="margin-top:14px">${c.learn}</div>
+      <div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;font-size:11px"><span class="af2-eyebrow" style="margin:0">Readiness</span><span class="af2-mono" style="color:var(--af2-ink-4)">${readiness[0]}/${readiness[1]}</span></div>
+        <div class="readiness-bar"><span style="width:${pct}%"></span></div>
+      </div>
+    </div>
+    <div style="padding:0 18px 20px">
+      ${guidedSetup(selectedKind)}
+      <div style="margin-top:16px">
+        <div class="af2-eyebrow">Suggested next steps</div>
+        <div class="next-step">→ Run a test with sample data</div>
+        <div class="next-step">→ Launch team to run this autonomously</div>
+      </div>
+      <details style="margin-top:18px;font-size:12px;color:var(--af2-ink-3)">
+        <summary style="cursor:pointer;font-weight:500">Advanced (I/O keys, technical IDs)</summary>
+        <p style="margin-top:8px;color:var(--af2-ink-4)">Hidden for operators — expand in Pro mode.</p>
+      </details>
+    </div>`;
+}
+
+function renderAssistant() {
+  const bodies = {
+    build: `
+      <div class="chat-bubble user">When a customer uploads a screenshot, classify urgency, get manager approval if high, otherwise notify Slack.</div>
+      <div class="chat-bubble ai"><strong>Proposed routine (6 steps)</strong><br>File upload start → Ask AI → If/then → Human sign-off OR App action → Deliver result<br><br>
+        <button class="af2-btn af2-btn-sm af2-btn-primary" style="margin-top:6px">Apply to canvas</button>
+        <button class="af2-btn af2-btn-sm" style="margin-top:6px;margin-left:6px">Preview only</button>
+      </div>
+      <p style="font-size:11px;color:var(--af2-ink-4)">Replaces separate "Generate with AI" modal — same power, always available while you edit.</p>`,
+    ask: `
+      <div class="chat-bubble user">What does "File upload start" actually do?</div>
+      <div class="chat-bubble ai">It waits for someone to upload a file when the routine runs. The engine parses PDFs/images into text and passes <code>content</code>, <code>filename</code>, and <code>mimeType</code> to the next step. It does <em>not</em> run on a schedule by itself.</div>
+      <div class="chat-bubble user">What's the difference between Assign to agent and Ask AI?</div>
+      <div class="chat-bubble ai"><strong>Ask AI</strong> is one model call inside this routine. <strong>Assign to agent</strong> hands work to a persistent teammate who can keep working, file Assignments, and respect budgets between runs.</div>`,
+    fix: `
+      <div class="chat-bubble ai">You're editing <strong>${CATALOG[selectedKind].label}</strong>. I can fill in the guided fields for you.</div>
+      <div class="chat-bubble user">Configure accepted PDF and PNG for this file trigger</div>
+      <div class="chat-bubble ai">Done — set accepted types to <code>.pdf, .png, .jpg</code> and added a test upload button in the inspector. Want me to add an Ask AI step after it?</div>`,
+  };
+  document.getElementById("assistant-body").innerHTML = bodies[assistantTab];
+}
+
+function renderAll() {
+  renderPalette();
+  renderCanvas();
+  renderInspector();
+  if (assistantOpen) renderAssistant();
+}
+
+/* Assistant toggle */
+document.getElementById("btn-assistant").addEventListener("click", () => {
+  assistantOpen = !assistantOpen;
+  document.getElementById("assistant").style.display = assistantOpen ? "flex" : "none";
+  document.getElementById("studio-body").classList.toggle("assistant-open", assistantOpen);
+  if (assistantOpen) renderAssistant();
+});
+document.querySelectorAll(".assistant-tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    assistantTab = btn.dataset.tab;
+    document.querySelectorAll(".assistant-tabs button").forEach(b => b.classList.toggle("on", b === btn));
+    renderAssistant();
+  });
+});
+
+/* Launch modal */
+document.getElementById("btn-launch").addEventListener("click", () => document.getElementById("modal-launch").classList.add("open"));
+function closeModal() { document.getElementById("modal-launch").classList.remove("open"); }
+document.getElementById("modal-launch").addEventListener("click", e => { if (e.target.id === "modal-launch") closeModal(); });
+document.getElementById("path-from-routine").addEventListener("click", function() {
+  document.getElementById("path-from-routine").classList.add("on");
+  document.getElementById("path-standalone").classList.remove("on");
+});
+document.getElementById("path-standalone").addEventListener("click", function() {
+  document.getElementById("path-standalone").classList.add("on");
+  document.getElementById("path-from-routine").classList.remove("on");
+});
+
+renderAll();
+</script>
+</body>
+</html>

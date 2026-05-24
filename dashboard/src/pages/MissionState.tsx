@@ -202,8 +202,12 @@ export default function MissionState() {
           </div>
         </div>
         <div className="af2-page-actions">
-          <Link to="/templates" className="af2-btn" style={{ textDecoration: "none" }}>
-            Templates
+          <Link
+            to="/routines"
+            className="af2-btn"
+            style={{ textDecoration: "none" }}
+          >
+            Routines
           </Link>
           <Link to="/hire" className="af2-btn af2-btn-clay" style={{ textDecoration: "none" }}>
             ＋ New mission

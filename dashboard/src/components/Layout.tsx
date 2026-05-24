@@ -73,7 +73,10 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     title: "Build",
     items: [
       { to: "/builder", icon: Wand2, label: "Studio" },
-      { to: "/templates", icon: BookOpen, label: "Library" },
+      // HEL-208 / PR E: Library was a flat template browser; renamed to
+      // Routines and rebuilt as a Mine / Library two-tab hub. Studio is
+      // launched from a Mine row, not from a sidebar shortcut.
+      { to: "/routines", icon: BookOpen, label: "Routines" },
     ],
   },
   {

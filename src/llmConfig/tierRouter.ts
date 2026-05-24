@@ -119,7 +119,7 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  * cheaper. Not exact $/1M; just a relative ordering.
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
-  gemini: 1, // 1.5-flash ≈ $0.075/1M in
+  gemini: 1, // 2.5-flash — low $/1M in
   openai: 2, // GPT-5.4 nano — low $/1M, slots between Gemini Flash and Haiku
   mistral: 3, // small ≈ $0.10/1M
   anthropic: 4, // haiku ≈ $1/1M

@@ -891,6 +891,17 @@ app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "appro
 app.use("/api/observability", requireAuth, workspaceResolver, requireRole("admin", "operator"), observabilityRoutes);
 app.use("/api/reporting", requireAuth, workspaceResolver, requireRole("admin", "operator"), reportRoutes);
 app.use("/api/tickets", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketRoutes);
+// HEL-204 PR A: dashboard v2 renamed Tickets → Assignments. Mount the
+// same router under the new path so the Linear-feel New Assignment modal
+// can POST to /api/mission-assignments. Old /api/tickets stays alive for
+// existing integrations + the ticket-detail surfaces.
+app.use(
+  "/api/mission-assignments",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "operator"),
+  ticketRoutes,
+);
 app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
 app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);

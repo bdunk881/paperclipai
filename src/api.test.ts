@@ -2916,7 +2916,7 @@ describe("POST /api/workflows/generate", () => {
     expect(mockGetProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "openai",
-        model: "gpt-5.5",
+        model: "gpt-5.4",
         apiKey: "sk-workflow-user-1234",
       })
     );

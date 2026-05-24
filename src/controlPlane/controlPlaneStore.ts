@@ -181,7 +181,7 @@ function modelForTier(tier: "lite" | "standard" | "power"): string {
     case "standard":
       return "gpt-5.4";
     case "power":
-      return "gpt-5.2";
+      return "gpt-5.5";
   }
 }
 

@@ -41,7 +41,18 @@ export type ProviderName =
  * of each list is the default the connect form selects.
  */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
-  openai: ["gpt-5.5", "gpt-5.5-pro", "gpt-5", "gpt-5-mini", "gpt-5-nano"],
+  openai: [
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "o3",
+    "o4-mini",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+  ],
   anthropic: [
     "claude-opus-4-7",
     "claude-sonnet-4-6",

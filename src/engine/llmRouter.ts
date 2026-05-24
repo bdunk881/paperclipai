@@ -37,9 +37,9 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     power: "claude-opus-4-7",
   },
   openai: {
-    lite: "gpt-5-nano",
-    standard: "gpt-5.5",
-    power: "gpt-5.5-pro",
+    lite: "gpt-5.4-nano",
+    standard: "gpt-5.4",
+    power: "gpt-5.5",
   },
   gemini: {
     lite: "gemini-3.1-flash-lite",
@@ -136,6 +136,11 @@ const MODEL_COST_RATES: Record<string, TokenCostRate> = {
   // OpenAI (per developers.openai.com pricing 2026-05)
   "gpt-5.5":                    { input: 0.005,     output: 0.030   },
   "gpt-5.5-pro":                { input: 0.030,     output: 0.180   },
+  "gpt-5.4":                    { input: 0.0025,    output: 0.015   },
+  "gpt-5.4-mini":               { input: 0.00075,   output: 0.0045  },
+  "gpt-5.4-nano":               { input: 0.0002,    output: 0.00125 },
+  "o3":                         { input: 0.002,     output: 0.008   },
+  "o4-mini":                    { input: 0.00055,   output: 0.0022  },
   "gpt-5":                      { input: 0.00125,   output: 0.010   },
   "gpt-5-mini":                 { input: 0.00025,   output: 0.002   },
   "gpt-5-nano":                 { input: 0.00005,   output: 0.0004  },

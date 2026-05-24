@@ -34,9 +34,16 @@ interface RateEntry {
  */
 const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
   openai: {
-    // Latest GPT-5 family (2026-05 list).
+    // Latest GPT-5.5 / 5.4 family (2026-05 list).
     "gpt-5.5": { promptPer1k: 0.005, completionPer1k: 0.03 },
     "gpt-5.5-pro": { promptPer1k: 0.03, completionPer1k: 0.18 },
+    "gpt-5.4": { promptPer1k: 0.0025, completionPer1k: 0.015 },
+    "gpt-5.4-mini": { promptPer1k: 0.00075, completionPer1k: 0.0045 },
+    "gpt-5.4-nano": { promptPer1k: 0.0002, completionPer1k: 0.00125 },
+    // Reasoning models (o-series; o3 reflects the 2026 80% price cut).
+    "o3": { promptPer1k: 0.002, completionPer1k: 0.008 },
+    "o4-mini": { promptPer1k: 0.00055, completionPer1k: 0.0022 },
+    // Older GPT-5 family — still live, kept for cheaper-tier callers.
     "gpt-5": { promptPer1k: 0.00125, completionPer1k: 0.01 },
     "gpt-5-mini": { promptPer1k: 0.00025, completionPer1k: 0.002 },
     "gpt-5-nano": { promptPer1k: 0.00005, completionPer1k: 0.0004 },
@@ -87,13 +94,20 @@ const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
  */
 function tierFallback(model: string): RateEntry {
   const lc = model.toLowerCase();
-  if (lc.includes("opus") || lc.includes("gpt-4-turbo")) {
+  if (lc.includes("opus") || lc.includes("gpt-4-turbo") || lc.includes("gpt-5.5-pro")) {
     return { promptPer1k: 0.015, completionPer1k: 0.075 };
   }
-  if (lc.includes("sonnet") || lc.includes("gpt-4o") || lc.includes("gpt-4")) {
+  if (
+    lc.includes("sonnet") ||
+    lc.includes("gpt-5") ||
+    lc.includes("gpt-4o") ||
+    lc.includes("gpt-4") ||
+    lc.startsWith("o3") ||
+    lc.startsWith("o4")
+  ) {
     return { promptPer1k: 0.003, completionPer1k: 0.015 };
   }
-  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("3.5")) {
+  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("nano") || lc.includes("3.5")) {
     return { promptPer1k: 0.0008, completionPer1k: 0.004 };
   }
   // Truly unknown model: zero so the row still writes (HEL-74 wants a

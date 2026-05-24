@@ -73,9 +73,9 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
     vision: "claude-sonnet-4-6",
   },
   openai: {
-    small: "gpt-5-nano",
-    medium: "gpt-5.5",
-    large: "gpt-5.5-pro",
+    small: "gpt-5.4-nano",
+    medium: "gpt-5.4",
+    large: "gpt-5.5",
     embeddings: "text-embedding-3-small",
     vision: "gpt-5.5",
   },
@@ -125,8 +125,8 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
   gemini: 1, // gemini-3.1-flash-lite ≈ $0.25/1M in
-  openai: 2, // gpt-5-nano ≈ $0.05/1M in (cheaper, but Gemini wins on
-  //          recommendation priority + multimodal coverage)
+  openai: 2, // gpt-5.4-nano ≈ $0.20/1M in (Gemini's flash-lite is cheaper
+  //          and wins on recommendation priority + multimodal coverage)
   mistral: 3, // mistral-small (v4) ≈ $0.10/1M
   anthropic: 4, // claude-haiku-4-5 ≈ $1/1M
   groq: 1.5,

@@ -143,8 +143,8 @@ describe("resolveModelForTier", () => {
     expect(resolveModelForTier("anthropic", "power")).toBe("claude-opus-4-7");
   });
 
-  it("returns gpt-5-nano for openai lite tier", () => {
-    expect(resolveModelForTier("openai", "lite")).toBe("gpt-5-nano");
+  it("returns gpt-5.4-nano for openai lite tier", () => {
+    expect(resolveModelForTier("openai", "lite")).toBe("gpt-5.4-nano");
   });
 
   it("returns a cheaper model for lite than for power (anthropic)", () => {

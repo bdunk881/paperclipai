@@ -313,8 +313,10 @@ export type LLMProvider = (prompt: string) => Promise<LLMResponse>;
  * dashboard connect form.
  *
  * Notes on selection:
- *   - OpenAI: GPT-5.5 / 5.5-pro are the current frontier; the 5/5-mini/5-nano
- *     family stays in the list as cheaper alternatives.
+ *   - OpenAI: GPT-5.5 is the current frontier; GPT-5.4 family is the
+ *     production workhorse; o3 / o4-mini cover reasoning workloads; the
+ *     older 5 / 5-mini / 5-nano family stays in the list as cheaper
+ *     alternatives.
  *   - Anthropic: Opus 4.7 is the current top model; Sonnet 4.6 and Haiku 4.5
  *     remain the working tier (per Anthropic deprecations table 2026-05).
  *   - Gemini: 3.5 Flash is GA (2026-05-19), 3.1 Flash-Lite is GA (2026-05-07),
@@ -338,6 +340,11 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   openai: [
     "gpt-5.5",
     "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "o3",
+    "o4-mini",
     "gpt-5",
     "gpt-5-mini",
     "gpt-5-nano",

@@ -35,7 +35,6 @@ import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import Hire from "./pages/Hire";
 import HiringPlanReview from "./pages/HiringPlanReview";
-import WorkspaceMemory from "./pages/WorkspaceMemory";
 import Dashboard from "./pages/Dashboard";
 import LandingPage from "./pages/LandingPage";
 import Connections from "./pages/Connections";
@@ -291,8 +290,11 @@ const routes: RouteObject[] = [
       // client that have been wired for months but never had a UI.
       { path: "integrations/health", element: <ConnectorHealth /> },
       { path: "memory", element: <Memory /> },
-      // HEL-90/92: Workspace memory (instructions + knowledge + episodes)
-      { path: "settings/memory", element: <WorkspaceMemory /> },
+      // HEL-207: Workspace memory + the legacy /workspace/memory path are
+      // both folded into /memory; the scope picker on Memory.tsx supersedes
+      // the separate Workspace Memory page (deleted in PR D).
+      { path: "settings/memory", element: <Navigate to="/memory" replace /> },
+      { path: "workspace/memory", element: <Navigate to="/memory" replace /> },
 
       // Settings + per-tab sub-routes (still v2-chromed since #772)
       { path: "settings", element: <Settings /> },

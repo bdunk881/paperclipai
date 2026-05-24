@@ -45,7 +45,8 @@ export default defineConfig({
         "src/pages/AgentDetail.tsx",          // UX-5 agent hub (463 lines, 0% cov)
         "src/pages/AgentJobDescription.tsx",  // Wave-3 LLM wizard page
         "src/pages/AgentStandingTasks.tsx",   // Wave-4 standing tasks page
-        "src/pages/WorkspaceMemory.tsx",      // Workspace memory hub (HEL-90/92)
+        // HEL-207: WorkspaceMemory.tsx deleted; the scope picker on Memory.tsx
+        // (already excluded above) absorbed its 3-tab view.
         "src/components/JobDescriptionWizardModal.tsx", // LLM hiring-plan modal
         // --- pure fetch-wrapper API files with no coverage ---
         // These are thin network clients (one function ≈ one fetch call + error

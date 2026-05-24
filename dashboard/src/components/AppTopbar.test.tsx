@@ -214,10 +214,10 @@ describe("AppTopbar", () => {
     expect(screen.getByRole("button", { name: /inbox/i })).toBeInTheDocument();
   });
 
-  it("renders the user avatar as a button that opens the user menu, with initials", () => {
-    // HEL-203 PR 1: avatar is now a button that toggles Af2UserMenu
-    // instead of a direct link to /settings/profile. Navigation to
-    // Account / Members / Billing happens through the menu.
+  it("renders the user avatar as a button that opens the Af2UserMenu (HEL-203/HEL-213)", () => {
+    // HEL-203 PR 1 + HEL-213 PR I: avatar is now a button that toggles
+    // Af2UserMenu instead of a direct link to /settings/profile.
+    // Navigation to Account / Members / Billing happens through the menu.
     render(
       <MemoryRouter>
         <AppTopbar />
@@ -225,6 +225,7 @@ describe("AppTopbar", () => {
     );
 
     const avatar = screen.getByRole("button", { name: /open user menu/i });
+    expect(avatar).toHaveAttribute("aria-haspopup", "menu");
     expect(avatar).toHaveTextContent("JD");
   });
 

@@ -32,6 +32,7 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
   const { mode: experienceMode, setMode: setExperienceMode } = useExperienceMode();
   const searchLaunchRef = useRef<HTMLButtonElement | null>(null);
   const paletteInputRef = useRef<HTMLInputElement | null>(null);
+  // HEL-213 PR I: anchor refs + open state for the user-avatar dropdown.
   const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [userMenuAnchor, setUserMenuAnchor] = useState<DOMRect | null>(null);
@@ -271,6 +272,10 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         Pro
       </button>
 
+      {/* HEL-213 PR I: avatar opens the Af2UserMenu dropdown (Account /
+          Members / Billing / Sign out). The previous /settings/profile
+          link still works via redirect from the router so existing
+          bookmarks keep landing somewhere useful. */}
       <button
         ref={avatarButtonRef}
         type="button"

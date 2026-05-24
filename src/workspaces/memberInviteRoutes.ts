@@ -140,7 +140,9 @@ export function createMemberInviteRoutes(pool: Pool): Router {
 
       const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
       const role = typeof req.body?.role === "string" ? (req.body.role as InviteRole) : null;
-      if (!email || !/.+@.+\..+/.test(email)) {
+      // Length cap + character-class regex (no `.+` backtracking) — fixes
+      // CodeQL js/redos finding flagged on the previous `/.+@.+\..+/` pattern.
+      if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         res.status(400).json({ error: "Valid email required" });
         return;
       }

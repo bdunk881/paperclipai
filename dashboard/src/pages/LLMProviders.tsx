@@ -33,6 +33,7 @@ import {
   createLLMConfig,
   setDefaultLLMConfig,
   deleteLLMConfig,
+  updateLLMConfig,
   PROVIDER_MODELS,
   type LLMConfig,
   type ProviderName,
@@ -363,6 +364,9 @@ interface ConfigureModalProps {
   onClose: () => void;
   onSetDefault: (id: string) => Promise<void>;
   togglingDefault: string | null;
+  onChangeModel: (id: string, model: string) => Promise<void>;
+  changingModelId: string | null;
+  modelChangeError: string | null;
   onDelete: (config: LLMConfig) => void;
 }
 
@@ -372,9 +376,13 @@ function ConfigureModal({
   onClose,
   onSetDefault,
   togglingDefault,
+  onChangeModel,
+  changingModelId,
+  modelChangeError,
   onDelete,
 }: ConfigureModalProps) {
   const meta = PROVIDERS[vendor];
+  const availableModels = PROVIDER_MODELS[vendor] ?? [];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-lg mx-4">
@@ -389,6 +397,11 @@ function ConfigureModal({
           </button>
         </div>
         <div className="px-6 py-5">
+          {modelChangeError && (
+            <div className="mb-3 px-3 py-2 rounded-lg bg-af2-clay-soft/30 border border-af2-clay/30 text-sm text-af2-clay">
+              {modelChangeError}
+            </div>
+          )}
           {configs.length === 0 ? (
             <p className="af2-muted" style={{ fontSize: 13 }}>
               No keys connected yet for this vendor.
@@ -401,40 +414,61 @@ function ConfigureModal({
                 <div>Default</div>
                 <div></div>
               </div>
-              {configs.map((cfg) => (
-                <div
-                  key={cfg.id}
-                  className="af2-list-row"
-                  style={{ gridTemplateColumns: "1fr 1fr 110px 110px" }}
-                >
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{cfg.label}</div>
-                    <div className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
-                      {cfg.apiKeyMasked}
+              {configs.map((cfg) => {
+                const options = availableModels.includes(cfg.model)
+                  ? availableModels
+                  : [cfg.model, ...availableModels];
+                return (
+                  <div
+                    key={cfg.id}
+                    className="af2-list-row"
+                    style={{ gridTemplateColumns: "1fr 1fr 110px 110px" }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{cfg.label}</div>
+                      <div className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
+                        {cfg.apiKeyMasked}
+                      </div>
+                    </div>
+                    <div>
+                      <select
+                        value={cfg.model}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (next !== cfg.model) void onChangeModel(cfg.id, next);
+                        }}
+                        disabled={changingModelId === cfg.id}
+                        aria-label={`Model for ${cfg.label}`}
+                        className="af2-mono w-full px-2 py-1 rounded-md border border-af2-line-2 bg-af2-card text-af2-ink-2 focus:outline-none focus:ring-2 focus:ring-af2-clay/40 disabled:opacity-60"
+                        style={{ fontSize: 12 }}
+                      >
+                        {options.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => !cfg.isDefault && onSetDefault(cfg.id)}
+                        disabled={cfg.isDefault || togglingDefault === cfg.id}
+                        title={cfg.isDefault ? "Default config" : "Set as default"}
+                        className="af2-btn af2-btn-sm"
+                      >
+                        {cfg.isDefault ? "Default" : "Make default"}
+                      </button>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <button
+                        onClick={() => onDelete(cfg)}
+                        className="af2-btn af2-btn-sm"
+                        title="Disconnect"
+                      >
+                        Disconnect
+                      </button>
                     </div>
                   </div>
-                  <div className="af2-mono af2-muted" style={{ fontSize: 12 }}>{cfg.model}</div>
-                  <div>
-                    <button
-                      onClick={() => !cfg.isDefault && onSetDefault(cfg.id)}
-                      disabled={cfg.isDefault || togglingDefault === cfg.id}
-                      title={cfg.isDefault ? "Default config" : "Set as default"}
-                      className="af2-btn af2-btn-sm"
-                    >
-                      {cfg.isDefault ? "Default" : "Make default"}
-                    </button>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <button
-                      onClick={() => onDelete(cfg)}
-                      className="af2-btn af2-btn-sm"
-                      title="Disconnect"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -515,6 +549,8 @@ export default function LLMProviders() {
   const [configuringVendor, setConfiguringVendor] = useState<ProviderName | null>(null);
   const [deletingConfig, setDeletingConfig] = useState<LLMConfig | null>(null);
   const [togglingDefault, setTogglingDefault] = useState<string | null>(null);
+  const [changingModelId, setChangingModelId] = useState<string | null>(null);
+  const [modelChangeError, setModelChangeError] = useState<string | null>(null);
   // PR B.3: hosted-free catalog + per-workspace daily usage. Silent on
   // failure since the rest of the page works fine without it (the
   // catalog is decorative — engine-level routing in stepHandlers.ts
@@ -554,6 +590,21 @@ export default function LLMProviders() {
       cancelled = true;
     };
   }, [requireAccessToken]);
+
+  const handleChangeModel = useCallback(async (id: string, model: string) => {
+    setChangingModelId(id);
+    setModelChangeError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      const updated = await updateLLMConfig(id, { model }, accessToken);
+      setConfigs((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    } catch (err) {
+      setModelChangeError(err instanceof Error ? err.message : "Failed to change model");
+      await loadConfigs();
+    } finally {
+      setChangingModelId(null);
+    }
+  }, [requireAccessToken, loadConfigs]);
 
   const handleSetDefault = useCallback(async (id: string) => {
     setTogglingDefault(id);
@@ -1000,9 +1051,15 @@ export default function LLMProviders() {
         <ConfigureModal
           vendor={configuringVendor}
           configs={configuringConfigs}
-          onClose={() => setConfiguringVendor(null)}
+          onClose={() => {
+            setConfiguringVendor(null);
+            setModelChangeError(null);
+          }}
           onSetDefault={handleSetDefault}
           togglingDefault={togglingDefault}
+          onChangeModel={handleChangeModel}
+          changingModelId={changingModelId}
+          modelChangeError={modelChangeError}
           onDelete={(cfg) => setDeletingConfig(cfg)}
         />
       )}

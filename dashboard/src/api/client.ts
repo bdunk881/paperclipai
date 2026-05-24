@@ -369,6 +369,27 @@ export async function createLLMConfig(
   return res.json() as Promise<LLMConfig>;
 }
 
+/** PATCH /api/llm-credentials/:id — update label/model on an existing config. */
+export async function updateLLMConfig(
+  id: string,
+  patch: Partial<Pick<LLMConfig, "label" | "model">>,
+  accessToken?: string
+): Promise<LLMConfig> {
+  const res = await trackedFetch(
+    `${BASE}${LLM_CREDENTIALS_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: buildJsonHeaders(accessToken),
+      body: JSON.stringify(patch),
+    }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? `Failed to update LLM credential: ${res.status}`);
+  }
+  return res.json() as Promise<LLMConfig>;
+}
+
 /** PATCH /api/llm-credentials/:id/default */
 export async function setDefaultLLMConfig(id: string, accessToken?: string): Promise<LLMConfig> {
   const res = await trackedFetch(

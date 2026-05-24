@@ -6,6 +6,7 @@ const listLLMConfigsMock = vi.fn();
 const createLLMConfigMock = vi.fn();
 const setDefaultLLMConfigMock = vi.fn();
 const deleteLLMConfigMock = vi.fn();
+const updateLLMConfigMock = vi.fn();
 const requireAccessTokenMock = vi.fn();
 
 vi.mock("../api/client", () => ({
@@ -13,8 +14,9 @@ vi.mock("../api/client", () => ({
   createLLMConfig: (...args: unknown[]) => createLLMConfigMock(...args),
   setDefaultLLMConfig: (...args: unknown[]) => setDefaultLLMConfigMock(...args),
   deleteLLMConfig: (...args: unknown[]) => deleteLLMConfigMock(...args),
+  updateLLMConfig: (...args: unknown[]) => updateLLMConfigMock(...args),
   PROVIDER_MODELS: {
-    openai: ["gpt-4o", "gpt-4o-mini"],
+    openai: ["gpt-5.5", "gpt-5.4", "gpt-4o", "gpt-4o-mini"],
     anthropic: ["claude-sonnet-4-6"],
     gemini: ["gemini-2.0-flash"],
     mistral: ["mistral-large-latest"],
@@ -53,6 +55,7 @@ describe("LLMProviders", () => {
     createLLMConfigMock.mockReset();
     setDefaultLLMConfigMock.mockReset();
     deleteLLMConfigMock.mockReset();
+    updateLLMConfigMock.mockReset();
     requireAccessTokenMock.mockReset();
     requireAccessTokenMock.mockResolvedValue("token-123");
     // Default: hosted-free section is hidden (no catalog returned).
@@ -121,7 +124,7 @@ describe("LLMProviders", () => {
         {
           label: "Team OpenAI",
           provider: "openai",
-          model: "gpt-4o",
+          model: "gpt-5.5",
           apiKey: "sk-test-key",
         },
         "token-123"
@@ -250,6 +253,63 @@ describe("LLMProviders", () => {
 
     await waitFor(() => {
       expect(screen.queryByText(/anthropic/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it("lets the user switch an existing config's model version", async () => {
+    listLLMConfigsMock.mockResolvedValue([
+      makeConfig({ id: "cfg-openai", label: "Primary OpenAI", model: "gpt-5.5" }),
+    ]);
+    updateLLMConfigMock.mockResolvedValue(
+      makeConfig({ id: "cfg-openai", label: "Primary OpenAI", model: "gpt-5.4" })
+    );
+
+    render(<LLMProviders />);
+
+    const configureBtn = await screen.findByRole("button", { name: /configure/i });
+    fireEvent.click(configureBtn);
+
+    const select = await screen.findByLabelText(/model for primary openai/i);
+    expect((select as HTMLSelectElement).value).toBe("gpt-5.5");
+
+    fireEvent.change(select, { target: { value: "gpt-5.4" } });
+
+    await waitFor(() => {
+      expect(updateLLMConfigMock).toHaveBeenCalledWith(
+        "cfg-openai",
+        { model: "gpt-5.4" },
+        "token-123"
+      );
+    });
+
+    await waitFor(() => {
+      expect((screen.getByLabelText(/model for primary openai/i) as HTMLSelectElement).value).toBe(
+        "gpt-5.4"
+      );
+    });
+  });
+
+  it("surfaces an error and reloads when changing the model fails", async () => {
+    listLLMConfigsMock
+      .mockResolvedValueOnce([
+        makeConfig({ id: "cfg-openai", label: "Primary OpenAI", model: "gpt-5.5" }),
+      ])
+      .mockResolvedValueOnce([
+        makeConfig({ id: "cfg-openai", label: "Primary OpenAI", model: "gpt-5.5" }),
+      ]);
+    updateLLMConfigMock.mockRejectedValue(new Error("Update failed"));
+
+    render(<LLMProviders />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /configure/i }));
+
+    const select = await screen.findByLabelText(/model for primary openai/i);
+    fireEvent.change(select, { target: { value: "gpt-5.4" } });
+
+    expect(await screen.findByText("Update failed")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listLLMConfigsMock).toHaveBeenCalledTimes(2);
     });
   });
 

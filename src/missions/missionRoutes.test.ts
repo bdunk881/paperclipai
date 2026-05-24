@@ -481,4 +481,32 @@ describe("teamAssemblyRequestFromMission", () => {
     expect(prompt).toContain(baseMission.statement);
     expect(prompt).not.toContain("Own strategy, resource allocation");
   });
+
+  // HEL-211 — owner-defined free-form context pills serialise into the
+  // team-assembly prompt as `${label}: ${value}` after the canonical
+  // fields. The prompt builder receives them via importedContextSummary
+  // so they sit beside the structured prompts (industry, runway, etc.).
+  it("serialises owner-defined customContext entries into the prompt", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseMission,
+      metadata: {
+        industry: "Healthtech",
+        customContext: [
+          { label: "Compliance", value: "HIPAA + SOC 2 required" },
+          { label: "Geography", value: "US only for v1" },
+        ],
+      },
+    });
+
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Compliance: HIPAA + SOC 2 required",
+    );
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Geography: US only for v1",
+    );
+
+    const prompt = buildTeamAssemblyPrompt(request);
+    expect(prompt).toContain("Compliance: HIPAA + SOC 2 required");
+    expect(prompt).toContain("Geography: US only for v1");
+  });
 });

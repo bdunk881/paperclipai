@@ -14,9 +14,10 @@ export interface Agent {
   userId: string;
   name: string;
   /**
-   * HEL-210 — owner-defined friendly alias. When non-null the dashboard
-   * renders this as the primary line and demotes `roleKey` to subtitle;
-   * when null we fall back to `name` so legacy rows still read sensibly.
+   * HEL-210/HEL-211 — owner-defined friendly alias. When non-null the
+   * dashboard renders this as the primary line and demotes `roleKey` to
+   * subtitle; when null we fall back to `name` (the LLM-generated role
+   * title) so legacy rows still read sensibly.
    */
   displayName?: string | null;
   description?: string | null;
@@ -193,6 +194,11 @@ export async function createAgent(input: AgentCreateInput, accessToken: string):
 // soft-deletes; this PATCH is for live attribute edits.
 export interface AgentPatchInput {
   name?: string;
+  /**
+   * HEL-211 — owner-friendly handle stored in `agents.display_name`. Pass
+   * an empty string to clear the value back to NULL.
+   */
+  displayName?: string | null;
   status?: "active" | "paused" | "terminated";
   budgetMonthlyUsd?: number;
   instructions?: string;

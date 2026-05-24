@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { Af2PageHead } from "../components/af2";
@@ -29,6 +29,7 @@ import {
   generateHiringPlan,
   listMissions,
   type Mission,
+  type MissionCustomContextEntry,
   type MissionMetadata,
 } from "../api/missionsApi";
 import { listLLMConfigs, type LLMConfig } from "../api/client";
@@ -38,7 +39,10 @@ import { teamLinkForMission } from "../lib/missionNavigation";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
-type ContextPillKey = keyof MissionMetadata;
+// HEL-211: canonical pill keys are the four single-string structured
+// prompts the LLM treats specially. Owner-defined free-form pills live
+// on `MissionMetadata.customContext` (an array) and are handled separately.
+type ContextPillKey = "industry" | "targetCustomer" | "successMetric" | "runway";
 
 const CONTEXT_PILLS: Array<{
   key: ContextPillKey;
@@ -78,6 +82,7 @@ function computeReadiness(
   statement: string,
   metadata: MissionMetadata,
   enabledPills: Set<ContextPillKey>,
+  customContext: MissionCustomContextEntry[],
 ): number {
   const trimmed = statement.trim();
   if (trimmed.length === 0) return 0;
@@ -87,20 +92,35 @@ function computeReadiness(
   const filled = pillKeys.filter(
     (key) => enabledPills.has(key) && (metadata[key] ?? "").trim().length > 0,
   ).length;
-  const metadataScore =
-    enabledCount === 0 ? 0 : (filled / enabledCount) * 0.4;
-  return Math.min(1, Number((statementScore + metadataScore).toFixed(2)));
+  const canonicalScore =
+    enabledCount === 0 ? 0 : (filled / enabledCount) * 0.3;
+  // HEL-211: each complete owner-defined pill nudges readiness up; cap
+  // at 0.1 so canonical fields still dominate the score.
+  const completeCustom = customContext.filter(
+    (e) => e.label.trim().length > 0 && e.value.trim().length > 0,
+  ).length;
+  const customScore = Math.min(completeCustom * 0.025, 0.1);
+  return Math.min(1, Number((statementScore + canonicalScore + customScore).toFixed(2)));
 }
 
 function buildMetadataForSubmit(
   metadata: MissionMetadata,
   enabledPills: Set<ContextPillKey>,
+  customContext: MissionCustomContextEntry[],
 ): MissionMetadata {
   const out: MissionMetadata = {};
   for (const { key } of CONTEXT_PILLS) {
     if (!enabledPills.has(key)) continue;
     const value = metadata[key]?.trim();
     if (value) out[key] = value;
+  }
+  // HEL-211: drop entries with an empty `label` *or* `value` — both
+  // halves are load-bearing for the prompt-template (`${label}: ${value}`).
+  const trimmedCustom = customContext
+    .map((entry) => ({ label: entry.label.trim(), value: entry.value.trim() }))
+    .filter((entry) => entry.label.length > 0 && entry.value.length > 0);
+  if (trimmedCustom.length > 0) {
+    out.customContext = trimmedCustom;
   }
   return out;
 }
@@ -142,6 +162,13 @@ export default function Hire() {
   const [enabledPills, setEnabledPills] = useState<Set<ContextPillKey>>(new Set());
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(null);
   const [regeneratingMissionId, setRegeneratingMissionId] = useState<string | null>(null);
+  // HEL-211: owner-defined free-form context pills + the popover composer.
+  // `customContext` is the committed list; `pendingLabel`/`pendingValue`
+  // are the staged inputs in the Add detail composer.
+  const [customContext, setCustomContext] = useState<MissionCustomContextEntry[]>([]);
+  const [addDetailOpen, setAddDetailOpen] = useState(false);
+  const [pendingLabel, setPendingLabel] = useState("");
+  const [pendingValue, setPendingValue] = useState("");
 
   const modelOptions = useMemo(() => {
     const opts: Array<{ id: string; label: string; detail: string }> = [];
@@ -259,8 +286,8 @@ export default function Hire() {
     !llmCheckLoading &&
     Boolean(selectedLlmConfigId);
   const readiness = useMemo(
-    () => computeReadiness(statement, metadata, enabledPills),
-    [statement, metadata, enabledPills],
+    () => computeReadiness(statement, metadata, enabledPills, customContext),
+    [statement, metadata, enabledPills, customContext],
   );
 
   function togglePill(key: ContextPillKey) {
@@ -272,8 +299,24 @@ export default function Hire() {
     });
   }
 
-  function updateMetadata<K extends keyof MissionMetadata>(key: K, value: string) {
+  function updateMetadata<K extends ContextPillKey>(key: K, value: string) {
     setMetadata((current) => ({ ...current, [key]: value }));
+  }
+
+  function commitPendingCustomEntry() {
+    const label = pendingLabel.trim();
+    const value = pendingValue.trim();
+    if (!label || !value) return;
+    setCustomContext((cur) => [...cur, { label, value }]);
+    setPendingLabel("");
+    setPendingValue("");
+    setAddDetailOpen(false);
+  }
+
+  function cancelPendingCustomEntry() {
+    setAddDetailOpen(false);
+    setPendingLabel("");
+    setPendingValue("");
   }
 
   async function handleRegenerateMission(mission: Mission): Promise<void> {
@@ -310,7 +353,7 @@ export default function Hire() {
       const created = await createMission(
         {
           statement: trimmedStatement,
-          metadata: buildMetadataForSubmit(metadata, enabledPills),
+          metadata: buildMetadataForSubmit(metadata, enabledPills, customContext),
         },
         token,
       );
@@ -345,6 +388,7 @@ export default function Hire() {
       setStatement("");
       setMetadata({});
       setEnabledPills(new Set());
+      setCustomContext([]);
       void refreshMissions();
       setSubmitState("idle");
     } catch (err) {
@@ -471,7 +515,13 @@ export default function Hire() {
           <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
             Optional context
           </div>
-          <div className="af2-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {/* HEL-211: canonical pill toggles + owner-defined pill chips +
+              "+ Add detail" composer. Positioned relative so the popover
+              anchors to the row. */}
+          <div
+            className="af2-row"
+            style={{ gap: 8, flexWrap: "wrap", marginBottom: 10, position: "relative" }}
+          >
             {CONTEXT_PILLS.map((pill) => {
               const active = enabledPills.has(pill.key);
               return (
@@ -486,6 +536,143 @@ export default function Hire() {
                 </button>
               );
             })}
+            {customContext.map((entry, index) => (
+              <span
+                key={`${entry.label}-${index}`}
+                className="af2-pill"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background:
+                    "color-mix(in srgb, var(--af2-clay) 10%, var(--af2-card))",
+                  borderColor: "rgba(192,84,76,0.30)",
+                  fontSize: 12,
+                  paddingRight: 6,
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{entry.label}</span>
+                <span className="af2-muted" style={{ maxWidth: 220 }}>
+                  {entry.value.length > 32 ? `${entry.value.slice(0, 32)}…` : entry.value}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${entry.label}`}
+                  onClick={() =>
+                    setCustomContext((cur) => cur.filter((_, i) => i !== index))
+                  }
+                  disabled={isBusy}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    marginLeft: 2,
+                    cursor: isBusy ? "not-allowed" : "pointer",
+                    color: "var(--af2-muted)",
+                    display: "inline-flex",
+                  }}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+            <button
+              type="button"
+              className="af2-btn af2-btn-sm af2-btn-ghost"
+              onClick={() => setAddDetailOpen((open) => !open)}
+              disabled={isBusy}
+              aria-expanded={addDetailOpen}
+              aria-controls="hire-add-detail-popover"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <Plus size={12} />
+              Add detail
+            </button>
+            {addDetailOpen ? (
+              <div
+                id="hire-add-detail-popover"
+                role="dialog"
+                aria-label="Add custom context"
+                className="af2-card"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: 8,
+                  zIndex: 20,
+                  width: 320,
+                  padding: 14,
+                  boxShadow: "0 12px 32px rgba(26,20,16,0.18)",
+                }}
+              >
+                <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
+                  Add a detail
+                </div>
+                <label
+                  htmlFor="hire-custom-label"
+                  className="af2-eyebrow"
+                  style={{ fontSize: 10 }}
+                >
+                  Label
+                </label>
+                <input
+                  id="hire-custom-label"
+                  type="text"
+                  className="af2-input"
+                  value={pendingLabel}
+                  onChange={(e) => setPendingLabel(e.target.value)}
+                  placeholder="Compliance"
+                  style={{ width: "100%", marginTop: 4, marginBottom: 10 }}
+                  maxLength={64}
+                  autoFocus
+                />
+                <label
+                  htmlFor="hire-custom-value"
+                  className="af2-eyebrow"
+                  style={{ fontSize: 10 }}
+                >
+                  Value
+                </label>
+                <input
+                  id="hire-custom-value"
+                  type="text"
+                  className="af2-input"
+                  value={pendingValue}
+                  onChange={(e) => setPendingValue(e.target.value)}
+                  placeholder="HIPAA + SOC 2 required"
+                  style={{ width: "100%", marginTop: 4, marginBottom: 10 }}
+                  maxLength={280}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      commitPendingCustomEntry();
+                    } else if (e.key === "Escape") {
+                      cancelPendingCustomEntry();
+                    }
+                  }}
+                />
+                <div className="af2-row" style={{ gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="af2-btn af2-btn-sm af2-btn-ghost"
+                    onClick={cancelPendingCustomEntry}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="af2-btn af2-btn-sm af2-btn-clay"
+                    disabled={
+                      pendingLabel.trim().length === 0 ||
+                      pendingValue.trim().length === 0
+                    }
+                    onClick={commitPendingCustomEntry}
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
           {CONTEXT_PILLS.filter((pill) => enabledPills.has(pill.key)).map((field) => (
             <div key={field.key} style={{ marginBottom: 10 }}>

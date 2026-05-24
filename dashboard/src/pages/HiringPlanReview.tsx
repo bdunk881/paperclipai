@@ -16,7 +16,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CheckCircle2, ChevronDown, ChevronUp, Loader2, Sparkles, Trash2, Users } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Sparkles,
+  Trash2,
+  UserCircle2,
+  Users,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import {
@@ -29,6 +39,7 @@ import {
   type StaffingRecommendation,
   type StarterJobDescription,
 } from "../api/missionsApi";
+import { patchAgent } from "../api/agentApi";
 import { getConnectorHealth } from "../api/client";
 import { listLLMConfigs } from "../api/client";
 import { AgentToolChips, type ConnectorHealthByKey } from "../components/missions/AgentToolChips";
@@ -38,9 +49,19 @@ type PageState =
   | "loading"
   | "ready"
   | "confirming"
+  // HEL-211: post-confirm "Name your team" rename slider.
+  | "renaming"
+  | "savingNames"
   | "confirmed"
   | "discarding"
   | "error";
+
+interface PendingRename {
+  agentId: string;
+  agentName: string;
+  roleTitle: string;
+  displayName: string;
+}
 
 function ModelTierBadge({ tier }: { tier: string }) {
   const colors: Record<string, string> = {
@@ -167,6 +188,11 @@ export default function HiringPlanReview() {
   const [seededRoutines, setSeededRoutines] = useState<
     Array<{ agentId: string; agentName: string; routineId: string; routineName: string }>
   >([]);
+  // HEL-211: staged display-name values for the post-confirm "Name your
+  // team" step. Defaults to empty per agent so the input placeholder
+  // (the role title) shows until the owner types.
+  const [pendingRenames, setPendingRenames] = useState<PendingRename[]>([]);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [includedRoleKeys, setIncludedRoleKeys] = useState<Set<string>>(new Set());
   const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthByKey>({});
@@ -242,10 +268,25 @@ export default function HiringPlanReview() {
       const token = await requireAccessToken();
       await persistSelection(selected);
       const confirmed = await confirmHiringPlan(planId, token, selected);
-      setPageState("confirmed");
       // Refresh plan data so the confirmed state is reflected.
       const refreshed = await getHiringPlan(planId, token);
       setPlan(refreshed);
+      // HEL-211: stage one rename entry per provisioned agent. Default
+      // displayName is "" so the input placeholder (role title) shows
+      // and we don't accidentally PATCH unchanged rows.
+      const agentsByRoleKey = new Map(
+        refreshed.plan.provisioningPlan.agents.map((a) => [a.roleKey, a]),
+      );
+      setPendingRenames(
+        confirmed.agents.map((agent) => ({
+          agentId: agent.id,
+          agentName: agent.name,
+          roleTitle:
+            agentsByRoleKey.get(agent.roleKey)?.title ?? agent.name,
+          displayName: "",
+        })),
+      );
+      setRenameError(null);
       // HEL-154: zip seeded routines to their agents for the post-confirm CTA list.
       if (confirmed.seededRoutines && confirmed.seededRoutines.length > 0) {
         const agentNameById = new Map(confirmed.agents.map((a) => [a.id, a.name]));
@@ -266,12 +307,66 @@ export default function HiringPlanReview() {
           agentCount === 1 ? "" : "s"
         } provisioned.`,
       );
+      // HEL-211: move into the rename step. Falls back to "confirmed"
+      // when no agents were provisioned (defensive — shouldn't happen
+      // post-validation but the step has nothing to render in that
+      // case).
+      setPageState(confirmed.agents.length > 0 ? "renaming" : "confirmed");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to confirm plan";
       setError(msg);
       toast.error(msg);
       setPageState("ready");
     }
+  }
+
+  // HEL-211 — "Name your team" handlers.
+  function updatePendingRename(agentId: string, displayName: string) {
+    setPendingRenames((cur) =>
+      cur.map((row) =>
+        row.agentId === agentId ? { ...row, displayName } : row,
+      ),
+    );
+  }
+
+  async function handleSaveRenames() {
+    setRenameError(null);
+    // Only PATCH the rows with a non-empty value — empty stays NULL so
+    // the org list falls back to `name`.
+    const dirty = pendingRenames
+      .map((row) => ({ ...row, trimmed: row.displayName.trim() }))
+      .filter((row) => row.trimmed.length > 0);
+
+    if (dirty.length === 0) {
+      // Nothing to save — same as skip.
+      setPageState("confirmed");
+      return;
+    }
+
+    setPageState("savingNames");
+    try {
+      const token = await requireAccessToken();
+      // Sequential rather than Promise.all so the first failure stops
+      // the rest — partial saves on this screen would surface as half
+      // the org renamed without an obvious recovery path.
+      for (const row of dirty) {
+        await patchAgent(row.agentId, { displayName: row.trimmed }, token);
+      }
+      toast.success(
+        `Renamed ${dirty.length} agent${dirty.length === 1 ? "" : "s"}.`,
+      );
+      setPageState("confirmed");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save names";
+      setRenameError(msg);
+      toast.error(msg);
+      setPageState("renaming");
+    }
+  }
+
+  function handleSkipRenames() {
+    setRenameError(null);
+    setPageState("confirmed");
   }
 
   async function handleDiscard() {
@@ -525,6 +620,20 @@ export default function HiringPlanReview() {
             />
           ) : null}
 
+          {/* HEL-211: post-confirm "Name your team" rename slider. Renders
+              after the confirm call succeeds; Skip / Continue both
+              transition into the "confirmed" callout below. */}
+          {pageState === "renaming" || pageState === "savingNames" ? (
+            <NameYourTeamStep
+              pendingRenames={pendingRenames}
+              onChangeRename={updatePendingRename}
+              onContinue={() => void handleSaveRenames()}
+              onSkip={handleSkipRenames}
+              saving={pageState === "savingNames"}
+              error={renameError}
+            />
+          ) : null}
+
           {/* Confirm / confirmed state */}
           {pageState === "confirmed" || plan.acceptedAt ? (
             <div
@@ -554,7 +663,7 @@ export default function HiringPlanReview() {
                 ) : null}
               </div>
             </div>
-          ) : (
+          ) : pageState === "renaming" || pageState === "savingNames" ? null : (
             <div className="af2-card" style={{ padding: "18px 22px" }}>
               <p style={{ fontSize: 14, color: "var(--af2-ink-2)", marginBottom: 14 }}>
                 Confirming will provision {selectedCount} selected agent
@@ -635,6 +744,250 @@ export default function HiringPlanReview() {
         confirming={pageState === "discarding"}
         onConfirm={() => void handleDiscard()}
       />
+    </div>
+  );
+}
+
+/**
+ * HEL-211 — "Name your team" step that follows the Confirm CTA.
+ *
+ * Renders one row per provisioned agent: a circular initial avatar,
+ * the freeform display-name input (placeholder shows the role title),
+ * and a muted role label. Continue PATCHes `display_name` for each
+ * non-empty value; Skip jumps straight to the confirmed callout.
+ *
+ * Kept inline (no separate file) since it's only used here and reuses
+ * the page's af2-card chrome.
+ */
+function NameYourTeamStep({
+  pendingRenames,
+  onChangeRename,
+  onContinue,
+  onSkip,
+  saving,
+  error,
+}: {
+  pendingRenames: PendingRename[];
+  onChangeRename: (agentId: string, displayName: string) => void;
+  onContinue: () => void;
+  onSkip: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const filledCount = pendingRenames.filter(
+    (row) => row.displayName.trim().length > 0,
+  ).length;
+  return (
+    <div
+      className="af2-card"
+      style={{
+        padding: "18px 22px",
+        borderColor: "rgba(74,107,74,0.30)",
+        background: "rgba(74,107,74,0.04)",
+        marginBottom: 16,
+      }}
+    >
+      {/* Simple two-dot horizontal stepper mirroring the v2 prototype's
+          plan→rename pattern. */}
+      <div
+        className="af2-row"
+        style={{ gap: 10, alignItems: "center", marginBottom: 12 }}
+      >
+        <StepDot label="Plan reviewed" complete />
+        <span
+          aria-hidden
+          style={{
+            flex: "0 0 24px",
+            height: 1,
+            background: "var(--af2-line-2)",
+          }}
+        />
+        <StepDot label="Name your team" active />
+      </div>
+
+      <div className="af2-eyebrow" style={{ marginBottom: 6 }}>
+        Step 2 · Name your team
+      </div>
+      <h2 className="af2-h2 font-af2-serif" style={{ margin: 0 }}>
+        Give your agents a friendlier handle.
+      </h2>
+      <p className="af2-muted" style={{ marginTop: 6, fontSize: 13, lineHeight: 1.55 }}>
+        Optional — names show up in the org list and activity feed. Skip this
+        step to keep the role titles AutoFlow generated.
+      </p>
+
+      {error ? (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: "8px 12px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid rgba(194,80,43,0.3)",
+            background: "rgba(194,80,43,0.10)",
+            color: "var(--af2-clay)",
+            fontSize: 12.5,
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div
+        style={{
+          marginTop: 14,
+          display: "grid",
+          gap: 8,
+        }}
+      >
+        {pendingRenames.map((row) => (
+          <RenameRow
+            key={row.agentId}
+            row={row}
+            onChange={(value) => onChangeRename(row.agentId, value)}
+            disabled={saving}
+          />
+        ))}
+      </div>
+
+      <div
+        className="af2-row"
+        style={{ gap: 10, marginTop: 16, alignItems: "center" }}
+      >
+        <span className="af2-muted-2 af2-mono" style={{ fontSize: 11 }}>
+          {filledCount} of {pendingRenames.length} renamed
+        </span>
+        <span className="af2-spacer" />
+        <button
+          type="button"
+          className="af2-btn af2-btn-ghost"
+          onClick={onSkip}
+          disabled={saving}
+        >
+          Skip
+        </button>
+        <button
+          type="button"
+          className="af2-btn af2-btn-clay"
+          onClick={onContinue}
+          disabled={saving}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+        >
+          {saving ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <ArrowRight size={14} />
+          )}
+          {saving ? "Saving names…" : "Continue"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StepDot({
+  label,
+  active,
+  complete,
+}: {
+  label: string;
+  active?: boolean;
+  complete?: boolean;
+}) {
+  const color = complete
+    ? "var(--af2-sage)"
+    : active
+      ? "var(--af2-clay)"
+      : "var(--af2-ink-3)";
+  return (
+    <span
+      className="af2-row"
+      style={{ gap: 6, alignItems: "center", fontSize: 11 }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "inline-block",
+          width: 10,
+          height: 10,
+          borderRadius: "50%",
+          background: color,
+        }}
+      />
+      <span
+        style={{
+          color: active || complete ? "var(--af2-ink)" : "var(--af2-ink-3)",
+          fontWeight: active ? 600 : 400,
+        }}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function RenameRow({
+  row,
+  onChange,
+  disabled,
+}: {
+  row: PendingRename;
+  onChange: (value: string) => void;
+  disabled: boolean;
+}) {
+  const initial = (row.agentName || row.roleTitle || "?")
+    .trim()
+    .charAt(0)
+    .toUpperCase();
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "32px minmax(0, 1fr) minmax(0, 1fr)",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: "1px solid var(--af2-line-2)",
+        background: "var(--af2-card)",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          background: "var(--af2-paper-2)",
+          color: "var(--af2-ink-2)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontFamily: "var(--af2-serif)",
+          fontSize: 13,
+          fontWeight: 600,
+        }}
+      >
+        {initial || <UserCircle2 size={16} />}
+      </span>
+      <input
+        type="text"
+        className="af2-input"
+        value={row.displayName}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={row.roleTitle}
+        disabled={disabled}
+        maxLength={120}
+        aria-label={`Display name for ${row.roleTitle}`}
+        style={{ width: "100%", fontSize: 14 }}
+      />
+      <span
+        className="af2-muted"
+        style={{ fontSize: 12, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}
+        title={row.roleTitle}
+      >
+        {row.roleTitle}
+      </span>
     </div>
   );
 }

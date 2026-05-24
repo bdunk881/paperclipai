@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen } from "../test/render";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import Tickets from "./Tickets";
@@ -33,6 +33,6 @@ describe("Tickets (V2 / DASH-10)", () => {
     // V2 page-head: eyebrow + serif h1 + primary CTA.
     await screen.findByText(/run · assignments/i);
     await screen.findByRole("heading", { level: 1, name: /mission assignments/i });
-    await screen.findByRole("button", { name: /new assignment/i });
+    expect(screen.getAllByRole("button", { name: /new assignment/i }).length).toBeGreaterThan(0);
   });
 });

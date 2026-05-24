@@ -14,7 +14,6 @@ import {
   createTicket,
   getTicket,
   hydrateTicketActorProfiles,
-  listTickets,
   type TicketPriority,
 } from "./api/tickets";
 import { readStoredAuthUser } from "./auth/authStorage";
@@ -69,7 +68,6 @@ import {
   type CreateTicketRouteActionData,
   type CreateTicketRouteActionPayload,
   type TicketDetailRouteData,
-  type TicketsRouteData,
 } from "./routes/ticketRouteData";
 import {
   activityLoader,
@@ -77,6 +75,7 @@ import {
   budgetDashboardLoader,
   homeLoader,
   orgStructureLoader,
+  ticketsLoader,
 } from "./router/loaders";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -120,18 +119,6 @@ async function withTypedLoaderErrors<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw err;
   }
-}
-
-async function ticketsLoader(): Promise<TicketsRouteData> {
-  return withTypedLoaderErrors(async () => {
-    const session = await readCurrentAccessSession();
-    const accessToken = session?.accessToken;
-    const [result] = await Promise.all([
-      listTickets({}, accessToken),
-      hydrateActorsFromAccessToken(accessToken),
-    ]);
-    return result;
-  });
 }
 
 async function ticketDetailLoader({
@@ -187,7 +174,6 @@ async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTic
 }
 
 function TicketsRoute() {
-  const initialData = useLoaderData() as TicketsRouteData;
   const fetcher = useFetcher<CreateTicketRouteActionData>();
 
   const submit = useCallback(
@@ -209,7 +195,6 @@ function TicketsRoute() {
 
   return (
     <Tickets
-      initialData={initialData}
       routeAction={{
         data: fetcher.data,
         state: fetcher.state,

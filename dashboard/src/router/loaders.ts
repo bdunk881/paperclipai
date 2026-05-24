@@ -2,6 +2,7 @@ import { fetchHomeSnapshot } from "../api/snapshotApi";
 import { listApprovals } from "../api/client";
 import { listObservabilityEvents } from "../api/observability";
 import { getOrgGraph, listBudgets } from "../api/canonicalApi";
+import { listTickets } from "../api/tickets";
 import { getSupabaseStoredSession } from "../auth/supabaseAuth";
 import { queryClient } from "../lib/queryClient";
 import { queryKeys } from "../lib/queryKeys";
@@ -71,11 +72,25 @@ export async function activityLoader(): Promise<unknown> {
       return null;
     }
     return queryClient.ensureQueryData({
-      queryKey: queryKeys.observability(workspaceId, "live"),
+      queryKey: queryKeys.observability(workspaceId, "feed"),
       queryFn: async () => {
         const page = await listObservabilityEvents(token, { limit: 100 });
         return page.events;
       },
+    });
+  });
+}
+
+export async function ticketsLoader(): Promise<unknown> {
+  return withTypedLoaderErrors(async () => {
+    const token = await readAccessToken();
+    const workspaceId = workspaceIdForLoader();
+    if (!token || workspaceId === "none") {
+      return null;
+    }
+    return queryClient.ensureQueryData({
+      queryKey: queryKeys.tickets(workspaceId),
+      queryFn: () => listTickets({ workspaceId }, token),
     });
   });
 }

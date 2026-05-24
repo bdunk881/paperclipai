@@ -93,16 +93,14 @@ describe("AppTopbar", () => {
     expect(screen.getByText("Ctrl K")).toBeInTheDocument();
   });
 
-  it("opens the command palette from Ctrl+K and runs a scoped search", async () => {
+  it("opens the command palette from Ctrl+K without firing search until the user types", async () => {
     renderWithRoutes();
 
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
 
     const dialog = await screen.findByRole("dialog", { name: /search autoflow/i });
     expect(within(dialog).getByRole("searchbox", { name: /search autoflow/i })).toHaveFocus();
-    await waitFor(() => {
-      expect(searchEntitiesMock).toHaveBeenCalledWith("token-123", "", 8);
-    });
+    expect(searchEntitiesMock).not.toHaveBeenCalled();
   });
 
   it("opens search from the desktop launcher and routes clicked results", async () => {
@@ -130,6 +128,11 @@ describe("AppTopbar", () => {
         name: /search agents, missions, assignments, runs/i,
       }),
     );
+    const input = await screen.findByRole("searchbox", { name: /search autoflow/i });
+    await user.type(input, "revenue");
+    await waitFor(() => {
+      expect(searchEntitiesMock).toHaveBeenCalledWith("token-123", "revenue", 8);
+    });
     await user.click(await screen.findByRole("option", { name: /Revenue Analyst/i }));
 
     expect(await screen.findByText("Agent detail route")).toBeInTheDocument();
@@ -166,6 +169,10 @@ describe("AppTopbar", () => {
 
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const input = await screen.findByRole("searchbox", { name: /search autoflow/i });
+    await userEvent.type(input, "support");
+    await waitFor(() => {
+      expect(searchEntitiesMock).toHaveBeenCalledWith("token-123", "support", 8);
+    });
     await screen.findByRole("option", { name: /Support Agent/i });
 
     fireEvent.keyDown(input, { key: "ArrowDown" });

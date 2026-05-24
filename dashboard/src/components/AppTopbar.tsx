@@ -95,28 +95,41 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
 
   useEffect(() => {
     if (!searchOpen) return;
-    let cancelled = false;
-    setSearchState("loading");
 
-    async function runSearch() {
-      try {
-        const token = await requireAccessToken();
-        const payload = await searchEntities(token, query, 8);
-        if (cancelled) return;
-        setResults(payload.results);
-        setActiveIndex(0);
-        setSearchState("idle");
-      } catch {
-        if (cancelled) return;
-        setResults([]);
-        setActiveIndex(0);
-        setSearchState("error");
-      }
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setResults([]);
+      setActiveIndex(0);
+      setSearchState("idle");
+      return;
     }
 
-    void runSearch();
+    let cancelled = false;
+    const debounceId = window.setTimeout(() => {
+      setSearchState("loading");
+
+      async function runSearch() {
+        try {
+          const token = await requireAccessToken();
+          const payload = await searchEntities(token, trimmed, 8);
+          if (cancelled) return;
+          setResults(payload.results);
+          setActiveIndex(0);
+          setSearchState("idle");
+        } catch {
+          if (cancelled) return;
+          setResults([]);
+          setActiveIndex(0);
+          setSearchState("error");
+        }
+      }
+
+      void runSearch();
+    }, 300);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(debounceId);
     };
   }, [query, requireAccessToken, searchOpen]);
 

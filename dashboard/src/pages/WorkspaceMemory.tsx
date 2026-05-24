@@ -82,15 +82,15 @@ export default function WorkspaceMemory() {
       </nav>
 
       <main className="px-8 py-8">
-        {activeTab === "instructions" ? (
+        <div hidden={activeTab !== "instructions"}>
           <InstructionsTab requireAccessToken={requireAccessToken} />
-        ) : null}
-        {activeTab === "knowledge" ? (
+        </div>
+        <div hidden={activeTab !== "knowledge"}>
           <KnowledgeTab requireAccessToken={requireAccessToken} />
-        ) : null}
-        {activeTab === "episodes" ? (
+        </div>
+        <div hidden={activeTab !== "episodes"}>
           <EpisodesTab requireAccessToken={requireAccessToken} />
-        ) : null}
+        </div>
       </main>
     </div>
   );

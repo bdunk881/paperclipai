@@ -6,21 +6,20 @@ import { useWorkspace } from "../../context/useWorkspace";
 import { useResolveAccessToken } from "./resolveAccessToken";
 
 const FEED_LIMIT = 100;
+export const OBSERVABILITY_FEED_TAB = "feed";
 
-export function useObservabilityQuery(tabKey: string) {
+export function useObservabilityQuery() {
   const { accessMode } = useAuth();
   const resolveAccessToken = useResolveAccessToken();
   const { activeWorkspaceId } = useWorkspace();
 
   return useQuery({
-    queryKey: queryKeys.observability(activeWorkspaceId ?? "none", tabKey),
+    queryKey: queryKeys.observability(activeWorkspaceId ?? "none", OBSERVABILITY_FEED_TAB),
     queryFn: async () => {
       const token = await resolveAccessToken();
       const page = await listObservabilityEvents(token, { limit: FEED_LIMIT });
       return page.events;
     },
     enabled: Boolean(activeWorkspaceId) && accessMode !== "preview",
-    staleTime: tabKey === "live" ? 0 : 30_000,
-    refetchInterval: tabKey === "live" ? false : undefined,
   });
 }

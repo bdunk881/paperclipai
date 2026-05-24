@@ -1,23 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
-import { listMissions } from "../../api/missionsApi";
+import { listTickets } from "../../api/tickets";
 import { queryKeys } from "../../lib/queryKeys";
 import { useAuth } from "../../context/AuthContext";
 import { useWorkspace } from "../../context/useWorkspace";
 import { useResolveAccessToken } from "./resolveAccessToken";
 
-export function useMissionsQuery(options?: { enabled?: boolean }) {
+export function useTicketsQuery() {
   const { accessMode } = useAuth();
   const resolveAccessToken = useResolveAccessToken();
   const { activeWorkspaceId } = useWorkspace();
-  const enabled = options?.enabled ?? true;
 
   return useQuery({
-    queryKey: queryKeys.missions(activeWorkspaceId ?? "none"),
+    queryKey: queryKeys.tickets(activeWorkspaceId ?? "none"),
     queryFn: async () => {
-      if (!activeWorkspaceId) return [];
       const token = await resolveAccessToken();
-      return listMissions(token);
+      return listTickets({ workspaceId: activeWorkspaceId ?? undefined }, token);
     },
-    enabled: enabled && Boolean(activeWorkspaceId) && accessMode !== "preview",
+    enabled: Boolean(activeWorkspaceId) && accessMode !== "preview",
   });
 }

@@ -999,6 +999,218 @@ export function createMissionRoutes(
     });
   }));
 
+  // ---------------------------------------------------------------------
+  // POST /api/missions/:missionId/complete — HEL-210
+  //
+  // Flags a mission as complete without tearing the team down. Optional
+  // `note` is appended to `missions.metadata.completionNote`. Returns
+  // 409 if the mission is already in a terminal state.
+  // ---------------------------------------------------------------------
+  router.post(
+    "/:missionId/complete",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+
+      const missionId = req.params.missionId;
+      if (!missionId || !UUID_RE.test(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const body = req.body as { note?: unknown };
+      const note =
+        typeof body?.note === "string" && body.note.trim().length > 0
+          ? body.note.trim().slice(0, 2000)
+          : null;
+
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) => {
+            const existing = await client.query<{
+              status: string;
+              metadata: MissionMetadata | null;
+            }>(
+              `SELECT m.status, m.metadata
+                 FROM missions m
+                 JOIN companies c ON c.id = m.company_id
+                WHERE m.id = $1 AND c.workspace_id = $2
+                LIMIT 1`,
+              [missionId, workspaceId],
+            );
+            if (existing.rows.length === 0) {
+              throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+            }
+            const current = existing.rows[0];
+            if (current.status === "completed" || current.status === "archived") {
+              throw Object.assign(
+                new Error("Mission already terminal."),
+                { code: "ALREADY_TERMINAL" },
+              );
+            }
+            const nextMetadata: Record<string, unknown> = {
+              ...(current.metadata ?? {}),
+            };
+            if (note) nextMetadata.completionNote = note;
+            nextMetadata.completedAt = new Date().toISOString();
+            const updated = await client.query<{
+              status: string;
+              completed_at: string;
+            }>(
+              `UPDATE missions
+                  SET status = 'completed',
+                      metadata = $1::jsonb
+                WHERE id = $2
+                RETURNING status, (metadata->>'completedAt') AS completed_at`,
+              [JSON.stringify(nextMetadata), missionId],
+            );
+            return updated.rows[0];
+          },
+        );
+        res.status(200).json({
+          id: missionId,
+          status: result.status,
+          completedAt: result.completed_at,
+        });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "NOT_FOUND") {
+          res.status(404).json({ error: "Mission not found" });
+          return;
+        }
+        if (code === "ALREADY_TERMINAL") {
+          res.status(409).json({ error: (err as Error).message });
+          return;
+        }
+        console.error(`[missions] complete failed: ${(err as Error).message}`);
+        Sentry.captureException(err, {
+          tags: { route: "POST /api/missions/:missionId/complete" },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        res.status(500).json({ error: "Failed to complete mission" });
+      }
+    }),
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /api/missions/:missionId/stop — HEL-210
+  //
+  // Terminates open assignments + archives the mission. Idempotent.
+  // ---------------------------------------------------------------------
+  router.post(
+    "/:missionId/stop",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+
+      const missionId = req.params.missionId;
+      if (!missionId || !UUID_RE.test(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) => {
+            const own = await client.query<{ id: string; company_id: string }>(
+              `SELECT m.id, m.company_id
+                 FROM missions m
+                 JOIN companies c ON c.id = m.company_id
+                WHERE m.id = $1 AND c.workspace_id = $2
+                LIMIT 1`,
+              [missionId, workspaceId],
+            );
+            if (own.rows.length === 0) {
+              throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+            }
+            const companyId = own.rows[0].company_id;
+            const agentRows = await client.query<{
+              id: string;
+              metadata: unknown;
+              company_id: string;
+              status: string;
+            }>(
+              `SELECT id, metadata, company_id, status
+                 FROM agents
+                WHERE workspace_id = $1
+                  AND status <> 'terminated'`,
+              [workspaceId],
+            );
+            const agentIds = agentRows.rows
+              .filter((row) => {
+                if (row.status === "terminated") return false;
+                const meta =
+                  row.metadata && typeof row.metadata === "object"
+                    ? (row.metadata as Record<string, unknown>)
+                    : {};
+                if (meta.missionId === missionId) return true;
+                return row.company_id === companyId;
+              })
+              .map((row) => row.id);
+
+            if (agentIds.length > 0) {
+              await client.query(
+                `UPDATE agents
+                    SET status = 'terminated', updated_at = NOW()
+                  WHERE id = ANY($1::uuid[])`,
+                [agentIds],
+              );
+              await client.query(
+                `DELETE FROM org_edges
+                  WHERE workspace_id = $1
+                    AND (manager_agent_id = ANY($2::uuid[]) OR agent_id = ANY($2::uuid[]))`,
+                [workspaceId, agentIds],
+              );
+              await client.query(
+                `UPDATE agents
+                    SET reporting_to_agent_id = NULL
+                  WHERE id = ANY($1::uuid[])`,
+                [agentIds],
+              );
+            }
+
+            await client.query(
+              `UPDATE missions SET status = 'stopped' WHERE id = $1`,
+              [missionId],
+            );
+
+            return { terminatedAgentCount: agentIds.length };
+          },
+        );
+
+        res.status(200).json({
+          id: missionId,
+          status: "stopped",
+          terminatedAgentCount: result.terminatedAgentCount,
+        });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "NOT_FOUND") {
+          res.status(404).json({ error: "Mission not found" });
+          return;
+        }
+        console.error(`[missions] stop failed: ${(err as Error).message}`);
+        Sentry.captureException(err, {
+          tags: { route: "POST /api/missions/:missionId/stop" },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        res.status(500).json({ error: "Failed to stop mission" });
+      }
+    }),
+  );
+
   registerMissionTeamRoutes(router, pool);
 
   return router;

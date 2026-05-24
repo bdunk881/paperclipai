@@ -28,6 +28,7 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
+import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
 import securityRoutes from "./security/securityRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
@@ -563,6 +564,22 @@ app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("adm
 // HEL-166: platform API keys for programmatic AutoFlow access. Keys are
 // workspace-scoped; owner/admin/developer may create, rotate, and revoke.
 app.use("/api/api-keys", requireAuth, workspaceResolver, requireRole("admin", "developer"), apiKeyRoutes);
+
+// HEL-205: per-scope connector grants (Connections hub Manage panel).
+// Backed by `connector_grants` (migration 060) — RLS-isolated per workspace.
+// In-memory mode returns 501 across the surface since persistence is required.
+const connectorGrantsRoutes = isPostgresPersistenceEnabled()
+  ? createConnectorGrantsRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Connector grants require PostgreSQL persistence." }),
+    );
+app.use(
+  "/api/connector-grants",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "developer"),
+  connectorGrantsRoutes,
+);
 
 // ---------------------------------------------------------------------------
 // Hosted free model catalog (PR B.1) + per-workspace daily token usage

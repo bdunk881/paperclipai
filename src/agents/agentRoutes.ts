@@ -831,4 +831,31 @@ router.delete("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   }
 }));
 
+// ---------------------------------------------------------------------------
+// HEL-214 / PR J scaffold — POST /api/agents/:id/tools/:toolId/sandbox
+//
+// TODO: HEL-214 wire real implementation. Pro Mode's ToolCallSandbox lets
+// power users fire a synthetic tool input against an agent's allowlist;
+// the real handler will check the allowlist, route through the MCP /
+// integration adapter, and return the live result. For now we echo a
+// sample success response so the UI plumbing is reviewable.
+// ---------------------------------------------------------------------------
+router.post(
+  "/:id/tools/:toolId/sandbox",
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const { id, toolId } = req.params;
+    const body = (req.body ?? {}) as { input?: unknown };
+    res.status(200).json({
+      agentId: id,
+      toolId,
+      input: body.input ?? null,
+      result: {
+        ok: true,
+        durationMs: 142,
+        note: "Scaffold response. Real implementation arrives in a follow-up.",
+      },
+    });
+  }),
+);
+
 export default router;

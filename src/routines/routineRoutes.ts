@@ -342,5 +342,63 @@ export function createRoutineRoutes(
     }
   }));
 
+  // -------------------------------------------------------------------------
+  // HEL-214 / PR J scaffold — POST /api/routines/:id/debug-run
+  //
+  // TODO: HEL-214 wire real implementation. Pro Mode's StepDebugger runs a
+  // routine in paused mode, surfaces each step's IO, and lets the user
+  // mutate + resume. Real wiring will route through the run engine with a
+  // pause flag; for now we return a synthetic three-step trace.
+  // -------------------------------------------------------------------------
+  router.post("/:id/debug-run", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const body = (req.body ?? {}) as {
+      mode?: unknown;
+      runId?: unknown;
+      stepIndex?: unknown;
+      output?: unknown;
+    };
+    const mode = body.mode === "resume" ? "resume" : "paused";
+    const runId =
+      mode === "resume" && typeof body.runId === "string"
+        ? body.runId
+        : `dbg_${Math.random().toString(36).slice(2, 10)}`;
+
+    const baseSteps = [
+      {
+        index: 0,
+        name: "fetch_input",
+        input: { trigger: "manual" },
+        output: { docId: "doc_42", contentLength: 1240 },
+        status: "ok" as const,
+      },
+      {
+        index: 1,
+        name: "summarize",
+        input: { docId: "doc_42" },
+        output: { summary: "Three highlights about the doc." },
+        status: mode === "resume" ? ("ok" as const) : ("paused" as const),
+      },
+      {
+        index: 2,
+        name: "send_email",
+        input: { to: "owner@example.com", body: "<pending>" },
+        output: null as unknown,
+        status: mode === "resume" ? ("ok" as const) : ("paused" as const),
+      },
+    ];
+
+    if (
+      mode === "resume" &&
+      typeof body.stepIndex === "number" &&
+      body.stepIndex >= 0 &&
+      body.stepIndex < baseSteps.length &&
+      body.output !== undefined
+    ) {
+      baseSteps[body.stepIndex]!.output = body.output;
+    }
+
+    res.status(200).json({ runId, mode, steps: baseSteps });
+  }));
+
   return router;
 }

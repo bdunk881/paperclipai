@@ -34,6 +34,9 @@ import {
   type Instruction,
   type KnowledgeItem,
 } from "../api/memoryApi";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { EpisodeScrubber } from "../components/pro/EpisodeScrubber";
 
 type ScopeKind = "mission" | "team" | "agent" | "workspace";
 type Tab = "instructions" | "knowledge" | "episodes";
@@ -241,6 +244,12 @@ export default function Memory() {
         <div hidden={activeTab !== "episodes"}>
           <EpisodesTab scopeFilter={scopeFilter} />
         </div>
+        <ProReveal
+          label="Episode scrubber"
+          description="Time-travel through workspace episodes at any timestamp."
+        >
+          <EpisodeScrubber />
+        </ProReveal>
       </main>
     </div>
   );

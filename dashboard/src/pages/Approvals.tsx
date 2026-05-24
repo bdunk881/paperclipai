@@ -39,6 +39,9 @@ import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { useAgentPresence } from "../hooks/useAgentPresence";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { RuleDebugger } from "../components/pro/RuleDebugger";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 
@@ -362,6 +365,12 @@ export default function Approvals() {
           }}
         />
       ) : null}
+      <ProReveal
+        label="Rule debugger"
+        description="Dry-run a policy against a synthetic payload."
+      >
+        <RuleDebugger />
+      </ProReveal>
     </div>
   );
 }

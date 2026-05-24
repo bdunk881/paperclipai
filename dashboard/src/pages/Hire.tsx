@@ -36,6 +36,9 @@ import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { getHostedFreeCatalog } from "../api/hostedFreeModelsApi";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
 import { teamLinkForMission } from "../lib/missionNavigation";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { PromptPreviewPane } from "../components/pro/PromptPreviewPane";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
 
@@ -980,6 +983,19 @@ export default function Hire() {
           if (discardTarget) await handleDelete(discardTarget);
         }}
       />
+      <ProReveal
+        label="Prompt preview"
+        description="Live-previews the team-assembly normalizedGoalDocument the server will receive."
+      >
+        <PromptPreviewPane
+          goal={statement}
+          targetCustomer={metadata.targetCustomer}
+          successMetrics={metadata.successMetric ? [metadata.successMetric] : []}
+          constraints={metadata.industry ? [metadata.industry] : []}
+          budget={null}
+          timeHorizon={metadata.runway}
+        />
+      </ProReveal>
     </div>
   );
 }

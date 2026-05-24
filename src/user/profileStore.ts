@@ -20,6 +20,58 @@ function mapRow(row: UserProfileRow): UserProfile {
   };
 }
 
+// HEL-203 PR 1: per-user UI preferences blob. Keyed under namespaces
+// (currently `experienceMode`) so future PRs can extend without a
+// schema change. See migrations/058_user_profile_preferences.sql.
+export type UserPreferences = Record<string, unknown>;
+
+export async function getUserPreferences(userId: string): Promise<UserPreferences> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("userId is required");
+  }
+  if (!isPostgresConfigured()) {
+    return {};
+  }
+  const result = await queryPostgres<{ preferences: UserPreferences | null }>(
+    `SELECT preferences
+       FROM user_profiles
+      WHERE user_id = $1`,
+    [normalizedUserId],
+  );
+  const row = result.rows[0];
+  return row?.preferences ?? {};
+}
+
+/**
+ * Shallow-merges `patch` into the stored preferences JSONB blob. The
+ * caller is responsible for shape validation — the store only enforces
+ * "this is an object". We upsert a profile row so first-time writers
+ * (OAuth-only users who haven't opened Profile Settings yet) succeed.
+ */
+export async function mergeUserPreferences(
+  userId: string,
+  patch: UserPreferences,
+): Promise<UserPreferences> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    throw new Error("userId is required");
+  }
+  if (!isPostgresConfigured()) {
+    throw new Error("User preferences persistence requires PostgreSQL");
+  }
+  const result = await queryPostgres<{ preferences: UserPreferences }>(
+    `INSERT INTO user_profiles (user_id, preferences)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (user_id) DO UPDATE SET
+         preferences = user_profiles.preferences || EXCLUDED.preferences,
+         updated_at = now()
+     RETURNING preferences`,
+    [normalizedUserId, JSON.stringify(patch)],
+  );
+  return result.rows[0]?.preferences ?? {};
+}
+
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) {

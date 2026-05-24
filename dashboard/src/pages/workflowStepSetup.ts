@@ -10,6 +10,141 @@ const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
   "file_trigger",
 ]);
 
+/**
+ * HEL-209 / PR E.2 — Studio UX overhaul.
+ *
+ * Renamed, operator-friendly per-kind metadata used by the Studio palette,
+ * canvas, and guided inspector cards. The underlying `StepKind` enum is
+ * UNCHANGED — only the labels/subtitles/tones surface differently. This
+ * keeps `stepHandlers.ts` and the runtime engine untouched while giving
+ * users a friendlier mental model ("Ask AI" instead of "LLM",
+ * "Human sign-off" instead of "Approval", etc.). Absorbs the closed
+ * PR #985 prototype documented at
+ * docs/design/v2/studio-ux-overhaul-prototype.html.
+ */
+export type StepKindTone = "sage" | "mustard" | "clay" | "plum" | "blue";
+
+export interface StepKindCopy {
+  displayLabel: string;
+  subtitle: string;
+  learnText: string;
+  tone: StepKindTone;
+}
+
+export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
+  trigger: {
+    displayLabel: "Manual start",
+    subtitle: "Runs when you click Run or an app sends data here",
+    learnText:
+      "Use this when a person or another system kicks off the routine on demand. The description is for your team — it does not change runtime behavior.",
+    tone: "mustard",
+  },
+  cron_trigger: {
+    displayLabel: "Scheduled start",
+    subtitle: "Runs on a calendar schedule (Mon 9am, daily, etc.)",
+    learnText:
+      "In production, schedules run via Routines. This step documents intent and can auto-create a Routine when you launch a team.",
+    tone: "sage",
+  },
+  interval_trigger: {
+    displayLabel: "Repeating start",
+    subtitle: "Runs every N minutes while the routine is active",
+    learnText:
+      "Good for inbox polling or periodic check-ins. Pair with Launch team to keep agents working autonomously.",
+    tone: "sage",
+  },
+  file_trigger: {
+    displayLabel: "File upload start",
+    subtitle: "Runs when someone uploads a PDF, image, or document",
+    learnText:
+      "At run time, the engine expects parsed file content. Configure accepted types here; users upload when they click Run.",
+    tone: "mustard",
+  },
+  llm: {
+    displayLabel: "Ask AI",
+    subtitle: "Have AI read prior data and write a response or decision",
+    learnText:
+      "Your prompt is sent to the model with {{variables}} from earlier steps. Pick a tier or specific model.",
+    tone: "clay",
+  },
+  transform: {
+    displayLabel: "Shape data",
+    subtitle: "Rename, filter, or reformat fields before the next step",
+    learnText:
+      "Pick what to change — not just a description. Downstream steps only see the fields you pass through.",
+    tone: "clay",
+  },
+  action: {
+    displayLabel: "App action",
+    subtitle: "Do something in Slack, email, CRM, or another connected app",
+    learnText:
+      "Choose from registered actions or describe what you want — AI maps it to the right integration call.",
+    tone: "clay",
+  },
+  mcp: {
+    displayLabel: "Connected app",
+    subtitle: "Call a tool from a workspace integration you've connected",
+    learnText:
+      "Connect inline — no need to leave Studio. Then pick the tool and parameters.",
+    tone: "blue",
+  },
+  agent: {
+    displayLabel: "Assign to agent",
+    subtitle: "Hand this work to a persistent agent on your team",
+    learnText:
+      "Pick an existing agent or create one. They run autonomously, respect budgets, and show up in Assignments + Activity.",
+    tone: "clay",
+  },
+  condition: {
+    displayLabel: "If / then",
+    subtitle: "Send the routine down different paths based on a rule",
+    learnText:
+      "Build rules from upstream fields — not free-text descriptions. Yes/No paths appear on the canvas.",
+    tone: "mustard",
+  },
+  approval: {
+    displayLabel: "Human sign-off",
+    subtitle: "Pause until someone on your team approves or rejects",
+    learnText:
+      "Show approvers exactly what they're signing off on. Choose what happens after approve, reject, or timeout.",
+    tone: "plum",
+  },
+  output: {
+    displayLabel: "Deliver result",
+    subtitle: "Package the final result for your team or downstream systems",
+    learnText:
+      "Pick which fields to deliver and where — Activity feed, Assignment, webhook, or return to caller.",
+    tone: "sage",
+  },
+};
+
+/**
+ * Three-section palette grouping used by the Studio left rail. Matches the
+ * prototype's "When to start" / "What to do" / "Control flow" layout —
+ * easier to scan than a flat list of 12 kinds.
+ */
+export const STEP_PALETTE_SECTIONS: Array<{
+  title: string;
+  kinds: StepKind[];
+}> = [
+  {
+    title: "When to start",
+    kinds: ["trigger", "cron_trigger", "interval_trigger", "file_trigger"],
+  },
+  {
+    title: "What to do",
+    kinds: ["llm", "transform", "action", "mcp", "agent"],
+  },
+  {
+    title: "Control flow",
+    kinds: ["condition", "approval", "output"],
+  },
+];
+
+export function getStepKindDisplayLabel(kind: StepKind): string {
+  return STEP_KIND_COPY[kind]?.displayLabel ?? kind;
+}
+
 export type StepSetupStatus = "ready" | "needs_setup" | "blocked";
 
 export type ReadinessItem = {

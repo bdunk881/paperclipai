@@ -10,13 +10,21 @@ const {
   listAgentsMock,
   listBudgetsMock,
   listBudgetAlertsMock,
+  getBudgetBreakdownMock,
+  setBudgetCeilingMock,
+  predictMissionCostMock,
   accessModeMock,
+  experienceModeMock,
 } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   listAgentsMock: vi.fn(),
   listBudgetsMock: vi.fn(),
   listBudgetAlertsMock: vi.fn(),
+  getBudgetBreakdownMock: vi.fn(),
+  setBudgetCeilingMock: vi.fn(),
+  predictMissionCostMock: vi.fn(),
   accessModeMock: vi.fn(),
+  experienceModeMock: vi.fn(),
 }));
 
 vi.mock("../context/AuthContext", () => ({
@@ -26,12 +34,19 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
+vi.mock("../context/ExperienceModeContext", () => ({
+  useExperienceMode: () => ({ mode: experienceModeMock(), setMode: vi.fn(), loading: false }),
+}));
+
 vi.mock("../api/agentApi", () => ({
   listAgents: listAgentsMock,
 }));
 
 vi.mock("../api/canonicalApi", () => ({
   listBudgets: listBudgetsMock,
+  getBudgetBreakdown: getBudgetBreakdownMock,
+  setBudgetCeiling: setBudgetCeilingMock,
+  predictMissionCost: predictMissionCostMock,
 }));
 
 vi.mock("../api/controlPlane", () => ({
@@ -87,6 +102,20 @@ describe("BudgetDashboard", () => {
     listBudgetsMock.mockResolvedValue([]);
     listBudgetAlertsMock.mockReset();
     listBudgetAlertsMock.mockResolvedValue([]);
+    getBudgetBreakdownMock.mockReset();
+    getBudgetBreakdownMock.mockResolvedValue({
+      scope: "agent",
+      since: "2026-04-01T00:00:00Z",
+      until: "2026-05-01T00:00:00Z",
+      model: null,
+      rows: [],
+      series: [],
+      totals: { byModel: {}, all: 0, tokens: 0, cacheHitRate: null },
+    });
+    setBudgetCeilingMock.mockReset();
+    predictMissionCostMock.mockReset();
+    experienceModeMock.mockReset();
+    experienceModeMock.mockReturnValue("simple");
   });
 
   it("shows page chrome while budget data is loading", () => {

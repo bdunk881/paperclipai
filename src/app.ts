@@ -119,6 +119,8 @@ import {
   createWakeEventsRoutes,
 } from "./canonical/canonicalReadRoutes";
 import { createWorkspaceSnapshotRoutes } from "./canonical/workspaceSnapshotRoutes";
+import { createBudgetBreakdownRoute } from "./budget/budgetBreakdownRoute";
+import { createBudgetSetRoute } from "./budget/budgetSetRoute";
 import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
@@ -219,6 +221,29 @@ const budgetsRoutes = canonicalReadsArePostgres
   ? createBudgetsRoutes(getPostgresPool())
   : express.Router().get("/", (_req, res) =>
       res.json({ budgets: [], limit: 0, total: 0 }),
+    );
+
+// HEL-212 (PR H): Budget v2 dashboard endpoints — spend breakdown
+// (GET /api/budget/breakdown) and ceiling upsert (PUT /api/budget).
+// Read mount allows all workspace members; the write mount tightens
+// to admin/operator so a billing-only seat can't reshape spend caps.
+const budgetBreakdownRoute = canonicalReadsArePostgres
+  ? createBudgetBreakdownRoute(getPostgresPool())
+  : express.Router().get("/breakdown", (_req, res) =>
+      res.json({
+        scope: "workspace",
+        since: null,
+        until: null,
+        model: null,
+        rows: [],
+        series: [],
+        totals: { byModel: {}, all: 0, tokens: 0, cacheHitRate: null },
+      }),
+    );
+const budgetSetRoute = canonicalReadsArePostgres
+  ? createBudgetSetRoute(getPostgresPool())
+  : express.Router().put("/", (_req, res) =>
+      res.status(501).json({ error: "Budget ceilings require PostgreSQL persistence." }),
     );
 const entitlementsRoutes = canonicalReadsArePostgres
   ? createEntitlementsRoutes(getPostgresPool())
@@ -804,6 +829,25 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   budgetsRoutes,
+);
+// HEL-212 (PR H): Budget v2 — breakdown read + ceiling write. Both
+// mount under /api/budget (singular) to avoid colliding with the
+// existing /api/budgets read-only list above. Read is open to every
+// workspace member; write tightens to admin/operator so non-billing
+// roles can't reshape spend caps.
+app.use(
+  "/api/budget",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  budgetBreakdownRoute,
+);
+app.use(
+  "/api/budget",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "operator"),
+  budgetSetRoute,
 );
 app.use(
   "/api/entitlements",

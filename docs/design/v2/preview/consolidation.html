@@ -246,7 +246,7 @@
 <a href="#main-content" class="skip">Skip to main content</a>
 
 <div class="preview-banner">
-  v2 with full submenus · Toggle <kbd>Pro mode</kbd> · click a list row to open the <kbd>inline drawer</kbd> · click avatar for <kbd>Account menu</kbd> · key flows: <b>New Assignment</b>, <b>Fire Team</b>, <b>Complete Mission</b>, <b>+ Add Detail</b> pill, <b>Invite Member</b>
+  v2 with full submenus · Toggle <kbd>Pro mode</kbd> · click a list row to open the <kbd>inline drawer</kbd> · click avatar for <kbd>Account menu</kbd> · key flows: <b>New Assignment</b>, <b>Fire Team</b>, <b>Complete Mission</b>, <b>+ Add Detail</b> pill, <b>Invite Member</b>, <b>Configure Models</b> (PR #983 inline model switch)
 </div>
 
 <div class="shell">
@@ -1120,24 +1120,103 @@ webhook_url:   https://api.helloautoflow.com/webhooks/hubspot</pre>
         </div>
 
         <div class="panel" id="con-models" hidden>
+          <div class="info-strip">
+            ☁ Hosted-free catalog · 73,420 / 250,000 tokens used today (workspace-wide) · resets at midnight UTC · routes via <code>stepHandlers.ts</code>. Connect your own keys below for higher limits + model pinning.
+          </div>
+
           <div class="grid-2">
             <div class="card">
-              <h3>Anthropic</h3>
-              <div class="desc">Powers <b>large</b> tier · sk-ant-…RyZ4 · last used 2 min ago</div>
-              <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
-              <div class="pro-only pro-block">
-                <div class="label">Pro · Tier routing</div>
-                <pre>small:      openai/gpt-4o-mini
-medium:     anthropic/claude-haiku-4-5
-large:      anthropic/claude-opus-4-7
-embeddings: openai/text-embedding-3-small</pre>
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div>
+                  <h3>Anthropic</h3>
+                  <div class="desc"><b>2 keys</b> connected · powers <code>large</code> tier</div>
+                </div>
+                <span class="pill dot sage">healthy</span>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="btn primary" onclick="openModal('configure-anthropic')">Configure ▸</button>
+                <button class="btn">+ Add key</button>
               </div>
             </div>
+
             <div class="card">
-              <h3>OpenAI</h3>
-              <div class="desc">Powers <b>small</b> tier · sk-…aB12 · last used 14s ago</div>
-              <div style="margin-top:10px"><span class="pill dot sage">healthy</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div>
+                  <h3>OpenAI</h3>
+                  <div class="desc"><b>1 key</b> connected · powers <code>small</code> tier</div>
+                </div>
+                <span class="pill dot sage">healthy</span>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="btn primary" onclick="openModal('configure-openai')">Configure ▸</button>
+                <button class="btn">+ Add key</button>
+              </div>
             </div>
+
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div>
+                  <h3>Google · Gemini</h3>
+                  <div class="desc">Not connected · falls back to hosted-free</div>
+                </div>
+                <span class="pill">—</span>
+              </div>
+              <div style="margin-top:12px"><button class="btn primary">Connect Gemini key</button></div>
+            </div>
+
+            <div class="card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+                <div>
+                  <h3>Mistral</h3>
+                  <div class="desc">Not connected</div>
+                </div>
+                <span class="pill">—</span>
+              </div>
+              <div style="margin-top:12px"><button class="btn primary">Connect Mistral key</button></div>
+            </div>
+          </div>
+
+          <div class="pro-only pro-block">
+            <div class="label">Pro · Tier routing (editable)</div>
+            <p style="font-size:12px;color:var(--af2-ink-2);margin:0 0 8px">Engine reads this mapping at every step. Override per-mission or per-agent on each tier row.</p>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="border-bottom:1px solid var(--af2-line);color:var(--af2-ink-3);text-align:left">
+                <th style="padding:6px 4px;font-weight:500">Tier</th>
+                <th style="padding:6px 4px;font-weight:500">Provider</th>
+                <th style="padding:6px 4px;font-weight:500">Model</th>
+                <th style="padding:6px 4px;font-weight:500">Override</th>
+              </tr></thead>
+              <tbody>
+                <tr style="border-bottom:1px dashed var(--af2-line)">
+                  <td style="padding:8px 4px"><code>small</code></td><td style="padding:8px 4px">OpenAI</td>
+                  <td><select style="font:inherit;font-family:var(--af2-mono);font-size:11px;border:1px solid var(--af2-line-2);border-radius:4px;padding:3px 6px">
+                    <option>gpt-5.4-nano</option><option>gpt-5.4-mini</option><option>gpt-5-nano</option><option>o4-mini</option>
+                  </select></td>
+                  <td><button class="btn sm">Per-scope ▸</button></td>
+                </tr>
+                <tr style="border-bottom:1px dashed var(--af2-line)">
+                  <td style="padding:8px 4px"><code>medium</code></td><td style="padding:8px 4px">Anthropic</td>
+                  <td><select style="font:inherit;font-family:var(--af2-mono);font-size:11px;border:1px solid var(--af2-line-2);border-radius:4px;padding:3px 6px">
+                    <option>claude-haiku-4-5</option><option>claude-sonnet-4-6</option>
+                  </select></td>
+                  <td><button class="btn sm">Per-scope ▸</button></td>
+                </tr>
+                <tr style="border-bottom:1px dashed var(--af2-line)">
+                  <td style="padding:8px 4px"><code>large</code></td><td style="padding:8px 4px">Anthropic</td>
+                  <td><select style="font:inherit;font-family:var(--af2-mono);font-size:11px;border:1px solid var(--af2-line-2);border-radius:4px;padding:3px 6px">
+                    <option>claude-opus-4-7</option><option>claude-opus-4-6</option><option>claude-sonnet-4-6</option>
+                  </select></td>
+                  <td><button class="btn sm">Per-scope ▸</button></td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 4px"><code>embeddings</code></td><td style="padding:8px 4px">OpenAI</td>
+                  <td><select style="font:inherit;font-family:var(--af2-mono);font-size:11px;border:1px solid var(--af2-line-2);border-radius:4px;padding:3px 6px">
+                    <option>text-embedding-3-small</option><option>text-embedding-3-large</option>
+                  </select></td>
+                  <td><button class="btn sm">Per-scope ▸</button></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -1538,6 +1617,83 @@ status: ready  last_reindex: 2026-04-15</pre>
   <div style="margin-top:14px;font-size:11px;color:var(--af2-ink-3)">Common examples: <code>compliance: HIPAA</code> · <code>geo: EU only</code> · <code>tone: formal</code> · <code>persona: skeptical CFO</code></div>
 </template>
 
+<template id="m-configure-anthropic">
+  <p style="font-size:12px;color:var(--af2-ink-3);margin:0 0 6px">Switch a key's bound model inline — no disconnect/reconnect needed. Extends <a href="https://github.com/bdunk881/paperclipai/pull/983" style="color:var(--af2-clay)">PR #983</a>.</p>
+  <div id="model-change-err" style="display:none;margin:8px 0 12px;padding:8px 10px;background:rgba(194,80,43,0.10);border:1px solid rgba(194,80,43,0.3);border-radius:6px;color:var(--af2-clay);font-size:12px">
+    Failed to change model: <code>upstream 429 from Anthropic</code> · reverted to previous selection
+  </div>
+  <div style="display:grid;grid-template-columns:1.2fr 1.4fr 110px 110px;gap:10px;padding:6px 0 8px;border-bottom:1px solid var(--af2-line);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--af2-ink-3)">
+    <div>Label / key</div><div>Model</div><div>Default</div><div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1.2fr 1.4fr 110px 110px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--af2-line)">
+    <div>
+      <div style="font-weight:500;font-size:13px">Production</div>
+      <div style="font-family:var(--af2-mono);font-size:11px;color:var(--af2-ink-4)">sk-ant-…RyZ4</div>
+    </div>
+    <div>
+      <select style="width:100%;font-family:var(--af2-mono);font-size:12px;border:1px solid var(--af2-line-2);border-radius:6px;padding:5px 8px;background:var(--af2-card)" onchange="document.getElementById('model-change-err').style.display='none'">
+        <option>claude-opus-4-7</option>
+        <option selected>claude-sonnet-4-6</option>
+        <option>claude-haiku-4-5</option>
+        <option>claude-opus-4-6</option>
+      </select>
+    </div>
+    <div><button class="btn sm" disabled style="opacity:0.6">Default</button></div>
+    <div style="text-align:right"><button class="btn sm">Disconnect</button></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1.2fr 1.4fr 110px 110px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--af2-line)">
+    <div>
+      <div style="font-weight:500;font-size:13px">Dev sandbox</div>
+      <div style="font-family:var(--af2-mono);font-size:11px;color:var(--af2-ink-4)">sk-ant-…qF2K</div>
+    </div>
+    <div>
+      <select style="width:100%;font-family:var(--af2-mono);font-size:12px;border:1px solid var(--af2-line-2);border-radius:6px;padding:5px 8px;background:var(--af2-card)" onchange="document.getElementById('model-change-err').style.display='block'">
+        <option>claude-opus-4-7</option>
+        <option>claude-sonnet-4-6</option>
+        <option selected>claude-haiku-4-5</option>
+        <option>claude-opus-4-6</option>
+      </select>
+    </div>
+    <div><button class="btn sm">Make default</button></div>
+    <div style="text-align:right"><button class="btn sm">Disconnect</button></div>
+  </div>
+  <div style="margin-top:14px;font-size:11px;color:var(--af2-ink-3)">
+    Catalog refreshed 2026-05-23 · first option in each list is the provider default. Tip: change the second row's model to trigger the error-banner demo.
+  </div>
+</template>
+
+<template id="m-configure-openai">
+  <p style="font-size:12px;color:var(--af2-ink-3);margin:0 0 12px">Switch a key's bound model inline. Catalog from <code>PROVIDER_MODELS.openai</code> (10 models).</p>
+  <div style="display:grid;grid-template-columns:1.2fr 1.4fr 110px 110px;gap:10px;padding:6px 0 8px;border-bottom:1px solid var(--af2-line);font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:var(--af2-ink-3)">
+    <div>Label / key</div><div>Model</div><div>Default</div><div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1.2fr 1.4fr 110px 110px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px dashed var(--af2-line)">
+    <div>
+      <div style="font-weight:500;font-size:13px">Primary</div>
+      <div style="font-family:var(--af2-mono);font-size:11px;color:var(--af2-ink-4)">sk-…aB12</div>
+    </div>
+    <div>
+      <select style="width:100%;font-family:var(--af2-mono);font-size:12px;border:1px solid var(--af2-line-2);border-radius:6px;padding:5px 8px;background:var(--af2-card)">
+        <option>gpt-5.5</option>
+        <option>gpt-5.5-pro</option>
+        <option selected>gpt-5.4</option>
+        <option>gpt-5.4-mini</option>
+        <option>gpt-5.4-nano</option>
+        <option>o3</option>
+        <option>o4-mini</option>
+        <option>gpt-5</option>
+        <option>gpt-5-mini</option>
+        <option>gpt-5-nano</option>
+      </select>
+    </div>
+    <div><button class="btn sm" disabled style="opacity:0.6">Default</button></div>
+    <div style="text-align:right"><button class="btn sm">Disconnect</button></div>
+  </div>
+  <div style="margin-top:14px;font-size:11px;color:var(--af2-ink-3)">
+    First entry of each list is the connect-form default. Inline switch goes through <code>PATCH /api/llm-credentials/:id</code> (added by #983).
+  </div>
+</template>
+
 <template id="m-add-env-var">
   <p style="font-size:12px;color:var(--af2-ink-3);margin:0 0 14px">🔐 Encrypted at rest · value never returned via API · agent execution uses short-lived signed deref tokens · audit row on every grant change.</p>
   <label class="field">Name<input placeholder="e.g. STRIPE_API_KEY" style="font-family:var(--af2-mono)" /></label>
@@ -1564,6 +1720,8 @@ status: ready  last_reindex: 2026-04-15</pre>
     'invite-member':   { eyebrow:'Members',     title:'Invite teammate',         template:'m-invite-member',   foot:'<button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary">Send invite (+$9/mo)</button>' },
     'add-pill':        { eyebrow:'Hire',        title:'Add custom context pill', template:'m-add-pill',        foot:'<button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary">Add pill</button>' },
     'add-env-var':     { eyebrow:'Connections', title:'Add environment variable',template:'m-add-env-var',     foot:'<button class="btn" onclick="closeModal()">Cancel</button><button class="btn primary">Create (encrypted)</button>' },
+    'configure-anthropic': { eyebrow:'Connections · Models', title:'Configure Anthropic',  template:'m-configure-anthropic', foot:'<button class="btn" onclick="closeModal()">Close</button><button class="btn primary">+ Add another key</button>' },
+    'configure-openai':    { eyebrow:'Connections · Models', title:'Configure OpenAI',     template:'m-configure-openai',    foot:'<button class="btn" onclick="closeModal()">Close</button><button class="btn primary">+ Add another key</button>' },
   };
 
   function openModal(key){

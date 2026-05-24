@@ -126,7 +126,7 @@ describe("WorkflowBuilder", () => {
     expect(screen.queryByText("What to do next")).toBeNull();
   });
 
-  it("renders the v2 left palette rail with Triggers / Tools / Logic sections", async () => {
+  it("renders the v2 left palette rail with When to start / What to do / Control flow sections", async () => {
     renderBuilder();
 
     expect(await screen.findByText("Compose a workflow your team can run.")).toBeInTheDocument();
@@ -134,16 +134,17 @@ describe("WorkflowBuilder", () => {
     const palette = screen.getByTestId("studio-palette");
     expect(palette).toBeInTheDocument();
 
-    // HEL-100 v2: three sections, derived from KIND_META, ordered
-    // Triggers → Tools → Logic.
-    expect(palette).toHaveTextContent("Triggers");
-    expect(palette).toHaveTextContent("Tools");
-    expect(palette).toHaveTextContent("Logic");
+    // HEL-209 / PR E.2: palette sections renamed to operator-friendly
+    // "When to start" / "What to do" / "Control flow" headings, with
+    // STEP_KIND_COPY display labels per item.
+    expect(palette).toHaveTextContent("When to start");
+    expect(palette).toHaveTextContent("What to do");
+    expect(palette).toHaveTextContent("Control flow");
 
     // Spot-check one item per section reaches the rail.
-    expect(palette).toHaveTextContent("Cron Trigger");
-    expect(palette).toHaveTextContent("LLM");
-    expect(palette).toHaveTextContent("Approval");
+    expect(palette).toHaveTextContent("Scheduled start");
+    expect(palette).toHaveTextContent("Ask AI");
+    expect(palette).toHaveTextContent("Human sign-off");
   });
 
   it("adds a step when a palette item is clicked", async () => {
@@ -153,15 +154,15 @@ describe("WorkflowBuilder", () => {
 
     const palette = screen.getByTestId("studio-palette");
 
-    // Click the Agent button in the Tools section; it should add an Agent
-    // step (same handler as the popover-style AddStepMenu). Palette items
-    // expose an aria-label of "Add {Label} step" to keep them disjoint
-    // from the popover's exact-label buttons.
-    fireEvent.click(within(palette).getByRole("button", { name: /Add Agent step/i }));
+    // HEL-209 rename: palette items now expose aria-label "Add {display}
+    // step" using the operator-friendly copy. The underlying step kind is
+    // unchanged (`agent`), so the inspector + canvas still show
+    // "Agent Step" as the default name.
+    fireEvent.click(
+      within(palette).getByRole("button", { name: /Add Assign to agent step/i }),
+    );
 
     expect(await screen.findByTestId("react-flow")).toBeInTheDocument();
-    // "Agent Step" appears in both the canvas card and the inspector
-    // header's serif title (HEL-100 v2 inspector chrome).
     expect(screen.getAllByText("Agent Step").length).toBeGreaterThan(0);
   });
 
@@ -342,7 +343,7 @@ describe("WorkflowBuilder", () => {
     expect(copilot.className).not.toContain("w-[360px]");
   });
 
-  it("opens the deploy as team modal for populated workflows", async () => {
+  it("opens the launch team modal for populated workflows", async () => {
     render(
       <MemoryRouter initialEntries={["/builder"]}>
         <Routes>
@@ -355,10 +356,13 @@ describe("WorkflowBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /node palette/i }));
     fireEvent.click(screen.getByRole("button", { name: /^agent$/i }));
+    // HEL-209: replaces the older DeployAsTeamModal with LaunchTeamModal.
     fireEvent.click(screen.getByRole("button", { name: /deploy workflow as agent team/i }));
 
-    expect(screen.getByText(/promote this workflow into a live agent roster/i)).toBeInTheDocument();
-    expect(screen.getByText(/team preview/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/turn this routine into agents that work for you/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/launch as routine/i)).toBeInTheDocument();
   });
 
   it("renders cron trigger fields and a live schedule preview", async () => {

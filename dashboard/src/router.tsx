@@ -60,7 +60,7 @@ import SocialAuthCallback from "./pages/SocialAuthCallback";
 import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
-import Templates from "./pages/Templates";
+import Routines from "./pages/Routines";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import WorkflowBuilderSetupCoachDemo from "./pages/WorkflowBuilderSetupCoachDemo";
 import {
@@ -212,8 +212,11 @@ const routes: RouteObject[] = [
         ? [{ path: "builder/demo/setup-coach", element: <WorkflowBuilderSetupCoachDemo /> }]
         : []),
       { path: "builder/:templateId", element: <WorkflowBuilder /> },
-      { path: "templates", element: <Templates /> },
-      { path: "templates/:templateId", element: <WorkflowBuilder /> },
+      // HEL-208 / PR E: Templates renamed → Routines. Studio is reached
+      // exclusively via row click → `/builder/:templateId`; the old
+      // `/templates/:templateId` Studio-landing shortcut has been removed
+      // alongside it. `/templates` still redirects below for stale links.
+      { path: "routines", element: <Routines /> },
 
       // Run pillar
       // HEL-204 PR A: /agents/activity merged into Assignments → Activity tab.
@@ -334,16 +337,20 @@ const routes: RouteObject[] = [
       // Keeps stale bookmarks / share-links landing somewhere useful instead
       // of on half-converted v1 pages.
       // ---------------------------------------------------------------------
-      { path: "agents", element: <Navigate to="/templates" replace /> },
+      // HEL-208 / PR E: legacy `/templates*` paths redirect to the
+      // renamed Routines hub.
+      { path: "templates", element: <Navigate to="/routines" replace /> },
+      { path: "templates/:templateId", element: <RedirectTemplateToBuilder /> },
+      { path: "agents", element: <Navigate to="/routines" replace /> },
       { path: "agents/my", element: <Navigate to="/workspace/org-structure" replace /> },
-      { path: "agents/routines", element: <Navigate to="/templates" replace /> },
+      { path: "agents/routines", element: <Navigate to="/routines" replace /> },
       // UX-5 note: the old catch-all `agents/:templateId` → /templates
       // redirect used to mask real agent IDs (so OrgStructure's
       // "View agent" links dead-ended). Removed; `agents/:agentId`
       // above now resolves to the AgentDetail hub. v1 deploy-template
       // URL keeps its redirect since `deploy/...` is structurally
       // distinct from a UUID.
-      { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
+      { path: "agents/deploy/:templateId", element: <Navigate to="/routines" replace /> },
       // HEL-205: route the legacy entry points into the new Connections hub
       // with the right tab pre-selected. Old direct routes above still
       // resolve for any external deep-links that bypass the hub.
@@ -403,6 +410,17 @@ function RedirectTicketActor() {
       replace
     />
   );
+}
+
+/**
+ * HEL-208 / PR E: old `/templates/:templateId` deep-link used to drop the
+ * user straight onto the Studio canvas. Studio is now only reachable via
+ * the Routines hub row click, so redirect into `/builder/:templateId`
+ * (which is the same destination, just under its real path).
+ */
+function RedirectTemplateToBuilder() {
+  const { templateId } = useParams<{ templateId: string }>();
+  return <Navigate to={`/builder/${templateId ?? ""}`} replace />;
 }
 
 function readString(value: FormDataEntryValue | null): string {

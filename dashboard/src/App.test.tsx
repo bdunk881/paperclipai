@@ -42,7 +42,7 @@ vi.mock("./pages/Login", () => ({ default: () => <div>Login Page</div> }));
 vi.mock("./pages/Signup", () => ({ default: () => <div>Signup Page</div> }));
 vi.mock("./pages/Dashboard", () => ({ default: () => <div>Dashboard Page</div> }));
 vi.mock("./pages/WorkflowBuilder", () => ({ default: () => <div>Workflow Builder Page</div> }));
-vi.mock("./pages/Templates", () => ({ default: () => <div>Templates Page</div> }));
+vi.mock("./pages/Routines", () => ({ default: () => <div>Routines Page</div> }));
 vi.mock("./pages/LandingPage", () => ({ default: () => <div>Landing Page</div> }));
 vi.mock("./pages/LLMProviders", () => ({ default: () => <div>LLM Providers Page</div> }));
 vi.mock("./pages/MissionState", async (importOriginal) => {
@@ -157,14 +157,24 @@ describe("App", () => {
     expect(await screen.findByText("Dashboard Page")).toBeInTheDocument();
   });
 
-  it("renders the templates route for authenticated users", async () => {
+  it("renders the routines route for authenticated users", async () => {
+    authState.user = { id: "user-1", email: "user@example.com", name: "User" };
+    window.history.replaceState({}, "", "/routines");
+
+    render(<App />);
+
+    expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
+    expect(screen.getByText("Routines Page")).toBeInTheDocument();
+  });
+
+  it("redirects the legacy /templates URL to /routines", async () => {
     authState.user = { id: "user-1", email: "user@example.com", name: "User" };
     window.history.replaceState({}, "", "/templates");
 
     render(<App />);
 
     expect(await screen.findByText("Layout Shell")).toBeInTheDocument();
-    expect(screen.getByText("Templates Page")).toBeInTheDocument();
+    expect(await screen.findByText("Routines Page")).toBeInTheDocument();
   });
 
   it("redirects the legacy /workspace/staffing-plan URL to Missions", async () => {

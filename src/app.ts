@@ -104,6 +104,7 @@ import {
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
+import { createMemberInviteRoutes } from "./workspaces/memberInviteRoutes";
 import profileRoutes from "./user/profileRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
@@ -831,6 +832,24 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   createWorkspaceSnapshotRoutes(),
+);
+// HEL-213 PR I: workspace member invites (POST/DELETE invites; POST accept).
+// Mounted under /api/workspace/members so the dashboard's existing
+// `${API}/workspace/...` base path picks it up without extra config. The
+// owner/admin role check lives inside the router for write ops; the mount
+// requires the standard workspace-member role chain so any authenticated
+// workspace member can hit /accept on a token.
+const memberInviteRoutes = isPostgresPersistenceEnabled()
+  ? createMemberInviteRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) => {
+      res.status(501).json({ error: "Member invites require PostgreSQL persistence." });
+    });
+app.use(
+  "/api/workspace/members",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  memberInviteRoutes,
 );
 // HEL-167: user security settings. The actions are user-scoped, but they
 // write workspace audit events, so every authenticated workspace member gets

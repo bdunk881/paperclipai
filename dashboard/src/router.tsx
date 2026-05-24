@@ -54,6 +54,10 @@ import Pricing from "./pages/Pricing";
 import ProfileSettings from "./pages/ProfileSettings";
 import SecuritySettings from "./pages/SecuritySettings";
 import Settings from "./pages/Settings";
+// HEL-213 PR I: user-avatar dropdown pages.
+import Account from "./pages/Account";
+import Members from "./pages/Members";
+import Billing from "./pages/Billing";
 import SocialAuthCallback from "./pages/SocialAuthCallback";
 import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
@@ -300,14 +304,32 @@ const routes: RouteObject[] = [
       { path: "settings/memory", element: <Navigate to="/memory" replace /> },
       { path: "workspace/memory", element: <Navigate to="/memory" replace /> },
 
-      // Settings + per-tab sub-routes (still v2-chromed since #772)
-      { path: "settings", element: <Settings /> },
+      // HEL-213 PR I: user-avatar dropdown surfaces Account/Members/Billing
+      // as their own top-level routes. The previous /settings/* sub-pages
+      // that these absorb (general, security, profile, billing) redirect
+      // to /account or /billing so bookmarks land somewhere useful.
+      { path: "account", element: <Account /> },
+      { path: "members", element: <Members /> },
+      { path: "billing", element: <Billing /> },
+
+      // Settings + per-tab sub-routes (still v2-chromed since #772). The
+      // legacy /settings tab strip lives on /settings/tabs because /settings
+      // itself now redirects to /account; the absorbed tabs (general,
+      // security, profile, billing) also redirect. /settings/legacy-profile
+      // + /settings/legacy-security keep the per-page editors mounted so the
+      // imports stay used until Account.tsx reaches parity.
+      { path: "settings", element: <Navigate to="/account" replace /> },
+      { path: "settings/general", element: <Navigate to="/account" replace /> },
+      { path: "settings/profile", element: <Navigate to="/account" replace /> },
+      { path: "settings/security", element: <Navigate to="/account" replace /> },
+      { path: "settings/billing", element: <Navigate to="/billing" replace /> },
+      { path: "settings/tabs", element: <Settings /> },
+      { path: "settings/legacy-profile", element: <ProfileSettings /> },
+      { path: "settings/legacy-security", element: <SecuritySettings /> },
       { path: "settings/api-keys", element: <ApiKeys /> },
       { path: "settings/llm-providers", element: <LLMProviders /> },
       { path: "settings/mcp-servers", element: <McpServers /> },
       { path: "settings/notifications", element: <NotificationsSettings /> },
-      { path: "settings/profile", element: <ProfileSettings /> },
-      { path: "settings/security", element: <SecuritySettings /> },
       { path: "settings/mission-assignment-sla", element: <TicketSlaSettings /> },
 
       // Mission assignments subsystem (HITL) — formerly "Tickets". Reachable

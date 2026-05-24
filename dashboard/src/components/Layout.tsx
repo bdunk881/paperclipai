@@ -14,7 +14,6 @@ import {
   BookOpen,
   Plug,
   Sparkles,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -82,7 +81,10 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { to: "/integrations/mcp", icon: Plug, label: "Integrations" },
       { to: "/settings/llm-providers", icon: Sparkles, label: "Models" },
-      { to: "/settings", icon: Settings, label: "Settings", end: true },
+      // HEL-213 PR I: Settings sidebar entry removed — Account/Members/
+      // Billing live in the user-avatar dropdown in the topbar now. The
+      // legacy Settings tab strip remains reachable for power users via
+      // /settings/tabs (deep-linked from the credentials/API tiles).
     ],
   },
 ] as const;

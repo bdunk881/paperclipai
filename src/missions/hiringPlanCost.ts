@@ -31,22 +31,36 @@ interface RateEntry {
  * Per-model rates. Keys are normalized to lower-case to make lookups
  * tolerant to model name casing differences. Missing models fall back
  * to a per-tier conservative default — see `tierFallback` below.
+ *
+ * Rate sources (USD per 1K tokens):
+ *   - Anthropic: https://www.anthropic.com/pricing#anthropic-api (May 2026)
+ *   - OpenAI:    https://openai.com/api/pricing (May 2026)
  */
 const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
   openai: {
-    "gpt-4o": { promptPer1k: 0.0025, completionPer1k: 0.01 },
-    "gpt-4o-mini": { promptPer1k: 0.00015, completionPer1k: 0.0006 },
-    "gpt-4-turbo": { promptPer1k: 0.01, completionPer1k: 0.03 },
-    "gpt-3.5-turbo": { promptPer1k: 0.0005, completionPer1k: 0.0015 },
+    // GPT-4.1 family (Apr 2025+)
+    "gpt-4.1":      { promptPer1k: 0.002,    completionPer1k: 0.008   },
+    "gpt-4.1-mini": { promptPer1k: 0.0004,   completionPer1k: 0.0016  },
+    "gpt-4.1-nano": { promptPer1k: 0.0001,   completionPer1k: 0.0004  },
+    // o-series reasoning models
+    "o3":           { promptPer1k: 0.01,     completionPer1k: 0.04    },
+    "o4-mini":      { promptPer1k: 0.0011,   completionPer1k: 0.0044  },
+    // Legacy GPT-4o (kept for existing workspace configs)
+    "gpt-4o":       { promptPer1k: 0.0025,   completionPer1k: 0.01    },
+    "gpt-4o-mini":  { promptPer1k: 0.00015,  completionPer1k: 0.0006  },
+    "gpt-4-turbo":  { promptPer1k: 0.01,     completionPer1k: 0.03    },
+    "gpt-3.5-turbo": { promptPer1k: 0.0005,  completionPer1k: 0.0015  },
   },
   anthropic: {
-    // Claude 3.5 family per the 2026 list. Newer claude-sonnet-4-x models
-    // share the Sonnet rate point until/unless Anthropic publishes a
-    // distinct tier.
-    "claude-3-5-sonnet": { promptPer1k: 0.003, completionPer1k: 0.015 },
-    "claude-3-5-haiku": { promptPer1k: 0.0008, completionPer1k: 0.004 },
-    "claude-3-opus": { promptPer1k: 0.015, completionPer1k: 0.075 },
-    "claude-sonnet-4-6": { promptPer1k: 0.003, completionPer1k: 0.015 },
+    // Claude 4 family (May 2026 pricing)
+    "claude-opus-4-7":          { promptPer1k: 0.005,  completionPer1k: 0.025  },
+    "claude-opus-4-6":          { promptPer1k: 0.015,  completionPer1k: 0.075  },
+    "claude-sonnet-4-6":        { promptPer1k: 0.003,  completionPer1k: 0.015  },
+    "claude-haiku-4-5-20251001": { promptPer1k: 0.0008, completionPer1k: 0.004  },
+    // Legacy entries kept for backward-compat cost lookups
+    "claude-3-5-sonnet":        { promptPer1k: 0.003,  completionPer1k: 0.015  },
+    "claude-3-5-haiku":         { promptPer1k: 0.0008, completionPer1k: 0.004  },
+    "claude-3-opus":            { promptPer1k: 0.015,  completionPer1k: 0.075  },
   },
 };
 
@@ -57,13 +71,24 @@ const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
  */
 function tierFallback(model: string): RateEntry {
   const lc = model.toLowerCase();
+  // Reasoning / power models
+  if (lc === "o3" || lc.startsWith("o3-")) {
+    return { promptPer1k: 0.01, completionPer1k: 0.04 };
+  }
   if (lc.includes("opus") || lc.includes("gpt-4-turbo")) {
     return { promptPer1k: 0.015, completionPer1k: 0.075 };
   }
-  if (lc.includes("sonnet") || lc.includes("gpt-4o") || lc.includes("gpt-4")) {
+  // Standard tier
+  if (
+    lc.includes("sonnet") ||
+    lc.includes("gpt-4.1") ||
+    lc.includes("gpt-4o") ||
+    lc.includes("gpt-4")
+  ) {
     return { promptPer1k: 0.003, completionPer1k: 0.015 };
   }
-  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("3.5")) {
+  // Lite / mini tier
+  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("flash") || lc.includes("nano")) {
     return { promptPer1k: 0.0008, completionPer1k: 0.004 };
   }
   // Truly unknown model: zero so the row still writes (HEL-74 wants a

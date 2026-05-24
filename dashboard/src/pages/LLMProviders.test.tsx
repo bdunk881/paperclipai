@@ -14,9 +14,9 @@ vi.mock("../api/client", () => ({
   setDefaultLLMConfig: (...args: unknown[]) => setDefaultLLMConfigMock(...args),
   deleteLLMConfig: (...args: unknown[]) => deleteLLMConfigMock(...args),
   PROVIDER_MODELS: {
-    openai: ["gpt-4o", "gpt-4o-mini"],
+    openai: ["gpt-4.1", "gpt-4.1-mini"],
     anthropic: ["claude-sonnet-4-6"],
-    gemini: ["gemini-2.0-flash"],
+    gemini: ["gemini-2.5-flash"],
     mistral: ["mistral-large-latest"],
   },
 }));
@@ -121,7 +121,7 @@ describe("LLMProviders", () => {
         {
           label: "Team OpenAI",
           provider: "openai",
-          model: "gpt-4o",
+          model: "gpt-4.1",
           apiKey: "sk-test-key",
         },
         "token-123"

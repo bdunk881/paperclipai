@@ -34,17 +34,17 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
   anthropic: {
     lite: "claude-haiku-4-5-20251001",
     standard: "claude-sonnet-4-6",
-    power: "claude-opus-4-6",
+    power: "claude-opus-4-7",
   },
   openai: {
-    lite: "gpt-4o-mini",
-    standard: "gpt-4o",
-    power: "gpt-4o",
+    lite: "gpt-4.1-mini",
+    standard: "gpt-4.1",
+    power: "o3",
   },
   gemini: {
-    lite: "gemini-1.5-flash",
-    standard: "gemini-2.0-flash",
-    power: "gemini-1.5-pro",
+    lite: "gemini-2.5-flash-lite",
+    standard: "gemini-2.5-flash",
+    power: "gemini-2.5-pro",
   },
   mistral: {
     lite: "mistral-small-latest",
@@ -52,34 +52,34 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     power: "mistral-large-latest",
   },
   bedrock: {
-    lite: "amazon.nova-micro-v1:0",
-    standard: "amazon.nova-lite-v1:0",
-    power: "amazon.nova-pro-v1:0",
+    lite: "amazon.nova-2-lite-v1:0",
+    standard: "amazon.nova-pro-v1:0",
+    power: "anthropic.claude-opus-4-7",
   },
   "vertex-ai": {
-    lite: "gemini-1.5-flash-002",
-    standard: "gemini-1.5-pro-002",
-    power: "claude-3-5-sonnet-v2@20241022",
+    lite: "gemini-2.5-flash-lite",
+    standard: "gemini-2.5-flash",
+    power: "gemini-2.5-pro",
   },
   groq: {
     lite: "llama-3.1-8b-instant",
-    standard: "mixtral-8x7b-32768",
+    standard: "meta-llama/llama-4-scout-17b-16e-instruct",
     power: "llama-3.3-70b-versatile",
   },
   fireworks: {
-    lite: "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    standard: "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    power: "accounts/fireworks/models/deepseek-r1",
+    lite: "accounts/fireworks/models/llama4-scout-instruct-basic",
+    standard: "accounts/fireworks/models/llama4-maverick-instruct-basic",
+    power: "accounts/fireworks/models/llama4-maverick-instruct-basic",
   },
   together: {
     lite: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    standard: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    power: "deepseek-ai/DeepSeek-R1",
+    standard: "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    power: "deepseek-ai/DeepSeek-V3",
   },
   ollama: {
     lite: "llama3.2",
-    standard: "llama3.1:70b",
-    power: "deepseek-r1:14b",
+    standard: "llama4:scout",
+    power: "llama3.3:70b",
   },
   localai: {
     lite: "llama-3.2-3b-instruct",
@@ -88,8 +88,8 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
   },
   cohere: {
     lite: "command-r7b-12-2024",
-    standard: "command-r-plus-08-2024",
-    power: "command-a-03-2025",
+    standard: "command-a-03-2025",
+    power: "command-a-plus-05-2026",
   },
   perplexity: {
     lite: "sonar",
@@ -97,14 +97,14 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     power: "sonar-reasoning-pro",
   },
   xai: {
-    lite: "grok-3-mini-beta",
-    standard: "grok-2-1212",
-    power: "grok-3-beta",
+    lite: "grok-4.20-0309-non-reasoning",
+    standard: "grok-4.3",
+    power: "grok-4.3",
   },
   deepseek: {
-    lite: "deepseek-chat",
-    standard: "deepseek-coder",
-    power: "deepseek-reasoner",
+    lite: "deepseek-v4-flash",
+    standard: "deepseek-v4-flash",
+    power: "deepseek-v4-pro",
   },
   opencode_zen: {
     // Hosted free tier provider has a single stealth model — use it for
@@ -126,16 +126,37 @@ interface TokenCostRate {
 }
 
 const MODEL_COST_RATES: Record<string, TokenCostRate> = {
-  "claude-haiku-4-5-20251001":  { input: 0.00025,  output: 0.00125 },
-  "claude-sonnet-4-6":          { input: 0.003,     output: 0.015   },
-  "claude-opus-4-6":            { input: 0.015,     output: 0.075   },
-  "gpt-4o-mini":                { input: 0.00015,   output: 0.0006  },
-  "gpt-4o":                     { input: 0.0025,    output: 0.01    },
-  "gemini-1.5-flash":           { input: 0.000075,  output: 0.0003  },
-  "gemini-2.0-flash":           { input: 0.0001,    output: 0.0004  },
-  "gemini-1.5-pro":             { input: 0.00125,   output: 0.005   },
-  "mistral-small-latest":       { input: 0.0002,    output: 0.0006  },
-  "mistral-large-latest":       { input: 0.002,     output: 0.006   },
+  // Anthropic Claude 4 family (USD per 1K tokens)
+  "claude-haiku-4-5-20251001":  { input: 0.00080,  output: 0.004   },
+  "claude-sonnet-4-6":          { input: 0.003,    output: 0.015   },
+  "claude-opus-4-6":            { input: 0.015,    output: 0.075   },
+  "claude-opus-4-7":            { input: 0.005,    output: 0.025   },
+  // OpenAI GPT-4.1 family
+  "gpt-4.1-nano":               { input: 0.0001,   output: 0.0004  },
+  "gpt-4.1-mini":               { input: 0.00040,  output: 0.0016  },
+  "gpt-4.1":                    { input: 0.002,    output: 0.008   },
+  "o4-mini":                    { input: 0.0011,   output: 0.0044  },
+  "o3":                         { input: 0.01,     output: 0.04    },
+  // Legacy OpenAI (kept for existing workspace configs)
+  "gpt-4o-mini":                { input: 0.00015,  output: 0.0006  },
+  "gpt-4o":                     { input: 0.0025,   output: 0.01    },
+  // Google Gemini 2.5 family
+  "gemini-2.5-flash-lite":      { input: 0.000075, output: 0.0003  },
+  "gemini-2.5-flash":           { input: 0.0003,   output: 0.0012  },
+  "gemini-2.5-pro":             { input: 0.00125,  output: 0.01    },
+  // Legacy Gemini (kept for existing workspace configs)
+  "gemini-2.0-flash":           { input: 0.0001,   output: 0.0004  },
+  "gemini-1.5-flash":           { input: 0.000075, output: 0.0003  },
+  "gemini-1.5-pro":             { input: 0.00125,  output: 0.005   },
+  // Mistral
+  "mistral-small-latest":       { input: 0.00015,  output: 0.0006  },
+  "mistral-large-latest":       { input: 0.0005,   output: 0.0015  },
+  // xAI Grok 4
+  "grok-4.3":                   { input: 0.00125,  output: 0.0025  },
+  "grok-4.20-0309-non-reasoning": { input: 0.00125, output: 0.0025 },
+  // DeepSeek V4
+  "deepseek-v4-flash":          { input: 0.00014,  output: 0.00028 },
+  "deepseek-v4-pro":            { input: 0.000435, output: 0.00087 },
 };
 
 // ---------------------------------------------------------------------------

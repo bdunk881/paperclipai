@@ -34,7 +34,7 @@ describe("tierRouter — default matrix inference", () => {
   it("uses OpenAI models when only OpenAI is connected, including embeddings", () => {
     const matrix = getDefaultTierMatrix(["openai"]);
     expect(matrix.small?.provider).toBe("openai");
-    expect(matrix.small?.model).toMatch(/^gpt-4o-mini$/);
+    expect(matrix.small?.model).toMatch(/^gpt-4\.1-mini$/);
     expect(matrix.embeddings?.provider).toBe("openai");
     expect(matrix.embeddings?.model).toBe("text-embedding-3-small");
     expect(matrix.embeddings?.version).toBe(1);
@@ -42,7 +42,7 @@ describe("tierRouter — default matrix inference", () => {
 
   it("mixes providers: cheapest small, Anthropic medium/large, OpenAI embeddings", () => {
     const matrix = getDefaultTierMatrix(["openai", "anthropic"]);
-    // small: OpenAI gpt-4o-mini is cheaper than Anthropic Haiku
+    // small: OpenAI gpt-4.1-mini is cheaper than Anthropic Haiku
     expect(matrix.small?.provider).toBe("openai");
     // medium: Anthropic Sonnet wins by priority
     expect(matrix.medium?.provider).toBe("anthropic");

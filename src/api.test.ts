@@ -1206,7 +1206,7 @@ describe("Control plane APIs", () => {
         agentId: workerAgent.id,
         category: "llm",
         costUsd: 7,
-        model: "gpt-5.4-mini",
+        model: "gpt-4.1-mini",
         provider: "openai",
       });
 
@@ -1295,7 +1295,7 @@ describe("Control plane APIs", () => {
         agentId: workerAgents[0].id,
         category: "llm",
         costUsd: 4,
-        model: "gpt-5.4-mini",
+        model: "gpt-4.1-mini",
       });
 
     expect(firstSpendRes.status).toBe(201);
@@ -1309,7 +1309,7 @@ describe("Control plane APIs", () => {
         agentId: workerAgents[1].id,
         category: "llm",
         costUsd: 1,
-        model: "gpt-5.4-mini",
+        model: "gpt-4.1-mini",
       });
 
     expect(secondSpendRes.status).toBe(201);
@@ -1409,7 +1409,7 @@ describe("Control plane APIs", () => {
         agentId: workerAgent.id,
         category: "llm",
         costUsd: 1,
-        model: "gpt-5.4-mini",
+        model: "gpt-4.1-mini",
       });
 
     expect(agentBudgetSpendRes.status).toBe(201);
@@ -1423,7 +1423,7 @@ describe("Control plane APIs", () => {
         agentId: workerAgent.id,
         category: "llm",
         costUsd: 0.1,
-        model: "gpt-5.4-mini",
+        model: "gpt-4.1-mini",
       });
 
     expect(blockedAgentSpendRes.status).toBe(409);
@@ -2916,7 +2916,7 @@ describe("POST /api/workflows/generate", () => {
     expect(mockGetProvider).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "openai",
-        model: "gpt-4o",
+        model: "gpt-4.1",
         apiKey: "sk-workflow-user-1234",
       })
     );

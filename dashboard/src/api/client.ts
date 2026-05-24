@@ -36,33 +36,39 @@ export type ProviderName =
 
 /** Available models per provider — mirrors PROVIDER_MODELS from the backend */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
-  anthropic: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  gemini: ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
-  mistral: ["mistral-large-latest", "mistral-small-latest", "open-mistral-7b"],
-  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"],
+  openai: ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o3", "o4-mini", "gpt-4o", "gpt-4o-mini"],
+  anthropic: ["claude-opus-4-7", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+  gemini: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"],
+  mistral: ["mistral-large-latest", "mistral-small-latest", "codestral-latest"],
+  groq: [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+  ],
   fireworks: [
+    "accounts/fireworks/models/llama4-maverick-instruct-basic",
+    "accounts/fireworks/models/llama4-scout-instruct-basic",
     "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    "accounts/fireworks/models/mixtral-8x7b-instruct",
   ],
   together: [
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    "meta-llama/Llama-4-Scout-17B-16E-Instruct",
     "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "mistralai/Mixtral-8x7B-Instruct-v0.1",
+    "deepseek-ai/DeepSeek-V3",
   ],
-  ollama: ["llama3.1:8b", "llama3.1:70b", "mixtral:8x7b"],
-  localai: ["llama-3.1-8b-instruct", "llama-3.1-70b-instruct", "mixtral-8x7b-instruct"],
-  cohere: ["command-r", "command-r-plus", "command-a-03-2025"],
-  perplexity: ["sonar", "sonar-pro", "llama-3.1-sonar-large-128k-online"],
-  xai: ["grok-2-1212", "grok-2-vision-1212", "grok-beta"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"],
+  ollama: ["llama4:scout", "llama3.3:70b", "deepseek-r1:14b"],
+  localai: ["llama-3.2-3b-instruct", "llama-3.1-8b-instruct", "llama-3.1-70b-instruct"],
+  cohere: ["command-a-plus-05-2026", "command-a-03-2025", "command-r7b-12-2024"],
+  perplexity: ["sonar", "sonar-pro", "sonar-reasoning-pro", "sonar-deep-research"],
+  xai: ["grok-4.3", "grok-4.20-0309-non-reasoning", "grok-4.20-0309-reasoning"],
+  deepseek: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
   bedrock: [
-    "anthropic.claude-3-5-sonnet-20241022-v2:0",
-    "meta.llama3-1-70b-instruct-v1:0",
+    "amazon.nova-2-lite-v1:0",
     "amazon.nova-pro-v1:0",
+    "anthropic.claude-opus-4-7",
+    "anthropic.claude-sonnet-4-6",
   ],
-  "vertex-ai": ["gemini-2.0-flash-001", "gemini-1.5-pro-002", "claude-3-5-sonnet-v2@20241022"],
+  "vertex-ai": ["gemini-2.5-pro", "gemini-2.5-flash", "claude-opus-4-7", "claude-sonnet-4-6"],
 };
 
 /** A saved LLM provider config (API key stored server-side, never returned) */

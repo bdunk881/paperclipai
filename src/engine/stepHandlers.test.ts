@@ -352,7 +352,7 @@ describe("handleLlm", () => {
     expect(entry.selectedTier).toBe("lite");
     expect(entry.confidenceScore).toBeGreaterThanOrEqual(0);
     expect(entry.confidenceScore).toBeLessThanOrEqual(1);
-    expect(entry.modelId).toBe("gpt-4o-mini");
+    expect(entry.modelId).toBe("gpt-4.1-mini");
     expect(entry.features).toBeDefined();
   });
 });

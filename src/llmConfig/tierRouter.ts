@@ -69,21 +69,21 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   anthropic: {
     small: "claude-haiku-4-5-20251001",
     medium: "claude-sonnet-4-6",
-    large: "claude-opus-4-6",
+    large: "claude-opus-4-7",
     vision: "claude-sonnet-4-6",
   },
   openai: {
-    small: "gpt-4o-mini",
-    medium: "gpt-4o",
-    large: "gpt-4o",
+    small: "gpt-4.1-mini",
+    medium: "gpt-4.1",
+    large: "o3",
     embeddings: "text-embedding-3-small",
-    vision: "gpt-4o",
+    vision: "gpt-4.1",
   },
   gemini: {
-    small: "gemini-1.5-flash",
-    medium: "gemini-1.5-pro",
-    large: "gemini-1.5-pro",
-    vision: "gemini-1.5-pro",
+    small: "gemini-2.5-flash-lite",
+    medium: "gemini-2.5-flash",
+    large: "gemini-2.5-pro",
+    vision: "gemini-2.5-flash",
   },
   mistral: {
     small: "mistral-small-latest",
@@ -91,9 +91,9 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
     large: "mistral-large-latest",
   },
   bedrock: {
-    small: "amazon.nova-micro-v1:0",
-    medium: "amazon.nova-lite-v1:0",
-    large: "amazon.nova-pro-v1:0",
+    small: "amazon.nova-2-lite-v1:0",
+    medium: "amazon.nova-pro-v1:0",
+    large: "anthropic.claude-opus-4-7",
   },
   "vertex-ai": {},
   groq: {},
@@ -118,10 +118,10 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  * cheaper. Not exact $/1M; just a relative ordering.
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
-  gemini: 1, // 1.5-flash ≈ $0.075/1M in
-  openai: 2, // 4o-mini ≈ $0.15/1M in
-  mistral: 3, // small ≈ $0.10/1M
-  anthropic: 4, // haiku ≈ $1/1M
+  gemini: 1, // 2.5-flash-lite ≈ $0.075/1M in
+  openai: 2, // 4.1-mini ≈ $0.40/1M in
+  mistral: 3, // small ≈ $0.15/1M in
+  anthropic: 4, // haiku-4-5 ≈ $0.80/1M in
   groq: 1.5,
   deepseek: 1.2,
   fireworks: 1.8,

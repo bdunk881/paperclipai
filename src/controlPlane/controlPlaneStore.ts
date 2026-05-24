@@ -177,11 +177,11 @@ function normalizeAgentStatusForSuccessfulHeartbeat(
 function modelForTier(tier: "lite" | "standard" | "power"): string {
   switch (tier) {
     case "lite":
-      return "gpt-5.4-mini";
+      return "gpt-4.1-mini";
     case "standard":
-      return "gpt-5.4";
+      return "gpt-4.1";
     case "power":
-      return "gpt-5.2";
+      return "o3";
   }
 }
 
@@ -242,7 +242,7 @@ const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
     id: "workspace-manager",
     name: "Workspace Manager",
     description: "Coordinates tenant-level provisioning, operations, and audit trail ownership.",
-    defaultModel: "gpt-5.4",
+    defaultModel: "gpt-4.1",
     defaultInstructions:
       "Own workspace-level orchestration, keep tenant systems healthy, and coordinate downstream agents.",
     defaultSkills: ["paperclip"],
@@ -251,7 +251,7 @@ const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
     id: "backend-engineer",
     name: "Backend Engineer",
     description: "Implements APIs, data models, and server-side integrations for the tenant.",
-    defaultModel: "gpt-5.4",
+    defaultModel: "gpt-4.1",
     defaultInstructions:
       "Build and maintain backend APIs, integrations, and persistence for the customer workspace.",
     defaultSkills: ["paperclip", "security-review"],
@@ -260,7 +260,7 @@ const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
     id: "integration-engineer",
     name: "Integration Engineer",
     description: "Owns third-party connectors, credentials, and external system setup for the tenant.",
-    defaultModel: "gpt-5.4",
+    defaultModel: "gpt-4.1",
     defaultInstructions:
       "Configure and maintain customer integrations, credentials, and operational playbooks.",
     defaultSkills: ["paperclip", "openai-docs"],
@@ -269,7 +269,7 @@ const BASE_ROLE_TEMPLATE_CATALOG: ControlPlaneRoleTemplateDefinition[] = [
     id: "github-operator",
     name: "GitHub Operator",
     description: "Handles repository automation, PR workflows, and CI follow-up tasks.",
-    defaultModel: "gpt-5.4-mini",
+    defaultModel: "gpt-4.1-mini",
     defaultInstructions:
       "Operate GitHub workflows safely, with strong auditability and fast CI feedback loops.",
     defaultSkills: ["paperclip", "gh-cli"],

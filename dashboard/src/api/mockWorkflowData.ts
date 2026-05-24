@@ -213,7 +213,7 @@ const mockLLMConfigs: LLMConfig[] = [
     id: "llm-default",
     label: "OpenAI Default",
     provider: "openai",
-    model: "gpt-4o-mini",
+    model: "gpt-4.1-mini",
     isDefault: true,
     apiKeyMasked: "sk-...mock",
     createdAt: new Date(now - 1000 * 60 * 60 * 24).toISOString(),

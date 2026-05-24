@@ -24,6 +24,7 @@ import clsx from "clsx";
 import LLMProviders from "./LLMProviders";
 import MCPIntegrations from "./MCPIntegrations";
 import McpServers from "./McpServers";
+import EnvVarManager from "../components/connections/EnvVarManager";
 import ScopePermissionSlider, {
   type ScopePermission,
 } from "../components/connections/ScopePermissionSlider";
@@ -66,6 +67,10 @@ const TABS: readonly TabDef[] = [
   { id: "models", label: "Models" },
   { id: "mcp", label: "MCP Servers", pro: true },
   { id: "health", label: "Health", pro: true },
+  // HEL-206 PR C: high-trust workspace env vars surfaced as a Pro tab inside
+  // the hub (per the consolidation plan). The standalone /env-vars route
+  // still resolves for deep-links.
+  { id: "env-vars", label: "Environment Variables", pro: true },
 ];
 
 function isTabId(value: string | null | undefined): value is TabId {
@@ -397,6 +402,7 @@ export default function Connections() {
           </>
         )}
         {activeTab === "health" && experienceMode === "pro" && <HealthTab />}
+        {activeTab === "env-vars" && experienceMode === "pro" && <EnvVarManager />}
       </div>
     </div>
   );

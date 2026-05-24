@@ -796,12 +796,3 @@ export default function Hire() {
     </div>
   );
 }
-
-function scrubEmptyMetadata(input: MissionMetadata): MissionMetadata {
-  const out: MissionMetadata = {};
-  if (input.industry?.trim()) out.industry = input.industry.trim();
-  if (input.targetCustomer?.trim()) out.targetCustomer = input.targetCustomer.trim();
-  if (input.successMetric?.trim()) out.successMetric = input.successMetric.trim();
-  if (input.runway?.trim()) out.runway = input.runway.trim();
-  return out;
-}

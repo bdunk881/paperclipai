@@ -19,14 +19,34 @@ function initialsFor(name: string): string {
     .join("");
 }
 
+/**
+ * HEL-210 — primary label for an agent. When the owner has set a
+ * `display_name` we render that as the headline; otherwise fall back
+ * to `name`.
+ */
+function primaryLabel(agent: ListRow["agent"]): string {
+  return agent.displayName?.trim() || agent.name;
+}
+
+function subtitle(agent: ListRow["agent"]): string {
+  if (agent.displayName?.trim()) return agent.roleKey ?? "—";
+  return agent.roleKey && agent.roleKey !== agent.name ? agent.roleKey : "—";
+}
+
 export default function OrgStructureListView({
   rows,
   budgets,
   presence,
+  onAgentClick,
 }: {
   rows: ListRow[];
   budgets: Map<string, AgentSpendRow>;
   presence: Map<string, AgentPresence>;
+  /**
+   * HEL-210: when provided, clicking the row body opens the parent's
+   * inline drawer instead of navigating away.
+   */
+  onAgentClick?: (agentId: string) => void;
 }) {
   return (
     <div className="af2-list">
@@ -51,16 +71,25 @@ export default function OrgStructureListView({
             : agent.budgetMonthlyUsd > 0
               ? `$${agent.budgetMonthlyUsd.toFixed(0)}`
               : "—";
+        const label = primaryLabel(agent);
         return (
           <div
             key={agent.id}
             className="af2-list-row"
-            style={{ gridTemplateColumns: LIST_GRID }}
+            style={{
+              gridTemplateColumns: LIST_GRID,
+              cursor: onAgentClick ? "pointer" : undefined,
+            }}
+            onClick={(event) => {
+              if (!onAgentClick) return;
+              if ((event.target as HTMLElement).closest("a,button")) return;
+              onAgentClick(agent.id);
+            }}
           >
             <div className="af2-row" style={{ gap: 10, minWidth: 0 }}>
               <Link
                 to={`/agents/${encodeURIComponent(agent.id)}`}
-                aria-label={`Open ${agent.name}'s detail`}
+                aria-label={`Open ${label}'s detail`}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -76,24 +105,46 @@ export default function OrgStructureListView({
                   flexShrink: 0,
                 }}
               >
-                {initialsFor(agent.name)}
+                {initialsFor(label)}
               </Link>
               <div style={{ minWidth: 0 }}>
-                <Link
-                  to={`/agents/${encodeURIComponent(agent.id)}`}
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "var(--af2-ink)",
-                    textDecoration: "none",
-                  }}
-                >
-                  {agent.name}
-                </Link>
+                {onAgentClick ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAgentClick(agent.id);
+                    }}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "var(--af2-ink)",
+                      background: "transparent",
+                      border: 0,
+                      padding: 0,
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    {label}
+                  </button>
+                ) : (
+                  <Link
+                    to={`/agents/${encodeURIComponent(agent.id)}`}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 500,
+                      color: "var(--af2-ink)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    {label}
+                  </Link>
+                )}
               </div>
             </div>
             <div className="af2-muted" style={{ fontSize: 12.5 }}>
-              {agent.roleKey ?? "—"}
+              {subtitle(agent)}
             </div>
             <div className="af2-muted" style={{ fontSize: 12.5 }}>
               {managerName ?? "—"}

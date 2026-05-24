@@ -13,6 +13,12 @@ export interface Agent {
   id: string;
   userId: string;
   name: string;
+  /**
+   * HEL-210 — owner-defined friendly alias. When non-null the dashboard
+   * renders this as the primary line and demotes `roleKey` to subtitle;
+   * when null we fall back to `name` so legacy rows still read sensibly.
+   */
+  displayName?: string | null;
   description?: string | null;
   roleKey?: string | null;
   model?: string | null;

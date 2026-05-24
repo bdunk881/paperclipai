@@ -1,17 +1,26 @@
+import { type ReactNode } from "react";
 import { Af2Modal } from "../af2/Af2Modal";
+
+/**
+ * Two confirm tones are supported (HEL-210):
+ *   - `destructive` (default) renders the primary action in clay/red.
+ *   - `sage` renders the primary action in sage/green for positive
+ *     confirms like "Complete mission".
+ */
+export type ConfirmTone = "destructive" | "sage";
 
 export interface ConfirmDestructiveModalProps {
   open: boolean;
   onClose: () => void;
   title: string;
   eyebrow?: string;
-  message: string;
+  message: ReactNode;
   confirmLabel: string;
   onConfirm: () => void | Promise<void>;
   confirming?: boolean;
-  /** When set, shows a secondary action (e.g. retire team before delete). */
   secondaryLabel?: string;
   onSecondary?: () => void;
+  tone?: ConfirmTone;
 }
 
 export function ConfirmDestructiveModal({
@@ -25,7 +34,9 @@ export function ConfirmDestructiveModal({
   confirming = false,
   secondaryLabel,
   onSecondary,
+  tone = "destructive",
 }: ConfirmDestructiveModalProps) {
+  const primaryColor = tone === "sage" ? "var(--af2-sage)" : "var(--af2-clay)";
   return (
     <Af2Modal
       open={open}
@@ -58,7 +69,7 @@ export function ConfirmDestructiveModal({
           <button
             type="button"
             className="af2-btn af2-btn-sm"
-            style={{ color: "var(--af2-clay)" }}
+            style={{ color: primaryColor }}
             disabled={confirming}
             onClick={() => void onConfirm()}
           >
@@ -67,9 +78,13 @@ export function ConfirmDestructiveModal({
         </div>
       }
     >
-      <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: "var(--af2-ink)" }}>
-        {message}
-      </p>
+      {typeof message === "string" ? (
+        <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.55, color: "var(--af2-ink)" }}>
+          {message}
+        </p>
+      ) : (
+        message
+      )}
     </Af2Modal>
   );
 }

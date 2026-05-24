@@ -1,16 +1,19 @@
 import { useCallback, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Agent } from "../api/agentApi";
-import type { Mission } from "../api/missionsApi";
+import { retireMissionTeam, type Mission } from "../api/missionsApi";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useBudgetsQuery } from "../hooks/queries/useBudgetsQuery";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 import { useOrgGraphQuery } from "../hooks/queries/useOrgGraphQuery";
 import { AddReportModal } from "../components/missions/AddReportModal";
+import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
 import { EmptyState, ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../components/ToastProvider";
 import { AgentPresencePill } from "../components/AgentPresencePill";
 import { AgentCardActions } from "../components/AgentCardActions";
+import { Af2RowDrawer } from "../components/Af2RowDrawer";
 import {
   useAgentPresence,
   type AgentPresence,
@@ -65,6 +68,20 @@ function initialsFor(name: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+/**
+ * HEL-210 — primary label for an agent. When the owner has set a
+ * `display_name` we render that as the headline and let `roleKey`
+ * fall through to the subtitle.
+ */
+function primaryAgentLabel(agent: Agent): string {
+  return agent.displayName?.trim() || agent.name;
+}
+
+function agentSubtitle(agent: Agent): string {
+  if (agent.displayName?.trim()) return agent.roleKey ?? "—";
+  return agent.roleKey && agent.roleKey !== agent.name ? agent.roleKey : "—";
 }
 
 function MissionNode({ mission, allWorkspace }: { mission: Mission | null; allWorkspace: boolean }) {
@@ -203,7 +220,7 @@ function PodLead({
         >
           <div className="af2-row" style={{ gap: 12 }}>
             <div className={`af2-avatar lg ${avatarClass}`}>
-              {initialsFor(lead.name)}
+              {initialsFor(primaryAgentLabel(lead))}
             </div>
             <div style={{ minWidth: 0 }}>
               <div
@@ -215,12 +232,12 @@ function PodLead({
                 }}
               >
                 <span style={{ fontWeight: 600, color: "var(--af2-ink)" }}>
-                  {lead.name}
+                  {primaryAgentLabel(lead)}
                 </span>
                 <AgentPresencePill presence={presence.get(lead.id)} />
               </div>
               <div className="af2-muted" style={{ fontSize: 12 }}>
-                {lead.roleKey ?? "—"}
+                {agentSubtitle(lead)}
               </div>
               {lead.model ? (
                 <div
@@ -245,7 +262,7 @@ function PodLead({
       </Link>
 
       <div style={{ marginTop: 8 }}>
-        <AgentCardActions agent={{ id: lead.id, name: lead.name }} />
+        <AgentCardActions agent={{ id: lead.id, name: primaryAgentLabel(lead) }} />
       </div>
 
       <div
@@ -287,7 +304,7 @@ function PodLead({
                 }}
               >
                 <div className={`af2-avatar sm ${avatarClassFor(tone)}`} aria-hidden="true">
-                  {initialsFor(report.name)}
+                  {initialsFor(primaryAgentLabel(report))}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
@@ -299,12 +316,12 @@ function PodLead({
                     }}
                   >
                     <span style={{ fontWeight: 500, fontSize: 13, color: "var(--af2-ink)" }}>
-                      {report.name}
+                      {primaryAgentLabel(report)}
                     </span>
                     <AgentPresencePill presence={presence.get(report.id)} />
                   </div>
                   <div className="af2-muted" style={{ fontSize: 11.5 }}>
-                    {report.roleKey ?? "—"}
+                    {agentSubtitle(report)}
                   </div>
                 </div>
                 {reportSpend ? (
@@ -313,7 +330,7 @@ function PodLead({
                   </span>
                 ) : null}
               </Link>
-              <AgentCardActions agent={{ id: report.id, name: report.name }} compact />
+              <AgentCardActions agent={{ id: report.id, name: primaryAgentLabel(report) }} compact />
             </div>
           );
         })}
@@ -336,7 +353,8 @@ function PodLead({
 }
 
 export default function OrgStructure() {
-  useAuth();
+  const { requireAccessToken } = useAuth();
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const presence = useAgentPresence();
   const agentsQuery = useAgentsQuery();
@@ -347,6 +365,17 @@ export default function OrgStructure() {
   const missions = missionsQuery.data ?? [];
   const orgGraphAgents = orgGraphQuery.data?.agents ?? [];
   const edges = orgGraphQuery.data?.edges ?? null;
+
+  // HEL-210 filter-bar state.
+  const searchQuery = (searchParams.get("q") ?? "").trim();
+  const statusFilter = searchParams.get("status") ?? "all";
+  const showArchived = searchParams.get("archived") === "1";
+  const [retireTeamTarget, setRetireTeamTarget] = useState<Mission | null>(null);
+  const [retiring, setRetiring] = useState(false);
+  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
+  const [agentDrawerTab, setAgentDrawerTab] = useState<
+    "overview" | "job" | "standing" | "budget"
+  >("overview");
   const budgets = useMemo(() => {
     const budgetMap = new Map<string, AgentSpendRow>();
     for (const row of budgetsQuery.data ?? []) {
@@ -375,18 +404,23 @@ export default function OrgStructure() {
   const missionIdParam = searchParams.get("missionId");
 
   const writeParam = useCallback(
-    (key: "view" | "missionId", value: string | null) => {
+    (key: "view" | "missionId" | "q" | "status" | "archived", value: string | null) => {
       const next = new URLSearchParams(searchParams);
       if (key === "view") {
-        if (!value || value === "map") {
-          next.delete("view");
-        } else {
-          next.set("view", value);
-        }
-      } else if (!value || value === "all") {
-        next.delete("missionId");
-      } else {
-        next.set("missionId", value);
+        if (!value || value === "map") next.delete("view");
+        else next.set("view", value);
+      } else if (key === "missionId") {
+        if (!value || value === "all") next.delete("missionId");
+        else next.set("missionId", value);
+      } else if (key === "status") {
+        if (!value || value === "all") next.delete("status");
+        else next.set("status", value);
+      } else if (key === "q") {
+        if (!value) next.delete("q");
+        else next.set("q", value);
+      } else if (key === "archived") {
+        if (value === "1") next.set("archived", "1");
+        else next.delete("archived");
       }
       setSearchParams(next, { replace: true });
     },
@@ -405,16 +439,37 @@ export default function OrgStructure() {
     [missions, missionIdParam],
   );
 
-  const filteredAgents = useMemo(
-    () =>
-      filterAgentsForMission(
-        agents,
-        scopeAllWorkspace ? null : selectedMissionId,
-        scopeAllWorkspace ? null : selectedMission,
-        companyIdByAgentId(orgGraphAgents),
-      ),
-    [agents, scopeAllWorkspace, selectedMissionId, selectedMission, orgGraphAgents],
-  );
+  const filteredAgents = useMemo(() => {
+    const base = filterAgentsForMission(
+      agents,
+      scopeAllWorkspace ? null : selectedMissionId,
+      scopeAllWorkspace ? null : selectedMission,
+      companyIdByAgentId(orgGraphAgents),
+    );
+    const q = searchQuery.toLowerCase();
+    return base.filter((agent) => {
+      if (!showArchived && agent.status === "idle" && !(agent.lastHeartbeatAt || agent.lastRunAt)) {
+        return false;
+      }
+      if (statusFilter !== "all" && agent.status !== statusFilter) {
+        return false;
+      }
+      if (q) {
+        const hay = `${primaryAgentLabel(agent)} ${agent.name} ${agent.roleKey ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [
+    agents,
+    scopeAllWorkspace,
+    selectedMissionId,
+    selectedMission,
+    orgGraphAgents,
+    searchQuery,
+    statusFilter,
+    showArchived,
+  ]);
 
   const tree = useMemo(
     () => buildOrgTree(filteredAgents, edges),
@@ -505,17 +560,40 @@ export default function OrgStructure() {
 
       {agents.length > 0 ? (
         <>
+          {/* HEL-210: filter bar — search · status · team · archived */}
           <div
             className="af2-row"
             style={{ marginBottom: 14, gap: 12, flexWrap: "wrap", alignItems: "center" }}
           >
+            <input
+              type="search"
+              className="af2-input"
+              placeholder="Search agents…"
+              value={searchQuery}
+              onChange={(event) => writeParam("q", event.target.value)}
+              style={{ minWidth: 200, flex: "1 1 240px" }}
+              aria-label="Search agents"
+            />
+            <select
+              className="af2-input"
+              value={statusFilter}
+              onChange={(event) => writeParam("status", event.target.value)}
+              style={{ minWidth: 130 }}
+              aria-label="Filter by status"
+            >
+              <option value="all">All statuses</option>
+              <option value="running">Running</option>
+              <option value="paused">Paused</option>
+              <option value="idle">Idle</option>
+              <option value="error">Blocked</option>
+            </select>
             <label className="af2-muted" style={{ fontSize: 12 }} htmlFor="team-mission-select">
-              Mission
+              Team
             </label>
             <select
               id="team-mission-select"
               className="af2-input"
-              style={{ minWidth: 280, maxWidth: "100%", flex: "1 1 280px" }}
+              style={{ minWidth: 220, maxWidth: "100%", flex: "1 1 220px" }}
               value={missionSelectValue}
               onChange={(event) => {
                 const value = event.target.value;
@@ -529,7 +607,63 @@ export default function OrgStructure() {
                 </option>
               ))}
             </select>
+            <label
+              className="af2-row"
+              style={{ gap: 6, fontSize: 12, color: "var(--af2-ink-3)", alignItems: "center" }}
+            >
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => writeParam("archived", e.target.checked ? "1" : null)}
+              />
+              Show archived
+            </label>
           </div>
+
+          {/* HEL-210: team header row-actions visible when scoped to one mission. */}
+          {!scopeAllWorkspace && selectedMission ? (
+            <div
+              className="af2-row"
+              style={{ marginBottom: 14, gap: 8, flexWrap: "wrap", alignItems: "center" }}
+            >
+              <span className="af2-muted" style={{ fontSize: 12 }}>
+                Team actions:
+              </span>
+              <button
+                type="button"
+                className="af2-btn af2-btn-sm"
+                onClick={() => {
+                  const firstLead = tree.rootAgents[0] ?? null;
+                  if (firstLead) setAddReportLead(firstLead);
+                  else
+                    toast.error(
+                      "No team lead yet — confirm a hiring plan before adding agents.",
+                    );
+                }}
+              >
+                ＋ Add agent
+              </button>
+              <button
+                type="button"
+                className="af2-btn af2-btn-sm"
+                onClick={() => {
+                  // TODO(HEL-210 follow-up): wire explicit archive-team mutation.
+                  toast.info("Archive team flow lives on the mission detail page.");
+                }}
+              >
+                Archive team
+              </button>
+              <button
+                type="button"
+                className="af2-btn af2-btn-sm"
+                style={{ color: "var(--af2-clay)" }}
+                aria-label="Fire team"
+                onClick={() => setRetireTeamTarget(selectedMission)}
+              >
+                Fire team
+              </button>
+            </div>
+          ) : null}
 
           <div className="af2-tabs" style={{ marginBottom: 18 }}>
             <button
@@ -579,7 +713,15 @@ export default function OrgStructure() {
           </div>
         </div>
       ) : viewMode === "list" ? (
-        <OrgStructureListView rows={listRows} budgets={budgets} presence={presence} />
+        <OrgStructureListView
+          rows={listRows}
+          budgets={budgets}
+          presence={presence}
+          onAgentClick={(id) => {
+            setOpenAgentId(id);
+            setAgentDrawerTab("overview");
+          }}
+        />
       ) : (
         <>
           <MissionNode mission={selectedMission} allWorkspace={scopeAllWorkspace} />
@@ -624,7 +766,7 @@ export default function OrgStructure() {
             onClose={() => setAddReportLead(null)}
             missionId={missionForReport.id}
             managerAgentId={addReportLead.id}
-            managerName={addReportLead.name}
+            managerName={primaryAgentLabel(addReportLead)}
             managerRoleKey={addReportLead.roleKey ?? null}
             existingRoleKeys={existingRoleKeys}
             hiringPlanId={missionForReport.latestHiringPlanId}
@@ -633,6 +775,143 @@ export default function OrgStructure() {
           />
         );
       })() : null}
+
+      {/* HEL-210 — "Fire team" confirm. Reuses retireMissionTeam from PR #956. */}
+      <ConfirmDestructiveModal
+        open={retireTeamTarget !== null}
+        onClose={() => {
+          if (!retiring) setRetireTeamTarget(null);
+        }}
+        eyebrow="Fire team"
+        title="Fire this team?"
+        message={
+          retireTeamTarget
+            ? `"${truncateStatement(retireTeamTarget.statement, 140)}" — this terminates every agent on the mission and clears org edges. You can re-hire later.`
+            : ""
+        }
+        confirmLabel="Fire team"
+        confirming={retiring}
+        onConfirm={async () => {
+          if (!retireTeamTarget) return;
+          setRetiring(true);
+          try {
+            const token = await requireAccessToken();
+            const result = await retireMissionTeam(retireTeamTarget.id, token);
+            toast.success(
+              `Team retired (${result.retiredAgentCount} agent${result.retiredAgentCount === 1 ? "" : "s"}).`,
+            );
+            setRetireTeamTarget(null);
+            refreshOrg();
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Failed to retire team");
+          } finally {
+            setRetiring(false);
+          }
+        }}
+      />
+
+      {/* HEL-210 — inline agent drawer (opens from the list view onAgentClick). */}
+      {(() => {
+        const agent = openAgentId
+          ? filteredAgents.find((a) => a.id === openAgentId) ?? null
+          : null;
+        if (!agent) return null;
+        return (
+          <Af2RowDrawer
+            open
+            onClose={() => setOpenAgentId(null)}
+            ariaLabel={`Agent ${primaryAgentLabel(agent)} details`}
+          >
+            <div style={{ padding: "14px 20px 18px" }}>
+              <div className="af2-row" style={{ gap: 10, marginBottom: 10 }}>
+                <strong style={{ fontSize: 15 }}>{primaryAgentLabel(agent)}</strong>
+                <span className="af2-muted" style={{ fontSize: 12 }}>
+                  · {agentSubtitle(agent)}
+                </span>
+              </div>
+              <div
+                className="af2-tabs"
+                role="tablist"
+                aria-label="Agent details"
+                style={{ marginBottom: 12 }}
+              >
+                {(
+                  [
+                    { key: "overview", label: "Overview" },
+                    { key: "job", label: "Job" },
+                    { key: "standing", label: "Standing Tasks" },
+                    { key: "budget", label: "Budget" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={agentDrawerTab === t.key}
+                    className={`af2-tab${agentDrawerTab === t.key ? " active" : ""}`}
+                    onClick={() => setAgentDrawerTab(t.key)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {agentDrawerTab === "overview" ? (
+                <div className="af2-muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
+                  Role · {agent.roleKey ?? "—"}
+                  <br />
+                  Model · {agent.model ?? "—"}
+                  <br />
+                  Status · {agent.status}
+                  <br />
+                  Budget · ${agent.budgetMonthlyUsd.toFixed(0)}/mo
+                  <div style={{ marginTop: 8 }}>
+                    <Link
+                      to={`/agents/${encodeURIComponent(agent.id)}`}
+                      className="af2-btn af2-btn-sm"
+                      style={{ textDecoration: "none" }}
+                    >
+                      Open full detail →
+                    </Link>
+                  </div>
+                </div>
+              ) : agentDrawerTab === "job" ? (
+                <div className="af2-muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
+                  Job description lives on the{" "}
+                  <Link
+                    to={`/agents/${encodeURIComponent(agent.id)}/job-description`}
+                    style={{ color: "var(--af2-sage)" }}
+                  >
+                    Job page
+                  </Link>
+                  .
+                </div>
+              ) : agentDrawerTab === "standing" ? (
+                <div className="af2-muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
+                  Standing tasks for this agent open on the{" "}
+                  <Link
+                    to={`/agents/${encodeURIComponent(agent.id)}/standing-tasks`}
+                    style={{ color: "var(--af2-sage)" }}
+                  >
+                    Standing Tasks page
+                  </Link>
+                  .
+                </div>
+              ) : (
+                <div className="af2-muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
+                  Spend / cap lives on the{" "}
+                  <Link
+                    to={`/budget?agentId=${encodeURIComponent(agent.id)}`}
+                    style={{ color: "var(--af2-sage)" }}
+                  >
+                    Budget page
+                  </Link>
+                  .
+                </div>
+              )}
+            </div>
+          </Af2RowDrawer>
+        );
+      })()}
     </div>
   );
 }

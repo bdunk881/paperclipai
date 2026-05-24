@@ -89,6 +89,11 @@ router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
           id: agent.id,
           userId: agent.userId,
           name: agent.name,
+          // HEL-210: in-memory legacy store doesn't carry display_name;
+          // expose null so the dashboard falls back to `name`. The
+          // Postgres-backed branch (loadCanonicalAgents) returns the
+          // real column value.
+          displayName: null as string | null,
           description: team?.description ?? null,
           roleKey: agent.roleKey,
           model: agent.model ?? null,
@@ -158,6 +163,8 @@ async function loadCanonicalAgents(
     id: string;
     userId: string;
     name: string;
+    /** HEL-210: nullable owner-defined alias; UI falls back to `name`. */
+    displayName: string | null;
     description: string | null;
     roleKey: string;
     model: string | null;
@@ -183,6 +190,9 @@ async function loadCanonicalAgents(
     user_id: string;
     team_id: string;
     name: string;
+    // HEL-210: nullable owner-defined alias surfaced as the primary
+    // line on org/agent views. Falls back to `name` when null.
+    display_name: string | null;
     role_key: string;
     model: string | null;
     instructions: string | null;
@@ -204,6 +214,7 @@ async function loadCanonicalAgents(
     async (client) => {
       const result = await client.query<AgentRow>(
         `SELECT a.id, a.workspace_id, a.user_id, a.team_id, a.name,
+                a.display_name,
                 a.role_key, a.model, a.instructions, a.budget_monthly_usd,
                 a.reporting_to_agent_id, a.metadata, a.status, a.last_heartbeat_at,
                 a.created_at, a.updated_at,
@@ -223,6 +234,7 @@ async function loadCanonicalAgents(
           id: row.id,
           userId: row.user_id,
           name: row.name,
+          displayName: row.display_name,
           description: row.team_description,
           roleKey: row.role_key,
           model: row.model,

@@ -168,6 +168,71 @@ export async function retireMissionTeam(
   );
 }
 
+/**
+ * HEL-210: positive-tone "Complete mission" action. Distinct from
+ * `retireMissionTeam` (which terminates agents) — completing a mission
+ * marks the brief as Done without tearing the team down. Optional
+ * `note` is stored on the mission as a success blurb.
+ */
+export interface CompleteMissionInput {
+  note?: string;
+}
+
+export interface CompleteMissionResponse {
+  id: string;
+  status: string;
+  completedAt: string;
+}
+
+export async function completeMission(
+  missionId: string,
+  input: CompleteMissionInput,
+  accessToken: string,
+): Promise<CompleteMissionResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/complete`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        input.note && input.note.trim().length > 0 ? { note: input.note.trim() } : {},
+      ),
+    },
+  );
+  return parseJsonOrError<CompleteMissionResponse>(
+    response,
+    `Failed to complete mission: ${response.status}`,
+  );
+}
+
+/**
+ * HEL-210: terminate open assignments and stop the mission. Different
+ * from "Complete" — this is the bail-out path when the brief is no
+ * longer worth running. Mirrors retire-team semantics on the backend.
+ */
+export interface StopMissionResponse {
+  id: string;
+  status: string;
+  terminatedAgentCount: number;
+}
+
+export async function stopMission(
+  missionId: string,
+  accessToken: string,
+): Promise<StopMissionResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/stop`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken),
+    },
+  );
+  return parseJsonOrError<StopMissionResponse>(
+    response,
+    `Failed to stop mission: ${response.status}`,
+  );
+}
+
 export async function deleteMission(
   missionId: string,
   accessToken: string,

@@ -50,13 +50,13 @@ window.AF2_DATA = {
     { name: "DocuSign", cat: "Legal",    auth: "OAuth", installed: false, desc: "Envelopes, signatures, templates." },
   ],
   llms: [
-    { vendor: "Anthropic",  models: ["claude-opus-4-5","claude-sonnet-4-5","claude-haiku-4-5"], byok: true,  status: "primary" },
-    { vendor: "OpenAI",     models: ["gpt-4o","gpt-4o-mini","gpt-4.1"],                          byok: true,  status: "secondary" },
-    { vendor: "Google",     models: ["gemini-2.5-pro","gemini-2.5-flash"],                       byok: true,  status: "off" },
-    { vendor: "Bedrock",    models: ["claude on bedrock","llama-3 on bedrock"],                  byok: true,  status: "off" },
-    { vendor: "Azure OAI",  models: ["gpt-4o on azure"],                                          byok: true,  status: "off" },
+    { vendor: "Anthropic",  models: ["claude-opus-4-7","claude-sonnet-4-6","claude-haiku-4-5"],  byok: true,  status: "primary" },
+    { vendor: "OpenAI",     models: ["gpt-5.5","gpt-5.4","gpt-5.4-nano"],                       byok: true,  status: "secondary" },
+    { vendor: "Google",     models: ["gemini-3.5-flash","gemini-3.1-pro-preview"],              byok: true,  status: "off" },
+    { vendor: "Bedrock",    models: ["claude-opus-4-7 on bedrock","nova on bedrock"],            byok: true,  status: "off" },
+    { vendor: "Azure OAI",  models: ["gpt-5.4 on azure"],                                        byok: true,  status: "off" },
   ],
-  tiers: { lite: "claude-haiku-4-5", standard: "claude-sonnet-4-5", power: "claude-opus-4-5" },
+  tiers: { lite: "claude-haiku-4-5", standard: "claude-sonnet-4-6", power: "claude-opus-4-7" },
 };
 
 // Logo helpers — inline SVGs (real brand marks).

@@ -106,7 +106,7 @@ const ProEnvPanel = () => (
 {`HUBSPOT_PORTAL_ID = 8439221
 APOLLO_API_KEY    = sk-•••• 4f8a
 SLACK_BOT_TOKEN   = xoxb-•••• d2c9
-DEFAULT_MODEL     = claude-sonnet-4-5
+DEFAULT_MODEL     = claude-sonnet-4-6
 MAX_RETRIES       = 3
 TIMEOUT_MS        = 12000`}
     </div>

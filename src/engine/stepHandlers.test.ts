@@ -268,7 +268,7 @@ describe("handleLlm", () => {
       expect(getProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           provider: "groq",
-          model: "llama-3.1-8b-instant",
+          model: "meta-llama/llama-4-scout-17b-16e-instruct",
           apiKey: "gsk-test-fallback",
         })
       );
@@ -352,7 +352,7 @@ describe("handleLlm", () => {
     expect(entry.selectedTier).toBe("lite");
     expect(entry.confidenceScore).toBeGreaterThanOrEqual(0);
     expect(entry.confidenceScore).toBeLessThanOrEqual(1);
-    expect(entry.modelId).toBe("gpt-4o-mini");
+    expect(entry.modelId).toBe("gpt-5.4-nano");
     expect(entry.features).toBeDefined();
   });
 });

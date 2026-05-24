@@ -7,8 +7,8 @@
  *   - Page action: "＋ Add provider"
  *   - "Default routing" section: 3 tier cards (Lite/Standard/Power) with
  *     colored top borders — derived from configured LLMConfigs via name
- *     heuristic (haiku/mini/lite → lite, sonnet/4o/command-r → standard,
- *     opus/4-turbo/command-a/reasoner → power).
+ *     heuristic (haiku/nano/lite → lite, sonnet/GPT-5.4 → standard,
+ *     opus/GPT-5.5/command-a/reasoner → power).
  *   - "Providers" section: af2-list grouped by `provider`, with vendor
  *     name, model pills, BYOK column (always yes — BYOK-only product),
  *     status pill (primary/fallback/off), and per-row Configure button.
@@ -77,8 +77,8 @@ const PROVIDERS: Record<ProviderName, ProviderMeta> = {
 
 // ---------------------------------------------------------------------------
 // Tier classification — pure heuristic over model strings.
-//   Lite     → haiku / mini / lite / flash / 8b / small / haiku-* / 3.5
-//   Power    → opus / 4-turbo / command-a / reasoner / 70b / large / pro
+//   Lite     → haiku / mini / lite / flash-lite / small / nano / low-parameter local models
+//   Power    → opus / GPT-5.5 / command-a / reasoner / large / pro / deep research
 //   Standard → everything else (the default bucket).
 // ---------------------------------------------------------------------------
 
@@ -89,10 +89,10 @@ const TIER_GRID = "200px 1fr 100px 110px 130px";
 function classifyTier(model: string): Tier {
   const m = model.toLowerCase();
   if (
-    /(haiku|mini|lite|flash|small|nano|8b|3\.5-turbo|sonar(?!-pro))/.test(m)
+    /(haiku|mini|flash-lite|small|nano|9b|8b|gpt-oss:20b|gpt-oss-20b|sonar(?!-(pro|deep|reasoning)))/.test(m)
   ) return "lite";
   if (
-    /(opus|4-turbo|command-a|reasoner|70b|large|pro|grok-2|sonar-pro|gemini-1\.5-pro)/.test(m)
+    /(opus|gpt-5\.5|command-a|reasoner|reasoning|large|pro|deep-research|grok-4\.3|llama4|qwen3\.5-397b)/.test(m)
   ) return "power";
   return "standard";
 }

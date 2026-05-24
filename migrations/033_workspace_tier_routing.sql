@@ -8,11 +8,11 @@
 --
 -- Shape of `tier_routing`:
 -- {
---   "small":      { "provider": "openai",    "model": "gpt-4.1-nano",      "credential_id": "<uuid>" },
---   "medium":     { "provider": "anthropic", "model": "claude-sonnet-4.5", "credential_id": "<uuid>" },
---   "large":      { "provider": "anthropic", "model": "claude-opus-4.7",   "credential_id": "<uuid>" },
+--   "small":      { "provider": "openai",    "model": "gpt-5.4-nano",      "credential_id": "<uuid>" },
+--   "medium":     { "provider": "anthropic", "model": "claude-sonnet-4-6", "credential_id": "<uuid>" },
+--   "large":      { "provider": "anthropic", "model": "claude-opus-4-7",   "credential_id": "<uuid>" },
 --   "embeddings": { "provider": "openai",    "model": "text-embedding-3-small", "version": 1 },
---   "vision":     { "provider": "anthropic", "model": "claude-sonnet-4.5", "credential_id": "<uuid>" }
+--   "vision":     { "provider": "anthropic", "model": "claude-sonnet-4-6", "credential_id": "<uuid>" }
 -- }
 --
 -- Null/empty matrix means "fall back to AutoFlow defaults inferred from

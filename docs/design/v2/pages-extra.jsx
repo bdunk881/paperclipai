@@ -105,10 +105,10 @@ const AF2_Budget = () => {
       <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>By model · last 30 days</h3>
       <div className="af2-card" style={{ padding: 18 }}>
         {[
-          { m: "claude-opus-4-5", t: 652, c: "$782" },
-          { m: "claude-sonnet-4-5", t: 318, c: "$281" },
+          { m: "claude-opus-4-7", t: 652, c: "$782" },
+          { m: "claude-sonnet-4-6", t: 318, c: "$281" },
           { m: "claude-haiku-4-5", t: 84,  c: "$48" },
-          { m: "gpt-4o", t: 96, c: "$96" },
+          { m: "gpt-5.4", t: 96, c: "$96" },
         ].map((row, i) => (
           <div key={row.m} style={{ display: "grid", gridTemplateColumns: "1fr 220px 80px", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: i < 3 ? "1px solid var(--af2-line)" : 0 }}>
             <span className="af2-mono" style={{ fontSize: 12.5 }}>{row.m}</span>

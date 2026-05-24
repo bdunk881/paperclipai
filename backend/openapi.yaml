@@ -464,8 +464,8 @@ paths:
               $ref: "#/components/schemas/LLMConfigInput"
             example:
               provider: openai
-              label: "My GPT-4o key"
-              model: "gpt-4o"
+              label: "My GPT-5.4 key"
+              model: "gpt-5.4"
               apiKey: "sk-..."
       responses:
         "201":
@@ -1544,11 +1544,11 @@ components:
         label:
           type: string
           description: User-friendly name for this config
-          example: "My GPT-4o key"
+          example: "My GPT-5.4 key"
         model:
           type: string
           description: Model identifier for the provider
-          example: "gpt-4o"
+          example: "gpt-5.4"
         apiKey:
           type: string
           description: |
@@ -1577,10 +1577,10 @@ components:
           $ref: "#/components/schemas/LLMProvider"
         label:
           type: string
-          example: "My GPT-4o key"
+          example: "My GPT-5.4 key"
         model:
           type: string
-          example: "gpt-4o"
+          example: "gpt-5.4"
         apiKeyMasked:
           type: string
           description: Backward-compatible masked API key field for legacy clients

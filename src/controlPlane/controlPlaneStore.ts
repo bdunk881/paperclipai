@@ -177,11 +177,11 @@ function normalizeAgentStatusForSuccessfulHeartbeat(
 function modelForTier(tier: "lite" | "standard" | "power"): string {
   switch (tier) {
     case "lite":
-      return "gpt-5.4-mini";
+      return "gpt-5.4-nano";
     case "standard":
       return "gpt-5.4";
     case "power":
-      return "gpt-5.2";
+      return "gpt-5.5";
   }
 }
 

@@ -44,7 +44,7 @@ describe("GET /api/hosted-free-models", () => {
   it("returns the catalog with availability=false when no env keys are set", async () => {
     const res = await request(buildApp()).get("/api/hosted-free-models");
     expect(res.status).toBe(200);
-    expect(res.body.defaultProviderId).toBe("groq_llama_31_8b");
+    expect(res.body.defaultProviderId).toBe("groq_llama_4_scout");
     expect(res.body.providers).toHaveLength(3);
     for (const p of res.body.providers) {
       expect(p.available).toBe(false);
@@ -54,13 +54,13 @@ describe("GET /api/hosted-free-models", () => {
   it("flips availability=true for providers whose env key IS set", async () => {
     process.env.GROQ_API_KEY = "gsk-test";
     const res = await request(buildApp()).get("/api/hosted-free-models");
-    const groq8b = res.body.providers.find(
-      (p: { id: string }) => p.id === "groq_llama_31_8b",
+    const groqFast = res.body.providers.find(
+      (p: { id: string }) => p.id === "groq_llama_4_scout",
     );
     const bigPickle = res.body.providers.find(
       (p: { id: string }) => p.id === "opencode_zen_big_pickle",
     );
-    expect(groq8b.available).toBe(true);
+    expect(groqFast.available).toBe(true);
     expect(bigPickle.available).toBe(false);
   });
 

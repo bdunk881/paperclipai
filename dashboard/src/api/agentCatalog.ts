@@ -45,7 +45,7 @@ function categorizeTemplate(template: {
 
 function suggestedBudgetForTemplate(defaultModel?: string): number {
   if (!defaultModel) return 0;
-  if (defaultModel.includes("mini")) return 50;
+  if (/(mini|nano|lite|haiku)/i.test(defaultModel)) return 50;
   return 100;
 }
 

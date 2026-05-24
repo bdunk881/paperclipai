@@ -34,7 +34,7 @@ describe("tierRouter — default matrix inference", () => {
   it("uses OpenAI models when only OpenAI is connected, including embeddings", () => {
     const matrix = getDefaultTierMatrix(["openai"]);
     expect(matrix.small?.provider).toBe("openai");
-    expect(matrix.small?.model).toMatch(/^gpt-4o-mini$/);
+    expect(matrix.small?.model).toMatch(/^gpt-5\.4-nano$/);
     expect(matrix.embeddings?.provider).toBe("openai");
     expect(matrix.embeddings?.model).toBe("text-embedding-3-small");
     expect(matrix.embeddings?.version).toBe(1);
@@ -42,7 +42,7 @@ describe("tierRouter — default matrix inference", () => {
 
   it("mixes providers: cheapest small, Anthropic medium/large, OpenAI embeddings", () => {
     const matrix = getDefaultTierMatrix(["openai", "anthropic"]);
-    // small: OpenAI gpt-4o-mini is cheaper than Anthropic Haiku
+    // small: OpenAI GPT-5.4 nano is cheaper than Anthropic Haiku
     expect(matrix.small?.provider).toBe("openai");
     // medium: Anthropic Sonnet wins by priority
     expect(matrix.medium?.provider).toBe("anthropic");
@@ -105,16 +105,16 @@ describe("tierRouter — resolveTier resolution order (HEL-81)", () => {
 
   it("prefers the agent override over the workspace matrix", async () => {
     await setWorkspaceTierMatrix(workspaceId, {
-      large: { provider: "anthropic", model: "claude-opus-4-6" },
+      large: { provider: "anthropic", model: "claude-opus-4-7" },
     });
     await setAgentTierOverrides(agentId, {
-      large: { provider: "openai", model: "gpt-4o" },
+      large: { provider: "openai", model: "gpt-5.5" },
     });
 
     const result = await resolveTier({ workspaceId, tier: "large", agentId });
     expect(result?.source).toBe("agent_override");
     expect(result?.binding.provider).toBe("openai");
-    expect(result?.binding.model).toBe("gpt-4o");
+    expect(result?.binding.model).toBe("gpt-5.5");
   });
 
   it("falls back to workspace matrix when agent has no override for the requested tier", async () => {
@@ -123,7 +123,7 @@ describe("tierRouter — resolveTier resolution order (HEL-81)", () => {
     });
     await setAgentTierOverrides(agentId, {
       // override only for large, not for medium
-      large: { provider: "openai", model: "gpt-4o" },
+      large: { provider: "openai", model: "gpt-5.5" },
     });
 
     const result = await resolveTier({ workspaceId, tier: "medium", agentId });
@@ -133,11 +133,11 @@ describe("tierRouter — resolveTier resolution order (HEL-81)", () => {
 
   it("resolves each of the 5 tier keys without crashing", async () => {
     await setWorkspaceTierMatrix(workspaceId, {
-      small: { provider: "openai", model: "gpt-4o-mini" },
-      medium: { provider: "openai", model: "gpt-4o" },
-      large: { provider: "openai", model: "gpt-4o" },
+      small: { provider: "openai", model: "gpt-5.4-nano" },
+      medium: { provider: "openai", model: "gpt-5.4" },
+      large: { provider: "openai", model: "gpt-5.5" },
       embeddings: { provider: "openai", model: "text-embedding-3-small", version: 1 },
-      vision: { provider: "openai", model: "gpt-4o" },
+      vision: { provider: "openai", model: "gpt-5.4" },
     });
 
     for (const tier of TIER_KEYS) {

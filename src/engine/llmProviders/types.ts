@@ -99,7 +99,7 @@ export type ResponseFormat =
  * ("Mistral API error: Request timed out: TimeoutError" on /hire).
  *
  * 120s is comfortably above observed p99 for the heaviest call site
- * across providers (mistral-large-latest, claude-opus, gpt-4o on the
+ * across providers (mistral-large-latest, claude-opus, gpt-5 on the
  * team-assembly prompt) while still keeping a hung backend from
  * spinning forever. Callers can override per call via
  * LLMProviderConfig.requestTimeoutMs — useful for cheap classification
@@ -309,80 +309,95 @@ export type LLMProvider = (prompt: string) => Promise<LLMResponse>;
 /** Available models per provider — used by frontend dropdowns */
 export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   openai: [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-3.5-turbo",
+    "gpt-5.5",
+    "gpt-5.5-pro",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
   ],
   anthropic: [
-    "claude-opus-4-6",
+    "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5-20251001",
   ],
   gemini: [
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
   ],
   mistral: [
     "mistral-large-latest",
+    "mistral-medium-3.5",
     "mistral-small-latest",
-    "open-mistral-7b",
+    "mistral-small-2603+1",
   ],
   bedrock: [
-    "amazon.nova-micro-v1:0",
-    "amazon.nova-lite-v1:0",
+    "anthropic.claude-opus-4-7",
+    "anthropic.claude-sonnet-4-6",
+    "anthropic.claude-haiku-4-5-20251001-v1:0",
     "amazon.nova-pro-v1:0",
   ],
   "vertex-ai": [
-    "gemini-1.5-flash-002",
-    "gemini-1.5-pro-002",
-    "claude-3-5-sonnet-v2@20241022",
+    "gemini-3.5-flash",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-pro",
+    "claude-opus-4-7",
   ],
   groq: [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
-    "mixtral-8x7b-32768",
+    "openai/gpt-oss-120b",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3-32b",
+    "groq/compound",
+    "groq/compound-mini",
   ],
   fireworks: [
-    "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    "accounts/fireworks/models/deepseek-r1",
+    "accounts/fireworks/models/gpt-oss-120b",
+    "accounts/fireworks/models/qwen3-32b",
+    "accounts/fireworks/models/qwen3p5-9b",
+    "accounts/fireworks/models/llama4-maverick-instruct-basic",
   ],
   together: [
-    "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    "deepseek-ai/DeepSeek-R1",
+    "deepseek-ai/DeepSeek-V4-Pro",
+    "Qwen/Qwen3.5-397B-A17B",
+    "Qwen/Qwen3.5-9B",
+    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
   ],
   ollama: [
-    "llama3.2",
-    "llama3.1:70b",
-    "deepseek-r1:14b",
+    "gpt-oss:20b",
+    "gpt-oss:120b",
+    "qwen3.6:27b",
+    "qwen3.6:35b",
+    "llama4:scout",
   ],
   localai: [
-    "llama-3.2-3b-instruct",
-    "llama-3.1-8b-instruct",
-    "llama-3.1-70b-instruct",
+    "gpt-oss-20b",
+    "qwen3.6-27b",
+    "qwen3.6-35b-a3b",
+    "qwen_qwen3.5-35b-a3b",
   ],
   cohere: [
-    "command-r7b-12-2024",
-    "command-r-plus-08-2024",
+    "command-a-plus-05-2026",
     "command-a-03-2025",
+    "command-a-vision-07-2025",
+    "command-r7b-12-2024",
   ],
   perplexity: [
+    "sonar-deep-research",
+    "sonar-reasoning-pro",
     "sonar",
     "sonar-pro",
-    "sonar-reasoning-pro",
   ],
   xai: [
-    "grok-2-1212",
-    "grok-3-mini-beta",
-    "grok-3-beta",
+    "grok-4.3",
+    "grok-4.20-non-reasoning",
+    "grok-build-0.1",
   ],
   deepseek: [
-    "deepseek-chat",
-    "deepseek-reasoner",
-    "deepseek-coder",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
   ],
   opencode_zen: [
     "big-pickle",

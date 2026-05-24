@@ -34,19 +34,16 @@ interface RateEntry {
  */
 const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
   openai: {
-    "gpt-4o": { promptPer1k: 0.0025, completionPer1k: 0.01 },
-    "gpt-4o-mini": { promptPer1k: 0.00015, completionPer1k: 0.0006 },
-    "gpt-4-turbo": { promptPer1k: 0.01, completionPer1k: 0.03 },
-    "gpt-3.5-turbo": { promptPer1k: 0.0005, completionPer1k: 0.0015 },
+    "gpt-5.5": { promptPer1k: 0.005, completionPer1k: 0.03 },
+    "gpt-5.5-pro": { promptPer1k: 0.03, completionPer1k: 0.18 },
+    "gpt-5.4": { promptPer1k: 0.0025, completionPer1k: 0.015 },
+    "gpt-5.4-mini": { promptPer1k: 0.00075, completionPer1k: 0.0045 },
+    "gpt-5.4-nano": { promptPer1k: 0.0002, completionPer1k: 0.00125 },
   },
   anthropic: {
-    // Claude 3.5 family per the 2026 list. Newer claude-sonnet-4-x models
-    // share the Sonnet rate point until/unless Anthropic publishes a
-    // distinct tier.
-    "claude-3-5-sonnet": { promptPer1k: 0.003, completionPer1k: 0.015 },
-    "claude-3-5-haiku": { promptPer1k: 0.0008, completionPer1k: 0.004 },
-    "claude-3-opus": { promptPer1k: 0.015, completionPer1k: 0.075 },
+    "claude-haiku-4-5-20251001": { promptPer1k: 0.001, completionPer1k: 0.005 },
     "claude-sonnet-4-6": { promptPer1k: 0.003, completionPer1k: 0.015 },
+    "claude-opus-4-7": { promptPer1k: 0.005, completionPer1k: 0.025 },
   },
 };
 
@@ -57,14 +54,17 @@ const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
  */
 function tierFallback(model: string): RateEntry {
   const lc = model.toLowerCase();
-  if (lc.includes("opus") || lc.includes("gpt-4-turbo")) {
-    return { promptPer1k: 0.015, completionPer1k: 0.075 };
+  if (lc.includes("gpt-5.5-pro")) {
+    return { promptPer1k: 0.03, completionPer1k: 0.18 };
   }
-  if (lc.includes("sonnet") || lc.includes("gpt-4o") || lc.includes("gpt-4")) {
+  if (lc.includes("opus") || lc.includes("gpt-5.5")) {
+    return { promptPer1k: 0.005, completionPer1k: 0.03 };
+  }
+  if (lc.includes("sonnet") || lc.includes("gpt-5.4") || lc.includes("gpt-5")) {
     return { promptPer1k: 0.003, completionPer1k: 0.015 };
   }
-  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("3.5")) {
-    return { promptPer1k: 0.0008, completionPer1k: 0.004 };
+  if (lc.includes("haiku") || lc.includes("mini") || lc.includes("nano")) {
+    return { promptPer1k: 0.001, completionPer1k: 0.005 };
   }
   // Truly unknown model: zero so the row still writes (HEL-74 wants a
   // visible step_results entry per generation) but doesn't anchor budget

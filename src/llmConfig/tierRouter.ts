@@ -5,7 +5,7 @@
  *
  * Why this exists (HEL-81):
  *   AutoFlow is BYOK + multi-provider. Some customers run all-Anthropic
- *   (Haiku/Sonnet/Opus). Some all-OpenAI (nano/4.1/5). Some mixed. Some on
+ *   (Haiku/Sonnet/Opus). Some all-OpenAI (GPT-5 family). Some mixed. Some on
  *   Gemini or Mistral. The platform shouldn't say "use Haiku for triage" —
  *   it should say "use the small tier for triage" and let each workspace
  *   resolve `small` to whatever they've configured.
@@ -60,8 +60,8 @@ export type TierMatrix = Partial<Record<TierKey, TierBinding>>;
  *
  * Order of preference when multiple providers are connected:
  *   - small      → cheapest small-tier model across connected providers
- *   - medium     → best balance (Sonnet/4.1/Gemini-Pro tier)
- *   - large      → best reasoning (Opus/GPT-5/Gemini-Ultra tier)
+ *   - medium     → best balance (Sonnet/GPT-5/Gemini frontier tier)
+ *   - large      → best reasoning (Opus/GPT-5.5/Gemini Pro tier)
  *   - embeddings → OpenAI text-embedding-3-small if available; else Voyage if Anthropic; else provider-native
  *   - vision     → first vision-capable medium-tier model among connected providers
  */
@@ -69,42 +69,88 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   anthropic: {
     small: "claude-haiku-4-5-20251001",
     medium: "claude-sonnet-4-6",
-    large: "claude-opus-4-6",
+    large: "claude-opus-4-7",
     vision: "claude-sonnet-4-6",
   },
   openai: {
-    small: "gpt-4o-mini",
-    medium: "gpt-4o",
-    large: "gpt-4o",
+    small: "gpt-5.4-nano",
+    medium: "gpt-5.4",
+    large: "gpt-5.5",
     embeddings: "text-embedding-3-small",
-    vision: "gpt-4o",
+    vision: "gpt-5.4",
   },
   gemini: {
-    small: "gemini-1.5-flash",
-    medium: "gemini-1.5-pro",
-    large: "gemini-1.5-pro",
-    vision: "gemini-1.5-pro",
+    small: "gemini-3.1-flash-lite",
+    medium: "gemini-3.5-flash",
+    large: "gemini-3.1-pro-preview",
+    vision: "gemini-3.5-flash",
   },
   mistral: {
     small: "mistral-small-latest",
-    medium: "mistral-large-latest",
+    medium: "mistral-medium-3.5",
     large: "mistral-large-latest",
   },
   bedrock: {
-    small: "amazon.nova-micro-v1:0",
-    medium: "amazon.nova-lite-v1:0",
-    large: "amazon.nova-pro-v1:0",
+    small: "anthropic.claude-haiku-4-5-20251001-v1:0",
+    medium: "anthropic.claude-sonnet-4-6",
+    large: "anthropic.claude-opus-4-7",
+    vision: "anthropic.claude-sonnet-4-6",
   },
-  "vertex-ai": {},
-  groq: {},
-  fireworks: {},
-  together: {},
-  ollama: {},
-  localai: {},
-  cohere: { embeddings: "embed-english-v3.0" },
-  perplexity: {},
-  xai: {},
-  deepseek: {},
+  "vertex-ai": {
+    small: "gemini-3.1-flash-lite",
+    medium: "gemini-3.5-flash",
+    large: "gemini-3.1-pro-preview",
+    vision: "gemini-3.5-flash",
+  },
+  groq: {
+    small: "meta-llama/llama-4-scout-17b-16e-instruct",
+    medium: "qwen/qwen3-32b",
+    large: "openai/gpt-oss-120b",
+  },
+  fireworks: {
+    small: "accounts/fireworks/models/qwen3p5-9b",
+    medium: "accounts/fireworks/models/qwen3-32b",
+    large: "accounts/fireworks/models/gpt-oss-120b",
+  },
+  together: {
+    small: "Qwen/Qwen3.5-9B",
+    medium: "Qwen/Qwen3.5-397B-A17B",
+    large: "deepseek-ai/DeepSeek-V4-Pro",
+    vision: "Qwen/Qwen3.5-397B-A17B",
+  },
+  ollama: {
+    small: "gpt-oss:20b",
+    medium: "qwen3.6:27b",
+    large: "llama4:scout",
+  },
+  localai: {
+    small: "gpt-oss-20b",
+    medium: "qwen3.6-27b",
+    large: "qwen3.6-35b-a3b",
+  },
+  cohere: {
+    small: "command-r7b-12-2024",
+    medium: "command-a-03-2025",
+    large: "command-a-plus-05-2026",
+    embeddings: "embed-english-v3.0",
+    vision: "command-a-vision-07-2025",
+  },
+  perplexity: {
+    small: "sonar",
+    medium: "sonar-pro",
+    large: "sonar-deep-research",
+  },
+  xai: {
+    small: "grok-4.20-non-reasoning",
+    medium: "grok-4.3",
+    large: "grok-4.3",
+    vision: "grok-4.3",
+  },
+  deepseek: {
+    small: "deepseek-v4-flash",
+    medium: "deepseek-v4-pro",
+    large: "deepseek-v4-pro",
+  },
   // Hosted-free fallback provider (PR B.1). The engine doesn't go
   // through tier routing for hosted-free — it pins to the catalog's
   // modelId in src/hostedFreeModels/providers.ts — so we leave the
@@ -118,17 +164,17 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
  * cheaper. Not exact $/1M; just a relative ordering.
  */
 const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
-  gemini: 1, // 1.5-flash ≈ $0.075/1M in
-  openai: 2, // 4o-mini ≈ $0.15/1M in
-  mistral: 3, // small ≈ $0.10/1M
-  anthropic: 4, // haiku ≈ $1/1M
-  groq: 1.5,
-  deepseek: 1.2,
+  gemini: 2, // 3.1 Flash-Lite ≈ $0.45/1M in
+  openai: 1.5, // GPT-5.4 nano ≈ $0.20/1M in
+  mistral: 1.2, // Small latest ≈ $0.15/1M in
+  anthropic: 4, // Haiku ≈ $1/1M in
+  groq: 1,
+  deepseek: 1.1,
   fireworks: 1.8,
   together: 1.8,
   ollama: 0,
   localai: 0,
-  bedrock: 3,
+  bedrock: 4,
   "vertex-ai": 2,
   cohere: 5,
   perplexity: 5,
@@ -162,7 +208,7 @@ export function getDefaultTierMatrix(connectedProviders: ProviderName[]): TierMa
     matrix.small = { provider: cheapestForSmall.provider, model: cheapestForSmall.model };
   }
 
-  // medium — prefer Anthropic Sonnet, then OpenAI 4.x, then Gemini Pro, then Mistral
+  // medium — prefer Anthropic Sonnet, then OpenAI GPT-5, then Gemini, then Mistral
   const mediumPriority: ProviderName[] = ["anthropic", "openai", "gemini", "mistral"];
   for (const p of mediumPriority) {
     if (connectedProviders.includes(p)) {
@@ -181,7 +227,7 @@ export function getDefaultTierMatrix(connectedProviders: ProviderName[]): TierMa
     }
   }
 
-  // large — prefer Anthropic Opus, then GPT-4o/5, then Gemini Pro
+  // large — prefer Anthropic Opus, then GPT-5.5, then Gemini Pro
   const largePriority: ProviderName[] = ["anthropic", "openai", "gemini", "mistral"];
   for (const p of largePriority) {
     if (connectedProviders.includes(p)) {

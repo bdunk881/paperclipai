@@ -269,9 +269,9 @@ AutoFlow routes each LLM step to the cheapest capable model automatically:
 
 | Tier | Models | When |
 |---|---|---|
-| `lite` | claude-haiku / gpt-4o-mini | Classification, extraction, short yes/no |
-| `standard` | claude-sonnet / gpt-4o | Multi-step reasoning, content generation |
-| `power` | claude-opus / gpt-4o | Complex orchestration, large context (>2000 chars) |
+| `lite` | claude-haiku-4-5 / gpt-5.4-nano | Classification, extraction, short yes/no |
+| `standard` | claude-sonnet-4-6 / gpt-5.4 | Multi-step reasoning, content generation |
+| `power` | claude-opus-4-7 / gpt-5.5 | Complex orchestration, large context (>2000 chars) |
 
 This is a compelling demo point: show cost observability via `costLog` on every run response.
 

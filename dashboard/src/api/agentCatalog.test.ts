@@ -19,7 +19,7 @@ const BASE_TEMPLATE = {
   id: "tmpl-ops",
   name: "Operations Lead",
   description: "Handles operational workflows",
-  defaultModel: "gpt-4o",
+  defaultModel: "gpt-5.4",
   defaultInstructions: "Run operations",
   defaultSkills: ["skill-b", "skill-a"],
 };
@@ -101,12 +101,12 @@ describe("suggestedBudgetForTemplate", () => {
     expect(await budgetFor(undefined)).toBe(0);
   });
 
-  it("returns 50 for a 'mini' model", async () => {
-    expect(await budgetFor("gpt-4o-mini")).toBe(50);
+  it("returns 50 for a low-cost model", async () => {
+    expect(await budgetFor("gpt-5.4-nano")).toBe(50);
   });
 
-  it("returns 100 for a non-mini model", async () => {
-    expect(await budgetFor("gpt-4o")).toBe(100);
+  it("returns 100 for a non-low-cost model", async () => {
+    expect(await budgetFor("gpt-5.4")).toBe(100);
   });
 });
 

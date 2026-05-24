@@ -29,6 +29,7 @@ import approvalPolicyRoutes from "./approvals/policyRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
 import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
+import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
@@ -580,6 +581,13 @@ app.use(
   requireRole("admin", "developer"),
   connectorGrantsRoutes,
 );
+
+// HEL-206: workspace-scoped encrypted environment variables (Pro surface).
+// High-trust: list paths never return plaintext; the only decrypt path is
+// the short-lived deref token issued by `/api/env-vars/:id/deref-token`.
+// Mirrors the api-keys role gate (admin/developer); follow-up may tighten
+// further (owner-only) once the surface is reviewed.
+app.use("/api/env-vars", requireAuth, workspaceResolver, requireRole("admin", "developer"), envVarRoutes);
 
 // ---------------------------------------------------------------------------
 // Hosted free model catalog (PR B.1) + per-workspace daily token usage

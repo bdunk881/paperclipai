@@ -30,6 +30,7 @@ import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import AuthCallback from "./pages/AuthCallback";
 import AuthConfirm from "./pages/AuthConfirm";
+import EnvVars from "./pages/EnvVars";
 import Escalations from "./pages/Escalations";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
@@ -284,6 +285,9 @@ const routes: RouteObject[] = [
       // the hub with the right tab pre-selected.
       { path: "connections", element: <Connections /> },
       { path: "integrations/mcp", element: <MCPIntegrations /> },
+      // HEL-206 (PR C): encrypted env vars surface. Lives as a standalone
+      // route until PR B (HEL-205) lands the Connections hub with tabs.
+      { path: "env-vars", element: <EnvVars /> },
       // HEL-179: operator-visible health surface for every workspace connector
       // (status pills + Reconnect CTA on auth_failed). Backed by the existing
       // `GET /api/connectors/health` route + `getConnectorHealth()` typed

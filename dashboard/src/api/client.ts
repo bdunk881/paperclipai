@@ -479,6 +479,112 @@ export async function revokeApiKey(id: string, accessToken?: string): Promise<vo
   }
 }
 
+// ---------------------------------------------------------------------------
+// HEL-206: encrypted workspace environment variables (Pro surface).
+// ---------------------------------------------------------------------------
+
+export type EnvVarScopeKind = "mission" | "team" | "agent";
+export type EnvVarPermission = "allow" | "ask" | "deny";
+
+export interface EnvVarGrant {
+  scope_kind: EnvVarScopeKind;
+  scope_id: string;
+  permission: EnvVarPermission;
+}
+
+export interface EnvVarRecord {
+  id: string;
+  name: string;
+  keyVersion: number;
+  createdAt: string;
+  lastUsedAt: string | null;
+  createdByUserId: string | null;
+  grants: EnvVarGrant[];
+}
+
+export interface CreateEnvVarInput {
+  name: string;
+  value: string;
+  grants?: EnvVarGrant[];
+}
+
+const ENV_VARS_PATH = "/env-vars";
+
+export async function listEnvVars(accessToken?: string): Promise<EnvVarRecord[]> {
+  const res = await trackedFetch(`${BASE}${ENV_VARS_PATH}`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch env vars: ${res.status}`);
+  const data = (await res.json()) as { envVars: EnvVarRecord[] };
+  return data.envVars;
+}
+
+export async function createEnvVar(
+  input: CreateEnvVarInput,
+  accessToken?: string,
+): Promise<EnvVarRecord> {
+  const res = await trackedFetch(`${BASE}${ENV_VARS_PATH}`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken),
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to create env var: ${res.status}`));
+  }
+  return (await res.json()) as EnvVarRecord;
+}
+
+export async function rotateEnvVar(
+  id: string,
+  value: string,
+  accessToken?: string,
+): Promise<{ id: string; keyVersion: number }> {
+  const res = await trackedFetch(
+    `${BASE}${ENV_VARS_PATH}/${encodeURIComponent(id)}/rotate`,
+    {
+      method: "POST",
+      headers: buildJsonHeaders(accessToken),
+      body: JSON.stringify({ value }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to rotate env var: ${res.status}`));
+  }
+  return (await res.json()) as { id: string; keyVersion: number };
+}
+
+export async function updateEnvVarGrants(
+  id: string,
+  grants: EnvVarGrant[],
+  accessToken?: string,
+): Promise<{ id: string; grants: EnvVarGrant[] }> {
+  const res = await trackedFetch(
+    `${BASE}${ENV_VARS_PATH}/${encodeURIComponent(id)}/grants`,
+    {
+      method: "PUT",
+      headers: buildJsonHeaders(accessToken),
+      body: JSON.stringify({ grants }),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to update grants: ${res.status}`));
+  }
+  return (await res.json()) as { id: string; grants: EnvVarGrant[] };
+}
+
+export async function deleteEnvVar(id: string, accessToken?: string): Promise<void> {
+  const res = await trackedFetch(
+    `${BASE}${ENV_VARS_PATH}/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: buildAuthHeaders(accessToken),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await readApiError(res, `Failed to delete env var: ${res.status}`));
+  }
+}
+
 const BASE = getApiBasePath();
 
 const MOCK_CONNECTOR_HEALTH: ConnectorHealthRecord[] = [

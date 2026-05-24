@@ -34,62 +34,62 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
   anthropic: {
     lite: "claude-haiku-4-5-20251001",
     standard: "claude-sonnet-4-6",
-    power: "claude-opus-4-6",
+    power: "claude-opus-4-7",
   },
   openai: {
-    lite: "gpt-4o-mini",
-    standard: "gpt-4o",
-    power: "gpt-4o",
+    lite: "gpt-5-nano",
+    standard: "gpt-5.5",
+    power: "gpt-5.5-pro",
   },
   gemini: {
-    lite: "gemini-1.5-flash",
-    standard: "gemini-2.0-flash",
-    power: "gemini-1.5-pro",
+    lite: "gemini-3.1-flash-lite",
+    standard: "gemini-3.5-flash",
+    power: "gemini-2.5-pro",
   },
   mistral: {
     lite: "mistral-small-latest",
-    standard: "mistral-large-latest",
+    standard: "mistral-medium-latest",
     power: "mistral-large-latest",
   },
   bedrock: {
     lite: "amazon.nova-micro-v1:0",
     standard: "amazon.nova-lite-v1:0",
-    power: "amazon.nova-pro-v1:0",
+    power: "amazon.nova-premier-v1:0",
   },
   "vertex-ai": {
-    lite: "gemini-1.5-flash-002",
-    standard: "gemini-1.5-pro-002",
-    power: "claude-3-5-sonnet-v2@20241022",
+    lite: "gemini-2.5-flash",
+    standard: "gemini-3.5-flash",
+    power: "gemini-2.5-pro",
   },
   groq: {
     lite: "llama-3.1-8b-instant",
-    standard: "mixtral-8x7b-32768",
-    power: "llama-3.3-70b-versatile",
+    standard: "meta-llama/llama-4-scout-17b-16e-instruct",
+    power: "meta-llama/llama-4-maverick-17b-128e-instruct",
   },
   fireworks: {
-    lite: "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    standard: "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    power: "accounts/fireworks/models/deepseek-r1",
+    lite: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+    standard: "accounts/fireworks/models/llama4-scout-instruct-basic",
+    power: "accounts/fireworks/models/llama4-maverick-instruct-basic",
   },
   together: {
-    lite: "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
-    standard: "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-    power: "deepseek-ai/DeepSeek-R1",
+    lite: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    standard: "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+    power: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
   },
   ollama: {
     lite: "llama3.2",
-    standard: "llama3.1:70b",
+    standard: "llama3.3:70b",
     power: "deepseek-r1:14b",
   },
   localai: {
     lite: "llama-3.2-3b-instruct",
     standard: "llama-3.1-8b-instruct",
-    power: "llama-3.1-70b-instruct",
+    power: "llama-3.3-70b-instruct",
   },
   cohere: {
-    lite: "command-r7b-12-2024",
-    standard: "command-r-plus-08-2024",
-    power: "command-a-03-2025",
+    lite: "command-r-plus-08-2024",
+    standard: "command-a-03-2025",
+    power: "command-a-plus-05-2026",
   },
   perplexity: {
     lite: "sonar",
@@ -97,14 +97,14 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     power: "sonar-reasoning-pro",
   },
   xai: {
-    lite: "grok-3-mini-beta",
-    standard: "grok-2-1212",
-    power: "grok-3-beta",
+    lite: "grok-4.3",
+    standard: "grok-4.3",
+    power: "grok-4.3",
   },
   deepseek: {
-    lite: "deepseek-chat",
-    standard: "deepseek-coder",
-    power: "deepseek-reasoner",
+    lite: "deepseek-v4-flash",
+    standard: "deepseek-v4-flash",
+    power: "deepseek-v4-pro",
   },
   opencode_zen: {
     // Hosted free tier provider has a single stealth model — use it for
@@ -126,16 +126,46 @@ interface TokenCostRate {
 }
 
 const MODEL_COST_RATES: Record<string, TokenCostRate> = {
-  "claude-haiku-4-5-20251001":  { input: 0.00025,  output: 0.00125 },
+  // Anthropic (per Anthropic's 2026-05 pricing page)
+  "claude-opus-4-7":            { input: 0.005,     output: 0.025   },
+  "claude-opus-4-6":            { input: 0.005,     output: 0.025   },
   "claude-sonnet-4-6":          { input: 0.003,     output: 0.015   },
-  "claude-opus-4-6":            { input: 0.015,     output: 0.075   },
-  "gpt-4o-mini":                { input: 0.00015,   output: 0.0006  },
+  "claude-haiku-4-5":           { input: 0.001,     output: 0.005   },
+  "claude-haiku-4-5-20251001":  { input: 0.001,     output: 0.005   },
+
+  // OpenAI (per developers.openai.com pricing 2026-05)
+  "gpt-5.5":                    { input: 0.005,     output: 0.030   },
+  "gpt-5.5-pro":                { input: 0.030,     output: 0.180   },
+  "gpt-5":                      { input: 0.00125,   output: 0.010   },
+  "gpt-5-mini":                 { input: 0.00025,   output: 0.002   },
+  "gpt-5-nano":                 { input: 0.00005,   output: 0.0004  },
+  // Legacy GPT-4o rates retained so historical step_results cost out
+  // correctly when older snapshots are queried.
   "gpt-4o":                     { input: 0.0025,    output: 0.01    },
+  "gpt-4o-mini":                { input: 0.00015,   output: 0.0006  },
+
+  // Gemini (per ai.google.dev pricing 2026-05)
+  "gemini-3.5-flash":           { input: 0.00050,   output: 0.003   },
+  "gemini-3.1-pro-preview":     { input: 0.002,     output: 0.012   },
+  "gemini-3.1-flash-lite":      { input: 0.00025,   output: 0.0015  },
+  "gemini-2.5-pro":             { input: 0.00125,   output: 0.005   },
+  "gemini-2.5-flash":           { input: 0.00010,   output: 0.0004  },
+  // Legacy
   "gemini-1.5-flash":           { input: 0.000075,  output: 0.0003  },
   "gemini-2.0-flash":           { input: 0.0001,    output: 0.0004  },
   "gemini-1.5-pro":             { input: 0.00125,   output: 0.005   },
-  "mistral-small-latest":       { input: 0.0002,    output: 0.0006  },
-  "mistral-large-latest":       { input: 0.002,     output: 0.006   },
+
+  // Mistral
+  "mistral-large-latest":       { input: 0.0005,    output: 0.0015  },
+  "mistral-medium-latest":      { input: 0.0004,    output: 0.002   },
+  "mistral-small-latest":       { input: 0.0001,    output: 0.0003  },
+
+  // xAI Grok (per docs.x.ai pricing 2026-05)
+  "grok-4.3":                   { input: 0.00125,   output: 0.0025  },
+
+  // DeepSeek V4 (cache-miss rates; cache-hit pricing is ~10×–250× lower)
+  "deepseek-v4-pro":            { input: 0.00174,   output: 0.00348 },
+  "deepseek-v4-flash":          { input: 0.00014,   output: 0.00028 },
 };
 
 // ---------------------------------------------------------------------------

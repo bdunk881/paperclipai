@@ -706,6 +706,11 @@ app.use("/api/workspaces", requireAuth, workspaceRoutes);
 // 404'd on every save and fell back to sessionStorage with a misleading
 // "backend endpoint pending" toast. Postgres-backed via profileStore.
 app.use("/api/user", requireAuth, profileRoutes);
+// HEL-203 PR 1: alias mount so the dashboard's v2 Pro/Simple toggle and
+// any future per-user UI preference can hit /api/user-profile/preferences
+// without an extra router. The handlers live in profileRoutes.ts; this
+// is purely a path alias.
+app.use("/api/user-profile", requireAuth, profileRoutes);
 // llmEndpointRateLimiter is now applied INSIDE missionRoutes on the
 // generate-plan POST only (see createMissionRoutes). Mounting it
 // here would re-block the cheap GET list endpoint that the dashboard

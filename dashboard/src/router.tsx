@@ -38,6 +38,7 @@ import HiringPlanReview from "./pages/HiringPlanReview";
 import WorkspaceMemory from "./pages/WorkspaceMemory";
 import Dashboard from "./pages/Dashboard";
 import LandingPage from "./pages/LandingPage";
+import Connections from "./pages/Connections";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
@@ -278,6 +279,11 @@ const routes: RouteObject[] = [
       { path: "team", element: <Navigate to="/workspace/org-structure" replace /> },
 
       // Connect pillar
+      // HEL-205: unified Connections hub with sub-tabs. The legacy direct
+      // routes below still resolve (for deep-links from external surfaces),
+      // and `/integrations`, `/settings/llm`, `/settings/mcp` redirect into
+      // the hub with the right tab pre-selected.
+      { path: "connections", element: <Connections /> },
       { path: "integrations/mcp", element: <MCPIntegrations /> },
       // HEL-179: operator-visible health surface for every workspace connector
       // (status pills + Reconnect CTA on auth_failed). Backed by the existing
@@ -332,9 +338,14 @@ const routes: RouteObject[] = [
       // URL keeps its redirect since `deploy/...` is structurally
       // distinct from a UUID.
       { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
-      { path: "integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      // HEL-205: route the legacy entry points into the new Connections hub
+      // with the right tab pre-selected. Old direct routes above still
+      // resolve for any external deep-links that bypass the hub.
+      { path: "integrations", element: <Navigate to="/connections?tab=integrations" replace /> },
+      { path: "settings/llm", element: <Navigate to="/connections?tab=models" replace /> },
+      { path: "settings/mcp", element: <Navigate to="/connections?tab=mcp" replace /> },
       // HEL-179: `/integrations/health` redirect retired — real page mounted above.
-      { path: "settings/integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "settings/integrations", element: <Navigate to="/connections?tab=integrations" replace /> },
       { path: "logs", element: <Navigate to="/agents/activity" replace /> },
       { path: "monitor", element: <Navigate to="/" replace /> },
       { path: "history", element: <Navigate to="/agents/activity" replace /> },

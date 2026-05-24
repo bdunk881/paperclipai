@@ -32,6 +32,9 @@ export interface AgentMemoryEntry {
   entryType: AgentMemoryEntryType;
   memoryLayer: AgentMemoryLayer;
   teamId?: string;
+  // HEL-207: mission_id is a retrieval-relevance tag (see migration 062), never
+  // a visibility wall. Null by default so existing callers don't break.
+  missionId?: string;
   key: string;
   text: string;
   metadata: Record<string, unknown>;
@@ -57,6 +60,7 @@ export interface AgentKnowledgeFact {
   scope: AgentMemoryScope;
   memoryLayer: AgentMemoryLayer;
   teamId?: string;
+  missionId?: string;
   subject: string;
   predicate: string;
   object: string;
@@ -74,6 +78,7 @@ export interface AgentHeartbeatLog {
   runId: string;
   memoryLayer: AgentMemoryLayer;
   teamId?: string;
+  missionId?: string;
   status?: string;
   summary: string;
   metadata: Record<string, unknown>;
@@ -124,6 +129,7 @@ interface PersistedEntryRow {
   entry_type: AgentMemoryEntryType;
   memory_layer: AgentMemoryLayer;
   team_id: string | null;
+  mission_id: string | null;
   key: string;
   text_value: string;
   metadata: unknown;
@@ -414,6 +420,7 @@ function toPublicEntry(entry: StoredAgentMemoryEntry): AgentMemoryEntry {
     entryType: entry.entryType,
     memoryLayer: entry.memoryLayer,
     teamId: entry.teamId,
+    missionId: entry.missionId,
     key: entry.key,
     text: entry.text,
     metadata: entry.metadata,
@@ -435,6 +442,7 @@ function mapEntryRow(row: PersistedEntryRow): StoredAgentMemoryEntry {
     entryType: row.entry_type,
     memoryLayer: normalizeMemoryLayer(row.memory_layer),
     teamId: row.team_id ?? undefined,
+    missionId: row.mission_id ?? undefined,
     key: row.key,
     text: row.text_value,
     metadata: parseJsonColumn(row.metadata, {} as Record<string, unknown>),
@@ -456,6 +464,7 @@ function mapFactRow(row: PersistedFactRow): StoredKnowledgeFact {
     scope: row.scope,
     memoryLayer: normalizeMemoryLayer(row.memory_layer),
     teamId: row.team_id ?? undefined,
+    // mission_id column not present on agent_memory_kg_facts; left undefined.
     subject: row.subject,
     predicate: row.predicate,
     object: row.object,
@@ -475,6 +484,7 @@ function mapHeartbeatRow(row: PersistedHeartbeatRow): StoredHeartbeatLog {
     runId: row.run_id,
     memoryLayer: normalizeMemoryLayer(row.memory_layer),
     teamId: row.team_id ?? undefined,
+    // mission_id column not present on agent_heartbeat_logs; left undefined.
     status: row.status ?? undefined,
     summary: row.summary,
     metadata: parseJsonColumn(row.metadata, {} as Record<string, unknown>),
@@ -877,6 +887,8 @@ export const agentMemoryStore = {
     entryType?: AgentMemoryEntryType;
     memoryLayer?: AgentMemoryLayer;
     teamId?: string;
+    // HEL-207: optional mission scope tag; default null (existing callers unchanged).
+    missionId?: string;
     key: string;
     text: string;
     metadata?: Record<string, unknown>;
@@ -900,6 +912,7 @@ export const agentMemoryStore = {
       entryType,
       memoryLayer,
       teamId: input.teamId?.trim() || undefined,
+      missionId: input.missionId?.trim() || undefined,
       key: input.key,
       text: input.text,
       metadata: {
@@ -933,8 +946,8 @@ export const agentMemoryStore = {
       await ensureSchema();
       await queryPostgres(
         `INSERT INTO agent_memory_entries (
-          id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15, $16, $17)`,
+          id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, mission_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15, $16, $17, $18)`,
         [
           entry.id,
           entry.userId,
@@ -945,6 +958,7 @@ export const agentMemoryStore = {
           entry.entryType,
           entry.memoryLayer,
           entry.teamId ?? null,
+          entry.missionId ?? null,
           entry.key,
           entry.text,
           JSON.stringify(entry.metadata),
@@ -968,6 +982,7 @@ export const agentMemoryStore = {
     scope?: AgentMemoryScope;
     memoryLayer?: AgentMemoryLayer;
     teamId?: string;
+    missionId?: string;
     ticketId: string;
     ticketUrl: string;
     closedAt: string;
@@ -990,6 +1005,7 @@ export const agentMemoryStore = {
       entryType: "ticket_close",
       memoryLayer: input.memoryLayer ?? "agent",
       teamId: input.teamId,
+      missionId: input.missionId,
       key: buildTicketCloseKey(metadata),
       text: buildTicketCloseText(metadata),
       metadata,
@@ -1003,6 +1019,10 @@ export const agentMemoryStore = {
     workspaceId?: string;
     agentId: string;
     teamId?: string;
+    // HEL-207: optional mission-scope filter. When set, only entries tagged
+    // with this missionId are returned. Passes through as a SQL filter; null
+    // (default) preserves existing behaviour.
+    missionId?: string;
     query: string;
     includeShared?: boolean;
     limit?: number;
@@ -1015,19 +1035,21 @@ export const agentMemoryStore = {
     await purgeExpiredForUser(input.userId);
 
     const workspaceId = input.workspaceId?.trim() || input.userId;
+    const missionId = input.missionId?.trim() || null;
     let candidates: StoredAgentMemoryEntry[];
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
       const rows = await queryPostgres<PersistedEntryRow>(
-        `SELECT id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
+        `SELECT id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, mission_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
            FROM agent_memory_entries
           WHERE user_id = $1
             AND workspace_id = $2
             AND ($3::text IS NULL OR entry_type = $3)
             AND ($4::text IS NULL OR memory_layer = $4)
+            AND ($5::text IS NULL OR mission_id = $5)
             AND archived_at IS NULL
           ORDER BY updated_at DESC`,
-        [input.userId, workspaceId, input.entryType ?? null, input.memoryLayer ?? null]
+        [input.userId, workspaceId, input.entryType ?? null, input.memoryLayer ?? null, missionId]
       );
       candidates = rows.rows
         .map(mapEntryRow)
@@ -1053,6 +1075,7 @@ export const agentMemoryStore = {
           }) &&
           (input.entryType ? entry.entryType === input.entryType : true) &&
           (input.memoryLayer ? entry.memoryLayer === input.memoryLayer : true) &&
+          (missionId ? entry.missionId === missionId : true) &&
           entryMatchesTags(entry, input.tags) &&
           entryMatchesTicketId(entry, input.ticketId) &&
           !isExpired(entry.expiresAt)
@@ -1104,6 +1127,7 @@ export const agentMemoryStore = {
     scope?: AgentMemoryScope;
     memoryLayer?: AgentMemoryLayer;
     teamId?: string;
+    missionId?: string;
     subject: string;
     predicate: string;
     object: string;
@@ -1121,6 +1145,7 @@ export const agentMemoryStore = {
       scope: input.scope ?? "private",
       memoryLayer: input.memoryLayer ?? "agent",
       teamId: input.teamId?.trim() || undefined,
+      missionId: input.missionId?.trim() || undefined,
       subject: input.subject,
       predicate: input.predicate,
       object: input.object,
@@ -1147,6 +1172,11 @@ export const agentMemoryStore = {
 
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
+      // HEL-207: migration 062 only adds mission_id to agent_memory_entries +
+      // workspace_instructions + knowledge_items + agent_episodes; the legacy
+      // kg_facts/heartbeat tables stay unchanged so the insert column list
+      // hasn't grown. missionId on AgentKnowledgeFact is carried in-memory and
+      // surfaced via the public type for callers that need provenance.
       await queryPostgres(
         `INSERT INTO agent_memory_kg_facts (
           id, user_id, workspace_id, agent_id, run_id, scope, memory_layer, team_id, subject, predicate, object, metadata, created_at, expires_at, archived_at
@@ -1179,6 +1209,10 @@ export const agentMemoryStore = {
     workspaceId?: string;
     agentId: string;
     teamId?: string;
+    // HEL-207: mission filter applied in-memory only — kg_facts table does not
+    // carry mission_id (see migration 062 scope). Persisted rows will fall
+    // through this filter unless the caller decides to wire it later.
+    missionId?: string;
     query?: string;
     subject?: string;
     predicate?: string;
@@ -1229,11 +1263,13 @@ export const agentMemoryStore = {
     }
 
     const query = input.query?.trim().toLowerCase();
+    const missionFilter = input.missionId?.trim();
     return facts
       .filter((fact) => {
         if (input.subject && fact.subject !== input.subject) return false;
         if (input.predicate && fact.predicate !== input.predicate) return false;
         if (input.object && fact.object !== input.object) return false;
+        if (missionFilter && fact.missionId !== missionFilter) return false;
         if (!query) return true;
         const haystack = `${fact.subject} ${fact.predicate} ${fact.object} ${JSON.stringify(fact.metadata)}`.toLowerCase();
         return haystack.includes(query);
@@ -1249,6 +1285,7 @@ export const agentMemoryStore = {
     runId: string;
     memoryLayer?: AgentMemoryLayer;
     teamId?: string;
+    missionId?: string;
     summary: string;
     status?: string;
     metadata?: Record<string, unknown>;
@@ -1264,6 +1301,7 @@ export const agentMemoryStore = {
       runId: input.runId,
       memoryLayer: input.memoryLayer ?? "agent",
       teamId: input.teamId?.trim() || undefined,
+      missionId: input.missionId?.trim() || undefined,
       status: input.status,
       summary: input.summary,
       metadata: sanitizeMetadata(input.metadata),
@@ -1319,6 +1357,8 @@ export const agentMemoryStore = {
     workspaceId?: string;
     agentId: string;
     teamId?: string;
+    // HEL-207: applied in-memory only (see queryKnowledgeFacts comment).
+    missionId?: string;
     tier: AgentMemoryTier;
     limit?: number;
     memoryLayer?: AgentMemoryLayer;
@@ -1353,6 +1393,7 @@ export const agentMemoryStore = {
         );
     }
 
+    const missionFilter = input.missionId?.trim();
     return Array.from(heartbeatLogs.values())
       .filter(
         (log) =>
@@ -1364,6 +1405,7 @@ export const agentMemoryStore = {
             includeShared: true,
           }) &&
           (input.memoryLayer ? log.memoryLayer === input.memoryLayer : true) &&
+          (missionFilter ? log.missionId === missionFilter : true) &&
           !isExpired(log.expiresAt)
       )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))

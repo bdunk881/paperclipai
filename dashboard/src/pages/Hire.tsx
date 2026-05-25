@@ -103,9 +103,8 @@ export default function Hire() {
   const [hostedFreeCatalog, setHostedFreeCatalog] = useState<
     Awaited<ReturnType<typeof getHostedFreeCatalog>> | null
   >(null);
-  // Default canonical pills to enabled so the prototype's 4-pill row renders.
   const [enabledPills, setEnabledPills] = useState<Set<ContextPillKey>>(
-    () => new Set(CONTEXT_PILLS.map((p) => p.key)),
+    () => new Set(),
   );
   const [selectedLlmConfigId, setSelectedLlmConfigId] = useState<string | null>(null);
   const [regeneratingMissionId, setRegeneratingMissionId] = useState<string | null>(null);
@@ -316,7 +315,7 @@ export default function Hire() {
 
       setStatement("");
       setMetadata({});
-      setEnabledPills(new Set(CONTEXT_PILLS.map((p) => p.key)));
+      setEnabledPills(new Set());
       setCustomContext([]);
       void refreshMissions();
       setSubmitState("idle");

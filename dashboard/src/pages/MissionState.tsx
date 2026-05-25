@@ -53,37 +53,6 @@ function relativeStarted(iso: string | undefined): string {
   return `started ${diffDays}d ago`;
 }
 
-interface FallbackMission {
-  id: string;
-  statement: string;
-  status: string;
-  meta: string;
-  pill: { tone: string; label: string };
-  started: string;
-  spend: string;
-}
-
-const FALLBACK_MISSIONS: FallbackMission[] = [
-  {
-    id: "M-04",
-    statement: "Book 5 demos this week",
-    status: "in_flight",
-    meta: "3/5 booked · Aaron + Mira",
-    pill: { tone: "mustard", label: "at risk" },
-    started: "started 3d ago",
-    spend: "$24.10",
-  },
-  {
-    id: "M-05",
-    statement: "Launch v2 features",
-    status: "in_flight",
-    meta: "8/12 tasks · Eli",
-    pill: { tone: "mustard", label: "at risk" },
-    started: "started 6d ago",
-    spend: "$118.22",
-  },
-];
-
 export default function MissionState() {
   const { activeWorkspaceId } = useWorkspace();
   const navigate = useNavigate();
@@ -101,8 +70,6 @@ export default function MissionState() {
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("statement");
   const [completeTarget, setCompleteTarget] = useState<Mission | null>(null);
   const [stopTarget, setStopTarget] = useState<Mission | null>(null);
-  const [confirmStop, setConfirmStop] = useState(false);
-  const [confirmComplete, setConfirmComplete] = useState(false);
 
   useEffect(() => {
     document.title = "Missions | AutoFlow";
@@ -147,17 +114,6 @@ export default function MissionState() {
     return { live, archived, all: missions.length };
   }, [missions]);
 
-  const usingFallback = missions.length === 0;
-  const fallbackVisible = FALLBACK_MISSIONS.filter(() => {
-    if (statusFilter === "all") return true;
-    if (statusFilter === "archived") return false;
-    return true;
-  }).filter((m) =>
-    search.trim()
-      ? m.statement.toLowerCase().includes(search.trim().toLowerCase())
-      : true,
-  );
-
   return (
     <div className="af2-v2">
       <div className="page-head">
@@ -165,8 +121,7 @@ export default function MissionState() {
           <div className="eyebrow">Run</div>
           <h1 className="h1">Missions</h1>
           <div className="meta">
-            {usingFallback ? 2 : counts.live} live ·{" "}
-            {usingFallback ? 4 : counts.archived} archived · click a row to
+            {counts.live} live · {counts.archived} archived · click a row to
             expand inline
           </div>
         </div>
@@ -202,31 +157,26 @@ export default function MissionState() {
         />
         <div className="grow" />
         <span style={{ fontSize: 12, color: "var(--af2-ink-3)" }}>
-          {usingFallback ? fallbackVisible.length : visible.length} missions
+          {visible.length} missions
         </span>
       </div>
 
       <div className="card card-list" style={{ padding: 0 }}>
-        {usingFallback
-          ? fallbackVisible.map((m) => (
-              <FallbackRow
-                key={m.id}
-                mission={m}
-                isOpen={openId === m.id}
-                onToggle={() => {
-                  if (openId === m.id) setOpenId(null);
-                  else {
-                    setOpenId(m.id);
-                    setDrawerTab("statement");
-                  }
-                }}
-                drawerTab={drawerTab}
-                setDrawerTab={setDrawerTab}
-                onStop={() => setConfirmStop(true)}
-                onComplete={() => setConfirmComplete(true)}
-              />
-            ))
-          : visible.map((m) => {
+        {missions.length === 0 ? (
+          <div style={{ padding: 32, textAlign: "center", fontSize: 13 }}>
+            <p className="desc" style={{ marginBottom: 12 }}>
+              No active missions yet.
+            </p>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => navigate("/hire")}
+            >
+              + New mission
+            </button>
+          </div>
+        ) : (
+          visible.map((m) => {
               const isOpen = openId === m.id;
               const pill = pillFor(m.status);
               const archived = isArchived(m.status);
@@ -355,8 +305,9 @@ export default function MissionState() {
                   </div>
                 </div>
               );
-            })}
-        {!usingFallback && visible.length === 0 ? (
+            })
+        )}
+        {missions.length > 0 && visible.length === 0 ? (
           <div
             style={{
               padding: 32,
@@ -390,209 +341,7 @@ export default function MissionState() {
         />
       ) : null}
 
-      {/* Fallback confirmation modals (no real mission backing) */}
-      {confirmStop ? (
-        <FallbackConfirmModal
-          title="Stop mission?"
-          message="Terminate open assignments and archive this mission."
-          confirmLabel="Stop mission"
-          tone="danger"
-          onConfirm={() => setConfirmStop(false)}
-          onClose={() => setConfirmStop(false)}
-        />
-      ) : null}
-      {confirmComplete ? (
-        <FallbackConfirmModal
-          title="Complete mission?"
-          message="Mark this mission as done. Open assignments must be resolved first."
-          confirmLabel="Complete"
-          tone="sage"
-          onConfirm={() => setConfirmComplete(false)}
-          onClose={() => setConfirmComplete(false)}
-        />
-      ) : null}
     </div>
   );
 }
 
-function FallbackRow({
-  mission,
-  isOpen,
-  onToggle,
-  drawerTab,
-  setDrawerTab,
-  onStop,
-  onComplete,
-}: {
-  mission: FallbackMission;
-  isOpen: boolean;
-  onToggle: () => void;
-  drawerTab: DrawerTab;
-  setDrawerTab: (t: DrawerTab) => void;
-  onStop: () => void;
-  onComplete: () => void;
-}) {
-  return (
-    <div>
-      <div
-        className={`row${isOpen ? " expanded" : ""}`}
-        style={{
-          gridTemplateColumns: "80px 1fr 110px 130px 100px 180px",
-        }}
-        onClick={onToggle}
-      >
-        <div className="id">{mission.id}</div>
-        <div>
-          <b>{mission.statement}</b>
-          <br />
-          <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
-            {mission.meta}
-          </span>
-        </div>
-        <div>
-          <span className={`pill dot ${mission.pill.tone}`}>
-            {mission.pill.label}
-          </span>
-        </div>
-        <div className="id">{mission.started}</div>
-        <div>{mission.spend}</div>
-        <div className="actions">
-          <button
-            type="button"
-            className="btn sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onStop();
-            }}
-          >
-            Stop
-          </button>
-          <button
-            type="button"
-            className="btn sage sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              onComplete();
-            }}
-          >
-            Complete
-          </button>
-        </div>
-      </div>
-      <div className={`row-drawer${isOpen ? " open" : ""}`}>
-        <div className="row-drawer-head">
-          <div>
-            <div className="eyebrow" style={{ marginBottom: 4 }}>
-              Mission · live
-            </div>
-            <h3>{mission.statement}</h3>
-          </div>
-        </div>
-        <div className="subtabs">
-          {(
-            [
-              { key: "statement", label: "Statement" },
-              { key: "team", label: "Team · 2" },
-              { key: "assignments", label: "Assignments · 4" },
-            ] as Array<{ key: DrawerTab; label: string }>
-          ).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              className="subtab"
-              aria-selected={drawerTab === t.key}
-              onClick={(e) => {
-                e.stopPropagation();
-                setDrawerTab(t.key);
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {drawerTab === "statement" ? (
-          <>
-            <p style={{ fontSize: 13 }}>
-              {mission.statement}. Target ICP: design agencies, 10–50
-              employees, $1M+ ARR.
-            </p>
-            <div
-              style={{
-                marginTop: 12,
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span className="pill">industry: design agencies</span>
-              <span className="pill">target: 10–50 employees</span>
-              <span className="pill">success: 5 booked</span>
-            </div>
-          </>
-        ) : drawerTab === "team" ? (
-          <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
-            Aaron + Mira are running this mission.
-          </p>
-        ) : (
-          <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
-            4 assignments tied to this mission. 3 open · 1 done.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FallbackConfirmModal({
-  title,
-  message,
-  confirmLabel,
-  tone,
-  onConfirm,
-  onClose,
-}: {
-  title: string;
-  message: string;
-  confirmLabel: string;
-  tone: "danger" | "sage";
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <div className="af2-v2">
-      <div
-        className="af2-v2-modal-overlay"
-        role="dialog"
-        aria-modal="true"
-        onClick={onClose}
-      >
-        <div
-          className="af2-v2-modal"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="af2-v2-modal-head">
-            <h2>{title}</h2>
-            <button type="button" className="btn ghost sm" onClick={onClose}>
-              ✕
-            </button>
-          </div>
-          <div className="af2-v2-modal-body">
-            <p style={{ margin: 0, fontSize: 13 }}>{message}</p>
-          </div>
-          <div className="af2-v2-modal-foot">
-            <button type="button" className="btn" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className={`btn ${tone === "danger" ? "danger" : "sage"}`}
-              onClick={onConfirm}
-            >
-              {confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

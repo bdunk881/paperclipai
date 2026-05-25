@@ -40,46 +40,6 @@ const TABS: Array<{ key: TabKey; label: string; count?: number | string }> = [
   { key: "by-team", label: "By team" },
 ];
 
-interface FallbackTicket {
-  id: string;
-  title: string;
-  desc: string;
-  status: "awaiting" | "in_progress";
-  priority: "P0" | "P1" | "P2";
-  assignee: string;
-  missionId: string;
-}
-
-const FALLBACK_TICKETS: FallbackTicket[] = [
-  {
-    id: "TKT-2041",
-    title: "Approve Q3 contract",
-    desc: "$48k · 3y term · MSA exception",
-    status: "awaiting",
-    priority: "P0",
-    assignee: "Aaron",
-    missionId: "M-04",
-  },
-  {
-    id: "TKT-2039",
-    title: "Post launch announcement",
-    desc: "Public LinkedIn · draft attached",
-    status: "awaiting",
-    priority: "P1",
-    assignee: "Mira",
-    missionId: "M-05",
-  },
-  {
-    id: "TKT-2036",
-    title: "Add column to invoices table",
-    desc: "Schema · destructive · review SQL",
-    status: "in_progress",
-    priority: "P0",
-    assignee: "Eli",
-    missionId: "M-05",
-  },
-];
-
 export default function Assignments() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -136,14 +96,11 @@ export default function Assignments() {
     });
   }, [activeWorkspaceId, queryClient]);
 
-  const queueCount = tickets.length || FALLBACK_TICKETS.length;
-  const openCount = tickets.length
-    ? tickets.filter((t) => t.status === "open" || t.status === "in_progress")
-        .length
-    : FALLBACK_TICKETS.length;
-  const awaiting = tickets.length
-    ? tickets.filter((t) => t.status === "open").length
-    : FALLBACK_TICKETS.filter((t) => t.status === "awaiting").length;
+  const queueCount = tickets.length;
+  const openCount = tickets.filter(
+    (t) => t.status === "open" || t.status === "in_progress",
+  ).length;
+  const awaiting = tickets.filter((t) => t.status === "open").length;
 
   return (
     <div className="af2-v2">
@@ -237,17 +194,6 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
   const [openChip, setOpenChip] = useState(true);
 
   const rows = useMemo(() => {
-    if (tickets.length === 0) {
-      return FALLBACK_TICKETS.map((t) => ({
-        id: t.id,
-        title: t.title,
-        desc: t.desc,
-        status: t.status,
-        priority: t.priority,
-        assignee: t.assignee,
-        missionId: t.missionId,
-      }));
-    }
     return tickets.map((t) => {
       const owner = primaryAssignee(t);
       const assignee = owner ? getTicketActorProfile(owner).name : "—";
@@ -272,6 +218,22 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
       };
     });
   }, [tickets]);
+
+  const missionOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (r.missionId) set.add(r.missionId);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const assigneeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) {
+      if (r.assignee && r.assignee !== "—") set.add(r.assignee);
+    }
+    return Array.from(set).sort();
+  }, [rows]);
 
   const filtered = rows.filter((r) => {
     if (openChip && r.status !== "awaiting" && r.status !== "in_progress")
@@ -308,14 +270,19 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
         />
         <select value={mission} onChange={(e) => setMission(e.target.value)}>
           <option value="any">Any mission</option>
-          <option value="M-04">Book 5 demos</option>
-          <option value="M-05">Launch v2</option>
+          {missionOptions.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
         </select>
         <select value={agent} onChange={(e) => setAgent(e.target.value)}>
           <option value="any">Any agent</option>
-          <option value="Aaron">Aaron</option>
-          <option value="Mira">Mira</option>
-          <option value="Eli">Eli</option>
+          {assigneeOptions.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
         </select>
         <select value={priority} onChange={(e) => setPriority(e.target.value)}>
           <option value="any">Any priority</option>
@@ -471,7 +438,9 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
         })}
         {filtered.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "var(--af2-ink-3)" }}>
-            No assignments match this view yet.
+            {rows.length === 0
+              ? "No assignments in the queue."
+              : "No assignments match the current filters."}
           </div>
         ) : null}
       </div>
@@ -490,27 +459,9 @@ function ByMissionTab({
 }) {
   if (tickets.length === 0) {
     return (
-      <>
-        <FallbackMissionCard
-          id="M-04"
-          name="Book 5 demos this week"
-          pill={{ tone: "mustard", label: "at risk" }}
-          meta="4 assignments · 3 open · 1 done"
-          rows={[
-            { id: "TKT-2041", title: "Approve Q3 contract · Acme", status: "awaiting", who: "Aaron" },
-            { id: "TKT-2037", title: "Send follow-up to 12 leads", status: "running", who: "Aaron" },
-          ]}
-        />
-        <FallbackMissionCard
-          id="M-05"
-          name="Launch v2 features"
-          pill={{ tone: "clay", label: "at risk" }}
-          meta="12 assignments · 4 open · 8 done"
-          rows={[
-            { id: "TKT-2036", title: "Add column to invoices table", status: "running", who: "Eli" },
-          ]}
-        />
-      </>
+      <div className="card">
+        <p className="desc">No assignments tied to missions yet.</p>
+      </div>
     );
   }
 
@@ -617,65 +568,6 @@ function ByMissionTab({
   );
 }
 
-function FallbackMissionCard({
-  id,
-  name,
-  pill,
-  meta,
-  rows,
-}: {
-  id: string;
-  name: string;
-  pill: { tone: "mustard" | "clay" | "sage"; label: string };
-  meta: string;
-  rows: Array<{ id: string; title: string; status: "awaiting" | "running"; who: string }>;
-}) {
-  return (
-    <div className="card" style={{ padding: 0, marginTop: 14 }}>
-      <div
-        style={{
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--af2-line)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <b>Mission {id}</b> · {name}{" "}
-          <span className={`pill ${pill.tone} dot`} style={{ marginLeft: 8 }}>
-            {pill.label}
-          </span>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--af2-ink-3)" }}>{meta}</div>
-      </div>
-      {rows.map((r) => (
-        <div
-          key={r.id}
-          className="row"
-          style={{ gridTemplateColumns: "90px 1fr 100px 90px 100px" }}
-        >
-          <div className="id">{r.id}</div>
-          <div>{r.title}</div>
-          <div>
-            <span
-              className={`pill dot ${r.status === "awaiting" ? "mustard" : "sage"}`}
-            >
-              {r.status}
-            </span>
-          </div>
-          <div>{r.who}</div>
-          <div className="actions">
-            <button type="button" className="btn sm">
-              Open
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ---- SLA tab ---------------------------------------------------------------
 
 function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
@@ -687,48 +579,28 @@ function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
   );
 
   const stats = [
-    { num: breached.length || 2, label: "breached today" },
-    { num: atRisk.length || 5, label: "at risk (within 1h)" },
-    { num: "14m", label: "median time-to-resolution" },
-    { num: "94%", label: "SLA met (last 7d)" },
+    { num: breached.length, label: "breached today" },
+    { num: atRisk.length, label: "at risk (within 1h)" },
+    { num: "—", label: "median time-to-resolution" },
+    { num: "—", label: "SLA met (last 7d)" },
   ];
 
-  const fallbackBreached = [
-    {
-      id: "TKT-2041",
-      title: "Approve Q3 contract",
-      sla: { tone: "clay" as const, text: "breached 2h" },
-      who: "Aaron",
-      cta: "Escalate",
-    },
-    {
-      id: "TKT-2039",
-      title: "Post launch announcement",
-      sla: { tone: "mustard" as const, text: "at risk 18m" },
-      who: "Mira",
-      cta: "Approve now",
-    },
-  ];
-
-  const rows =
-    tickets.length === 0
-      ? fallbackBreached
-      : [...breached, ...atRisk].slice(0, 6).map((t) => {
-          const owner = primaryAssignee(t);
-          const state = normalizeTicketSlaState(t.slaState);
-          return {
-            id: t.id.slice(0, 8).toUpperCase(),
-            title: t.title,
-            sla: {
-              tone: (state === "breached" ? "clay" : "mustard") as
-                | "clay"
-                | "mustard",
-              text: state === "breached" ? "breached" : "at risk",
-            },
-            who: owner ? getTicketActorProfile(owner).name : "—",
-            cta: state === "breached" ? "Escalate" : "Approve now",
-          };
-        });
+  const rows = [...breached, ...atRisk].slice(0, 6).map((t) => {
+    const owner = primaryAssignee(t);
+    const state = normalizeTicketSlaState(t.slaState);
+    return {
+      id: t.id.slice(0, 8).toUpperCase(),
+      title: t.title,
+      sla: {
+        tone: (state === "breached" ? "clay" : "mustard") as
+          | "clay"
+          | "mustard",
+        text: state === "breached" ? "breached" : "at risk",
+      },
+      who: owner ? getTicketActorProfile(owner).name : "—",
+      cta: state === "breached" ? "Escalate" : "Approve now",
+    };
+  });
 
   return (
     <>
@@ -807,33 +679,39 @@ function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
       </div>
       <div className="card card-list" style={{ padding: 0 }}>
         <h3>Breached / at risk · take action</h3>
-        {rows.map((r) => (
-          <div
-            key={r.id}
-            className="row"
-            style={{ gridTemplateColumns: "90px 1fr 130px 110px 200px" }}
-          >
-            <div className="id">{r.id}</div>
-            <div>
-              <b>{r.title}</b>
-            </div>
-            <div>
-              <span className={`pill ${r.sla.tone} dot`}>{r.sla.text}</span>
-            </div>
-            <div>{r.who}</div>
-            <div className="actions">
-              <button type="button" className="btn sm">
-                Reassign
-              </button>
-              <button type="button" className="btn sm">
-                Override
-              </button>
-              <button type="button" className="btn primary sm">
-                {r.cta}
-              </button>
-            </div>
+        {rows.length === 0 ? (
+          <div style={{ padding: 24, textAlign: "center", color: "var(--af2-ink-3)", fontSize: 13 }}>
+            No SLA breaches in the last 24h.
           </div>
-        ))}
+        ) : (
+          rows.map((r) => (
+            <div
+              key={r.id}
+              className="row"
+              style={{ gridTemplateColumns: "90px 1fr 130px 110px 200px" }}
+            >
+              <div className="id">{r.id}</div>
+              <div>
+                <b>{r.title}</b>
+              </div>
+              <div>
+                <span className={`pill ${r.sla.tone} dot`}>{r.sla.text}</span>
+              </div>
+              <div>{r.who}</div>
+              <div className="actions">
+                <button type="button" className="btn sm">
+                  Reassign
+                </button>
+                <button type="button" className="btn sm">
+                  Override
+                </button>
+                <button type="button" className="btn primary sm">
+                  {r.cta}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
       </div>
     </>
   );
@@ -845,61 +723,20 @@ function ActivityTab({ agents }: { agents: Agent[] }) {
   const eventsQuery = useObservabilityQuery();
   const events = eventsQuery.data ?? [];
 
-  const items =
-    events.length === 0
-      ? [
-          {
-            id: "f1",
-            time: "15:14:02",
-            body: (
-              <>
-                <b>Aaron</b> · called <code>hubspot.update_deal</code> · M-04
-              </>
-            ),
-          },
-          {
-            id: "f2",
-            time: "15:13:47",
-            body: (
-              <>
-                <b>Aaron</b> · escalated TKT-2041 to human · M-04
-              </>
-            ),
-          },
-          {
-            id: "f3",
-            time: "15:11:09",
-            body: (
-              <>
-                <b>routine.followup_stale_leads</b> ran (8 leads, $0.41) · M-04
-              </>
-            ),
-          },
-          {
-            id: "f4",
-            time: "15:08:33",
-            body: (
-              <>
-                <b>Aaron</b> · wrote memory <code>acme.budget_signal</code> ·
-                M-04
-              </>
-            ),
-          },
-        ]
-      : events.slice(0, 30).map((e: ObservabilityEvent) => ({
-          id: e.id,
-          time: new Date(e.occurredAt).toLocaleTimeString(undefined, {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false,
-          }),
-          body: (
-            <>
-              <b>{e.actor.label ?? e.actor.id ?? "system"}</b> · {e.summary}
-            </>
-          ),
-        }));
+  const items = events.slice(0, 30).map((e: ObservabilityEvent) => ({
+    id: e.id,
+    time: new Date(e.occurredAt).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }),
+    body: (
+      <>
+        <b>{e.actor.label ?? e.actor.id ?? "system"}</b> · {e.summary}
+      </>
+    ),
+  }));
 
   return (
     <>
@@ -908,18 +745,6 @@ function ActivityTab({ agents }: { agents: Agent[] }) {
         agent/mission/team
       </div>
       <div className="filterbar">
-        <span className="chip">
-          Aaron<span className="x">×</span>
-        </span>
-        <span className="chip">
-          Mission M-04<span className="x">×</span>
-        </span>
-        <select>
-          <option>Any team</option>
-          <option>Sales</option>
-          <option>Marketing</option>
-          <option>Eng</option>
-        </select>
         <select>
           <option>Any event</option>
           <option>tool.call</option>
@@ -939,12 +764,16 @@ function ActivityTab({ agents }: { agents: Agent[] }) {
         ) : null}
       </div>
       <div className="card">
-        {items.map((item) => (
-          <div key={item.id} className="feed-item">
-            <div className="feed-time">{item.time}</div>
-            <div className="feed-msg">{item.body}</div>
-          </div>
-        ))}
+        {items.length === 0 ? (
+          <p className="desc">No activity recorded yet.</p>
+        ) : (
+          items.map((item) => (
+            <div key={item.id} className="feed-item">
+              <div className="feed-time">{item.time}</div>
+              <div className="feed-msg">{item.body}</div>
+            </div>
+          ))
+        )}
       </div>
     </>
   );
@@ -961,28 +790,8 @@ function ByTeamTab({
 }) {
   if (tickets.length === 0 || agents.length === 0) {
     return (
-      <div className="grid-3">
-        <div className="card">
-          <h3>Sales</h3>
-          <div className="desc">3 assignments · 1 breached</div>
-          <div style={{ marginTop: 8 }}>
-            <span className="pill">Aaron</span>
-          </div>
-        </div>
-        <div className="card">
-          <h3>Marketing</h3>
-          <div className="desc">2 assignments · 1 at risk</div>
-          <div style={{ marginTop: 8 }}>
-            <span className="pill">Mira</span>
-          </div>
-        </div>
-        <div className="card">
-          <h3>Engineering</h3>
-          <div className="desc">2 assignments · 0 issues</div>
-          <div style={{ marginTop: 8 }}>
-            <span className="pill">Eli</span>
-          </div>
-        </div>
+      <div className="card">
+        <p className="desc">No team breakdown to show yet.</p>
       </div>
     );
   }

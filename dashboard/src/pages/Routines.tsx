@@ -69,16 +69,13 @@ type MineRow = TemplateSummary & {
   lastRunAt: string | null;
 };
 
-const SCHEDULES = ["every 2h", "Mon 9am", "on intercom.new_conversation", "Hourly"] as const;
-const OWNERS = ["Aaron", "Mira", "Sage", "Devon"] as const;
-
-function synthesizeMineRows(templates: TemplateSummary[]): MineRow[] {
-  return templates.slice(0, Math.min(templates.length, 6)).map((tpl, i) => ({
+function buildMineRows(templates: TemplateSummary[]): MineRow[] {
+  return templates.map((tpl) => ({
     ...tpl,
-    owner: OWNERS[i % OWNERS.length],
-    schedule: SCHEDULES[i % SCHEDULES.length],
-    status: i % 3 === 2 ? "draft" : "live",
-    lastRunAt: i % 3 === 2 ? null : new Date(Date.now() - (i + 1) * 8 * 60_000).toISOString(),
+    owner: "",
+    schedule: "",
+    status: "live",
+    lastRunAt: null,
   }));
 }
 
@@ -174,7 +171,7 @@ export default function Routines({
     };
   }, [getAccessToken]);
 
-  const mineRows = useMemo(() => synthesizeMineRows(templates), [templates]);
+  const mineRows = useMemo(() => buildMineRows(templates), [templates]);
   const expandedRow = useMemo(
     () => mineRows.find((r) => r.id === expandedRowId) ?? null,
     [mineRows, expandedRowId],
@@ -394,12 +391,16 @@ function RoutineRowWithDrawer({
       >
         <div>
           <b>{row.name}</b>
-          <br />
-          <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
-            {row.schedule} · {row.owner}
-          </span>
+          {row.schedule ? (
+            <>
+              <br />
+              <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
+                {row.schedule}
+              </span>
+            </>
+          ) : null}
         </div>
-        <div>{row.owner}</div>
+        <div>{row.owner || "—"}</div>
         <div>
           <span className={`pill dot ${isDraft ? "mustard" : "sage"}`}>{row.status}</span>
         </div>
@@ -470,26 +471,10 @@ function DrawerBody({
           <div className="feed-msg">Loading runs…</div>
         </div>
       ) : runs.length === 0 ? (
-        <>
-          <div className="feed-item">
-            <div className="feed-time">15:11:09</div>
-            <div className="feed-msg">
-              8 leads · $0.41 · <span className="pill sage dot">ok</span>
-            </div>
-          </div>
-          <div className="feed-item">
-            <div className="feed-time">13:11:09</div>
-            <div className="feed-msg">
-              12 leads · $0.62 · <span className="pill sage dot">ok</span>
-            </div>
-          </div>
-          <div className="feed-item">
-            <div className="feed-time">11:11:09</div>
-            <div className="feed-msg">
-              0 leads · $0.00 · <span className="pill">no-op</span>
-            </div>
-          </div>
-        </>
+        <div className="feed-item">
+          <div className="feed-time">—</div>
+          <div className="feed-msg">No runs recorded yet.</div>
+        </div>
       ) : (
         runs.map((run) => (
           <div className="feed-item" key={run.id}>
@@ -599,8 +584,6 @@ function LibraryGrid({
             <h3>{template.name}</h3>
             <p className="desc">
               {template.description || template.category}
-              {" · "}
-              <b>{8 + idx * 4} forks</b>
             </p>
             <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
               <button
@@ -698,10 +681,10 @@ function LibraryExpandedDetail({
       onClick={(e) => e.stopPropagation()}
     >
       <div style={{ marginBottom: 6 }}>
-        <b>Steps:</b> 1) Slack webhook → 2) hubspot.find_contact → 3) gpt.qualify(BANT) → 4) slack.reply
+        <b>{template.stepCount}</b> steps · {template.configFieldCount} fields
       </div>
       <div style={{ marginBottom: 6 }}>
-        <b>Required tools:</b>{" "}
+        <b>Suggested tools:</b>{" "}
         <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
           <AgentToolChips tools={suggestedIntegrations} connectorHealth={connectorHealth} />
         </span>

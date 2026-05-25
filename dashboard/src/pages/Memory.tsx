@@ -42,45 +42,6 @@ const SCOPE_LABELS: Record<ScopeKind, string> = {
   workspace: "Workspace-wide",
 };
 
-const SAMPLE_INSTRUCTION_BODY = `For Book 5 demos this week:
-- Only target design agencies in NA (per mission scope).
-- Use formal tone when quoting >$10k pricing.
-- Always require approval for contracts > 30 days payment terms.`;
-
-const SAMPLE_KNOWLEDGE = [
-  {
-    id: "kn-acme",
-    title: "Acme RFP context · uploaded by Brad",
-    desc: "PDF · 14 chunks · last referenced 12m ago",
-  },
-  {
-    id: "kn-q2",
-    title: "Q2 sales playbook · synthesized",
-    desc: "Markdown · 38 chunks · last referenced 1h ago",
-  },
-];
-
-const SAMPLE_EPISODES = [
-  {
-    id: "ep-1",
-    time: "15:13:47",
-    who: "Aaron",
-    msg: "escalated TKT-2041 (acme.budget_signal: 0.84)",
-  },
-  {
-    id: "ep-2",
-    time: "15:11:09",
-    who: "Aaron",
-    msg: "sent follow-up to alex@acme.com (template: warm_v2)",
-  },
-  {
-    id: "ep-3",
-    time: "15:08:33",
-    who: "Aaron",
-    msg: "wrote memory acme.budget_signal (confidence: 0.78)",
-  },
-];
-
 export default function Memory() {
   const { requireAccessToken } = useAuth();
   const [scope, setScope] = useState<ScopeKind>("mission");
@@ -134,6 +95,23 @@ export default function Memory() {
     [scope, missionId, teamId, agentId],
   );
 
+  const selectedScopeLabel = useMemo(() => {
+    if (scope === "workspace") return "Instructions · workspace";
+    if (scope === "mission") {
+      const m = missions.find((x) => x.id === missionId);
+      return m ? `Instructions · mission ${m.statement.slice(0, 60)}` : "Instructions";
+    }
+    if (scope === "team") {
+      const t = teams.find((x) => x.id === teamId);
+      return t ? `Instructions · team ${t.name}` : "Instructions";
+    }
+    if (scope === "agent") {
+      const a = agents.find((x) => x.id === agentId);
+      return a ? `Instructions · agent ${a.name}` : "Instructions";
+    }
+    return "Instructions";
+  }, [scope, missionId, teamId, agentId, missions, teams, agents]);
+
   return (
     <div className="af2-v2">
       <div className="af2-page" style={{ maxWidth: 1100 }}>
@@ -166,7 +144,7 @@ export default function Memory() {
               value={missionId}
               onChange={(e) => setMissionId(e.target.value)}
             >
-              <option value="">M-04 · Book 5 demos</option>
+              <option value="">(any mission)</option>
               {missions.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.statement.slice(0, 80)}
@@ -228,7 +206,7 @@ export default function Memory() {
             aria-selected={activeTab === "knowledge"}
             onClick={() => setActiveTab("knowledge")}
           >
-            Knowledge · 14
+            Knowledge
           </button>
           <button
             type="button"
@@ -236,12 +214,12 @@ export default function Memory() {
             aria-selected={activeTab === "episodes"}
             onClick={() => setActiveTab("episodes")}
           >
-            Episodes · 218
+            Episodes
           </button>
         </div>
 
         <div className="panel" hidden={activeTab !== "instructions"}>
-          <InstructionsTab scopeFilter={scopeFilter} />
+          <InstructionsTab scopeFilter={scopeFilter} scopeLabel={selectedScopeLabel} />
         </div>
         <div className="panel" hidden={activeTab !== "knowledge"}>
           <KnowledgeTab scopeFilter={scopeFilter} />
@@ -269,12 +247,18 @@ interface ScopeFilter {
   agentId?: string;
 }
 
-function InstructionsTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
+function InstructionsTab({
+  scopeFilter,
+  scopeLabel,
+}: {
+  scopeFilter: ScopeFilter;
+  scopeLabel: string;
+}) {
   const { requireAccessToken } = useAuth();
   const [items, setItems] = useState<Instruction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [body, setBody] = useState(SAMPLE_INSTRUCTION_BODY);
+  const [body, setBody] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -298,7 +282,7 @@ function InstructionsTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
     void refresh();
   }, [refresh]);
 
-  const headline = items.length > 0 ? items[0].title : "Instructions · mission M-04";
+  const headline = items.length > 0 ? items[0].title : scopeLabel;
 
   return (
     <div className="card">
@@ -316,6 +300,11 @@ function InstructionsTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
       {error ? (
         <p className="desc" style={{ marginTop: 10, color: "var(--af2-clay)" }}>
           {error}
+        </p>
+      ) : null}
+      {!loading && !error && items.length === 0 ? (
+        <p className="desc" style={{ marginTop: 10 }}>
+          No instructions saved yet.
         </p>
       ) : null}
       <textarea
@@ -365,14 +354,11 @@ function KnowledgeTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
     void refresh();
   }, [refresh]);
 
-  const cards =
-    items.length > 0
-      ? items.map((it) => ({
-          id: it.id,
-          title: it.title,
-          desc: `${it.kind} · trust ${(it.trustScore * 100).toFixed(0)}% · updated ${new Date(it.updatedAt).toLocaleString()}`,
-        }))
-      : SAMPLE_KNOWLEDGE;
+  const cards = items.map((it) => ({
+    id: it.id,
+    title: it.title,
+    desc: `${it.kind} · trust ${(it.trustScore * 100).toFixed(0)}% · updated ${new Date(it.updatedAt).toLocaleString()}`,
+  }));
 
   return (
     <>
@@ -381,6 +367,11 @@ function KnowledgeTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
         <p className="meta" style={{ color: "var(--af2-clay)" }}>
           {error}
         </p>
+      ) : null}
+      {!loading && !error && cards.length === 0 ? (
+        <div className="card">
+          <p className="desc">No knowledge items yet.</p>
+        </div>
       ) : null}
       <div className="card-list">
         {cards.map((c) => (
@@ -422,15 +413,12 @@ function EpisodesTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
     void refresh();
   }, [refresh]);
 
-  const feed =
-    items.length > 0
-      ? items.map((ep) => ({
-          id: ep.id,
-          time: new Date(ep.createdAt).toLocaleTimeString(),
-          who: ep.episodeType,
-          msg: ep.summary,
-        }))
-      : SAMPLE_EPISODES;
+  const feed = items.map((ep) => ({
+    id: ep.id,
+    time: new Date(ep.createdAt).toLocaleTimeString(),
+    who: ep.episodeType,
+    msg: ep.summary,
+  }));
 
   return (
     <>
@@ -439,6 +427,11 @@ function EpisodesTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
         <p className="meta" style={{ color: "var(--af2-clay)" }}>
           {error}
         </p>
+      ) : null}
+      {!loading && !error && feed.length === 0 ? (
+        <div className="card">
+          <p className="desc">No episodes recorded yet.</p>
+        </div>
       ) : null}
       <div>
         {feed.map((f) => (

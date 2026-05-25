@@ -107,14 +107,6 @@ const SCOPE_OPTIONS: Array<{ value: BudgetBreakdownScope; label: string }> = [
   { value: "agent", label: "By agent" },
 ];
 
-// Prototype sample rows — render when the breakdown endpoint has no
-// per-scope rollups yet so the layout still demos.
-const SAMPLE_MISSION_ROWS = [
-  { id: "M-04", label: "Book 5 demos", opus: 8.42, haiku: 3.12, gpt4o: 12.56, total: 24.1 },
-  { id: "M-05", label: "Launch v2 features", opus: 78.4, haiku: 22.18, gpt4o: 17.64, total: 118.22 },
-  { id: "M-06", label: "Audit Q2 churn", opus: 2.18, haiku: 1.4, gpt4o: 2.5, total: 6.08 },
-];
-
 // ---------------------------------------------------------------------------
 // Inline area chart — verbatim port of prototype lines 882-892 (HTML → JSX).
 // Visually static for now; real series wiring is followup.
@@ -320,10 +312,8 @@ export default function BudgetDashboard() {
     return Array.from(set).sort();
   }, [providerFilter, breakdown?.series]);
 
-  // Mission rows — real if we have them, otherwise the prototype sample so
-  // the layout still demos.
   const missionRows = useMemo(() => {
-    if (!breakdown || breakdown.rows.length === 0) return SAMPLE_MISSION_ROWS;
+    if (!breakdown || breakdown.rows.length === 0) return [];
     return breakdown.rows.slice(0, 8).map((row, idx) => ({
       id: `M-${String(idx + 1).padStart(2, "0")}`,
       label: row.scopeLabel,
@@ -543,25 +533,32 @@ export default function BudgetDashboard() {
       {/* ---------------- By mission card-list ---------------- */}
       <div className="card card-list" style={{ padding: 0 }}>
         <h3 style={{ padding: "14px 18px 4px" }}>By mission</h3>
-        <div
-          className="row"
-          style={{
-            gridTemplateColumns: "80px 1fr 90px 100px 100px 100px 110px",
-            background: "var(--af2-paper-2)",
-            fontSize: 10,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            cursor: "default",
-          }}
-        >
-          <div>ID</div>
-          <div>Mission</div>
-          <div>opus-4-7</div>
-          <div>haiku-4-5</div>
-          <div>gpt-4o</div>
-          <div>Total</div>
-          <div></div>
-        </div>
+        {missionRows.length === 0 ? (
+          <div style={{ padding: "16px 18px", color: "var(--af2-ink-3)", fontSize: 13 }}>
+            No spend recorded yet for the selected window.
+          </div>
+        ) : null}
+        {missionRows.length > 0 ? (
+          <div
+            className="row"
+            style={{
+              gridTemplateColumns: "80px 1fr 90px 100px 100px 100px 110px",
+              background: "var(--af2-paper-2)",
+              fontSize: 10,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              cursor: "default",
+            }}
+          >
+            <div>ID</div>
+            <div>Mission</div>
+            <div>opus-4-7</div>
+            <div>haiku-4-5</div>
+            <div>gpt-4o</div>
+            <div>Total</div>
+            <div></div>
+          </div>
+        ) : null}
         {missionRows.map((row) => (
           <div
             key={row.id}

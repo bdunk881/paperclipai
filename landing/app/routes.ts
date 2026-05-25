@@ -11,7 +11,7 @@ export default [
   route("robots.txt", "robots.ts"),
   route("sitemap.xml", "sitemap.ts"),
   // API endpoints (waitlist-signup, subscribe, beta-signup, checkout, stripe webhook)
-  // live in the FastAPI backend under /api/public/landing/* and /api/stripe/webhook.
-  // They're invoked via buildLandingApiUrl() against NEXT_PUBLIC_API_URL — not via
-  // React Router routes.
+  // live in the Express backend under /api/public/landing/* and /api/stripe/webhook
+  // (src/landing/publicApiRoutes.ts). Invoked via buildLandingApiUrl() against
+  // NEXT_PUBLIC_API_URL — not via React Router routes.
 ] satisfies RouteConfig;

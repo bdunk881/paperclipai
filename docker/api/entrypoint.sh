@@ -2,8 +2,8 @@
 #
 # AutoFlow TS Express entrypoint wrapper.
 #
-# Mirrors docker/backend/entrypoint.sh so Fly machines pull dev/staging/prod
-# secrets through Infisical the same way regardless of runtime.
+# Pulls dev/staging/prod secrets through Infisical so the Fly machine
+# can hydrate them before exec'ing the Node process.
 #
 # Behaviour:
 #   - On Fly (FLY_APP_NAME or FLY_MACHINE_ID set): INFISICAL_TOKEN is required.

@@ -2,7 +2,7 @@
 
 Production image for `src/app.ts` (the AutoFlow Node/Express backend). Deployed to Fly.io as `autoflow-api-{dev,staging,production}` per the [P2.5 — Backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9) project.
 
-Built and pushed by `.github/workflows/deploy-fly-api-{dev,staging,production}.yml` (added under HEL-83 / HEL-95 / HEL-96). The legacy Python image at `docker/backend/` is being retired in HEL-97.
+Built and pushed by `.github/workflows/deploy-fly-api-{dev,staging,production}.yml` (added under HEL-83 / HEL-95 / HEL-96). The legacy Python image at `docker/backend/` was retired in HEL-97.
 
 ## Layout
 
@@ -10,11 +10,11 @@ Built and pushed by `.github/workflows/deploy-fly-api-{dev,staging,production}.y
 docker/api/
   ├── Dockerfile               # multi-stage build: deps → tsc → slim runtime
   ├── Dockerfile.dockerignore  # build-context exclusions, scoped to this Dockerfile
-  ├── entrypoint.sh            # Infisical wrapper (mirrors docker/backend/entrypoint.sh)
+  ├── entrypoint.sh            # Infisical wrapper
   └── README.md                # this file
 ```
 
-The `Dockerfile.dockerignore` lives next to its Dockerfile (instead of in repo root) so it doesn't starve sibling images (`docker/frontend/Dockerfile`, `docker/backend/Dockerfile`) of their source. BuildKit picks it up automatically — see the [Docker docs on filename and location](https://docs.docker.com/build/concepts/context/#filename-and-location).
+The `Dockerfile.dockerignore` lives next to its Dockerfile (instead of in repo root) so it doesn't starve the sibling `docker/frontend/Dockerfile` image of its source. BuildKit picks it up automatically — see the [Docker docs on filename and location](https://docs.docker.com/build/concepts/context/#filename-and-location).
 
 ## Build args
 
@@ -73,15 +73,11 @@ curl -i http://localhost:8080/api/health
 
 The runtime stage uses `node:22-slim` (Debian-based) plus the Infisical CLI. Target image size: **under 500 MB**. If you push past that, audit `node_modules/` for accidental dev deps slipping past `--omit=dev`, or any added system packages.
 
-## Differences from `docker/backend/Dockerfile` (FastAPI, being retired)
+## Historical note
 
-| Aspect | FastAPI image (legacy) | TS Express image (this) |
-|---|---|---|
-| Runtime | `python:3.12-slim` + uvicorn | `node:22-slim` + Node runtime |
-| Build | `pip install -r requirements.txt` | `npm ci` + `tsc` (multi-stage) |
-| Healthcheck | Python `urllib.request` against `/health` | Node `http.get` against `/api/health` |
-| Entrypoint | `infisical run` → uvicorn | `infisical run` → `node dist/index.js` |
-| Internal port | 8080 | 8080 |
-| Surface | ~11 routes (knowledge + OAuth relays) | ~59 routes (missions, agents, runs, billing, integrations, …) |
-
-The two images are deployment-symmetric — Fly workflows can stay the same shape — but only one runs in production after the cleanup pass (HEL-97).
+This image replaced the legacy `docker/backend/Dockerfile` (FastAPI relay
+shim, ~11 routes covering knowledge bases + OAuth callback relays), which
+was retired in HEL-97. The Express image runs the full ~59-route API
+surface (missions, agents, runs, billing, integrations, …) on `node:22-slim`
+with an `infisical run → node dist/index.js` entrypoint, healthchecking
+`/api/health` on port 8080.

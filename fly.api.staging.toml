@@ -4,10 +4,8 @@
 # Public hostname: staging-api.helloautoflow.com (Cloudflare CNAME to
 # autoflow-api-staging.fly.dev, Fly cert allocated separately).
 #
-# Replaces autoflow-fastapi-staging (the relay shim from the aborted Phase-3
-# cutover). The FastAPI app stays running in parallel during cutover; the DNS
-# swap is the cutover moment (see infra/runbooks/fly-api-dev.md for the
-# corresponding dev runbook).
+# Replaces autoflow-fastapi-staging (the relay shim from the aborted
+# Phase-3 cutover, retired in HEL-97).
 
 app = "autoflow-api-staging"
 primary_region = "ord"

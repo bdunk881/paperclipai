@@ -54,7 +54,7 @@ function useExperienceMode(): ExperienceMode {
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = "integrations" | "models" | "mcp" | "health";
+type TabId = "integrations" | "models" | "mcp" | "health" | "env-vars";
 
 interface TabDef {
   id: TabId;

@@ -54,6 +54,11 @@ const ALLOWLIST = new Set<string>([
   // context applies, so requireRole has no role to gate. The router
   // itself enforces ownership via getAuthenticatedUser(req).
   "/api/user",
+  // PR #1000: user-profile router (avatars, account-level prefs) is
+  // also scoped to req.auth.sub, not a workspace — same rationale as
+  // /api/user above. The CI grep allowlist in .github/workflows/ci.yml
+  // already covers this path; keep this set in sync.
+  "/api/user-profile",
 ]);
 
 interface AuthenticatedMount {

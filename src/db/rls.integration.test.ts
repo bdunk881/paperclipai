@@ -27,6 +27,15 @@ import type { Pool, PoolClient } from "pg";
  * Seed inserts (which cross workspace boundaries inside a single call) still
  * use the superuser connection so they aren't blocked by their own RLS.
  *
+ * ## Module import strategy
+ *
+ * Modules are imported ONCE in beforeAll and reused (matching the pattern in
+ * subscriptionStore.integration.test.ts).  Calling jest.resetModules() inside
+ * each it() block would clear migrationPromise, causing re-application of
+ * migrations — migration 001 has CREATE POLICY statements without IF NOT
+ * EXISTS guards and would fail on a second apply.  It also leaks connection
+ * pools, causing unexpected behaviour under tight connection limits.
+ *
  * Tables covered:
  *   workflows, workflow_versions, routines, runs, step_results
  *   (FORCE RLS added in 027)
@@ -60,6 +69,13 @@ describe("P1 table RLS integration (HEL-70)", () => {
 
   let canRunIntegration = false;
 
+  // Shared module instances set once in beforeAll and reused across tests.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let pg: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let pgPool: Pool;
+  let withWorkspaceContextFn: typeof import("../middleware/workspaceContext").withWorkspaceContext;
+
   // IDs seeded by seedAll(); reset per-test in afterEach cleanup.
   let wfA: string, wfB: string;
   let wfvA: string, wfvB: string;
@@ -68,14 +84,6 @@ describe("P1 table RLS integration (HEL-70)", () => {
   let stepA: string, stepB: string;
   let approvalA: string, approvalB: string;
   let auditA: string, auditB: string;
-
-  async function loadModules() {
-    jest.resetModules();
-    const postgres = await import("./postgres");
-    const migrations = await import("./sqlMigrations");
-    const workspaceContext = await import("../middleware/workspaceContext");
-    return { postgres, migrations, workspaceContext };
-  }
 
   /**
    * Executes `fn` inside a transaction where the database role is temporarily
@@ -124,7 +132,10 @@ describe("P1 table RLS integration (HEL-70)", () => {
     }
   }
 
-  async function seedAll(pool: Pool, withWsCtx: typeof import("../middleware/workspaceContext").withWorkspaceContext) {
+  async function seedAll(
+    pool: Pool,
+    withWsCtx: typeof import("../middleware/workspaceContext").withWorkspaceContext,
+  ) {
     wfA = randomUUID();
     wfB = randomUUID();
     wfvA = randomUUID();
@@ -143,632 +154,785 @@ describe("P1 table RLS integration (HEL-70)", () => {
     await withWsCtx(pool, { workspaceId: workspaceA, userId: userA }, async (client) => {
       await client.query(
         `INSERT INTO workflows (id, workspace_id, name) VALUES ($1, $2, 'WF-A')`,
-        [wfA, workspaceA]
+        [wfA, workspaceA],
       );
       await client.query(
         `INSERT INTO workflow_versions (id, workflow_id, version, dag) VALUES ($1, $2, 1, '{}'::jsonb)`,
-        [wfvA, wfA]
+        [wfvA, wfA],
       );
       await client.query(
         `INSERT INTO routines (id, workspace_id, workflow_id, name, trigger_kind) VALUES ($1, $2, $3, 'Routine-A', 'manual')`,
-        [routineA, workspaceA, wfA]
+        [routineA, workspaceA, wfA],
       );
       await client.query(
         `INSERT INTO runs (id, workspace_id, workflow_version_id, status, started_at) VALUES ($1, $2, $3, 'completed', now())`,
-        [runA, workspaceA, wfvA]
+        [runA, workspaceA, wfvA],
       );
       await client.query(
         `INSERT INTO step_results (id, run_id, step_id, step_name, status, ordinal) VALUES ($1, $2, 'step-1', 'Step 1', 'success', 1)`,
-        [stepA, runA]
+        [stepA, runA],
       );
       await client.query(
         `INSERT INTO approvals (id, run_id, step_id, tier, status) VALUES ($1, $2, 'gate-1', 'standard', 'pending')`,
-        [approvalA, runA]
+        [approvalA, runA],
       );
       await client.query(
         `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
-        [randomUUID(), workspaceA]
+        [randomUUID(), workspaceA],
       );
       await client.query(
         `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'slack', 'tok-a')`,
-        [randomUUID(), workspaceA]
+        [randomUUID(), workspaceA],
       );
       await client.query(
         `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 100, '2026-05')`,
-        [randomUUID(), workspaceA]
+        [randomUUID(), workspaceA],
       );
       await client.query(
         `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_a_hel70', 'explore', 'active')`,
-        [randomUUID(), workspaceA]
+        [randomUUID(), workspaceA],
       );
       await client.query(
         `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
          VALUES ($1, 100, 3, 5, false, 7, 1, 'explore')
          ON CONFLICT (workspace_id) DO NOTHING`,
-        [workspaceA]
+        [workspaceA],
       );
       await client.query(
         `INSERT INTO audit_log (id, workspace_id, actor_user_id, category, action) VALUES ($1, $2, $3, 'auth', 'login')`,
-        [auditA, workspaceA, userA]
+        [auditA, workspaceA, userA],
       );
     });
 
     await withWsCtx(pool, { workspaceId: workspaceB, userId: userB }, async (client) => {
       await client.query(
         `INSERT INTO workflows (id, workspace_id, name) VALUES ($1, $2, 'WF-B')`,
-        [wfB, workspaceB]
+        [wfB, workspaceB],
       );
       await client.query(
         `INSERT INTO workflow_versions (id, workflow_id, version, dag) VALUES ($1, $2, 1, '{}'::jsonb)`,
-        [wfvB, wfB]
+        [wfvB, wfB],
       );
       await client.query(
         `INSERT INTO routines (id, workspace_id, workflow_id, name, trigger_kind) VALUES ($1, $2, $3, 'Routine-B', 'manual')`,
-        [routineB, workspaceB, wfB]
+        [routineB, workspaceB, wfB],
       );
       await client.query(
         `INSERT INTO runs (id, workspace_id, workflow_version_id, status, started_at) VALUES ($1, $2, $3, 'completed', now())`,
-        [runB, workspaceB, wfvB]
+        [runB, workspaceB, wfvB],
       );
       await client.query(
         `INSERT INTO step_results (id, run_id, step_id, step_name, status, ordinal) VALUES ($1, $2, 'step-1', 'Step 1', 'success', 1)`,
-        [stepB, runB]
+        [stepB, runB],
       );
       await client.query(
         `INSERT INTO approvals (id, run_id, step_id, tier, status) VALUES ($1, $2, 'gate-1', 'standard', 'pending')`,
-        [approvalB, runB]
+        [approvalB, runB],
       );
       await client.query(
         `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
-        [randomUUID(), workspaceB]
+        [randomUUID(), workspaceB],
       );
       await client.query(
         `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'slack', 'tok-b')`,
-        [randomUUID(), workspaceB]
+        [randomUUID(), workspaceB],
       );
       await client.query(
         `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 200, '2026-05')`,
-        [randomUUID(), workspaceB]
+        [randomUUID(), workspaceB],
       );
       await client.query(
         `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_b_hel70', 'explore', 'active')`,
-        [randomUUID(), workspaceB]
+        [randomUUID(), workspaceB],
       );
       await client.query(
         `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
          VALUES ($1, 100, 3, 5, false, 7, 1, 'explore')
          ON CONFLICT (workspace_id) DO NOTHING`,
-        [workspaceB]
+        [workspaceB],
       );
       await client.query(
         `INSERT INTO audit_log (id, workspace_id, actor_user_id, category, action) VALUES ($1, $2, $3, 'auth', 'login')`,
-        [auditB, workspaceB, userB]
+        [auditB, workspaceB, userB],
       );
     });
   }
 
-  async function cleanup(): Promise<void> {
-    const { postgres } = await loadModules();
-    // Delete top-down in cascade order; workspace ON DELETE CASCADE handles most children.
-    // queryPostgres runs as the superuser (autoflow), which bypasses RLS and
-    // allows the CASCADE to reach child tables with FORCE ROW LEVEL SECURITY.
-    await postgres.queryPostgres(
-      `DELETE FROM workspaces WHERE id IN ($1, $2)`,
-      [workspaceA, workspaceB]
-    );
-    await postgres.queryPostgres(
-      `DELETE FROM user_profiles WHERE user_id IN ($1, $2)`,
-      [userA, userB]
-    );
-    await postgres.closePostgresPoolForTests();
-  }
-
   beforeAll(async () => {
+    // Remove Jest's worker marker so isPostgresPersistenceEnabled() returns true.
     delete process.env.JEST_WORKER_ID;
     if (!process.env.DATABASE_URL?.trim()) {
       return;
     }
-    const { postgres } = await loadModules();
-    canRunIntegration = await postgres.checkPostgresConnection();
-  });
 
-  afterAll(() => {
+    try {
+      pg = await import("./postgres");
+      const migrations = await import("./sqlMigrations");
+      const workspaceContext = await import("../middleware/workspaceContext");
+      withWorkspaceContextFn = workspaceContext.withWorkspaceContext;
+
+      canRunIntegration = await pg.checkPostgresConnection();
+      if (canRunIntegration) {
+        await migrations.ensureSqlMigrationsApplied();
+        pgPool = pg.getPostgresPool();
+      }
+    } catch (err) {
+      console.error("[HEL-70] beforeAll setup failed:", err);
+      canRunIntegration = false;
+    }
+  }, 120_000);
+
+  afterAll(async () => {
     process.env.DATABASE_URL = originalDatabaseUrl;
     if (originalJestWorkerId !== undefined) {
       process.env.JEST_WORKER_ID = originalJestWorkerId;
     } else {
       delete process.env.JEST_WORKER_ID;
     }
-  });
+    if (pg) {
+      await pg.closePostgresPoolForTests().catch((err: unknown) => {
+        console.error("[HEL-70] pool close failed:", err);
+      });
+    }
+  }, 30_000);
 
   afterEach(async () => {
     if (!canRunIntegration) {
       return;
     }
-    await cleanup();
+    // Delete top-down in cascade order; workspace ON DELETE CASCADE handles
+    // most children. queryPostgres runs as the superuser (autoflow), which
+    // bypasses RLS and allows the CASCADE to reach child tables with FORCE RLS.
+    await pg.queryPostgres(`DELETE FROM workspaces WHERE id IN ($1, $2)`, [
+      workspaceA,
+      workspaceB,
+    ]);
+    await pg.queryPostgres(`DELETE FROM user_profiles WHERE user_id IN ($1, $2)`, [
+      userA,
+      userB,
+    ]);
   });
 
-  it("isolates workflows, workflow_versions, routines, runs, step_results across workspaces and denies NULL-context reads", async () => {
-    if (!canRunIntegration) {
-      return;
-    }
-
-    const { postgres, migrations, workspaceContext } = await loadModules();
-    await migrations.ensureSqlMigrationsApplied();
-
-    await postgres.queryPostgres(
-      `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
-      [userA, userB]
-    );
-    await postgres.queryPostgres(
-      `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
-      [workspaceA, workspaceB, userA, userB]
-    );
-
-    const pool = postgres.getPostgresPool();
-    // Seed uses withWorkspaceContext (superuser) so it can insert across both
-    // workspaces in one call without being blocked by each workspace's own RLS.
-    await seedAll(pool, workspaceContext.withWorkspaceContext);
-
-    const ctxA = { workspaceId: workspaceA, userId: userA };
-    const ctxB = { workspaceId: workspaceB, userId: userB };
-
-    // ---- workflows -------------------------------------------------------
-    // Use withRlsEnforcedContext (autoflow_api role, NOBYPASSRLS) so FORCE RLS
-    // policies are actually applied.  A superuser pool would see all rows
-    // regardless of workspace context and make these assertions vacuous.
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount).toBe(0);
-    });
-
-    // ---- workflow_versions -----------------------------------------------
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount).toBe(0);
-    });
-
-    // ---- routines --------------------------------------------------------
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount).toBe(0);
-    });
-
-    // ---- runs ------------------------------------------------------------
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount).toBe(0);
-    });
-
-    // ---- step_results (inherited via runs) --------------------------------
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount).toBe(0);
-    });
-
-    // ---- NULL workspace context denies all ---------------------------------
-    // Use a transaction with SET LOCAL ROLE autoflow_api so the null-context
-    // check runs under a role that is actually subject to RLS policies.
-    // We do NOT attempt "SET LOCAL app.current_workspace_id TO DEFAULT" here
-    // because that statement errors on PostgreSQL 16 when the custom GUC
-    // placeholder has never been set in this session.  A fresh or recycled
-    // pool connection already has an unset (or '') app.current_workspace_id
-    // at the session level, so app_current_workspace_id() returns NULL and
-    // all tenant-isolation policies deny access — no explicit reset needed.
-    const nullClient = await pool.connect();
-    try {
-      await nullClient.query("BEGIN");
-      await nullClient.query("SET LOCAL ROLE autoflow_api");
-      for (const [table, id] of [
-        ["workflows", wfA],
-        ["workflow_versions", wfvA],
-        ["routines", routineA],
-        ["runs", runA],
-        ["step_results", stepA],
-      ] as [string, string][]) {
-        const r = await nullClient.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
-        expect(r.rowCount ?? r.rows.length).toBe(0);
+  it(
+    "isolates workflows, workflow_versions, routines, runs, step_results across workspaces and denies NULL-context reads",
+    async () => {
+      if (!canRunIntegration) {
+        return;
       }
-      await nullClient.query("COMMIT");
-    } catch (err) {
-      await nullClient.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      nullClient.release();
-    }
-  });
 
-  it("isolates activity_events, connector_connections, budgets, subscriptions, entitlements across workspaces and denies NULL-context reads", async () => {
-    if (!canRunIntegration) {
-      return;
-    }
-
-    const { postgres, migrations, workspaceContext } = await loadModules();
-    await migrations.ensureSqlMigrationsApplied();
-
-    await postgres.queryPostgres(
-      `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
-      [userA, userB]
-    );
-    await postgres.queryPostgres(
-      `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
-      [workspaceA, workspaceB, userA, userB]
-    );
-
-    const pool = postgres.getPostgresPool();
-
-    const actEvtA = randomUUID();
-    const actEvtB = randomUUID();
-    const connA = randomUUID();
-    const connB = randomUUID();
-    const budgetA = randomUUID();
-    const budgetB = randomUUID();
-    const subA = randomUUID();
-    const subB = randomUUID();
-    const llmCredIdA = "hel70-llm-cred-a";
-    const llmCredIdB = "hel70-llm-cred-b";
-
-    await workspaceContext.withWorkspaceContext(pool, { workspaceId: workspaceA, userId: userA }, async (client) => {
-      await client.query(
-        `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
-        [actEvtA, workspaceA]
+      await pg.queryPostgres(
+        `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
+        [userA, userB],
       );
-      await client.query(
-        `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'github', 'tok-a-sep')`,
-        [connA, workspaceA]
+      await pg.queryPostgres(
+        `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
+        [workspaceA, workspaceB, userA, userB],
       );
-      await client.query(
-        `INSERT INTO llm_credentials (id, workspace_id, user_id, provider) VALUES ($1, $2, $3, 'anthropic') ON CONFLICT (id) DO NOTHING`,
-        [llmCredIdA, workspaceA, userA]
-      );
-      await client.query(
-        `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 100, '2026-06')`,
-        [budgetA, workspaceA]
-      );
-      await client.query(
-        `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_a2_hel70', 'explore', 'active')`,
-        [subA, workspaceA]
-      );
-      await client.query(
-        `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
-         VALUES ($1, 50, 1, 2, false, 3, 0, 'explore')
-         ON CONFLICT (workspace_id) DO NOTHING`,
-        [workspaceA]
-      );
-    });
 
-    await workspaceContext.withWorkspaceContext(pool, { workspaceId: workspaceB, userId: userB }, async (client) => {
-      await client.query(
-        `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
-        [actEvtB, workspaceB]
-      );
-      await client.query(
-        `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'github', 'tok-b-sep')`,
-        [connB, workspaceB]
-      );
-      await client.query(
-        `INSERT INTO llm_credentials (id, workspace_id, user_id, provider) VALUES ($1, $2, $3, 'anthropic') ON CONFLICT (id) DO NOTHING`,
-        [llmCredIdB, workspaceB, userB]
-      );
-      await client.query(
-        `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 200, '2026-06')`,
-        [budgetB, workspaceB]
-      );
-      await client.query(
-        `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_b2_hel70', 'explore', 'active')`,
-        [subB, workspaceB]
-      );
-      await client.query(
-        `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
-         VALUES ($1, 50, 1, 2, false, 3, 0, 'explore')
-         ON CONFLICT (workspace_id) DO NOTHING`,
-        [workspaceB]
-      );
-    });
+      // Seed uses withWorkspaceContext (superuser) so it can insert across both
+      // workspaces in one call without being blocked by each workspace's own RLS.
+      await seedAll(pgPool, withWorkspaceContextFn);
 
-    const ctxA = { workspaceId: workspaceA, userId: userA };
-    const ctxB = { workspaceId: workspaceB, userId: userB };
+      const ctxA = { workspaceId: workspaceA, userId: userA };
+      const ctxB = { workspaceId: workspaceB, userId: userB };
 
-    // activity_events
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount).toBe(0);
-    });
+      // ---- workflows -------------------------------------------------------
+      // Use withRlsEnforcedContext (autoflow_api role, NOBYPASSRLS) so FORCE RLS
+      // policies are actually applied.  A superuser pool would see all rows
+      // regardless of workspace context and make these assertions vacuous.
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount,
+        ).toBe(0);
+      });
 
-    // connector_connections
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA])).rowCount).toBe(0);
-    });
+      // ---- workflow_versions -----------------------------------------------
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount,
+        ).toBe(0);
+      });
 
-    // llm_credentials (workspace-scoped rows)
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA])).rowCount).toBe(0);
-    });
+      // ---- routines --------------------------------------------------------
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount,
+        ).toBe(0);
+      });
 
-    // budgets
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount).toBe(0);
-    });
+      // ---- runs ------------------------------------------------------------
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount,
+        ).toBe(0);
+      });
 
-    // subscriptions
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount).toBe(0);
-    });
+      // ---- step_results (inherited via runs) --------------------------------
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount,
+        ).toBe(0);
+      });
 
-    // entitlements (workspace_id is PK; read own row, not other)
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceA])).rowCount).toBe(0);
-    });
-
-    // NULL context denies all
-    const nullClient = await pool.connect();
-    try {
-      await nullClient.query("BEGIN");
-      await nullClient.query("SET LOCAL ROLE autoflow_api");
-      for (const [table, id] of [
-        ["activity_events", actEvtA],
-        ["connector_connections", connA],
-        ["llm_credentials", llmCredIdA],
-        ["budgets", budgetA],
-        ["subscriptions", subA],
-      ] as [string, string][]) {
-        const r = await nullClient.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
-        expect(r.rowCount ?? r.rows.length).toBe(0);
+      // ---- NULL workspace context denies all ---------------------------------
+      // Use a transaction with SET LOCAL ROLE autoflow_api so the null-context
+      // check runs under a role that is actually subject to RLS policies.
+      // We do NOT attempt "SET LOCAL app.current_workspace_id TO DEFAULT" here
+      // because that statement errors on PostgreSQL 16 when the custom GUC
+      // placeholder has never been set in this session.  A fresh or recycled
+      // pool connection already has an unset (or '') app.current_workspace_id
+      // at the session level, so app_current_workspace_id() returns NULL and
+      // all tenant-isolation policies deny access — no explicit reset needed.
+      const nullClient = await pgPool.connect();
+      try {
+        await nullClient.query("BEGIN");
+        await nullClient.query("SET LOCAL ROLE autoflow_api");
+        for (const [table, id] of [
+          ["workflows", wfA],
+          ["workflow_versions", wfvA],
+          ["routines", routineA],
+          ["runs", runA],
+          ["step_results", stepA],
+        ] as [string, string][]) {
+          const r = await nullClient.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
+          expect(r.rowCount ?? r.rows.length).toBe(0);
+        }
+        await nullClient.query("COMMIT");
+      } catch (err) {
+        await nullClient.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        nullClient.release();
       }
-      const entr = await nullClient.query(
-        `SELECT workspace_id FROM entitlements WHERE workspace_id = $1`,
-        [workspaceA]
+    },
+    30_000,
+  );
+
+  it(
+    "isolates activity_events, connector_connections, budgets, subscriptions, entitlements across workspaces and denies NULL-context reads",
+    async () => {
+      if (!canRunIntegration) {
+        return;
+      }
+
+      await pg.queryPostgres(
+        `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
+        [userA, userB],
       );
-      expect(entr.rowCount ?? entr.rows.length).toBe(0);
-      await nullClient.query("COMMIT");
-    } catch (err) {
-      await nullClient.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      nullClient.release();
-    }
-  });
-
-  it("approvals: workspace policy (027) hides cross-tenant approvals; NULL context denies", async () => {
-    if (!canRunIntegration) {
-      return;
-    }
-
-    const { postgres, migrations, workspaceContext } = await loadModules();
-    await migrations.ensureSqlMigrationsApplied();
-
-    await postgres.queryPostgres(
-      `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
-      [userA, userB]
-    );
-    await postgres.queryPostgres(
-      `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
-      [workspaceA, workspaceB, userA, userB]
-    );
-
-    const pool = postgres.getPostgresPool();
-    await seedAll(pool, workspaceContext.withWorkspaceContext);
-
-    const ctxA = { workspaceId: workspaceA, userId: userA };
-    const ctxB = { workspaceId: workspaceB, userId: userB };
-
-    // Workspace A sees its own approval, not B's
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount).toBe(0);
-    });
-
-    // Workspace B sees its own approval, not A's
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount).toBe(0);
-    });
-
-    // NULL context: both user and workspace policies deny
-    const nullClient = await pool.connect();
-    try {
-      await nullClient.query("BEGIN");
-      await nullClient.query("SET LOCAL ROLE autoflow_api");
-      const r = await nullClient.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA]);
-      expect(r.rowCount ?? r.rows.length).toBe(0);
-      await nullClient.query("COMMIT");
-    } catch (err) {
-      await nullClient.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      nullClient.release();
-    }
-  });
-
-  it("audit_log: workspace isolation holds; RESTRICTIVE no-update and no-delete policies silently reject mutations", async () => {
-    if (!canRunIntegration) {
-      return;
-    }
-
-    const { postgres, migrations, workspaceContext } = await loadModules();
-    await migrations.ensureSqlMigrationsApplied();
-
-    await postgres.queryPostgres(
-      `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
-      [userA, userB]
-    );
-    await postgres.queryPostgres(
-      `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
-      [workspaceA, workspaceB, userA, userB]
-    );
-
-    const pool = postgres.getPostgresPool();
-    await seedAll(pool, workspaceContext.withWorkspaceContext);
-
-    const ctxA = { workspaceId: workspaceA, userId: userA };
-    const ctxB = { workspaceId: workspaceB, userId: userB };
-
-    // Workspace isolation: A sees A, B sees B
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount).toBe(0);
-    });
-    await withRlsEnforcedContext(pool, ctxB, async (client) => {
-      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount).toBe(1);
-      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(0);
-    });
-
-    // NULL context denies
-    const nullClient = await pool.connect();
-    try {
-      await nullClient.query("BEGIN");
-      await nullClient.query("SET LOCAL ROLE autoflow_api");
-      const r = await nullClient.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA]);
-      expect(r.rowCount ?? r.rows.length).toBe(0);
-      await nullClient.query("COMMIT");
-    } catch (err) {
-      await nullClient.query("ROLLBACK").catch(() => undefined);
-      throw err;
-    } finally {
-      nullClient.release();
-    }
-
-    // RESTRICTIVE no-update policy: audit_log_no_update has USING (false),
-    // which makes the target row invisible to the UPDATE command (USING filters
-    // the set of rows the command can operate on). PostgreSQL does NOT raise an
-    // error in this case — it silently updates 0 rows. Verify that no rows were
-    // tampered with by confirming rowCount=0 and the original value is intact.
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      const updateResult = await client.query(
-        `UPDATE audit_log SET action = 'tampered' WHERE id = $1`,
-        [auditA]
+      await pg.queryPostgres(
+        `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
+        [workspaceA, workspaceB, userA, userB],
       );
-      expect(updateResult.rowCount).toBe(0);
-    });
-    // Confirm original value unchanged
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      const r = await client.query(`SELECT action FROM audit_log WHERE id = $1`, [auditA]);
-      expect(r.rows[0]?.action).toBe("login");
-    });
 
-    // RESTRICTIVE no-delete policy: audit_log_no_delete has USING (false),
-    // similarly making all rows invisible to DELETE — 0 rows deleted, no error.
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      const deleteResult = await client.query(
-        `DELETE FROM audit_log WHERE id = $1`,
-        [auditA]
+      const actEvtA = randomUUID();
+      const actEvtB = randomUUID();
+      const connA = randomUUID();
+      const connB = randomUUID();
+      const budgetA = randomUUID();
+      const budgetB = randomUUID();
+      const subA = randomUUID();
+      const subB = randomUUID();
+      const llmCredIdA = "hel70-llm-cred-a";
+      const llmCredIdB = "hel70-llm-cred-b";
+
+      await withWorkspaceContextFn(
+        pgPool,
+        { workspaceId: workspaceA, userId: userA },
+        async (client) => {
+          await client.query(
+            `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
+            [actEvtA, workspaceA],
+          );
+          await client.query(
+            `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'github', 'tok-a-sep')`,
+            [connA, workspaceA],
+          );
+          await client.query(
+            `INSERT INTO llm_credentials (id, workspace_id, user_id, provider) VALUES ($1, $2, $3, 'anthropic') ON CONFLICT (id) DO NOTHING`,
+            [llmCredIdA, workspaceA, userA],
+          );
+          await client.query(
+            `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 100, '2026-06')`,
+            [budgetA, workspaceA],
+          );
+          await client.query(
+            `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_a2_hel70', 'explore', 'active')`,
+            [subA, workspaceA],
+          );
+          await client.query(
+            `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
+           VALUES ($1, 50, 1, 2, false, 3, 0, 'explore')
+           ON CONFLICT (workspace_id) DO NOTHING`,
+            [workspaceA],
+          );
+        },
       );
-      expect(deleteResult.rowCount).toBe(0);
-    });
-    // Confirm row still exists
-    await withRlsEnforcedContext(pool, ctxA, async (client) => {
-      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(1);
-    });
-  });
 
-  it("FORCE RLS guard: test fails cleanly if FORCE RLS is dropped from any P1 table", async () => {
-    if (!canRunIntegration) {
-      return;
-    }
+      await withWorkspaceContextFn(
+        pgPool,
+        { workspaceId: workspaceB, userId: userB },
+        async (client) => {
+          await client.query(
+            `INSERT INTO activity_events (id, workspace_id, kind, actor, subject, payload) VALUES ($1, $2, 'test.event', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)`,
+            [actEvtB, workspaceB],
+          );
+          await client.query(
+            `INSERT INTO connector_connections (id, workspace_id, kind, oauth_token_ref) VALUES ($1, $2, 'github', 'tok-b-sep')`,
+            [connB, workspaceB],
+          );
+          await client.query(
+            `INSERT INTO llm_credentials (id, workspace_id, user_id, provider) VALUES ($1, $2, $3, 'anthropic') ON CONFLICT (id) DO NOTHING`,
+            [llmCredIdB, workspaceB, userB],
+          );
+          await client.query(
+            `INSERT INTO budgets (id, workspace_id, scope_kind, cap_cents, period) VALUES ($1, $2, 'workspace', 200, '2026-06')`,
+            [budgetB, workspaceB],
+          );
+          await client.query(
+            `INSERT INTO subscriptions (id, workspace_id, stripe_subscription_id, plan, status) VALUES ($1, $2, 'sub_b2_hel70', 'explore', 'active')`,
+            [subB, workspaceB],
+          );
+          await client.query(
+            `INSERT INTO entitlements (workspace_id, runs_per_month, agent_cap, integration_cap, byok_allowed, log_retention_days, approval_tier_max, plan)
+           VALUES ($1, 50, 1, 2, false, 3, 0, 'explore')
+           ON CONFLICT (workspace_id) DO NOTHING`,
+            [workspaceB],
+          );
+        },
+      );
 
-    const { postgres, migrations } = await loadModules();
-    await migrations.ensureSqlMigrationsApplied();
+      const ctxA = { workspaceId: workspaceA, userId: userA };
+      const ctxB = { workspaceId: workspaceB, userId: userB };
 
-    const p1Tables = [
-      "workflows",
-      "workflow_versions",
-      "routines",
-      "runs",
-      "step_results",
-      "activity_events",
-      "connector_connections",
-      "budgets",
-      "subscriptions",
-      "entitlements",
-      "approvals",
-      "audit_log",
-    ];
+      // activity_events
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount,
+        ).toBe(0);
+      });
 
-    const result = await postgres.queryPostgres<{ relname: string; rowsecurity: boolean; forcerowsecurity: boolean }>(
-      `SELECT relname, relrowsecurity AS rowsecurity, relforcerowsecurity AS forcerowsecurity
+      // connector_connections
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA]))
+            .rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB]))
+            .rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB]))
+            .rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA]))
+            .rowCount,
+        ).toBe(0);
+      });
+
+      // llm_credentials (workspace-scoped rows)
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA]))
+            .rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB]))
+            .rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB]))
+            .rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA]))
+            .rowCount,
+        ).toBe(0);
+      });
+
+      // budgets
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount,
+        ).toBe(0);
+      });
+
+      // subscriptions
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount,
+        ).toBe(0);
+      });
+
+      // entitlements (workspace_id is PK; read own row, not other)
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (
+            await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [
+              workspaceA,
+            ])
+          ).rowCount,
+        ).toBe(1);
+        expect(
+          (
+            await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [
+              workspaceB,
+            ])
+          ).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (
+            await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [
+              workspaceB,
+            ])
+          ).rowCount,
+        ).toBe(1);
+        expect(
+          (
+            await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [
+              workspaceA,
+            ])
+          ).rowCount,
+        ).toBe(0);
+      });
+
+      // NULL context denies all
+      const nullClient = await pgPool.connect();
+      try {
+        await nullClient.query("BEGIN");
+        await nullClient.query("SET LOCAL ROLE autoflow_api");
+        for (const [table, id] of [
+          ["activity_events", actEvtA],
+          ["connector_connections", connA],
+          ["llm_credentials", llmCredIdA],
+          ["budgets", budgetA],
+          ["subscriptions", subA],
+        ] as [string, string][]) {
+          const r = await nullClient.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
+          expect(r.rowCount ?? r.rows.length).toBe(0);
+        }
+        const entr = await nullClient.query(
+          `SELECT workspace_id FROM entitlements WHERE workspace_id = $1`,
+          [workspaceA],
+        );
+        expect(entr.rowCount ?? entr.rows.length).toBe(0);
+        await nullClient.query("COMMIT");
+      } catch (err) {
+        await nullClient.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        nullClient.release();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "approvals: workspace policy (027) hides cross-tenant approvals; NULL context denies",
+    async () => {
+      if (!canRunIntegration) {
+        return;
+      }
+
+      await pg.queryPostgres(
+        `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
+        [userA, userB],
+      );
+      await pg.queryPostgres(
+        `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
+        [workspaceA, workspaceB, userA, userB],
+      );
+
+      await seedAll(pgPool, withWorkspaceContextFn);
+
+      const ctxA = { workspaceId: workspaceA, userId: userA };
+      const ctxB = { workspaceId: workspaceB, userId: userB };
+
+      // Workspace A sees its own approval, not B's
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount,
+        ).toBe(0);
+      });
+
+      // Workspace B sees its own approval, not A's
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount,
+        ).toBe(0);
+      });
+
+      // NULL context: both user and workspace policies deny
+      const nullClient = await pgPool.connect();
+      try {
+        await nullClient.query("BEGIN");
+        await nullClient.query("SET LOCAL ROLE autoflow_api");
+        const r = await nullClient.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA]);
+        expect(r.rowCount ?? r.rows.length).toBe(0);
+        await nullClient.query("COMMIT");
+      } catch (err) {
+        await nullClient.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        nullClient.release();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "audit_log: workspace isolation holds; RESTRICTIVE no-update and no-delete policies silently reject mutations",
+    async () => {
+      if (!canRunIntegration) {
+        return;
+      }
+
+      await pg.queryPostgres(
+        `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
+        [userA, userB],
+      );
+      await pg.queryPostgres(
+        `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
+        [workspaceA, workspaceB, userA, userB],
+      );
+
+      await seedAll(pgPool, withWorkspaceContextFn);
+
+      const ctxA = { workspaceId: workspaceA, userId: userA };
+      const ctxB = { workspaceId: workspaceB, userId: userB };
+
+      // Workspace isolation: A sees A, B sees B
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount,
+        ).toBe(0);
+      });
+
+      // NULL context denies
+      const nullClient = await pgPool.connect();
+      try {
+        await nullClient.query("BEGIN");
+        await nullClient.query("SET LOCAL ROLE autoflow_api");
+        const r = await nullClient.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA]);
+        expect(r.rowCount ?? r.rows.length).toBe(0);
+        await nullClient.query("COMMIT");
+      } catch (err) {
+        await nullClient.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        nullClient.release();
+      }
+
+      // RESTRICTIVE no-update policy: audit_log_no_update has USING (false),
+      // which makes the target row invisible to the UPDATE command (USING filters
+      // the set of rows the command can operate on). PostgreSQL does NOT raise an
+      // error in this case — it silently updates 0 rows. Verify that no rows were
+      // tampered with by confirming rowCount=0 and the original value is intact.
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        const updateResult = await client.query(
+          `UPDATE audit_log SET action = 'tampered' WHERE id = $1`,
+          [auditA],
+        );
+        expect(updateResult.rowCount).toBe(0);
+      });
+      // Confirm original value unchanged
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        const r = await client.query(`SELECT action FROM audit_log WHERE id = $1`, [auditA]);
+        expect(r.rows[0]?.action).toBe("login");
+      });
+
+      // RESTRICTIVE no-delete policy: audit_log_no_delete has USING (false),
+      // similarly making all rows invisible to DELETE — 0 rows deleted, no error.
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        const deleteResult = await client.query(`DELETE FROM audit_log WHERE id = $1`, [auditA]);
+        expect(deleteResult.rowCount).toBe(0);
+      });
+      // Confirm row still exists
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount,
+        ).toBe(1);
+      });
+    },
+    30_000,
+  );
+
+  it(
+    "FORCE RLS guard: test fails cleanly if FORCE RLS is dropped from any P1 table",
+    async () => {
+      if (!canRunIntegration) {
+        return;
+      }
+
+      const p1Tables = [
+        "workflows",
+        "workflow_versions",
+        "routines",
+        "runs",
+        "step_results",
+        "activity_events",
+        "connector_connections",
+        "budgets",
+        "subscriptions",
+        "entitlements",
+        "approvals",
+        "audit_log",
+      ];
+
+      const result = await pg.queryPostgres<{
+        relname: string;
+        rowsecurity: boolean;
+        forcerowsecurity: boolean;
+      }>(
+        `SELECT relname, relrowsecurity AS rowsecurity, relforcerowsecurity AS forcerowsecurity
        FROM pg_class
        WHERE relname = ANY($1)
          AND relkind = 'r'`,
-      [p1Tables]
-    );
+        [p1Tables],
+      );
 
-    for (const row of result.rows) {
-      expect({ table: row.relname, rowsecurity: row.rowsecurity }).toMatchObject({
-        table: row.relname,
-        rowsecurity: true,
-      });
-    }
-
-    const tablesWithForceRls = [
-      "workflows",
-      "workflow_versions",
-      "routines",
-      "runs",
-      "step_results",
-      "activity_events",
-      "connector_connections",
-      "budgets",
-      "subscriptions",
-      "entitlements",
-      "approvals",
-      "audit_log",
-    ];
-    for (const row of result.rows) {
-      if (tablesWithForceRls.includes(row.relname)) {
-        expect({ table: row.relname, forcerowsecurity: row.forcerowsecurity }).toMatchObject({
+      for (const row of result.rows) {
+        expect({ table: row.relname, rowsecurity: row.rowsecurity }).toMatchObject({
           table: row.relname,
-          forcerowsecurity: true,
+          rowsecurity: true,
         });
       }
-    }
-  });
+
+      const tablesWithForceRls = [
+        "workflows",
+        "workflow_versions",
+        "routines",
+        "runs",
+        "step_results",
+        "activity_events",
+        "connector_connections",
+        "budgets",
+        "subscriptions",
+        "entitlements",
+        "approvals",
+        "audit_log",
+      ];
+      for (const row of result.rows) {
+        if (tablesWithForceRls.includes(row.relname)) {
+          expect({ table: row.relname, forcerowsecurity: row.forcerowsecurity }).toMatchObject({
+            table: row.relname,
+            forcerowsecurity: true,
+          });
+        }
+      }
+    },
+    30_000,
+  );
 });

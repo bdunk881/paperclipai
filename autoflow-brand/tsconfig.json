@@ -28,6 +28,12 @@
       ],
       "@autoflow/logo-dev": [
         "../shared/logoDev/index.ts"
+      ],
+      "react": [
+        "./node_modules/@types/react/index.d.ts"
+      ],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime.d.ts"
       ]
     }
   },

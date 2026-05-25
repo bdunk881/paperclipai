@@ -19,7 +19,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@autoflow/logo-dev": ["../shared/logoDev/index.ts"],
-      "@testing-library/react-original": ["node_modules/@testing-library/react"]
+      "@testing-library/react-original": ["node_modules/@testing-library/react"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime.d.ts"]
     },
     "types": ["node"]
   },

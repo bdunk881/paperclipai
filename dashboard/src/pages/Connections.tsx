@@ -13,9 +13,16 @@
  * to `/api/connector-grants` lands in a follow-up; until then the rows
  * mutate in-place so QA can exercise the slider UI.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { useExperienceMode } from "../context/ExperienceModeContext";
-import { getConnectorHealth, type ConnectorHealthRecord } from "../api/client";
+import {
+  getConnectorHealth,
+  listLLMConfigs,
+  type ConnectorHealthRecord,
+  type LLMConfig,
+  type ProviderName,
+} from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 // ---------------------------------------------------------------------------
@@ -229,15 +236,340 @@ function IntegrationsPanel() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Models panel — same int-cat / int-row layout as Integrations. Each provider
+// gets a category header; each notable model is a row. Status pill is driven
+// by whether the workspace has an LLMConfig for that (provider, model) pair.
+// ---------------------------------------------------------------------------
+
+interface ModelEntry {
+  id: string;
+  name: string;
+  tier: "Lite" | "Standard" | "Power";
+  desc: string;
+}
+
+interface ProviderCatalogEntry {
+  provider: ProviderName;
+  category: string;
+  logo: string;
+  models: ModelEntry[];
+}
+
+const MODEL_CATALOG: ProviderCatalogEntry[] = [
+  {
+    provider: "anthropic",
+    category: "Anthropic",
+    logo: "A",
+    models: [
+      {
+        id: "claude-opus-4-7",
+        name: "Claude Opus 4.7",
+        tier: "Power",
+        desc: "Top reasoning + agentic planning — flagship for complex multi-step work",
+      },
+      {
+        id: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4.6",
+        tier: "Standard",
+        desc: "Balanced — fast, smart, cost-effective. Sensible default",
+      },
+      {
+        id: "claude-haiku-4-5",
+        name: "Claude Haiku 4.5",
+        tier: "Lite",
+        desc: "Fastest + cheapest — great for high-volume routines and embeddings",
+      },
+    ],
+  },
+  {
+    provider: "openai",
+    category: "OpenAI",
+    logo: "O",
+    models: [
+      {
+        id: "gpt-5.5",
+        name: "GPT-5.5",
+        tier: "Power",
+        desc: "Flagship multimodal reasoning",
+      },
+      {
+        id: "gpt-5.4",
+        name: "GPT-5.4",
+        tier: "Standard",
+        desc: "Balanced multimodal with strong tool use",
+      },
+      {
+        id: "gpt-5.4-mini",
+        name: "GPT-5.4 mini",
+        tier: "Lite",
+        desc: "Fast + affordable — good default for routines",
+      },
+      {
+        id: "o3",
+        name: "o3",
+        tier: "Power",
+        desc: "Deep reasoning model for hard problems",
+      },
+    ],
+  },
+  {
+    provider: "gemini",
+    category: "Google Gemini",
+    logo: "G",
+    models: [
+      {
+        id: "gemini-2.5-pro",
+        name: "Gemini 2.5 Pro",
+        tier: "Power",
+        desc: "Best-in-class context window for long-document workflows",
+      },
+      {
+        id: "gemini-3.5-flash",
+        name: "Gemini 3.5 Flash",
+        tier: "Standard",
+        desc: "Quick + multimodal with vision",
+      },
+      {
+        id: "gemini-3.1-flash-lite",
+        name: "Gemini 3.1 Flash Lite",
+        tier: "Lite",
+        desc: "Cheapest tier — embeddings, low-stakes tasks",
+      },
+    ],
+  },
+  {
+    provider: "mistral",
+    category: "Mistral",
+    logo: "M",
+    models: [
+      {
+        id: "mistral-large-latest",
+        name: "Mistral Large",
+        tier: "Power",
+        desc: "Open-weight reasoning. EU-hosted option for compliance",
+      },
+      {
+        id: "mistral-medium-latest",
+        name: "Mistral Medium",
+        tier: "Standard",
+        desc: "Cost-effective with strong code skills",
+      },
+      {
+        id: "codestral-latest",
+        name: "Codestral",
+        tier: "Standard",
+        desc: "Code-specialized model — fill-in-middle, multi-language",
+      },
+    ],
+  },
+  {
+    provider: "xai",
+    category: "xAI",
+    logo: "X",
+    models: [
+      {
+        id: "grok-4",
+        name: "Grok 4",
+        tier: "Power",
+        desc: "Reasoning model with real-time search and code tools",
+      },
+      {
+        id: "grok-3",
+        name: "Grok 3",
+        tier: "Standard",
+        desc: "Fast multimodal generalist",
+      },
+    ],
+  },
+  {
+    provider: "deepseek",
+    category: "DeepSeek",
+    logo: "D",
+    models: [
+      {
+        id: "deepseek-v3",
+        name: "DeepSeek V3",
+        tier: "Power",
+        desc: "Open-source reasoning model with strong code performance",
+      },
+      {
+        id: "deepseek-r1",
+        name: "DeepSeek R1",
+        tier: "Power",
+        desc: "Deep-reasoning variant tuned for chain-of-thought",
+      },
+    ],
+  },
+  {
+    provider: "groq",
+    category: "Groq · open-weight (served fast)",
+    logo: "Q",
+    models: [
+      {
+        id: "openai/gpt-oss-120b",
+        name: "GPT-OSS 120B",
+        tier: "Power",
+        desc: "Open-weight GPT-class model served at Groq speed (~500 tok/s)",
+      },
+      {
+        id: "meta-llama/llama-4-maverick-17b-128e-instruct",
+        name: "Llama 4 Maverick",
+        tier: "Standard",
+        desc: "Open Meta Llama 4 — sub-second time-to-first-token",
+      },
+      {
+        id: "llama-3.3-70b-versatile",
+        name: "Llama 3.3 70B",
+        tier: "Standard",
+        desc: "Open Meta Llama 3.3, versatile general-purpose",
+      },
+    ],
+  },
+];
+
+const TIER_PILL_TONE: Record<ModelEntry["tier"], string> = {
+  Lite: "sage",
+  Standard: "mustard",
+  Power: "clay",
+};
+
+function useLLMConfigs(): { configs: LLMConfig[]; loading: boolean; error: string | null } {
+  const { getAccessToken } = useAuth();
+  const [configs, setConfigs] = useState<LLMConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await getAccessToken();
+        if (!token) {
+          if (!cancelled) {
+            setConfigs([]);
+            setLoading(false);
+          }
+          return;
+        }
+        const list = await listLLMConfigs(token);
+        if (!cancelled) setConfigs(list);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "Failed to load model providers");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken]);
+
+  return { configs, loading, error };
+}
+
 function ModelsPanel() {
+  const { configs, loading, error } = useLLMConfigs();
+  const navigate = useNavigate();
+
+  // Index configs by `${provider}:${model}` for O(1) lookup. A provider is
+  // "connected" overall iff at least one credential exists for it; an
+  // individual model is "connected" iff a credential exists for that exact
+  // (provider, model) pair.
+  const connectedKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of configs) set.add(`${c.provider}:${c.model}`);
+    return set;
+  }, [configs]);
+
+  const connectedProviders = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of configs) set.add(c.provider);
+    return set;
+  }, [configs]);
+
   return (
     <div className="panel" role="tabpanel" id="con-models">
-      <div className="card">
-        <p className="desc">
-          No model providers configured yet. Add an OpenAI, Anthropic, or other
-          provider key in Settings → Models.
-        </p>
-      </div>
+      {error ? (
+        <div className="card">
+          <p className="desc" style={{ color: "var(--af2-clay)" }}>
+            {error}
+          </p>
+        </div>
+      ) : null}
+
+      {MODEL_CATALOG.map((entry) => {
+        const providerConnected = connectedProviders.has(entry.provider);
+        return (
+          <div key={entry.provider}>
+            <div className="int-cat">
+              {entry.category}
+              {providerConnected ? (
+                <span className="pill sage dot" style={{ marginLeft: 10 }}>
+                  key configured
+                </span>
+              ) : null}
+            </div>
+            {entry.models.map((model) => {
+              const isConnected = connectedKeys.has(`${entry.provider}:${model.id}`);
+              return (
+                <div
+                  key={model.id}
+                  className="int-row"
+                  style={{ gridTemplateColumns: "36px 1fr 90px auto auto" }}
+                >
+                  <div className="int-logo">{entry.logo}</div>
+                  <div>
+                    <div className="int-name">
+                      {model.name}{" "}
+                      <code
+                        style={{
+                          color: "var(--af2-ink-4)",
+                          fontSize: 11,
+                          marginLeft: 4,
+                        }}
+                      >
+                        {model.id}
+                      </code>
+                    </div>
+                    <div className="int-desc">{model.desc}</div>
+                  </div>
+                  <span className={`pill ${TIER_PILL_TONE[model.tier]}`}>
+                    {model.tier}
+                  </span>
+                  {isConnected ? (
+                    <span className="pill sage dot">connected</span>
+                  ) : (
+                    <span className="pill">not connected</span>
+                  )}
+                  <button
+                    type="button"
+                    className={`btn sm${isConnected ? "" : " primary"}`}
+                    onClick={() =>
+                      navigate(
+                        `/settings/llm-providers?provider=${encodeURIComponent(
+                          entry.provider,
+                        )}&model=${encodeURIComponent(model.id)}`,
+                      )
+                    }
+                  >
+                    {isConnected ? "Manage" : "Connect"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+
+      {loading ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <p className="desc">Loading your configured providers…</p>
+        </div>
+      ) : null}
     </div>
   );
 }

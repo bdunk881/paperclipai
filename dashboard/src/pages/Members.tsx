@@ -46,46 +46,6 @@ const ROLE_LABEL: Record<WorkspaceMemberRole, string> = {
   member: "member",
 };
 
-interface FallbackMember {
-  id: string;
-  name: string;
-  email: string;
-  role: WorkspaceMemberRole;
-  joined: string;
-  status: "active" | "pending";
-  avatar: string;
-}
-
-const FALLBACK_MEMBERS: FallbackMember[] = [
-  {
-    id: "f-brad",
-    name: "Brad Dunkley",
-    email: "bdunk881@gmail.com",
-    role: "owner",
-    joined: "since 2026-03-01",
-    status: "active",
-    avatar: "B",
-  },
-  {
-    id: "f-jordan",
-    name: "Jordan Lee",
-    email: "jordan@acmerobotics.com",
-    role: "admin",
-    joined: "joined 2026-04-12",
-    status: "active",
-    avatar: "J",
-  },
-  {
-    id: "f-priya",
-    name: "Priya Shah",
-    email: "priya@acmerobotics.com",
-    role: "operator",
-    joined: "invited 2h ago",
-    status: "pending",
-    avatar: "P",
-  },
-];
-
 export default function Members() {
   const { requireAccessToken } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -143,8 +103,7 @@ export default function Members() {
     return [...members].sort((a, b) => order[a.role] - order[b.role]);
   }, [members]);
 
-  const usingFallback = !loading && !error && sortedMembers.length === 0;
-  const displayCount = usingFallback ? FALLBACK_MEMBERS.length : members.length;
+  const displayCount = members.length;
 
   return (
     <div className="af2-v2">
@@ -200,12 +159,19 @@ export default function Members() {
                 fontSize: 13,
               }}
             >
-              Loading members…
+              Loading…
             </div>
-          ) : usingFallback ? (
-            FALLBACK_MEMBERS.map((m, idx) => (
-              <MemberRowFallback key={m.id} member={m} idx={idx} />
-            ))
+          ) : sortedMembers.length === 0 ? (
+            <div
+              style={{
+                padding: 24,
+                textAlign: "center",
+                color: "var(--af2-ink-3)",
+                fontSize: 13,
+              }}
+            >
+              No members other than you. Invite a teammate to get started.
+            </div>
           ) : (
             sortedMembers.map((m) => <MemberRow key={m.id} member={m} />)
           )}
@@ -291,72 +257,6 @@ function MemberRow({ member }: { member: WorkspaceMemberRow }) {
           <button type="button" className="btn sm" disabled>
             —
           </button>
-        ) : (
-          <>
-            <button type="button" className="btn sm">
-              Edit
-            </button>
-            <button type="button" className="btn danger sm">
-              Remove
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MemberRowFallback({ member, idx }: { member: FallbackMember; idx: number }) {
-  const gradient =
-    idx === 0
-      ? undefined
-      : idx === 1
-        ? "linear-gradient(135deg,var(--af2-sage),var(--af2-mustard))"
-        : "linear-gradient(135deg,var(--af2-plum),var(--af2-ink-blue))";
-  return (
-    <div
-      className="row"
-      style={{ gridTemplateColumns: "60px 1fr 130px 110px 110px" }}
-    >
-      <div
-        className="avatar"
-        style={{
-          width: 32,
-          height: 32,
-          fontSize: 12,
-          ...(gradient ? { background: gradient } : {}),
-        }}
-      >
-        {member.avatar}
-      </div>
-      <div>
-        <b>{member.name}</b>
-        {member.status === "pending" ? (
-          <span className="pill mustard" style={{ marginLeft: 6 }}>
-            pending
-          </span>
-        ) : null}
-        <br />
-        <span className="id">{member.email}</span>
-      </div>
-      <div>
-        <span className="pill">{ROLE_LABEL[member.role]}</span>
-      </div>
-      <div className="id">{member.joined}</div>
-      <div className="actions">
-        {member.role === "owner" ? (
-          <button type="button" className="btn sm" disabled>
-            —
-          </button>
-        ) : member.status === "pending" ? (
-          <>
-            <button type="button" className="btn sm">
-              Resend
-            </button>
-            <button type="button" className="btn danger sm">
-              Cancel
-            </button>
-          </>
         ) : (
           <>
             <button type="button" className="btn sm">

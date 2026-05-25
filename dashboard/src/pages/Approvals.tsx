@@ -92,9 +92,9 @@ const MODE_LABEL: Record<ApprovalTierMode, string> = {
   require_approval: "Always require human",
 };
 
-// -- Sample fallback data (mirrors the prototype) -----------------------------
+// -- Queue item type ----------------------------------------------------------
 
-interface SampleQueueItem {
+interface QueueItem {
   id: string;
   kind: "action" | "escalation";
   title: string;
@@ -110,148 +110,6 @@ interface SampleQueueItem {
     deepLink?: string;
   };
 }
-
-const SAMPLE_QUEUE: SampleQueueItem[] = [
-  {
-    id: "ESC-204",
-    kind: "escalation",
-    title: 'Aaron asked: "Should I push back on Acme\'s 90-day payment terms?"',
-    subtitle: "Escalation · 2h ago · matched contract_exception",
-    tierLabel: "escalation",
-    tierTone: "plum",
-    agent: "Aaron · Sales",
-    drawer: {
-      eyebrow: "Escalation · governance",
-      headline: '"Should I push back on Acme\'s 90-day payment terms?"',
-      body: "Acme wants Net-90; our standard is Net-30. Cashflow impact ~$24k float. Aaron's recommendation: counter at Net-45 with a 1% early-pay discount.",
-      actions: [
-        { label: "Approve recommendation", variant: "primary" },
-        { label: "Reply with guidance" },
-        { label: "Reject" },
-      ],
-      deepLink: "Open originating assignment TKT-2041 →",
-    },
-  },
-  {
-    id: "APR-118",
-    kind: "action",
-    title: "Send pricing email to inbound lead",
-    subtitle: "Acme Robotics · Q3 RFP · Mira",
-    tierLabel: "customer-email",
-    tierTone: "clay",
-    agent: "Mira · Marketing",
-    drawer: {
-      eyebrow: "Action approval",
-      headline: "Send pricing email to Acme RFP",
-      body: 'Subject: "Acme Q3 RFP — pricing per request" · To: alex@acmerobotics.com · Draft body (excerpt): "Hi Alex, attached is the pricing breakdown you requested. Happy to walk through any line item…"',
-      actions: [
-        { label: "Approve", variant: "primary" },
-        { label: "Edit draft" },
-        { label: "Reject" },
-      ],
-      deepLink: "Open assignment TKT-2039 →",
-    },
-  },
-  {
-    id: "APR-117",
-    kind: "action",
-    title: "Merge PR #482 to main",
-    subtitle: "3 files · invoices schema · Eli",
-    tierLabel: "prod-deploy",
-    tierTone: "clay",
-    agent: "Eli · Eng",
-    drawer: {
-      eyebrow: "Action approval",
-      headline: "Merge PR #482",
-      body: "PR diff preview · 3 files in invoices schema · CI green · 0 reviewer comments.",
-      actions: [
-        { label: "Approve", variant: "primary" },
-        { label: "Reject" },
-      ],
-    },
-  },
-  {
-    id: "ESC-203",
-    kind: "escalation",
-    title: 'Mira asked: "Brand voice for launch post — formal or playful?"',
-    subtitle: "Escalation · 4h ago",
-    tierLabel: "escalation",
-    tierTone: "plum",
-    agent: "Mira · Marketing",
-    drawer: {
-      eyebrow: "Escalation · governance",
-      headline: "Brand voice for launch post",
-      body: "Mira drafted two versions of the launch announcement and needs a steer on tone before publishing.",
-      actions: [
-        { label: "Approve recommendation", variant: "primary" },
-        { label: "Reply with guidance" },
-        { label: "Reject" },
-      ],
-    },
-  },
-  {
-    id: "APR-116",
-    kind: "action",
-    title: "Post launch announcement to LinkedIn",
-    subtitle: "Public-post · Mira · Marketing",
-    tierLabel: "public-post",
-    tierTone: "clay",
-    agent: "Mira · Marketing",
-    drawer: {
-      eyebrow: "Action approval",
-      headline: "LinkedIn launch post",
-      body: "Public announcement of v2 features · 220 words · scheduled for Tuesday 9am ET.",
-      actions: [
-        { label: "Approve", variant: "primary" },
-        { label: "Reject" },
-      ],
-    },
-  },
-];
-
-const SAMPLE_POLICIES: Array<{
-  title: string;
-  desc: string;
-  pillTone: "plum" | "mustard";
-  pillLabel: string;
-}> = [
-  {
-    title: "Customer-facing comms",
-    desc: "Require approval when an agent sends email to anyone with is_customer=true",
-    pillTone: "plum",
-    pillLabel: "always",
-  },
-  {
-    title: "Production deploys",
-    desc: "Require approval before merging to main or deploying to prod",
-    pillTone: "plum",
-    pillLabel: "always",
-  },
-  {
-    title: "Public posts",
-    desc: "Require approval for any public social post",
-    pillTone: "plum",
-    pillLabel: "always",
-  },
-  {
-    title: "Spend > $25",
-    desc: "Require approval when a single agent action costs over $25",
-    pillTone: "mustard",
-    pillLabel: "conditional",
-  },
-];
-
-const SAMPLE_HISTORY: Array<{
-  id: string;
-  title: string;
-  status: "approved" | "rejected";
-  when: string;
-  by: string;
-}> = [
-  { id: "APR-115", title: "Sent pricing email to inbound lead", status: "approved", when: "2h ago", by: "by Brad" },
-  { id: "APR-114", title: "Merged PR #481", status: "approved", when: "3h ago", by: "by Brad" },
-  { id: "ESC-202", title: "Net-30 vs Net-60 with Zara", status: "rejected", when: "yesterday", by: "by Brad" },
-];
 
 // -- Helpers ------------------------------------------------------------------
 
@@ -361,11 +219,9 @@ export default function Approvals() {
     [approvals],
   );
 
-  // Merge pending approvals + escalations into one queue. When the backend
-  // returns nothing, fall back to the prototype sample so the UI is never
-  // dead-empty during the v2 rollout.
-  const queueItems: SampleQueueItem[] = useMemo(() => {
-    const fromApprovals: SampleQueueItem[] = pending.map((approval) => ({
+  // Merge pending approvals + escalations into one queue.
+  const queueItems: QueueItem[] = useMemo(() => {
+    const fromApprovals: QueueItem[] = pending.map((approval) => ({
       id: approval.id.slice(0, 8).toUpperCase(),
       kind: "action",
       title: approval.message || approval.stepName,
@@ -383,7 +239,7 @@ export default function Approvals() {
         ],
       },
     }));
-    const fromEscalations: SampleQueueItem[] = escalations.map((req) => ({
+    const fromEscalations: QueueItem[] = escalations.map((req) => ({
       id: req.id.slice(0, 8).toUpperCase(),
       kind: "escalation",
       title: req.question,
@@ -402,8 +258,7 @@ export default function Approvals() {
         ],
       },
     }));
-    const merged = [...fromEscalations, ...fromApprovals];
-    return merged.length > 0 ? merged : SAMPLE_QUEUE;
+    return [...fromEscalations, ...fromApprovals];
   }, [pending, escalations]);
 
   async function handleResolve(
@@ -534,19 +389,25 @@ export default function Approvals() {
 
 // -- Queue tab ---------------------------------------------------------------
 
-function QueueTab({ items }: { items: SampleQueueItem[] }) {
+function QueueTab({ items }: { items: QueueItem[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>("all");
-  const [tierFilter, setTierFilter] = useState<string>("all");
   const [kindFilter, setKindFilter] = useState<"all" | "action" | "escalation">("all");
   const [todayChip, setTodayChip] = useState(true);
+
+  const agentOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const it of items) {
+      if (it.agent && it.agent !== "—") set.add(it.agent);
+    }
+    return Array.from(set).sort();
+  }, [items]);
 
   const filtered = items.filter((item) => {
     if (kindFilter !== "all" && item.kind !== (kindFilter === "action" ? "action" : "escalation"))
       return false;
-    if (agentFilter !== "all" && !item.agent.toLowerCase().startsWith(agentFilter.toLowerCase()))
+    if (agentFilter !== "all" && item.agent !== agentFilter)
       return false;
-    if (tierFilter !== "all" && item.tierLabel !== tierFilter) return false;
     return true;
   });
 
@@ -578,15 +439,11 @@ function QueueTab({ items }: { items: SampleQueueItem[] }) {
         </div>
         <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}>
           <option value="all">Any agent</option>
-          <option value="Aaron">Aaron</option>
-          <option value="Mira">Mira</option>
-          <option value="Eli">Eli</option>
-        </select>
-        <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}>
-          <option value="all">Any tier</option>
-          <option value="customer-email">Customer-facing</option>
-          <option value="prod-deploy">Prod-deploy</option>
-          <option value="public-post">Public-post</option>
+          {agentOptions.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
         </select>
         {todayChip ? (
           <span className="chip">
@@ -719,7 +576,9 @@ function QueueTab({ items }: { items: SampleQueueItem[] }) {
         })}
         {filtered.length === 0 ? (
           <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--af2-ink-3)", fontSize: 13 }}>
-            No items match the current filters.
+            {items.length === 0
+              ? "No approvals waiting. You're all caught up."
+              : "No approvals match the current filters."}
           </div>
         ) : null}
       </div>
@@ -757,16 +616,12 @@ function PoliciesTab() {
     void load();
   }, [load]);
 
-  // Build the rendered cards: live policies if available, otherwise the
-  // prototype sample so the page is never blank during the v2 rollout.
-  const cards = policies.length
-    ? policies.map((p) => ({
-        title: policyKeyText(p),
-        desc: policyValueText(p),
-        pillTone: (p.mode === "require_approval" ? "plum" : "mustard") as "plum" | "mustard",
-        pillLabel: p.mode === "require_approval" ? "always" : "conditional",
-      }))
-    : SAMPLE_POLICIES;
+  const cards = policies.map((p) => ({
+    title: policyKeyText(p),
+    desc: policyValueText(p),
+    pillTone: (p.mode === "require_approval" ? "plum" : "mustard") as "plum" | "mustard",
+    pillLabel: p.mode === "require_approval" ? "always" : "conditional",
+  }));
 
   return (
     <>
@@ -788,6 +643,11 @@ function PoliciesTab() {
           />
         </div>
       ) : null}
+      {!loading && !error && cards.length === 0 ? (
+        <div className="card">
+          <p className="desc">No policies configured yet.</p>
+        </div>
+      ) : null}
       <div className="grid-2">
         {cards.map((c) => (
           <div key={c.title} className="card">
@@ -806,17 +666,22 @@ function PoliciesTab() {
 // -- History tab --------------------------------------------------------------
 
 function HistoryTab({ history }: { history: ApprovalRequest[] }) {
-  const rows = history.length
-    ? history.map((h) => ({
-        id: h.id.slice(0, 8).toUpperCase(),
-        title: h.message || h.stepName,
-        status: (h.status === "approved" ? "approved" : "rejected") as
-          | "approved"
-          | "rejected",
-        when: h.resolvedAt ? formatTimestamp(h.resolvedAt) : "—",
-        by: "by Brad",
-      }))
-    : SAMPLE_HISTORY;
+  const rows = history.map((h) => ({
+    id: h.id.slice(0, 8).toUpperCase(),
+    title: h.message || h.stepName,
+    status: (h.status === "approved" ? "approved" : "rejected") as
+      | "approved"
+      | "rejected",
+    when: h.resolvedAt ? formatTimestamp(h.resolvedAt) : "—",
+  }));
+
+  if (rows.length === 0) {
+    return (
+      <div className="card">
+        <p className="desc">No resolved approvals yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="card card-list" style={{ padding: 0 }}>
@@ -824,7 +689,7 @@ function HistoryTab({ history }: { history: ApprovalRequest[] }) {
         <div
           key={r.id}
           className="row"
-          style={{ gridTemplateColumns: "90px 1fr 120px 110px 110px", cursor: "default" }}
+          style={{ gridTemplateColumns: "90px 1fr 120px 110px", cursor: "default" }}
         >
           <div className="id">{r.id}</div>
           <div>
@@ -836,7 +701,6 @@ function HistoryTab({ history }: { history: ApprovalRequest[] }) {
             </span>
           </div>
           <div className="id">{r.when}</div>
-          <div>{r.by}</div>
         </div>
       ))}
     </div>

@@ -42,7 +42,7 @@ export default function Account() {
   const [missionDraft, setMissionDraft] = useState<string>("");
   const [experienceMode, setExperienceMode] = useState<"pro" | "simple">("pro");
 
-  const workspaceName = activeWorkspace?.name ?? "Acme Robotics";
+  const workspaceName = activeWorkspace?.name ?? "";
 
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -87,10 +87,7 @@ export default function Account() {
   }, [missions]);
 
   useEffect(() => {
-    setMissionDraft(
-      missionStatement ||
-        "Sell project-management software to design agencies, signing 5 new logos a month.",
-    );
+    setMissionDraft(missionStatement);
   }, [missionStatement]);
 
   const dirty =
@@ -155,14 +152,14 @@ export default function Account() {
               <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value.slice(0, 200))}
-                placeholder={profileLoading ? "Loading…" : "Brad Dunkley"}
+                placeholder={profileLoading ? "Loading…" : "Your name"}
                 disabled={profileLoading || saving}
               />
             </label>
             <label className="field">
               Email
               <input
-                value={user?.email ?? "bdunk881@gmail.com"}
+                value={user?.email ?? ""}
                 readOnly
                 style={{ opacity: 0.7, cursor: "not-allowed" }}
               />
@@ -211,6 +208,7 @@ export default function Account() {
               Name
               <input
                 value={workspaceName}
+                placeholder="Workspace name"
                 readOnly
                 style={{ opacity: 0.7, cursor: "not-allowed" }}
               />
@@ -220,6 +218,7 @@ export default function Account() {
               <textarea
                 rows={2}
                 value={missionDraft}
+                placeholder="Your current mission statement"
                 onChange={(e) => setMissionDraft(e.target.value)}
               />
             </label>

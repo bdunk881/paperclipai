@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 /**
  * HEL-70 — Live cross-tenant RLS integration test (Postgres-backed).
@@ -11,6 +11,21 @@ import type { Pool } from "pg";
  * migration 027's scope actually enforce isolation when queried through the
  * `withWorkspaceContext` helper (i.e. under the API role, not the migration
  * superuser).
+ *
+ * ## Why `withRlsEnforcedContext` instead of `withWorkspaceContext`?
+ *
+ * In CI (and local Docker), `POSTGRES_USER=autoflow` creates a PostgreSQL
+ * SUPERUSER.  Superusers bypass ALL row-level security, including tables with
+ * FORCE ROW LEVEL SECURITY — so using the plain pool (as the superuser) for
+ * read assertions would always return all rows, making the isolation checks
+ * vacuous.
+ *
+ * Migration 065 creates `autoflow_api` (NOSUPERUSER NOBYPASSRLS) with all
+ * required privileges.  `withRlsEnforcedContext` switches to that role for
+ * the duration of a transaction using SET LOCAL ROLE, which scopes the
+ * downgrade to the transaction and automatically reverts on COMMIT/ROLLBACK.
+ * Seed inserts (which cross workspace boundaries inside a single call) still
+ * use the superuser connection so they aren't blocked by their own RLS.
  *
  * Tables covered:
  *   workflows, workflow_versions, routines, runs, step_results
@@ -60,6 +75,53 @@ describe("P1 table RLS integration (HEL-70)", () => {
     const migrations = await import("./sqlMigrations");
     const workspaceContext = await import("../middleware/workspaceContext");
     return { postgres, migrations, workspaceContext };
+  }
+
+  /**
+   * Executes `fn` inside a transaction where the database role is temporarily
+   * downgraded to `autoflow_api` (NOSUPERUSER NOBYPASSRLS, created by
+   * migration 065).  This makes FORCE ROW LEVEL SECURITY policies apply even
+   * when the pool connection is owned by a superuser.
+   *
+   * SET LOCAL ROLE is transaction-scoped: the role reverts to the pool user
+   * automatically on COMMIT or ROLLBACK.
+   */
+  async function withRlsEnforcedContext<T>(
+    pool: Pool,
+    context: { workspaceId: string; userId: string },
+    fn: (client: PoolClient) => Promise<T>,
+  ): Promise<T> {
+    const client = await pool.connect();
+    let released = false;
+    const release = () => {
+      if (!released) {
+        released = true;
+        client.release();
+      }
+    };
+    try {
+      await client.query("BEGIN");
+      // Step down from superuser to the non-superuser API role so RLS applies.
+      await client.query("SET LOCAL ROLE autoflow_api");
+      await client.query("SELECT set_config('app.current_workspace_id', $1, true)", [
+        context.workspaceId,
+      ]);
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [
+        context.userId,
+      ]);
+      const result = await fn(client);
+      await client.query("COMMIT");
+      return result;
+    } catch (err) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // ignore rollback error
+      }
+      throw err;
+    } finally {
+      release();
+    }
   }
 
   async function seedAll(pool: Pool, withWsCtx: typeof import("../middleware/workspaceContext").withWorkspaceContext) {
@@ -188,6 +250,8 @@ describe("P1 table RLS integration (HEL-70)", () => {
   async function cleanup(): Promise<void> {
     const { postgres } = await loadModules();
     // Delete top-down in cascade order; workspace ON DELETE CASCADE handles most children.
+    // queryPostgres runs as the superuser (autoflow), which bypasses RLS and
+    // allows the CASCADE to reach child tables with FORCE ROW LEVEL SECURITY.
     await postgres.queryPostgres(
       `DELETE FROM workspaces WHERE id IN ($1, $2)`,
       [workspaceA, workspaceB]
@@ -242,66 +306,75 @@ describe("P1 table RLS integration (HEL-70)", () => {
     );
 
     const pool = postgres.getPostgresPool();
+    // Seed uses withWorkspaceContext (superuser) so it can insert across both
+    // workspaces in one call without being blocked by each workspace's own RLS.
     await seedAll(pool, workspaceContext.withWorkspaceContext);
 
     const ctxA = { workspaceId: workspaceA, userId: userA };
     const ctxB = { workspaceId: workspaceB, userId: userB };
 
     // ---- workflows -------------------------------------------------------
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    // Use withRlsEnforcedContext (autoflow_api role, NOBYPASSRLS) so FORCE RLS
+    // policies are actually applied.  A superuser pool would see all rows
+    // regardless of workspace context and make these assertions vacuous.
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM workflows WHERE id = $1`, [wfA])).rowCount).toBe(0);
     });
 
     // ---- workflow_versions -----------------------------------------------
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM workflow_versions WHERE id = $1`, [wfvA])).rowCount).toBe(0);
     });
 
     // ---- routines --------------------------------------------------------
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM routines WHERE id = $1`, [routineA])).rowCount).toBe(0);
     });
 
     // ---- runs ------------------------------------------------------------
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM runs WHERE id = $1`, [runA])).rowCount).toBe(0);
     });
 
     // ---- step_results (inherited via runs) --------------------------------
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM step_results WHERE id = $1`, [stepA])).rowCount).toBe(0);
     });
 
     // ---- NULL workspace context denies all ---------------------------------
+    // Use a transaction with SET LOCAL ROLE autoflow_api so the null-context
+    // check runs under a role that is actually subject to RLS policies.
     const nullClient = await pool.connect();
     try {
-      await nullClient.query("RESET app.current_workspace_id");
-      await nullClient.query("RESET app.current_user_id");
+      await nullClient.query("BEGIN");
+      await nullClient.query("SET LOCAL ROLE autoflow_api");
+      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
+      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       for (const [table, id] of [
         ["workflows", wfA],
         ["workflow_versions", wfvA],
@@ -312,6 +385,10 @@ describe("P1 table RLS integration (HEL-70)", () => {
         const r = await nullClient.query(`SELECT id FROM ${table} WHERE id = $1`, [id]);
         expect(r.rowCount ?? r.rows.length).toBe(0);
       }
+      await nullClient.query("COMMIT");
+    } catch (err) {
+      await nullClient.query("ROLLBACK").catch(() => undefined);
+      throw err;
     } finally {
       nullClient.release();
     }
@@ -409,61 +486,61 @@ describe("P1 table RLS integration (HEL-70)", () => {
     const ctxB = { workspaceId: workspaceB, userId: userB };
 
     // activity_events
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM activity_events WHERE id = $1`, [actEvtA])).rowCount).toBe(0);
     });
 
     // connector_connections
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM connector_connections WHERE id = $1`, [connA])).rowCount).toBe(0);
     });
 
     // llm_credentials (workspace-scoped rows)
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM llm_credentials WHERE id = $1`, [llmCredIdA])).rowCount).toBe(0);
     });
 
     // budgets
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM budgets WHERE id = $1`, [budgetA])).rowCount).toBe(0);
     });
 
     // subscriptions
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM subscriptions WHERE id = $1`, [subA])).rowCount).toBe(0);
     });
 
     // entitlements (workspace_id is PK; read own row, not other)
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceA])).rowCount).toBe(1);
       expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceB])).rowCount).toBe(1);
       expect((await client.query(`SELECT workspace_id FROM entitlements WHERE workspace_id = $1`, [workspaceA])).rowCount).toBe(0);
     });
@@ -471,8 +548,10 @@ describe("P1 table RLS integration (HEL-70)", () => {
     // NULL context denies all
     const nullClient = await pool.connect();
     try {
-      await nullClient.query("RESET app.current_workspace_id");
-      await nullClient.query("RESET app.current_user_id");
+      await nullClient.query("BEGIN");
+      await nullClient.query("SET LOCAL ROLE autoflow_api");
+      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
+      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       for (const [table, id] of [
         ["activity_events", actEvtA],
         ["connector_connections", connA],
@@ -488,6 +567,10 @@ describe("P1 table RLS integration (HEL-70)", () => {
         [workspaceA]
       );
       expect(entr.rowCount ?? entr.rows.length).toBe(0);
+      await nullClient.query("COMMIT");
+    } catch (err) {
+      await nullClient.query("ROLLBACK").catch(() => undefined);
+      throw err;
     } finally {
       nullClient.release();
     }
@@ -517,13 +600,13 @@ describe("P1 table RLS integration (HEL-70)", () => {
     const ctxB = { workspaceId: workspaceB, userId: userB };
 
     // Workspace A sees its own approval, not B's
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount).toBe(0);
     });
 
     // Workspace B sees its own approval, not A's
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA])).rowCount).toBe(0);
     });
@@ -531,16 +614,22 @@ describe("P1 table RLS integration (HEL-70)", () => {
     // NULL context: both user and workspace policies deny
     const nullClient = await pool.connect();
     try {
-      await nullClient.query("RESET app.current_workspace_id");
-      await nullClient.query("RESET app.current_user_id");
+      await nullClient.query("BEGIN");
+      await nullClient.query("SET LOCAL ROLE autoflow_api");
+      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
+      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       const r = await nullClient.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA]);
       expect(r.rowCount ?? r.rows.length).toBe(0);
+      await nullClient.query("COMMIT");
+    } catch (err) {
+      await nullClient.query("ROLLBACK").catch(() => undefined);
+      throw err;
     } finally {
       nullClient.release();
     }
   });
 
-  it("audit_log: workspace isolation holds; RESTRICTIVE no-update and no-delete policies reject mutations", async () => {
+  it("audit_log: workspace isolation holds; RESTRICTIVE no-update and no-delete policies silently reject mutations", async () => {
     if (!canRunIntegration) {
       return;
     }
@@ -564,11 +653,11 @@ describe("P1 table RLS integration (HEL-70)", () => {
     const ctxB = { workspaceId: workspaceB, userId: userB };
 
     // Workspace isolation: A sees A, B sees B
-    await workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
       expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount).toBe(0);
     });
-    await workspaceContext.withWorkspaceContext(pool, ctxB, async (client) => {
+    await withRlsEnforcedContext(pool, ctxB, async (client) => {
       expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditB])).rowCount).toBe(1);
       expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(0);
     });
@@ -576,27 +665,51 @@ describe("P1 table RLS integration (HEL-70)", () => {
     // NULL context denies
     const nullClient = await pool.connect();
     try {
-      await nullClient.query("RESET app.current_workspace_id");
-      await nullClient.query("RESET app.current_user_id");
+      await nullClient.query("BEGIN");
+      await nullClient.query("SET LOCAL ROLE autoflow_api");
+      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
+      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       const r = await nullClient.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA]);
       expect(r.rowCount ?? r.rows.length).toBe(0);
+      await nullClient.query("COMMIT");
+    } catch (err) {
+      await nullClient.query("ROLLBACK").catch(() => undefined);
+      throw err;
     } finally {
       nullClient.release();
     }
 
-    // RESTRICTIVE no-update policy: UPDATE must be rejected even for the row owner
-    await expect(
-      workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
-        await client.query(`UPDATE audit_log SET action = 'tampered' WHERE id = $1`, [auditA]);
-      })
-    ).rejects.toThrow();
+    // RESTRICTIVE no-update policy: audit_log_no_update has USING (false),
+    // which makes the target row invisible to the UPDATE command (USING filters
+    // the set of rows the command can operate on). PostgreSQL does NOT raise an
+    // error in this case — it silently updates 0 rows. Verify that no rows were
+    // tampered with by confirming rowCount=0 and the original value is intact.
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
+      const updateResult = await client.query(
+        `UPDATE audit_log SET action = 'tampered' WHERE id = $1`,
+        [auditA]
+      );
+      expect(updateResult.rowCount).toBe(0);
+    });
+    // Confirm original value unchanged
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
+      const r = await client.query(`SELECT action FROM audit_log WHERE id = $1`, [auditA]);
+      expect(r.rows[0]?.action).toBe("login");
+    });
 
-    // RESTRICTIVE no-delete policy: DELETE must be rejected even for the row owner
-    await expect(
-      workspaceContext.withWorkspaceContext(pool, ctxA, async (client) => {
-        await client.query(`DELETE FROM audit_log WHERE id = $1`, [auditA]);
-      })
-    ).rejects.toThrow();
+    // RESTRICTIVE no-delete policy: audit_log_no_delete has USING (false),
+    // similarly making all rows invisible to DELETE — 0 rows deleted, no error.
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
+      const deleteResult = await client.query(
+        `DELETE FROM audit_log WHERE id = $1`,
+        [auditA]
+      );
+      expect(deleteResult.rowCount).toBe(0);
+    });
+    // Confirm row still exists
+    await withRlsEnforcedContext(pool, ctxA, async (client) => {
+      expect((await client.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA])).rowCount).toBe(1);
+    });
   });
 
   it("FORCE RLS guard: test fails cleanly if FORCE RLS is dropped from any P1 table", async () => {

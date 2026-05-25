@@ -45,6 +45,7 @@ import {
 import clsx from "clsx";
 import { useAuth } from "../context/AuthContext";
 import { useEntitlement402, type Entitlement402State } from "../hooks/useEntitlement402";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 // ---------------------------------------------------------------------------
 // Provider metadata
@@ -54,26 +55,24 @@ interface ProviderMeta {
   name: string;
   color: string;
   bg: string;
-  abbr: string;
-  logo?: string;
 }
 
 const PROVIDERS: Record<ProviderName, ProviderMeta> = {
-  openai: { name: "OpenAI", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "OAI", logo: "openai.svg" },
-  anthropic: { name: "Anthropic", color: "text-af2-clay", bg: "bg-af2-clay-soft", abbr: "ANT", logo: "anthropic.svg" },
-  gemini: { name: "Google Gemini", color: "text-af2-ink-blue", bg: "bg-af2-ink-blue/15", abbr: "GEM", logo: "google.svg" },
-  mistral: { name: "Mistral", color: "text-af2-plum", bg: "bg-af2-plum/15", abbr: "MIS", logo: "mistral.svg" },
-  groq: { name: "Groq", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "GRQ" },
-  fireworks: { name: "Fireworks AI", color: "text-af2-clay", bg: "bg-af2-clay-soft/60", abbr: "FWK" },
-  together: { name: "Together AI", color: "text-fuchsia-700", bg: "bg-fuchsia-100", abbr: "TGT" },
-  ollama: { name: "Ollama", color: "text-stone-700", bg: "bg-stone-100", abbr: "OLL" },
-  localai: { name: "LocalAI", color: "text-af2-ink-2", bg: "bg-af2-paper-2", abbr: "LCL" },
-  cohere: { name: "Cohere", color: "text-af2-clay", bg: "bg-af2-clay-soft", abbr: "COH" },
-  perplexity: { name: "Perplexity", color: "text-cyan-700", bg: "bg-cyan-100", abbr: "PPL" },
-  xai: { name: "xAI", color: "text-zinc-700", bg: "bg-zinc-100", abbr: "XAI" },
-  deepseek: { name: "DeepSeek", color: "text-af2-sage", bg: "bg-af2-sage/15", abbr: "DSK" },
-  bedrock: { name: "AWS Bedrock", color: "text-af2-mustard", bg: "bg-af2-mustard/15", abbr: "AWS" },
-  "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100", abbr: "VTX" },
+  openai: { name: "OpenAI", color: "text-af2-sage", bg: "bg-af2-sage/15" },
+  anthropic: { name: "Anthropic", color: "text-af2-clay", bg: "bg-af2-clay-soft" },
+  gemini: { name: "Google Gemini", color: "text-af2-ink-blue", bg: "bg-af2-ink-blue/15" },
+  mistral: { name: "Mistral", color: "text-af2-plum", bg: "bg-af2-plum/15" },
+  groq: { name: "Groq", color: "text-af2-sage", bg: "bg-af2-sage/15" },
+  fireworks: { name: "Fireworks AI", color: "text-af2-clay", bg: "bg-af2-clay-soft/60" },
+  together: { name: "Together AI", color: "text-fuchsia-700", bg: "bg-fuchsia-100" },
+  ollama: { name: "Ollama", color: "text-stone-700", bg: "bg-stone-100" },
+  localai: { name: "LocalAI", color: "text-af2-ink-2", bg: "bg-af2-paper-2" },
+  cohere: { name: "Cohere", color: "text-af2-clay", bg: "bg-af2-clay-soft" },
+  perplexity: { name: "Perplexity", color: "text-cyan-700", bg: "bg-cyan-100" },
+  xai: { name: "xAI", color: "text-zinc-700", bg: "bg-zinc-100" },
+  deepseek: { name: "DeepSeek", color: "text-af2-sage", bg: "bg-af2-sage/15" },
+  bedrock: { name: "AWS Bedrock", color: "text-af2-mustard", bg: "bg-af2-mustard/15" },
+  "vertex-ai": { name: "Vertex AI", color: "text-lime-700", bg: "bg-lime-100" },
 };
 
 // ---------------------------------------------------------------------------
@@ -207,19 +206,14 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
       <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-3">
-            {meta.logo ? (
-              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
-                <img
-                  src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
-                  alt=""
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            ) : (
-              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg font-bold text-sm", meta.bg, meta.color)}>
-                {meta.abbr}
-              </div>
-            )}
+            <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
+              <CompanyLogo
+                integrationId={provider}
+                name={meta.name}
+                size={28}
+                className="w-full h-full"
+              />
+            </div>
             <h2 className="font-semibold text-af2-ink">Connect {meta.name}</h2>
           </div>
           <button
@@ -994,7 +988,13 @@ export default function LLMProviders() {
                 className="af2-list-row"
                 style={{ gridTemplateColumns: TIER_GRID }}
               >
-                <div className="af2-row">
+                <div className="af2-row" style={{ gap: 10 }}>
+                  <CompanyLogo
+                    integrationId={provider}
+                    name={meta.name}
+                    size={28}
+                    style={{ borderRadius: 6, background: "var(--af2-paper-2)" }}
+                  />
                   <strong style={{ fontSize: 13.5 }}>{meta.name}</strong>
                 </div>
                 <div className="af2-cluster">

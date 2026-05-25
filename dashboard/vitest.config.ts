@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@autoflow/logo-dev": path.resolve(__dirname, "../shared/logoDev/index.ts"),
       "@testing-library/react": path.resolve(__dirname, "src/test/render.tsx"),
       "@testing-library/react-original": path.resolve(
         __dirname,
@@ -21,6 +22,9 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
     globalTeardown: ["./src/test-global-teardown.ts"],
+    include: [
+      "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+    ],
     exclude: ["node_modules/**", "e2e/**"],
     pool: "forks",
     poolOptions: {

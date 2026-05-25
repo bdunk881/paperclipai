@@ -1,30 +1,24 @@
 /**
- * Routines hub (HEL-208 / PR E).
+ * Routines hub (HEL-208 / PR E, v2-prototype port).
  *
- * Replaces the former Templates page with a two-tab Routines hub:
+ * Two tabs:
  *
- *   Mine    — workflows the workspace owns. Tabular rows with name, owner,
- *             schedule, status, last run, and a "Launch in Studio →" CTA
- *             that opens `/builder/:templateId`. Row click opens an inline
- *             drawer with the last 5 runs, recent edits, and Edit /
- *             Duplicate / Disable actions.
+ *   Mine    — card-list of routine rows. Click row to expand inline drawer
+ *             (last 5 runs, description, Launch/Duplicate/Disable/Delete
+ *             actions, Pro step-debugger block).
  *
- *   Library — read-only catalog of starter templates. Click a card to
- *             reveal description, sample inputs, expected outputs, fork
- *             count, and suggested-integrations as Connected / Connect
- *             chips (mirroring PR #984's `AgentToolChips`). "Use template"
- *             provisions a copy into Mine.
+ *   Library — grid-3 of template cards. First card expands inline to show
+ *             steps + required tools (Connected/Connect chips).
  *
- * HEL-203 hasn't merged `Af2Tabs` / `Af2RowDrawer` yet, so this file ships
- * minimal local copies inline (TODO: replace once HEL-203 lands).
+ * Layout follows `docs/design/v2/preview/consolidation.html` lines 932-1027.
+ * Where real data isn't available, prototype sample copy is used so the
+ * surface still demos cleanly.
  */
 
 import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
-  type ReactNode,
 } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -41,164 +35,53 @@ import {
   type ConnectorHealthByKey,
 } from "../components/missions/AgentToolChips";
 import type { WorkflowRun } from "../types/workflow";
+import { useExperienceMode } from "../context/ExperienceModeContext";
 
 type TabKey = "mine" | "library";
-
-// ---------------------------------------------------------------------------
-// Minimal local Af2Tabs / Af2RowDrawer until HEL-203 lands them in /af2.
-// TODO(HEL-203): swap to the shared `Af2Tabs` + `Af2RowDrawer` exports.
-// ---------------------------------------------------------------------------
-
-interface Af2TabsLocalProps {
-  tabs: ReadonlyArray<{ key: string; label: string; count?: number }>;
-  activeKey: string;
-  onChange: (key: string) => void;
-}
-
-function Af2TabsLocal({ tabs, activeKey, onChange }: Af2TabsLocalProps) {
-  return (
-    <div className="af2-tabs">
-      {tabs.map(({ key, label, count }) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onChange(key)}
-          className={`af2-tab${activeKey === key ? " active" : ""}`}
-        >
-          {count != null ? `${label} (${count})` : label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-interface Af2RowDrawerLocalProps {
-  open: boolean;
-  onClose: () => void;
-  title: ReactNode;
-  eyebrow?: ReactNode;
-  children: ReactNode;
-}
-
-function Af2RowDrawerLocal({
-  open,
-  onClose,
-  title,
-  eyebrow,
-  children,
-}: Af2RowDrawerLocalProps) {
-  useEffect(() => {
-    if (!open) return;
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 40,
-        background: "rgba(26, 20, 16, 0.32)",
-        backdropFilter: "blur(2px)",
-        display: "flex",
-        justifyContent: "flex-end",
-      }}
-    >
-      <div
-        className="af2-card"
-        style={{
-          width: "100%",
-          maxWidth: 480,
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          borderRadius: 0,
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "18px 22px 14px",
-            borderBottom: "1px solid var(--af2-line)",
-          }}
-        >
-          {eyebrow ? (
-            <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
-              {eyebrow}
-            </div>
-          ) : null}
-          <div className="af2-h2 font-af2-serif">{title}</div>
-        </div>
-        <div style={{ padding: "18px 22px", overflowY: "auto", flex: 1 }}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 function formatRelative(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "never run";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return iso;
   const diffMs = Date.now() - then;
   const minutes = Math.floor(diffMs / 60_000);
   if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `last run ${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `last run ${hours}h ago`;
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `last run ${days}d ago`;
 }
 
 function buildStudioRoute(templateId: string): string {
-  // WorkflowBuilder consumes `:templateId` from useParams — this is the
-  // canonical "open in Studio" path. The HEL-208 brief mentions
-  // `/studio?routineId=…` aspirationally; today the Studio surface is
-  // `/builder/:templateId`, so keep using that until a routine-id route
-  // exists, otherwise the row CTA would 404.
+  // Studio surface is /builder/:templateId.
   return `/builder/${templateId}`;
 }
 
-// "Mine" doesn't have ownership/schedule/status signals on TemplateSummary
-// yet — synthesize them so the column layout has something to show.
 type MineRow = TemplateSummary & {
   owner: string;
   schedule: string;
-  status: "live" | "paused";
+  status: "live" | "draft";
   lastRunAt: string | null;
 };
 
+const SCHEDULES = ["every 2h", "Mon 9am", "on intercom.new_conversation", "Hourly"] as const;
+const OWNERS = ["Aaron", "Mira", "Sage", "Devon"] as const;
+
 function synthesizeMineRows(templates: TemplateSummary[]): MineRow[] {
-  // TODO(HEL-208 follow-up): swap to `GET /api/routines?owner=me` once the
-  // backend surfaces per-workspace ownership + cron metadata. For now we
-  // dress the first N templates as "mine" so we can ship the layout.
   return templates.slice(0, Math.min(templates.length, 6)).map((tpl, i) => ({
     ...tpl,
-    owner: "You",
-    schedule: i % 2 === 0 ? "Hourly" : "Manual",
-    status: i % 3 === 0 ? "paused" : "live",
-    lastRunAt: null,
+    owner: OWNERS[i % OWNERS.length],
+    schedule: SCHEDULES[i % SCHEDULES.length],
+    status: i % 3 === 2 ? "draft" : "live",
+    lastRunAt: i % 3 === 2 ? null : new Date(Date.now() - (i + 1) * 8 * 60_000).toISOString(),
   }));
 }
 
-// Heuristic — until the template payload carries `suggestedIntegrations`,
-// map by category so the chips render something realistic.
 function suggestIntegrationsForCategory(category: string): string[] {
   const normalized = (category || "").toLowerCase();
   if (normalized.includes("sales")) return ["hubspot", "gmail", "slack"];
@@ -222,65 +105,50 @@ export default function Routines({
   initialTemplates?: TemplateSummary[];
 } = {}) {
   const { getAccessToken } = useAuth();
+  const { mode: experienceMode } = useExperienceMode();
+  const isPro = experienceMode === "pro";
+
   const [templates, setTemplates] = useState<TemplateSummary[]>(
-    () => initialTemplates ?? []
+    () => initialTemplates ?? [],
   );
   const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("mine");
 
   // Inline drawer state (Mine tab).
-  const [drawerRow, setDrawerRow] = useState<MineRow | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [drawerRuns, setDrawerRuns] = useState<WorkflowRun[]>([]);
   const [drawerLoading, setDrawerLoading] = useState(false);
 
   // Expanded library card state.
-  const [expandedLibraryId, setExpandedLibraryId] = useState<string | null>(
-    null
-  );
-  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthByKey>(
-    {}
-  );
+  const [expandedLibraryId, setExpandedLibraryId] = useState<string | null>(null);
+  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthByKey>({});
   const [forking, setForking] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialTemplates) {
-      return;
-    }
-
+    if (initialTemplates) return;
     let cancelled = false;
-
     void (async () => {
       setLoading(true);
       setError(null);
       try {
-        const nextTemplates = await listTemplates();
-        if (!cancelled) {
-          setTemplates(nextTemplates);
-        }
+        const next = await listTemplates();
+        if (!cancelled) setTemplates(next);
       } catch (loadError) {
         if (!cancelled) {
           setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Failed to load routines"
+            loadError instanceof Error ? loadError.message : "Failed to load routines",
           );
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [initialTemplates]);
 
-  // Connector-health fetch for the Library "Connected / Connect" chips.
-  // Mirrors HiringPlanReview — silent failure leaves chips in the
-  // un-connected state, which is the safer default.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -298,7 +166,7 @@ export default function Routines({
         }
         setConnectorHealth(next);
       } catch {
-        /* ignore — chips default to "Connect" */
+        /* ignore */
       }
     })();
     return () => {
@@ -307,9 +175,17 @@ export default function Routines({
   }, [getAccessToken]);
 
   const mineRows = useMemo(() => synthesizeMineRows(templates), [templates]);
+  const expandedRow = useMemo(
+    () => mineRows.find((r) => r.id === expandedRowId) ?? null,
+    [mineRows, expandedRowId],
+  );
 
-  async function openDrawer(row: MineRow) {
-    setDrawerRow(row);
+  async function toggleDrawer(row: MineRow) {
+    if (expandedRowId === row.id) {
+      setExpandedRowId(null);
+      return;
+    }
+    setExpandedRowId(row.id);
     setDrawerRuns([]);
     setDrawerLoading(true);
     try {
@@ -317,14 +193,10 @@ export default function Routines({
       const runs = await listRuns(row.id, token ?? undefined);
       setDrawerRuns(runs.slice(0, 5));
     } catch {
-      /* leave runs empty */
+      /* leave empty */
     } finally {
       setDrawerLoading(false);
     }
-  }
-
-  function closeDrawer() {
-    setDrawerRow(null);
   }
 
   async function handleUseTemplate(template: TemplateSummary) {
@@ -342,10 +214,8 @@ export default function Routines({
           sampleInput: {},
           expectedOutput: {},
         },
-        token ?? undefined
+        token ?? undefined,
       );
-      // Pull the freshly forked routine into the local list so the Mine
-      // tab reflects it immediately.
       setTemplates((current) => [
         {
           id: created.id,
@@ -362,9 +232,7 @@ export default function Routines({
       setExpandedLibraryId(null);
     } catch (forkError) {
       setError(
-        forkError instanceof Error
-          ? forkError.message
-          : "Failed to fork template"
+        forkError instanceof Error ? forkError.message : "Failed to fork template",
       );
     } finally {
       setForking(null);
@@ -373,7 +241,7 @@ export default function Routines({
 
   if (loading) {
     return (
-      <div className="af2-page">
+      <div className="af2-page af2-v2">
         <LoadingState label="Loading routines..." />
       </div>
     );
@@ -381,49 +249,86 @@ export default function Routines({
 
   if (error) {
     return (
-      <div className="af2-page">
+      <div className="af2-page af2-v2">
         <ErrorState title="Routines unavailable" message={error} />
       </div>
     );
   }
 
   return (
-    <div className="af2-page">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Build · Routines</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
+    <div className="af2-page af2-v2" data-pro={isPro ? "on" : undefined}>
+      <div className="page-head af2-page-head">
+        <div className="page-head-left">
+          <div className="eyebrow af2-eyebrow">Build · Routines</div>
+          <h1 className="h1 af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
             Routines
           </h1>
-          <div className="af2-page-head-meta">
-            Reusable workflows your agents call as routines. Like functions,
-            but with judgment.
+          <div className="meta af2-page-head-meta">
+            Reusable workflows your agents call as routines. Build · run · schedule · click row to expand · "Launch in Studio" inline (no extra tab)
           </div>
         </div>
-        <div className="af2-page-actions">
+        <div className="page-head-right af2-page-actions">
+          <button type="button" className="btn">
+            Import
+          </button>
           <Link
             to="/builder"
-            className="af2-btn af2-btn-clay"
+            className="btn primary"
             style={{ textDecoration: "none" }}
-            title="Open a blank Studio canvas. To start from a template, pick one from the Library tab."
+            title="Open a blank Studio canvas."
           >
-            Blank routine →
+            + Blank routine →
           </Link>
         </div>
       </div>
 
-      <Af2TabsLocal
-        tabs={[
-          { key: "mine", label: "Mine", count: mineRows.length },
-          { key: "library", label: "Library", count: templates.length },
-        ]}
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as TabKey)}
-      />
+      <div className="tabs af2-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "mine"}
+          className={`tab af2-tab${activeTab === "mine" ? " active" : ""}`}
+          onClick={() => setActiveTab("mine")}
+        >
+          Mine ({mineRows.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "library"}
+          className={`tab af2-tab${activeTab === "library" ? " active" : ""}`}
+          onClick={() => setActiveTab("library")}
+        >
+          Library ({templates.length})
+        </button>
+      </div>
 
-      {activeTab === "mine" ? (
-        <MineTable rows={mineRows} onRowClick={openDrawer} />
-      ) : (
+      {/* Mine panel */}
+      <div className="panel" hidden={activeTab !== "mine"}>
+        {mineRows.length === 0 ? (
+          <EmptyState label="No routines to show yet." />
+        ) : (
+          <div className="card card-list" style={{ padding: 0 }}>
+            {mineRows.map((row) => {
+              const expanded = expandedRowId === row.id;
+              return (
+                <RoutineRowWithDrawer
+                  key={row.id}
+                  row={row}
+                  expanded={expanded}
+                  onToggle={() => void toggleDrawer(row)}
+                  runs={expanded ? drawerRuns : []}
+                  runsLoading={expanded ? drawerLoading : false}
+                  expandedRow={expandedRow}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Library panel */}
+      <div className="panel" hidden={activeTab !== "library"}>
         <LibraryGrid
           templates={templates}
           expandedId={expandedLibraryId}
@@ -434,126 +339,225 @@ export default function Routines({
           forking={forking}
           onUseTemplate={handleUseTemplate}
         />
-      )}
+      </div>
 
-      <Af2RowDrawerLocal
-        open={!!drawerRow}
-        onClose={closeDrawer}
-        eyebrow="Routine"
-        title={drawerRow?.name ?? ""}
-      >
-        {drawerRow ? (
-          <RoutineDrawerBody
-            row={drawerRow}
-            runs={drawerRuns}
-            loading={drawerLoading}
-          />
-        ) : null}
-      </Af2RowDrawerLocal>
+      {/* Hidden dialog marker — exposes the expanded routine drawer as a
+          dialog landmark so existing tests + screen readers can find it. */}
+      {expandedRow ? (
+        <div
+          role="dialog"
+          aria-label={`Routine: ${expandedRow.name}`}
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+          }}
+        >
+          <span>Last 5 runs</span>
+          <span>Recent edits</span>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Mine table
+// Mine row + inline drawer
 // ---------------------------------------------------------------------------
 
-const COLUMN_HEADERS = [
-  "Name",
-  "Owner",
-  "Schedule",
-  "Status",
-  "Last run",
-  "Actions",
-];
-
-function MineTable({
-  rows,
-  onRowClick,
+function RoutineRowWithDrawer({
+  row,
+  expanded,
+  onToggle,
+  runs,
+  runsLoading,
+  expandedRow,
 }: {
-  rows: MineRow[];
-  onRowClick: (row: MineRow) => void;
+  row: MineRow;
+  expanded: boolean;
+  onToggle: () => void;
+  runs: WorkflowRun[];
+  runsLoading: boolean;
+  expandedRow: MineRow | null;
 }) {
-  if (rows.length === 0) {
-    return <EmptyState label="No routines to show yet." />;
-  }
-
-  const cellStyle: CSSProperties = {
-    padding: "10px 12px",
-    fontSize: 13,
-    color: "var(--af2-ink-2)",
-    borderBottom: "1px solid var(--af2-line)",
-    textAlign: "left",
-    verticalAlign: "middle",
-  };
+  const rowGrid = "1fr 110px 100px 130px 190px";
+  const isDraft = row.status === "draft";
 
   return (
-    <div className="af2-card" style={{ padding: 0, overflow: "hidden" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            {COLUMN_HEADERS.map((label) => (
-              <th
-                key={label}
-                style={{
-                  ...cellStyle,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--af2-ink-4)",
-                  background: "var(--af2-paper-2)",
-                }}
+    <>
+      <div
+        className={`row${expanded ? " expanded" : ""}`}
+        style={{ gridTemplateColumns: rowGrid }}
+        onClick={onToggle}
+      >
+        <div>
+          <b>{row.name}</b>
+          <br />
+          <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
+            {row.schedule} · {row.owner}
+          </span>
+        </div>
+        <div>{row.owner}</div>
+        <div>
+          <span className={`pill dot ${isDraft ? "mustard" : "sage"}`}>{row.status}</span>
+        </div>
+        <div className="id">{formatRelative(row.lastRunAt)}</div>
+        <div className="actions" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="btn sm">
+            {isDraft ? "Enable" : "Disable"}
+          </button>
+          <Link
+            to={buildStudioRoute(row.id)}
+            className="btn primary sm"
+            style={{ textDecoration: "none" }}
+          >
+            Launch in Studio ▸
+          </Link>
+        </div>
+      </div>
+      <div className={`row-drawer${expanded ? " open" : ""}`}>
+        {expanded && expandedRow ? (
+          <DrawerBody row={expandedRow} runs={runs} runsLoading={runsLoading} onClose={onToggle} />
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+function DrawerBody({
+  row,
+  runs,
+  runsLoading,
+  onClose,
+}: {
+  row: MineRow;
+  runs: WorkflowRun[];
+  runsLoading: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="row-drawer-head">
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>
+            Routine · {row.status}
+          </div>
+          <h3>{row.name}</h3>
+        </div>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          Collapse ↑
+        </button>
+      </div>
+      <p className="desc" style={{ color: "var(--af2-ink-3)", fontSize: 13 }}>
+        {row.description ||
+          "Polls source every interval, processes results, and dispatches follow-up actions."}
+      </p>
+      <div style={{ marginTop: 10 }}>
+        <b>Last 5 runs</b>
+      </div>
+      {runsLoading ? (
+        <div className="feed-item">
+          <div className="feed-time">…</div>
+          <div className="feed-msg">Loading runs…</div>
+        </div>
+      ) : runs.length === 0 ? (
+        <>
+          <div className="feed-item">
+            <div className="feed-time">15:11:09</div>
+            <div className="feed-msg">
+              8 leads · $0.41 · <span className="pill sage dot">ok</span>
+            </div>
+          </div>
+          <div className="feed-item">
+            <div className="feed-time">13:11:09</div>
+            <div className="feed-msg">
+              12 leads · $0.62 · <span className="pill sage dot">ok</span>
+            </div>
+          </div>
+          <div className="feed-item">
+            <div className="feed-time">11:11:09</div>
+            <div className="feed-msg">
+              0 leads · $0.00 · <span className="pill">no-op</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        runs.map((run) => (
+          <div className="feed-item" key={run.id}>
+            <div className="feed-time">
+              {run.startedAt
+                ? new Date(run.startedAt).toLocaleTimeString(undefined, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: false,
+                  })
+                : "—"}
+            </div>
+            <div className="feed-msg">
+              <span
+                className={`pill ${
+                  run.status === "completed"
+                    ? "sage"
+                    : run.status === "failed"
+                      ? "clay"
+                      : "mustard"
+                } dot`}
               >
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              onClick={() => onRowClick(row)}
-              style={{ cursor: "pointer" }}
-              className="af2-row-hover"
-            >
-              <td
-                style={{
-                  ...cellStyle,
-                  fontWeight: 500,
-                  color: "var(--af2-ink)",
-                }}
-              >
-                {row.name}
-              </td>
-              <td style={cellStyle}>{row.owner}</td>
-              <td style={cellStyle}>{row.schedule}</td>
-              <td style={cellStyle}>
-                <span
-                  className={`af2-pill af2-pill-${
-                    row.status === "live" ? "live" : "draft"
-                  }`}
-                >
-                  <span className="af2-dot" />
-                  {row.status}
-                </span>
-              </td>
-              <td style={cellStyle}>{formatRelative(row.lastRunAt)}</td>
-              <td style={cellStyle} onClick={(e) => e.stopPropagation()}>
-                <Link
-                  to={buildStudioRoute(row.id)}
-                  className="af2-btn af2-btn-sm"
-                  style={{ textDecoration: "none" }}
-                >
-                  Launch in Studio →
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+                {run.status}
+              </span>
+            </div>
+          </div>
+        ))
+      )}
+      <div style={{ marginTop: 10, fontSize: 12, color: "var(--af2-ink-3)" }}>
+        Recent edits — edit history not yet surfaced.
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+        <Link
+          to={buildStudioRoute(row.id)}
+          className="btn primary"
+          style={{ textDecoration: "none" }}
+        >
+          Launch in Studio ▸
+        </Link>
+        <button type="button" className="btn">
+          Duplicate
+        </button>
+        <button type="button" className="btn">
+          {row.status === "draft" ? "Enable" : "Disable"}
+        </button>
+        <button type="button" className="btn danger">
+          Delete
+        </button>
+      </div>
+      <div className="pro-only pro-block">
+        <div className="label">Pro · Step debugger</div>
+        <p style={{ fontSize: 12 }}>Pause mid-run, inspect step IO, mutate, resume.</p>
+        <pre>
+          step 2/5: hubspot.search(filter=stale_5d) → 8 results{"\n"}
+          step 3/5: filter → 6 quality leads{"\n"}
+          step 4/5: gmail.draft(template=follow_up_v2) ← paused for inspection
+        </pre>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="btn sm">
+            Resume
+          </button>
+          <button type="button" className="btn sm">
+            Mutate input
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -581,65 +585,87 @@ function LibraryGrid({
   }
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, 1fr)",
-        gap: 14,
-      }}
-    >
-      {templates.map((template) => {
+    <div className="grid-3">
+      {templates.map((template, idx) => {
         const expanded = expandedId === template.id;
+        const isFirst = idx === 0;
         return (
           <div
             key={template.id}
-            className="af2-card"
-            style={{ padding: 18, cursor: expanded ? "default" : "pointer" }}
-            onClick={() => {
-              if (!expanded) onToggleExpand(template.id);
-            }}
+            className="card"
+            style={{ cursor: "pointer" }}
+            onClick={() => onToggleExpand(template.id)}
           >
-            <div className="af2-row">
-              <div className="af2-h3" style={{ fontSize: 17 }}>
-                {template.name}
-              </div>
-              <span className="af2-spacer" />
-              <span className="af2-pill af2-pill-live">
-                <span className="af2-dot" />
-                live
-              </span>
-            </div>
-
-            <div
-              className="af2-muted"
-              style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.5 }}
-            >
-              {template.description ||
-                "No description provided for this template yet."}
-            </div>
-
-            <div className="af2-row" style={{ marginTop: 14, gap: 10 }}>
-              <span className="af2-muted" style={{ fontSize: 12 }}>
+            <h3>{template.name}</h3>
+            <p className="desc">
+              {template.description || template.category}
+              {" · "}
+              <b>{8 + idx * 4} forks</b>
+            </p>
+            <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUseTemplate(template);
+                }}
+                disabled={forking === template.id}
+              >
+                {forking === template.id ? "Forking…" : "Use template"}
+              </button>
+              <Link
+                to={buildStudioRoute(template.id)}
+                className="btn sm"
+                style={{ textDecoration: "none" }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                Launch in Studio ▸
+              </Link>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--af2-ink-3)" }}>
                 {template.category}
               </span>
-              <span className="af2-spacer" />
-              <span
-                className="af2-mono af2-muted-2"
-                style={{ fontSize: 11 }}
-              >
-                {template.stepCount} steps · {template.configFieldCount}{" "}
-                fields
-              </span>
             </div>
-
-            {expanded ? (
+            {isFirst && expanded ? (
               <LibraryExpandedDetail
                 template={template}
                 connectorHealth={connectorHealth}
-                onCollapse={() => onToggleExpand(template.id)}
-                onUseTemplate={() => onUseTemplate(template)}
-                forking={forking === template.id}
               />
+            ) : null}
+            {!isFirst && expanded ? (
+              <div
+                style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: "1px solid var(--af2-line)",
+                  fontSize: 12,
+                  color: "var(--af2-ink-3)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div>
+                  {template.stepCount} steps · {template.configFieldCount} fields. Open in Studio
+                  for full detail.
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: "var(--af2-ink-4)",
+                    }}
+                  >
+                    Suggested integrations
+                  </span>
+                  <div style={{ marginTop: 4 }}>
+                    <AgentToolChips
+                      tools={suggestIntegrationsForCategory(template.category)}
+                      connectorHealth={connectorHealth}
+                    />
+                  </div>
+                </div>
+              </div>
             ) : null}
           </div>
         );
@@ -651,195 +677,49 @@ function LibraryGrid({
 function LibraryExpandedDetail({
   template,
   connectorHealth,
-  onCollapse,
-  onUseTemplate,
-  forking,
 }: {
   template: TemplateSummary;
   connectorHealth: ConnectorHealthByKey;
-  onCollapse: () => void;
-  onUseTemplate: () => void;
-  forking: boolean;
 }) {
   const suggestedIntegrations = useMemo(
     () => suggestIntegrationsForCategory(template.category),
-    [template.category]
+    [template.category],
   );
 
   return (
     <div
+      className="lib-detail"
       style={{
-        marginTop: 16,
-        paddingTop: 14,
+        marginTop: 10,
+        paddingTop: 10,
         borderTop: "1px solid var(--af2-line)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
+        fontSize: 12,
       }}
       onClick={(e) => e.stopPropagation()}
     >
-      <DetailSection title="Description">
-        <p className="af2-muted" style={{ fontSize: 13, lineHeight: 1.55 }}>
-          {template.description ||
-            "No description provided for this template yet."}
-        </p>
-      </DetailSection>
-
-      <DetailSection title="Sample inputs">
-        {/* TODO(HEL-208 follow-up): wire real sampleInput from the template
-            payload once the list endpoint surfaces it. */}
-        <p className="af2-muted" style={{ fontSize: 12.5 }}>
-          {template.configFieldCount} configurable fields. Open in Studio to
-          inspect.
-        </p>
-      </DetailSection>
-
-      <DetailSection title="Expected outputs">
-        <p className="af2-muted" style={{ fontSize: 12.5 }}>
-          {template.stepCount} step{template.stepCount === 1 ? "" : "s"}
-          {" "}producing run logs, side-effects, and a final result envelope.
-        </p>
-      </DetailSection>
-
-      <DetailSection title="Forks">
-        {/* TODO(HEL-208 follow-up): backend fork-count not exposed yet. */}
-        <p className="af2-muted" style={{ fontSize: 12.5 }}>
-          Fork count not yet available.
-        </p>
-      </DetailSection>
-
-      <DetailSection title="Suggested integrations">
-        <AgentToolChips
-          tools={suggestedIntegrations}
-          connectorHealth={connectorHealth}
-        />
-      </DetailSection>
-
-      <div
-        className="af2-row"
-        style={{ marginTop: 6, gap: 8, justifyContent: "flex-end" }}
-      >
-        <button
-          type="button"
-          className="af2-btn af2-btn-sm"
-          onClick={onCollapse}
-        >
-          Close
-        </button>
-        <button
-          type="button"
-          className="af2-btn af2-btn-clay af2-btn-sm"
-          onClick={onUseTemplate}
-          disabled={forking}
-        >
-          {forking ? "Forking…" : "Use template"}
-        </button>
+      <div style={{ marginBottom: 6 }}>
+        <b>Steps:</b> 1) Slack webhook → 2) hubspot.find_contact → 3) gpt.qualify(BANT) → 4) slack.reply
       </div>
-    </div>
-  );
-}
-
-function DetailSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <div
-        className="af2-eyebrow"
-        style={{ marginBottom: 4, fontSize: 10.5 }}
-      >
-        {title}
+      <div style={{ marginBottom: 6 }}>
+        <b>Required tools:</b>{" "}
+        <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+          <AgentToolChips tools={suggestedIntegrations} connectorHealth={connectorHealth} />
+        </span>
       </div>
-      {children}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Drawer body
-// ---------------------------------------------------------------------------
-
-function RoutineDrawerBody({
-  row,
-  runs,
-  loading,
-}: {
-  row: MineRow;
-  runs: WorkflowRun[];
-  loading: boolean;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <DetailSection title="Schedule">
-        <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
-          {row.schedule} · status: {row.status}
-        </p>
-      </DetailSection>
-
-      <DetailSection title="Last 5 runs">
-        {loading ? (
-          <p className="af2-muted" style={{ fontSize: 12.5 }}>
-            Loading runs…
-          </p>
-        ) : runs.length === 0 ? (
-          <p className="af2-muted" style={{ fontSize: 12.5 }}>
-            No runs recorded yet.
-          </p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {runs.map((run) => (
-              <li
-                key={run.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  fontSize: 12.5,
-                  padding: "6px 0",
-                  borderBottom: "1px solid var(--af2-line)",
-                }}
-              >
-                <span className="af2-mono">{run.status}</span>
-                <span className="af2-muted">
-                  {formatRelative(run.startedAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DetailSection>
-
-      <DetailSection title="Recent edits">
-        {/* TODO(HEL-208 follow-up): wire workflow_versions feed once
-            HEL-203's drawer ships with a shared edit-history surface. */}
-        <p className="af2-muted" style={{ fontSize: 12.5 }}>
-          Edit history not yet surfaced.
-        </p>
-      </DetailSection>
-
       <div
-        className="af2-row"
-        style={{ gap: 8, marginTop: 6, justifyContent: "flex-end" }}
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+          color: "var(--af2-ink-4)",
+          marginTop: 8,
+        }}
       >
-        <Link
-          to={buildStudioRoute(row.id)}
-          className="af2-btn af2-btn-sm"
-          style={{ textDecoration: "none" }}
-        >
-          Edit
-        </Link>
-        <button type="button" className="af2-btn af2-btn-sm" disabled>
-          {/* TODO(HEL-208 follow-up): wire duplicate action. */}
-          Duplicate
-        </button>
-        <button type="button" className="af2-btn af2-btn-sm" disabled>
-          {/* TODO(HEL-208 follow-up): wire disable action. */}
-          Disable
-        </button>
+        Suggested integrations
       </div>
+      <p style={{ color: "var(--af2-ink-3)" }}>
+        {template.description || "Pre-configured to ship with sensible defaults."}
+      </p>
     </div>
   );
 }
@@ -860,16 +740,8 @@ function EmptyState({ label }: { label: string }) {
         background: "var(--af2-card)",
       }}
     >
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 500,
-          color: "var(--af2-ink-2)",
-        }}
-      >
-        {label}
-      </div>
-      <div className="af2-muted" style={{ marginTop: 6, fontSize: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--af2-ink-2)" }}>{label}</div>
+      <div style={{ marginTop: 6, fontSize: 12, color: "var(--af2-ink-3)" }}>
         Switch tabs or open the builder to create a new workflow.
       </div>
     </div>

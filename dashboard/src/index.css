@@ -7,6 +7,12 @@
    .af2-h1, .af2-tabs, .af2-list, .af2-btn, .af2-pill, etc.). */
 @import "./af2-components.css";
 
+/* AutoFlow v2 "Consolidation Preview" shell — namespaced under .af2-v2
+   so pages can opt in to the unprefixed prototype class names (.btn,
+   .card, .row, .pill, .tabs, .filterbar, etc.) without conflicting
+   with Tailwind or the older af2-* classes. */
+@import "./styles/af2-v2-shell.css";
+
 @tailwind base;
 @tailwind components;
 

@@ -6,16 +6,10 @@
  * /api/billing/next-invoice (new — backend stubs land alongside this PR).
  * The page degrades gracefully when those endpoints 404.
  *
- * Surfaces:
- *   - Card on file (brand · last4 · expiry)
- *   - Next invoice (date + amount)
- *   - Plan + Upgrade subscription CTA
- *   - Buy more tokens (one-time top-up — opens pricing)
- *   - Cancel subscription (ConfirmDestructiveModal)
+ * v2 prototype port: docs/design/v2/preview/consolidation.html lines 1413-1455.
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CreditCard } from "lucide-react";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 import {
@@ -68,9 +62,6 @@ export default function Billing() {
           subscription: null,
           accessLevel: "none" as const,
         })),
-        // TODO(HEL-213-billing): /api/billing/payment-method is a stub —
-        // backend route lands alongside this PR. Until it does, the
-        // payment-method card surfaces "No card on file" gracefully.
         trackedFetch(`${getApiBasePath()}/billing/payment-method`, {
           headers: { Authorization: `Bearer ${token}` },
         })
@@ -129,210 +120,226 @@ export default function Billing() {
     }
   }
 
+  const planLabel = subscription
+    ? formatSubscriptionTierLabel(subscription.tier)
+    : "Free";
+  const nextInvoiceAmount = nextInvoice
+    ? formatMoney(nextInvoice.amountDue, nextInvoice.currency)
+    : "$0.00";
+  const nextInvoiceDate = nextInvoice ? formatDate(nextInvoice.periodEnd) : null;
+  const renewLabel = subscription?.currentPeriodEnd
+    ? subscription.cancelAtPeriodEnd
+      ? `Cancels on ${formatDate(subscription.currentPeriodEnd)}`
+      : `Renews on ${formatDate(subscription.currentPeriodEnd)}`
+    : null;
+
+  const metaLine = [
+    `${planLabel} plan`,
+    nextInvoice ? `${nextInvoiceAmount}` : null,
+    nextInvoiceDate ? `next invoice ${nextInvoiceDate}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="af2-page" style={{ maxWidth: 920 }}>
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Account · Workspace</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
-            Billing
-          </h1>
-          <div className="af2-page-head-meta">
-            Payment method, next invoice, and subscription controls.
+    <div className="af2-v2">
+      <div style={{ maxWidth: 920 }}>
+        <div className="page-head">
+          <div className="page-head-left">
+            <div className="eyebrow">Account · Billing</div>
+            <h1 className="h1">Billing</h1>
+            <div className="meta">
+              {metaLine || "Payment method, next invoice, and subscription controls."}
+            </div>
           </div>
         </div>
-      </div>
 
-      {loading ? (
-        <LoadingState label="Loading billing…" />
-      ) : error ? (
-        <ErrorState
-          title="Billing unavailable"
-          message={error}
-          onRetry={() => void load()}
-        />
-      ) : (
-        <div style={{ display: "grid", gap: 20 }}>
-          {/* ============ Card on file ============ */}
-          <section>
-            <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
-              Payment method
-            </div>
-            <div className="af2-card" style={{ padding: 18 }}>
-              {paymentMethod ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                  }}
-                >
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 8,
-                      background: "var(--af2-paper-2)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "var(--af2-ink-3)",
-                    }}
-                  >
-                    <CreditCard size={18} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                      {capitalize(paymentMethod.brand)} ···· {paymentMethod.last4}
+        {loading ? (
+          <LoadingState label="Loading billing…" />
+        ) : error ? (
+          <ErrorState
+            title="Billing unavailable"
+            message={error}
+            onRetry={() => void load()}
+          />
+        ) : (
+          <>
+            <div className="desc-grid">
+              {/* ============ Payment method ============ */}
+              <div className="card">
+                <h3>Payment method</h3>
+                {paymentMethod ? (
+                  <>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 48,
+                          height: 30,
+                          borderRadius: 4,
+                          background:
+                            "linear-gradient(135deg,#2b6cb0,#1a365d)",
+                          color: "#fff",
+                          display: "grid",
+                          placeItems: "center",
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {paymentMethod.brand.toUpperCase()}
+                      </div>
+                      <div>
+                        ···· {paymentMethod.last4} · expires{" "}
+                        {String(paymentMethod.expMonth).padStart(2, "0")}/
+                        {String(paymentMethod.expYear).slice(-2)}
+                      </div>
                     </div>
-                    <div className="af2-muted" style={{ fontSize: 12 }}>
-                      Expires {String(paymentMethod.expMonth).padStart(2, "0")}/
-                      {String(paymentMethod.expYear).slice(-2)}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="af2-btn af2-btn-sm"
-                    disabled
-                    title="Card updates land alongside HEL-213 PR ii"
-                  >
-                    Update card
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-                    No card on file
-                  </div>
-                  <p className="af2-muted" style={{ fontSize: 12.5, marginTop: 6 }}>
-                    Add a payment method to unlock paid plans and per-seat
-                    invites.
-                  </p>
-                  <Link
-                    to="/pricing"
-                    className="af2-btn af2-btn-sm af2-btn-clay"
-                    style={{
-                      marginTop: 10,
-                      textDecoration: "none",
-                      display: "inline-flex",
-                    }}
-                  >
-                    Add card via Stripe
-                  </Link>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ============ Next invoice ============ */}
-          <section>
-            <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
-              Next invoice
-            </div>
-            <div className="af2-card" style={{ padding: 18 }}>
-              {nextInvoice ? (
-                <div className="af2-row">
-                  <div>
-                    <div style={{ fontSize: 22, fontWeight: 600 }}>
-                      {formatMoney(nextInvoice.amountDue, nextInvoice.currency)}
-                    </div>
-                    <div className="af2-muted" style={{ fontSize: 12.5, marginTop: 4 }}>
-                      Charges on {formatDate(nextInvoice.periodEnd)}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="af2-muted" style={{ fontSize: 13 }}>
-                  No upcoming invoice — you’re on the free tier or your
-                  subscription is cancelled.
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* ============ Plan ============ */}
-          <section>
-            <div className="af2-eyebrow" style={{ marginBottom: 8 }}>
-              Plan
-            </div>
-            <div className="af2-card" style={{ padding: 18 }}>
-              <div className="af2-row">
-                <div>
-                  <div className="af2-eyebrow">Current plan</div>
-                  <div style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>
-                    {subscription
-                      ? formatSubscriptionTierLabel(subscription.tier)
-                      : "Free"}
-                  </div>
-                  {subscription?.currentPeriodEnd ? (
-                    <div className="af2-muted" style={{ fontSize: 12.5, marginTop: 4 }}>
-                      {subscription.cancelAtPeriodEnd
-                        ? `Cancels on ${formatDate(subscription.currentPeriodEnd)}`
-                        : `Renews on ${formatDate(subscription.currentPeriodEnd)}`}
-                    </div>
-                  ) : null}
-                </div>
-                <span className="af2-spacer" />
-                {subscription ? (
-                  <span
-                    className="af2-pill"
-                    style={{ textTransform: "capitalize" }}
-                  >
-                    {subscription.status.replace(/_/g, " ")}
-                  </span>
-                ) : null}
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ marginTop: 10 }}
+                      disabled
+                      title="Card updates land alongside HEL-213 PR ii"
+                    >
+                      Update card
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="desc" style={{ marginTop: 6 }}>
+                      No card on file. Add a payment method to unlock paid
+                      plans and per-seat invites.
+                    </p>
+                    <Link
+                      to="/pricing"
+                      className="btn primary"
+                      style={{ marginTop: 10 }}
+                    >
+                      Add card via Stripe
+                    </Link>
+                  </>
+                )}
               </div>
 
-              <div
-                style={{
-                  marginTop: 16,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 10,
-                }}
-              >
+              {/* ============ Next invoice ============ */}
+              <div className="card">
+                <h3>Next invoice</h3>
+                <div
+                  style={{
+                    fontFamily: "var(--af2-serif)",
+                    fontSize: 32,
+                    lineHeight: 1,
+                  }}
+                >
+                  {nextInvoiceAmount}
+                </div>
+                <p className="desc">
+                  {nextInvoice
+                    ? `Due ${nextInvoiceDate ?? "—"} · ${planLabel} plan`
+                    : `${planLabel} plan · no upcoming invoice`}
+                </p>
+                {renewLabel ? (
+                  <p
+                    className="desc"
+                    style={{ marginTop: 4, fontSize: 12 }}
+                  >
+                    {renewLabel}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid-3">
+              {/* ============ Upgrade ============ */}
+              <div className="card">
+                <h3>Upgrade subscription</h3>
+                <p className="desc">
+                  {subscription
+                    ? "Move up a tier for unlimited routines + priority support."
+                    : "View available plans."}
+                </p>
                 <Link
                   to="/pricing"
-                  className="af2-btn af2-btn-clay"
-                  style={{ textDecoration: "none" }}
+                  className="btn primary"
+                  style={{ marginTop: 8 }}
                 >
-                  {subscription ? "Upgrade subscription" : "View pricing"}
+                  {subscription ? "Upgrade →" : "View pricing →"}
                 </Link>
+              </div>
+              {/* ============ Top up tokens ============ */}
+              <div className="card">
+                <h3>Buy more tokens</h3>
+                <p className="desc">
+                  One-time top-up for hosted-model usage. $20 = 5M tokens
+                  (haiku-equiv).
+                </p>
                 <Link
                   to="/pricing?topup=tokens"
-                  className="af2-btn"
-                  style={{ textDecoration: "none" }}
+                  className="btn"
+                  style={{ marginTop: 8 }}
                   title="One-time top-up — does not change your subscription tier"
                 >
-                  Buy more tokens
+                  Top up
                 </Link>
+              </div>
+              {/* ============ Cancel ============ */}
+              <div
+                className="card"
+                style={{ borderColor: "rgba(194,80,43,0.4)" }}
+              >
+                <h3 style={{ color: "var(--af2-clay)" }}>
+                  Cancel subscription
+                </h3>
+                <p className="desc">
+                  Downgrades to free at next renewal · workspace stays
+                  read-only.
+                </p>
                 {subscription && !subscription.cancelAtPeriodEnd ? (
                   <button
                     type="button"
-                    className="af2-btn"
+                    className="btn danger"
+                    style={{ marginTop: 8 }}
                     onClick={() => setCancelOpen(true)}
-                    style={{ color: "var(--af2-clay)" }}
                   >
-                    Cancel subscription
+                    Cancel
                   </button>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    className="btn danger"
+                    style={{ marginTop: 8 }}
+                    disabled
+                    title={
+                      subscription?.cancelAtPeriodEnd
+                        ? "Already scheduled to cancel"
+                        : "No active subscription"
+                    }
+                  >
+                    Cancel
+                  </button>
+                )}
               </div>
             </div>
-          </section>
-        </div>
-      )}
+          </>
+        )}
 
-      <ConfirmDestructiveModal
-        open={cancelOpen}
-        onClose={() => (cancelling ? undefined : setCancelOpen(false))}
-        eyebrow="Billing · Subscription"
-        title="Cancel subscription?"
-        message="You’ll keep paid access until the end of the current billing period, then drop to the free tier. You can resubscribe any time before then to undo this."
-        confirmLabel={cancelling ? "Cancelling…" : "Cancel subscription"}
-        confirming={cancelling}
-        onConfirm={() => void handleCancel()}
-      />
+        <ConfirmDestructiveModal
+          open={cancelOpen}
+          onClose={() => (cancelling ? undefined : setCancelOpen(false))}
+          eyebrow="Billing · Subscription"
+          title="Cancel subscription?"
+          message="You'll keep paid access until the end of the current billing period, then drop to the free tier. You can resubscribe any time before then to undo this."
+          confirmLabel={cancelling ? "Cancelling…" : "Cancel subscription"}
+          confirming={cancelling}
+          onConfirm={() => void handleCancel()}
+        />
+      </div>
     </div>
   );
 }
@@ -357,9 +364,4 @@ function formatDate(iso: string): string {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function capitalize(value: string): string {
-  if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }

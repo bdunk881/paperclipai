@@ -60,6 +60,13 @@ const AUTO_SEED_PREFIX_CEILING = "022_";
  * the runner un-marks the affected migration so it re-applies on the next
  * boot. Pairs with the auto-seed cap above as belt-and-suspenders against
  * the over-seeding regression that bit dev.
+ *
+ * RULE: only list tables whose absence really means schema corruption. Tables
+ * that a later migration deliberately DROPS (e.g. `agent_assignments` dropped
+ * by 044_drop_orphan_schemas per DASH-52) must NOT be listed here — their
+ * intended state is "absent," so listing them turns the repair into an
+ * every-boot loop (re-apply 022+ → 031 creates the table → 044 drops it →
+ * next boot detects it missing → repeat forever).
  */
 const CANONICAL_TABLE_TO_MIGRATION: ReadonlyArray<{ table: string; filenamePrefix: string }> = [
   { table: "missions", filenamePrefix: "022_" },
@@ -75,7 +82,9 @@ const CANONICAL_TABLE_TO_MIGRATION: ReadonlyArray<{ table: string; filenamePrefi
   { table: "budgets", filenamePrefix: "025_" },
   { table: "subscriptions", filenamePrefix: "025_" },
   { table: "entitlements", filenamePrefix: "025_" },
-  { table: "agent_assignments", filenamePrefix: "031_" },
+  // NB: agent_assignments was here, removed because 044_drop_orphan_schemas
+  // deliberately drops it (DASH-52). Mission-assignments lives in tickets +
+  // ticket_assignments, not here. See docs/glossary.md.
   { table: "org_edges", filenamePrefix: "031_" },
   { table: "wake_events", filenamePrefix: "035_" },
 ];

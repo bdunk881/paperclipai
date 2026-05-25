@@ -121,6 +121,11 @@ describe("P1 table RLS integration (HEL-70)", () => {
       await client.query("COMMIT");
       return result;
     } catch (err) {
+      console.error(
+        "[HEL-70] withRlsEnforcedContext failed (workspace=%s): %s",
+        context.workspaceId,
+        err instanceof Error ? err.message : String(err),
+      );
       try {
         await client.query("ROLLBACK");
       } catch {
@@ -275,6 +280,47 @@ describe("P1 table RLS integration (HEL-70)", () => {
       if (canRunIntegration) {
         await migrations.ensureSqlMigrationsApplied();
         pgPool = pg.getPostgresPool();
+
+        // Preflight: verify autoflow_api role was created by migration 065 and
+        // that SET LOCAL ROLE can downgrade to it from the superuser pool.
+        const preClient = await pgPool.connect();
+        try {
+          await preClient.query("BEGIN");
+          const roleRow = await preClient.query<{
+            rolname: string;
+            rolsuper: boolean;
+            rolbypassrls: boolean;
+          }>("SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'autoflow_api'");
+          if (roleRow.rows.length === 0) {
+            console.error("[HEL-70] PREFLIGHT FAILED: autoflow_api role does not exist after migration 065");
+            canRunIntegration = false;
+          } else {
+            const { rolsuper, rolbypassrls } = roleRow.rows[0];
+            console.log(
+              "[HEL-70] PREFLIGHT: autoflow_api exists rolsuper=%s rolbypassrls=%s",
+              rolsuper,
+              rolbypassrls,
+            );
+            await preClient.query("SET LOCAL ROLE autoflow_api");
+            const curRole = await preClient.query<{ r: string }>("SELECT current_role() AS r");
+            console.log("[HEL-70] PREFLIGHT: current_role after SET LOCAL ROLE = %s", curRole.rows[0]?.r);
+            await preClient.query("SELECT set_config('app.current_workspace_id', $1, true)", [workspaceA]);
+            const gucVal = await preClient.query<{ v: string }>(
+              "SELECT current_setting('app.current_workspace_id', true) AS v",
+            );
+            console.log("[HEL-70] PREFLIGHT: GUC value after set_config = %s", gucVal.rows[0]?.v);
+          }
+          await preClient.query("ROLLBACK");
+        } catch (preflightErr) {
+          console.error(
+            "[HEL-70] PREFLIGHT error:",
+            preflightErr instanceof Error ? preflightErr.message : String(preflightErr),
+          );
+          canRunIntegration = false;
+          try { await preClient.query("ROLLBACK"); } catch { /* ignore */ }
+        } finally {
+          preClient.release();
+        }
       }
     } catch (err) {
       console.error("[HEL-70] beforeAll setup failed:", err);

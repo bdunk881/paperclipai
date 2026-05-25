@@ -13,11 +13,34 @@ create table if not exists connector_grants (
   scope_id text not null,
   permission text not null check (permission in ('allow','ask','deny')),
   created_at timestamptz not null default now(),
-  created_by uuid references auth.users(id),
+  created_by uuid,
   unique (workspace_id, connector_id, scope_kind, scope_id)
 );
+
+-- Attach the auth.users FK only when the Supabase auth schema is present.
+-- Dev/CI environments may run a bare Postgres without the auth schema; on
+-- those, the FK would be unsatisfiable and the whole migration would abort,
+-- crashlooping the API on startup. Production (real Supabase) has both
+-- pieces, so the FK lands there exactly as it always did.
+do $$
+begin
+  if exists (
+    select 1 from pg_class c
+    join pg_namespace ns on ns.oid = c.relnamespace
+    where ns.nspname = 'auth' and c.relname = 'users' and c.relkind = 'r'
+  ) and not exists (
+    select 1 from pg_constraint where conname = 'connector_grants_created_by_fkey'
+  ) then
+    alter table connector_grants
+      add constraint connector_grants_created_by_fkey
+      foreign key (created_by) references auth.users(id);
+  end if;
+end $$;
+
 alter table connector_grants enable row level security;
 alter table connector_grants force row level security;
+drop policy if exists connector_grants_workspace_isolation on connector_grants;
 create policy connector_grants_workspace_isolation on connector_grants
   using (workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()));
-create index on connector_grants (workspace_id, connector_id);
+create index if not exists connector_grants_workspace_connector_idx
+  on connector_grants (workspace_id, connector_id);

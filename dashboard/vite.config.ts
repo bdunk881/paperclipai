@@ -6,8 +6,14 @@ import { sentryVitePlugin } from "@sentry/vite-plugin";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const isProd = mode === "production";
+  const logoDevPublishableKey =
+    env.VITE_LOGO_DEV_PUBLISHABLE_KEY || env.LOGO_DEV_PUBLISHABLE_KEY || "";
 
   return {
+    define: {
+      "import.meta.env.VITE_LOGO_DEV_PUBLISHABLE_KEY":
+        JSON.stringify(logoDevPublishableKey),
+    },
     plugins: [
       react(),
       // sentryVitePlugin must come last; only runs when SENTRY_AUTH_TOKEN is set

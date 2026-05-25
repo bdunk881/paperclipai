@@ -46,6 +46,7 @@ import { getApiBasePath } from "../api/baseUrl";
 import { trackedFetch } from "../api/trackedFetch";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
+import { CompanyLogo } from "../components/CompanyLogo";
 import {
   LIVE_CONNECTOR_PROVIDER_BY_KEY,
   type ProviderKey,
@@ -444,23 +445,12 @@ export default function IntegrationsHub() {
                           : "none",
                     }}
                   >
-                    <div
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 8,
-                        background: "var(--af2-paper-2)",
-                        display: "grid",
-                        placeItems: "center",
-                      }}
-                    >
-                      <span
-                        className="font-af2-serif"
-                        style={{ fontSize: 14, color: "var(--af2-ink-2)" }}
-                      >
-                        {entry.name.charAt(0)}
-                      </span>
-                    </div>
+                    <CompanyLogo
+                      integrationId={entry.id}
+                      name={entry.name}
+                      size={32}
+                      style={{ borderRadius: 8, background: "var(--af2-paper-2)" }}
+                    />
                     <div style={{ minWidth: 0 }}>
                       <div
                         style={{

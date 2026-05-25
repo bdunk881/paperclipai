@@ -25,6 +25,7 @@ import {
   type ConnectorHealthSummary,
 } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { CompanyLogo } from "../components/CompanyLogo";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -260,6 +261,12 @@ function ConnectorRow({ connector }: { connector: ConnectorHealthRecord }) {
     <div className="af2-list-item" style={{ padding: "12px 16px" }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <CompanyLogo
+            integrationId={connector.connectorKey}
+            name={connector.connectorName}
+            size={28}
+            style={{ borderRadius: 6, background: "var(--af2-paper-2)" }}
+          />
           <strong style={{ fontSize: 14 }}>{connector.connectorName}</strong>
           <span className={`af2-pill ${meta.pillClass}`}>
             <Icon size={11} aria-hidden="true" />

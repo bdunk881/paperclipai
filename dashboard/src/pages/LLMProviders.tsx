@@ -45,6 +45,7 @@ import {
 import clsx from "clsx";
 import { useAuth } from "../context/AuthContext";
 import { useEntitlement402, type Entitlement402State } from "../hooks/useEntitlement402";
+import { CompanyLogo } from "../components/CompanyLogo";
 
 // ---------------------------------------------------------------------------
 // Provider metadata
@@ -207,19 +208,14 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
       <div className="bg-af2-card rounded-xl shadow-xl w-full max-w-md mx-4">
         <div className="flex items-center justify-between px-6 py-4 border-b border-af2-line">
           <div className="flex items-center gap-3">
-            {meta.logo ? (
-              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
-                <img
-                  src={new URL(`../assets/integrations/${meta.logo}`, import.meta.url).href}
-                  alt=""
-                  className="w-full h-full object-contain"
-                />
-              </div>
-            ) : (
-              <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg font-bold text-sm", meta.bg, meta.color)}>
-                {meta.abbr}
-              </div>
-            )}
+            <div className={clsx("flex items-center justify-center w-9 h-9 rounded-lg p-1.5", meta.bg)}>
+              <CompanyLogo
+                integrationId={provider}
+                name={meta.name}
+                size={28}
+                className="w-full h-full"
+              />
+            </div>
             <h2 className="font-semibold text-af2-ink">Connect {meta.name}</h2>
           </div>
           <button
@@ -994,7 +990,13 @@ export default function LLMProviders() {
                 className="af2-list-row"
                 style={{ gridTemplateColumns: TIER_GRID }}
               >
-                <div className="af2-row">
+                <div className="af2-row" style={{ gap: 10 }}>
+                  <CompanyLogo
+                    integrationId={provider}
+                    name={meta.name}
+                    size={28}
+                    style={{ borderRadius: 6, background: "var(--af2-paper-2)" }}
+                  />
                   <strong style={{ fontSize: 13.5 }}>{meta.name}</strong>
                 </div>
                 <div className="af2-cluster">

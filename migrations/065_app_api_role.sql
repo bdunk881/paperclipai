@@ -46,10 +46,15 @@ BEGIN
 END $$;
 
 -- Ensure tables/sequences/functions created by autoflow in future migrations
--- are automatically accessible to autoflow_api.
-ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public
-  GRANT ALL ON TABLES    TO autoflow_api;
-ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public
-  GRANT ALL ON SEQUENCES TO autoflow_api;
-ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public
-  GRANT EXECUTE ON FUNCTIONS TO autoflow_api;
+-- are automatically accessible to autoflow_api. Guarded so this is a no-op on
+-- Supabase (where the connecting role is `postgres`, not `autoflow`) —
+-- without the guard `ALTER DEFAULT PRIVILEGES FOR ROLE autoflow` errors with
+-- `role "autoflow" does not exist` and crashloops the API on startup.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'autoflow') THEN
+    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public GRANT ALL ON TABLES TO autoflow_api';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public GRANT ALL ON SEQUENCES TO autoflow_api';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES FOR ROLE autoflow IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO autoflow_api';
+  END IF;
+END $$;

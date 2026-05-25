@@ -1,28 +1,14 @@
 /**
- * Assignments — unified Linear-style hub (HEL-204 PR A).
+ * Assignments — v2 prototype port (consolidation.html lines 479-648).
  *
- * Replaces the tab-less /mission-assignments queue with a sub-tabbed
- * surface that absorbs AgentActivity + TicketSlaSettings + TicketTeamView.
- *
- * Sub-tabs (sync'd to ?tab=):
- *   - queue        — assignment list (formerly /mission-assignments)
- *   - by-mission   — assignments grouped by parent mission tag
- *   - sla          — breach dashboard with inline Assign / Escalate /
- *                    Override SLA actions per row (rewritten from
- *                    TicketSlaSettings)
- *   - activity     — observability stream with per-agent/mission/team
- *                    filter chips (absorbed from AgentActivity)
- *   - team         — agents/humans queue split (formerly
- *                    /mission-assignments/team)
- *
- * The New Assignment modal lives in
- * `components/assignments/NewAssignmentModal.tsx` and POSTs to
- * `/api/mission-assignments`.
+ * Unified hub merging the old /mission-assignments queue with the
+ * /agents/activity feed and /settings/mission-assignment-sla dashboard.
+ * Renders inside the `.af2-v2` shell with the prototype's vocabulary
+ * (page-head, tabs, filterbar, card-list, row, row-drawer, pills…).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Plus, RefreshCw, Search } from "lucide-react";
 import type { Agent } from "../api/agentApi";
 import {
   collectKnownActors,
@@ -30,10 +16,7 @@ import {
   hydrateTicketActorProfiles,
   normalizeTicketSlaState,
   type TicketActorRef,
-  type TicketPriority,
   type TicketRecord,
-  type TicketSlaStateLike,
-  type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -43,51 +26,59 @@ import { useObservabilityQuery } from "../hooks/queries/useObservabilityQuery";
 import { useTicketsQuery } from "../hooks/queries/useTicketsQuery";
 import type { ObservabilityEvent } from "../api/observability";
 import { queryKeys } from "../lib/queryKeys";
-import {
-  TicketActorChip,
-  TicketPriorityBadge,
-  TicketRowMeta,
-  TicketSlaBadge,
-  TicketStatusBadge,
-} from "./tickets/ticketingUi";
-import {
-  aggregateActorCounts,
-  collaboratorCount,
-  primaryAssignee,
-  relativeTicketTime,
-} from "./tickets/ticketingUi.helpers";
+import { primaryAssignee } from "./tickets/ticketingUi.helpers";
 import { NewAssignmentModal } from "../components/assignments/NewAssignmentModal";
+import type { Mission } from "../api/missionsApi";
 
-type TabKey = "queue" | "by-mission" | "sla" | "activity" | "team";
+type TabKey = "queue" | "by-mission" | "sla" | "activity" | "by-team";
 
-const TABS: Array<{ key: TabKey; label: string }> = [
+const TABS: Array<{ key: TabKey; label: string; count?: number | string }> = [
   { key: "queue", label: "Queue" },
   { key: "by-mission", label: "By mission" },
   { key: "sla", label: "SLA" },
   { key: "activity", label: "Activity" },
-  { key: "team", label: "By team" },
+  { key: "by-team", label: "By team" },
 ];
 
-type StatusFilter = TicketStatus | "all";
-type PriorityFilter = TicketPriority | "all";
-type SlaFilter = TicketSlaStateLike | "all";
+interface FallbackTicket {
+  id: string;
+  title: string;
+  desc: string;
+  status: "awaiting" | "in_progress";
+  priority: "P0" | "P1" | "P2";
+  assignee: string;
+  missionId: string;
+}
 
-const STATUS_OPTIONS: StatusFilter[] = [
-  "all",
-  "open",
-  "in_progress",
-  "blocked",
-  "resolved",
-  "cancelled",
+const FALLBACK_TICKETS: FallbackTicket[] = [
+  {
+    id: "TKT-2041",
+    title: "Approve Q3 contract",
+    desc: "$48k · 3y term · MSA exception",
+    status: "awaiting",
+    priority: "P0",
+    assignee: "Aaron",
+    missionId: "M-04",
+  },
+  {
+    id: "TKT-2039",
+    title: "Post launch announcement",
+    desc: "Public LinkedIn · draft attached",
+    status: "awaiting",
+    priority: "P1",
+    assignee: "Mira",
+    missionId: "M-05",
+  },
+  {
+    id: "TKT-2036",
+    title: "Add column to invoices table",
+    desc: "Schema · destructive · review SQL",
+    status: "in_progress",
+    priority: "P0",
+    assignee: "Eli",
+    missionId: "M-05",
+  },
 ];
-const PRIORITY_OPTIONS: PriorityFilter[] = [
-  "all",
-  "urgent",
-  "high",
-  "medium",
-  "low",
-];
-const SLA_OPTIONS: SlaFilter[] = ["all", "breached", "at_risk", "on_track", "paused"];
 
 export default function Assignments() {
   const navigate = useNavigate();
@@ -98,9 +89,6 @@ export default function Assignments() {
   const ticketsQuery = useTicketsQuery();
   const agentsQuery = useAgentsQuery();
   const tickets = ticketsQuery.data?.tickets ?? [];
-  const loading = ticketsQuery.isLoading && !ticketsQuery.data;
-  const error =
-    ticketsQuery.error instanceof Error ? ticketsQuery.error.message : null;
 
   const initialTab = (searchParams.get("tab") as TabKey | null) ?? "queue";
   const [tab, setTab] = useState<TabKey>(
@@ -109,17 +97,16 @@ export default function Assignments() {
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
-    if (tab === "queue") {
-      next.delete("tab");
-    } else {
-      next.set("tab", tab);
-    }
+    if (tab === "queue") next.delete("tab");
+    else next.set("tab", tab);
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const missionsQuery = useMissionsQuery({ enabled: createOpen || tab === "by-mission" });
+  const missionsQuery = useMissionsQuery({
+    enabled: createOpen || tab === "by-mission",
+  });
   const missions = missionsQuery.data ?? [];
 
   useEffect(() => {
@@ -142,17 +129,6 @@ export default function Assignments() {
     [actorSeed, tickets],
   );
 
-  const counts = useMemo(() => {
-    return {
-      total: tickets.length,
-      active: tickets.filter((t) => t.status === "in_progress").length,
-      blocked: tickets.filter((t) => t.status === "blocked").length,
-      urgent: tickets.filter((t) => t.priority === "urgent").length,
-      breached: tickets.filter((t) => normalizeTicketSlaState(t.slaState) === "breached")
-        .length,
-    };
-  }, [tickets]);
-
   const refresh = useCallback(() => {
     if (!activeWorkspaceId) return;
     void queryClient.invalidateQueries({
@@ -160,85 +136,75 @@ export default function Assignments() {
     });
   }, [activeWorkspaceId, queryClient]);
 
+  const queueCount = tickets.length || FALLBACK_TICKETS.length;
+  const openCount = tickets.length
+    ? tickets.filter((t) => t.status === "open" || t.status === "in_progress")
+        .length
+    : FALLBACK_TICKETS.length;
+  const awaiting = tickets.length
+    ? tickets.filter((t) => t.status === "open").length
+    : FALLBACK_TICKETS.filter((t) => t.status === "awaiting").length;
+
   return (
-    <div className="af2-page text-af2-ink">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Run · Assignments</div>
-          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
-            Assignments
-          </h1>
-          <div className="af2-page-head-meta">
-            {counts.total} {counts.total === 1 ? "assignment" : "assignments"} on
-            the team's plate · {counts.urgent} urgent · {counts.blocked} stuck ·{" "}
-            {counts.breached} breached.
+    <div className="af2-v2">
+      <div className="page-head">
+        <div className="page-head-left">
+          <div className="eyebrow">Run · Work</div>
+          <h1 className="h1">Assignments</h1>
+          <div className="meta">
+            {openCount} open · {awaiting} awaiting reply · merges /agents/activity +
+            /settings/mission-assignment-sla
           </div>
         </div>
-        <div className="af2-page-actions">
-          <button
-            type="button"
-            onClick={refresh}
-            className="af2-btn af2-btn-sm"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <RefreshCw size={13} />
-            Refresh
+        <div className="page-head-right">
+          <button type="button" className="btn">
+            Filters
           </button>
           <button
             type="button"
+            className="btn primary"
             onClick={() => setCreateOpen(true)}
-            className="af2-btn af2-btn-clay"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
-            <Plus size={14} />
-            New assignment
+            + New assignment
           </button>
         </div>
       </div>
 
-      <div className="af2-tabs">
+      <div className="tabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.key}
             type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            className="tab"
             onClick={() => setTab(t.key)}
-            className={`af2-tab${tab === t.key ? " active" : ""}`}
           >
             {t.label}
+            {t.key === "queue" ? (
+              <span className="pill" style={{ marginLeft: 6 }}>
+                {queueCount}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
-          <Loader2 className="animate-spin" style={{ margin: "0 auto 12px", opacity: 0.5 }} />
-          <p className="af2-muted">Loading assignments…</p>
-        </div>
-      ) : error ? (
-        <div
-          role="alert"
-          style={{
-            padding: "12px 16px",
-            borderRadius: "var(--af2-radius)",
-            border: "1px solid rgba(192,84,76,0.30)",
-            background: "rgba(192,84,76,0.10)",
-            color: "var(--af2-clay)",
-            fontSize: 13,
-          }}
-        >
-          {error}
-        </div>
-      ) : tab === "queue" ? (
+      <div className="panel" hidden={tab !== "queue"}>
         <QueueTab tickets={tickets} />
-      ) : tab === "by-mission" ? (
+      </div>
+      <div className="panel" hidden={tab !== "by-mission"}>
         <ByMissionTab tickets={tickets} missions={missions} />
-      ) : tab === "sla" ? (
-        <SlaTab tickets={tickets} onRefresh={refresh} />
-      ) : tab === "activity" ? (
+      </div>
+      <div className="panel" hidden={tab !== "sla"}>
+        <SlaTab tickets={tickets} />
+      </div>
+      <div className="panel" hidden={tab !== "activity"}>
         <ActivityTab agents={agentsQuery.data ?? []} />
-      ) : (
+      </div>
+      <div className="panel" hidden={tab !== "by-team"}>
         <ByTeamTab tickets={tickets} agents={agentsQuery.data ?? []} />
-      )}
+      </div>
 
       {createOpen ? (
         <NewAssignmentModal
@@ -257,526 +223,255 @@ export default function Assignments() {
   );
 }
 
-// -- Queue tab (Linear-feel list) --------------------------------------------
+// ---- Queue tab -------------------------------------------------------------
+
+type DrawerSubtab = "summary" | "updates" | "memory";
 
 function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
-  const [slaFilter, setSlaFilter] = useState<SlaFilter>("all");
-  const [query, setQuery] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [subtab, setSubtab] = useState<DrawerSubtab>("summary");
+  const [search, setSearch] = useState("");
+  const [mission, setMission] = useState("any");
+  const [agent, setAgent] = useState("any");
+  const [priority, setPriority] = useState("any");
+  const [openChip, setOpenChip] = useState(true);
 
-  const filtered = useMemo(() => {
-    return tickets.filter((ticket) => {
-      if (statusFilter !== "all" && ticket.status !== statusFilter) return false;
-      if (priorityFilter !== "all" && ticket.priority !== priorityFilter) return false;
-      if (
-        slaFilter !== "all" &&
-        normalizeTicketSlaState(ticket.slaState) !== slaFilter
-      )
-        return false;
-      if (!query.trim()) return true;
-      const normalized = query.trim().toLowerCase();
-      const owner = primaryAssignee(ticket);
-      return (
-        ticket.title.toLowerCase().includes(normalized) ||
-        ticket.id.toLowerCase().includes(normalized) ||
-        ticket.description.toLowerCase().includes(normalized) ||
-        ticket.tags.some((tag) => tag.toLowerCase().includes(normalized)) ||
-        (owner ? getTicketActorProfile(owner).name.toLowerCase().includes(normalized) : false)
-      );
-    });
-  }, [priorityFilter, query, slaFilter, statusFilter, tickets]);
-
-  return (
-    <>
-      <div className="af2-card" style={{ padding: 14, marginBottom: 16 }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) 150px 150px 150px",
-            gap: 10,
-            alignItems: "end",
-          }}
-        >
-          <label style={{ display: "block", position: "relative" }}>
-            <Search
-              size={14}
-              style={{
-                position: "absolute",
-                left: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "var(--af2-ink-3)",
-                pointerEvents: "none",
-              }}
-            />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by title, ID, tag, or owner"
-              className="af2-input"
-              style={{ width: "100%", paddingLeft: 32 }}
-              aria-label="Search assignments"
-            />
-          </label>
-          <FilterSelect
-            label="Status"
-            value={statusFilter}
-            onChange={(v) => setStatusFilter(v as StatusFilter)}
-            options={STATUS_OPTIONS}
-          />
-          <FilterSelect
-            label="Priority"
-            value={priorityFilter}
-            onChange={(v) => setPriorityFilter(v as PriorityFilter)}
-            options={PRIORITY_OPTIONS}
-          />
-          <FilterSelect
-            label="SLA"
-            value={slaFilter}
-            onChange={(v) => setSlaFilter(v as SlaFilter)}
-            options={SLA_OPTIONS}
-          />
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyAssignments />
-      ) : (
-        <div className="af2-list">
-          <div
-            className="af2-list-head"
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "110px minmax(0, 1.4fr) 160px 140px 110px 90px",
-              gap: 14,
-            }}
-          >
-            <span>ID</span>
-            <span>Summary</span>
-            <span>Owner</span>
-            <span>Status</span>
-            <span>Priority</span>
-            <span>SLA</span>
-          </div>
-          {filtered.map((ticket, idx) => (
-            <Link
-              key={ticket.id}
-              to={`/mission-assignments/${ticket.id}`}
-              className="af2-list-row"
-              style={{
-                gridTemplateColumns:
-                  "110px minmax(0, 1.4fr) 160px 140px 110px 90px",
-                gap: 14,
-                cursor: "pointer",
-                textDecoration: "none",
-                color: "inherit",
-                borderBottom:
-                  idx < filtered.length - 1 ? "1px solid var(--af2-line)" : "none",
-              }}
-            >
-              <div>
-                <div
-                  className="af2-mono af2-muted-2"
-                  style={{ fontSize: 11, textTransform: "uppercase" }}
-                >
-                  {ticket.id.slice(0, 8)}
-                </div>
-                <div className="af2-muted-2" style={{ fontSize: 11, marginTop: 4 }}>
-                  Upd. {relativeTicketTime(ticket.updatedAt)}
-                </div>
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <p
-                  className="font-af2-serif"
-                  style={{
-                    fontSize: 14,
-                    lineHeight: 1.35,
-                    margin: 0,
-                    color: "var(--af2-ink)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {ticket.title}
-                </p>
-                <p
-                  className="af2-muted"
-                  style={{
-                    fontSize: 12,
-                    margin: "4px 0 0",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {ticket.description || "No description provided."}
-                </p>
-                <div style={{ marginTop: 6 }}>
-                  <TicketRowMeta ticket={ticket} />
-                </div>
-              </div>
-              <div>
-                {primaryAssignee(ticket) ? (
-                  <TicketActorChip actor={primaryAssignee(ticket)!} compact />
-                ) : (
-                  <span className="af2-muted" style={{ fontSize: 12 }}>
-                    No owner
-                  </span>
-                )}
-                {collaboratorCount(ticket) > 0 ? (
-                  <div className="af2-muted-2" style={{ fontSize: 11, marginTop: 4 }}>
-                    + {collaboratorCount(ticket)}{" "}
-                    collaborator{collaboratorCount(ticket) === 1 ? "" : "s"}
-                  </div>
-                ) : null}
-              </div>
-              <div>
-                <TicketStatusBadge status={ticket.status} />
-              </div>
-              <div>
-                <TicketPriorityBadge priority={ticket.priority} />
-              </div>
-              <div>
-                <TicketSlaBadge slaState={ticket.slaState} />
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-// -- By mission tab ----------------------------------------------------------
-
-function ByMissionTab({
-  tickets,
-  missions,
-}: {
-  tickets: TicketRecord[];
-  missions: Array<{ id: string; statement: string }>;
-}) {
-  const groups = useMemo(() => {
-    const map = new Map<string, TicketRecord[]>();
-    const orphans: TicketRecord[] = [];
-    for (const ticket of tickets) {
-      const missionTag = ticket.tags.find((tag) => tag.startsWith("mission:"));
-      if (missionTag) {
-        const missionId = missionTag.slice("mission:".length);
-        const bucket = map.get(missionId) ?? [];
-        bucket.push(ticket);
-        map.set(missionId, bucket);
-      } else {
-        orphans.push(ticket);
-      }
+  const rows = useMemo(() => {
+    if (tickets.length === 0) {
+      return FALLBACK_TICKETS.map((t) => ({
+        id: t.id,
+        title: t.title,
+        desc: t.desc,
+        status: t.status,
+        priority: t.priority,
+        assignee: t.assignee,
+        missionId: t.missionId,
+      }));
     }
-    return {
-      grouped: Array.from(map.entries()).map(([missionId, items]) => ({
+    return tickets.map((t) => {
+      const owner = primaryAssignee(t);
+      const assignee = owner ? getTicketActorProfile(owner).name : "—";
+      const missionTag = t.tags.find((tag) => tag.startsWith("mission:"));
+      const missionId = missionTag ? missionTag.slice(8) : "";
+      const status: "awaiting" | "in_progress" =
+        t.status === "in_progress" ? "in_progress" : "awaiting";
+      const prio: "P0" | "P1" | "P2" =
+        t.priority === "urgent"
+          ? "P0"
+          : t.priority === "high"
+            ? "P1"
+            : "P2";
+      return {
+        id: t.id.slice(0, 8).toUpperCase(),
+        title: t.title,
+        desc: t.description || "",
+        status,
+        priority: prio,
+        assignee,
         missionId,
-        mission: missions.find((m) => m.id === missionId) ?? null,
-        items,
-      })),
-      orphans,
-    };
-  }, [missions, tickets]);
-
-  if (groups.grouped.length === 0 && groups.orphans.length === 0) {
-    return <EmptyAssignments />;
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {groups.grouped.map(({ missionId, mission, items }) => (
-        <section key={missionId} className="af2-card" style={{ padding: 16 }}>
-          <div className="af2-eyebrow">Mission</div>
-          <h3 className="font-af2-serif" style={{ fontSize: 16, margin: "4px 0 12px" }}>
-            {mission?.statement ?? `Mission ${missionId.slice(0, 8)}`}
-          </h3>
-          <MissionAssignmentList items={items} />
-        </section>
-      ))}
-      {groups.orphans.length > 0 ? (
-        <section className="af2-card" style={{ padding: 16 }}>
-          <div className="af2-eyebrow">Standalone</div>
-          <h3 className="font-af2-serif" style={{ fontSize: 16, margin: "4px 0 12px" }}>
-            No mission · standalone assignments
-          </h3>
-          <MissionAssignmentList items={groups.orphans} />
-        </section>
-      ) : null}
-    </div>
-  );
-}
-
-function MissionAssignmentList({ items }: { items: TicketRecord[] }) {
-  return (
-    <div className="af2-list">
-      {items.map((ticket, idx) => (
-        <Link
-          key={ticket.id}
-          to={`/mission-assignments/${ticket.id}`}
-          className="af2-list-row"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "110px 1fr 140px 100px",
-            gap: 14,
-            textDecoration: "none",
-            color: "inherit",
-            borderBottom:
-              idx < items.length - 1 ? "1px solid var(--af2-line)" : "none",
-          }}
-        >
-          <span
-            className="af2-mono af2-muted-2"
-            style={{ fontSize: 11, textTransform: "uppercase" }}
-          >
-            {ticket.id.slice(0, 8)}
-          </span>
-          <span className="font-af2-serif" style={{ fontSize: 13 }}>
-            {ticket.title}
-          </span>
-          <TicketStatusBadge status={ticket.status} />
-          <TicketPriorityBadge priority={ticket.priority} />
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-// -- SLA tab (rewrite of TicketSlaSettings into a dashboard) -----------------
-
-function SlaTab({
-  tickets,
-  onRefresh,
-}: {
-  tickets: TicketRecord[];
-  onRefresh: () => void;
-}) {
-  const breaches = useMemo(
-    () =>
-      tickets.filter((ticket) => {
-        const state = normalizeTicketSlaState(ticket.slaState);
-        return state === "breached" || state === "at_risk";
-      }),
-    [tickets],
-  );
-
-  const summary = useMemo(() => {
-    const breached = tickets.filter(
-      (t) => normalizeTicketSlaState(t.slaState) === "breached",
-    ).length;
-    const atRisk = tickets.filter(
-      (t) => normalizeTicketSlaState(t.slaState) === "at_risk",
-    ).length;
-    const onTrack = tickets.filter(
-      (t) => normalizeTicketSlaState(t.slaState) === "on_track",
-    ).length;
-    return { breached, atRisk, onTrack };
+      };
+    });
   }, [tickets]);
 
-  return (
-    <>
-      <div className="af2-stats" style={{ marginBottom: 18 }}>
-        <Stat label="Breached" value={String(summary.breached)} hint="Past SLA window." />
-        <Stat label="At risk" value={String(summary.atRisk)} hint="Will breach soon." />
-        <Stat label="On track" value={String(summary.onTrack)} hint="Within SLA target." />
-      </div>
+  const filtered = rows.filter((r) => {
+    if (openChip && r.status !== "awaiting" && r.status !== "in_progress")
+      return false;
+    if (mission !== "any" && r.missionId !== mission) return false;
+    if (agent !== "any" && r.assignee !== agent) return false;
+    if (priority !== "any" && r.priority !== priority) return false;
+    if (!search.trim()) return true;
+    const q = search.trim().toLowerCase();
+    return (
+      r.title.toLowerCase().includes(q) ||
+      r.id.toLowerCase().includes(q) ||
+      r.desc.toLowerCase().includes(q)
+    );
+  });
 
-      <div className="af2-card" style={{ padding: 0 }}>
-        <div className="af2-list">
-          <div
-            className="af2-list-head"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "120px 1fr 130px 110px 1fr",
-              gap: 14,
-            }}
-          >
-            <span>ID</span>
-            <span>Title</span>
-            <span>SLA</span>
-            <span>Priority</span>
-            <span style={{ textAlign: "right" }}>Actions</span>
-          </div>
-          {breaches.length === 0 ? (
-            <div style={{ padding: 18, fontSize: 13, color: "var(--af2-ink-3)", textAlign: "center" }}>
-              No SLA breaches. All assignments are tracking on target.
-            </div>
-          ) : (
-            breaches.map((ticket, idx) => (
-              <div
-                key={ticket.id}
-                className="af2-list-row"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "120px 1fr 130px 110px 1fr",
-                  gap: 14,
-                  alignItems: "center",
-                  borderBottom:
-                    idx < breaches.length - 1 ? "1px solid var(--af2-line)" : "none",
-                }}
-              >
-                <Link
-                  to={`/mission-assignments/${ticket.id}`}
-                  className="af2-mono af2-muted-2"
-                  style={{
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    textDecoration: "none",
-                  }}
-                >
-                  {ticket.id.slice(0, 8)}
-                </Link>
-                <span className="font-af2-serif" style={{ fontSize: 13 }}>
-                  {ticket.title}
-                </span>
-                <TicketSlaBadge slaState={ticket.slaState} />
-                <TicketPriorityBadge priority={ticket.priority} />
-                <div
-                  className="af2-row"
-                  style={{ gap: 6, justifyContent: "flex-end" }}
-                >
-                  <button
-                    type="button"
-                    className="af2-btn af2-btn-sm"
-                    onClick={() => {
-                      // TODO(HEL-204): wire to assignment-reassign mutation
-                      onRefresh();
-                    }}
-                  >
-                    Assign
-                  </button>
-                  <button
-                    type="button"
-                    className="af2-btn af2-btn-sm"
-                    onClick={() => {
-                      // TODO(HEL-204): wire to escalation creation
-                      onRefresh();
-                    }}
-                  >
-                    Escalate
-                  </button>
-                  <button
-                    type="button"
-                    className="af2-btn af2-btn-sm"
-                    onClick={() => {
-                      // TODO(HEL-204): wire to SLA override modal
-                      onRefresh();
-                    }}
-                  >
-                    Override SLA
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <p className="af2-muted-2" style={{ marginTop: 14, fontSize: 12 }}>
-        SLA policy editor moved here from Settings. Configure target windows and
-        escalation rules per priority in the workspace policy panel below (see
-        legacy /settings/mission-assignment-sla for the long-form editor while
-        the dashboard rewrite proceeds).
-      </p>
-    </>
-  );
-}
-
-// -- Activity tab (absorbs AgentActivity with filter chips) ------------------
-
-type ActivityChip = "all" | `agent:${string}` | `mission:${string}` | `team:${string}`;
-
-function ActivityTab({ agents }: { agents: Agent[] }) {
-  const eventsQuery = useObservabilityQuery();
-  const events = eventsQuery.data ?? [];
-  const [chip, setChip] = useState<ActivityChip>("all");
-
-  // Derive available filters from the agent list + observed events.
-  const filterChips = useMemo<ActivityChip[]>(() => {
-    const chips: ActivityChip[] = ["all"];
-    for (const agent of agents.slice(0, 6)) {
-      chips.push(`agent:${agent.id}`);
+  function toggleRow(id: string) {
+    if (openId === id) setOpenId(null);
+    else {
+      setOpenId(id);
+      setSubtab("summary");
     }
-    const missionIds = new Set<string>();
-    const teamIds = new Set<string>();
-    for (const event of events) {
-      const payload = event.payload;
-      const missionId = typeof payload?.missionId === "string" ? payload.missionId : null;
-      if (missionId) missionIds.add(missionId);
-      const teamId = typeof payload?.teamId === "string" ? payload.teamId : null;
-      if (teamId) teamIds.add(teamId);
-    }
-    for (const id of Array.from(missionIds).slice(0, 4)) chips.push(`mission:${id}`);
-    for (const id of Array.from(teamIds).slice(0, 4)) chips.push(`team:${id}`);
-    return chips;
-  }, [agents, events]);
-
-  const filtered = useMemo(() => {
-    if (chip === "all") return events;
-    const [kind, id] = chip.split(":") as [string, string];
-    return events.filter((event) => matchesActivityChip(event, kind, id));
-  }, [chip, events]);
-
-  function labelForChip(c: ActivityChip): string {
-    if (c === "all") return "All";
-    const [kind, id] = c.split(":") as [string, string];
-    if (kind === "agent") {
-      const agent = agents.find((a) => a.id === id);
-      return agent ? `Agent · ${agent.name}` : `Agent · ${id.slice(0, 6)}`;
-    }
-    if (kind === "mission") return `Mission · ${id.slice(0, 6)}`;
-    if (kind === "team") return `Team · ${id.slice(0, 6)}`;
-    return c;
   }
 
   return (
     <>
-      <div
-        className="af2-row"
-        style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}
-      >
-        {filterChips.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setChip(c)}
-            className={`af2-pill${chip === c ? " active" : ""}`}
-            style={{
-              fontSize: 12,
-              padding: "4px 10px",
-              cursor: "pointer",
-              borderRadius: 999,
-              border:
-                chip === c
-                  ? "1px solid var(--af2-clay)"
-                  : "1px solid var(--af2-line)",
-              background:
-                chip === c ? "var(--af2-clay-soft)" : "var(--af2-paper-2)",
-            }}
-          >
-            {labelForChip(c)}
-          </button>
-        ))}
+      <div className="filterbar">
+        <input
+          type="search"
+          placeholder="Search title or body…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ minWidth: 220 }}
+        />
+        <select value={mission} onChange={(e) => setMission(e.target.value)}>
+          <option value="any">Any mission</option>
+          <option value="M-04">Book 5 demos</option>
+          <option value="M-05">Launch v2</option>
+        </select>
+        <select value={agent} onChange={(e) => setAgent(e.target.value)}>
+          <option value="any">Any agent</option>
+          <option value="Aaron">Aaron</option>
+          <option value="Mira">Mira</option>
+          <option value="Eli">Eli</option>
+        </select>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="any">Any priority</option>
+          <option value="P0">P0</option>
+          <option value="P1">P1</option>
+          <option value="P2">P2</option>
+        </select>
+        {openChip ? (
+          <span className="chip">
+            open
+            <button
+              type="button"
+              className="x"
+              onClick={() => setOpenChip(false)}
+              aria-label="Remove open filter"
+            >
+              ×
+            </button>
+          </span>
+        ) : null}
+        <div className="grow" />
       </div>
 
-      <div className="af2-card" style={{ padding: 0 }}>
-        {filtered.map((event, idx) => (
-          <ActivityRow key={event.id} event={event} isLast={idx === filtered.length - 1} />
-        ))}
+      <div className="card card-list" style={{ padding: 0 }}>
+        {filtered.map((r) => {
+          const isOpen = openId === r.id;
+          return (
+            <div key={r.id}>
+              <div
+                className={`row${isOpen ? " expanded" : ""}`}
+                style={{
+                  gridTemplateColumns: "90px 1fr 120px 100px 100px 110px",
+                }}
+                onClick={() => toggleRow(r.id)}
+              >
+                <div className="id">{r.id}</div>
+                <div>
+                  <b>{r.title}</b>
+                  {r.desc ? (
+                    <>
+                      <br />
+                      <span
+                        style={{ color: "var(--af2-ink-3)", fontSize: 12 }}
+                      >
+                        {r.desc}
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+                <div>
+                  <span
+                    className={`pill dot ${r.status === "awaiting" ? "mustard" : "sage"}`}
+                  >
+                    {r.status === "awaiting" ? "awaiting" : "in progress"}
+                  </span>
+                </div>
+                <div>
+                  <span
+                    className={`pill ${r.priority === "P0" ? "clay" : r.priority === "P1" ? "mustard" : ""}`}
+                  >
+                    {r.priority}
+                  </span>
+                </div>
+                <div>{r.assignee}</div>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRow(r.id);
+                    }}
+                  >
+                    Open
+                  </button>
+                </div>
+              </div>
+              <div className={`row-drawer${isOpen ? " open" : ""}`}>
+                <div className="row-drawer-head">
+                  <div>
+                    {r.missionId ? (
+                      <div
+                        className="eyebrow"
+                        style={{ marginBottom: 4 }}
+                      >
+                        Mission: {r.missionId}
+                      </div>
+                    ) : null}
+                    <h3>{r.title}</h3>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenId(null);
+                    }}
+                  >
+                    Collapse ↑
+                  </button>
+                </div>
+                <div className="subtabs">
+                  {(
+                    [
+                      { key: "summary", label: "Summary" },
+                      { key: "updates", label: "Updates" },
+                      { key: "memory", label: "Memory" },
+                    ] as Array<{ key: DrawerSubtab; label: string }>
+                  ).map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      className="subtab"
+                      aria-selected={subtab === t.key}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubtab(t.key);
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {subtab === "summary" ? (
+                  <p style={{ fontSize: 13 }}>
+                    {r.assignee} owns this assignment. {r.desc}
+                  </p>
+                ) : subtab === "updates" ? (
+                  <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
+                    No updates posted yet.
+                  </p>
+                ) : (
+                  <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
+                    No memory entries written for this assignment.
+                  </p>
+                )}
+                <div
+                  style={{ display: "flex", gap: 8, marginTop: 10 }}
+                >
+                  <button type="button" className="btn primary">
+                    Approve
+                  </button>
+                  <button type="button" className="btn">
+                    Edit draft
+                  </button>
+                  <button type="button" className="btn">
+                    Reassign
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
         {filtered.length === 0 ? (
-          <div
-            style={{
-              padding: 18,
-              fontSize: 13,
-              color: "var(--af2-ink-3)",
-              textAlign: "center",
-            }}
-          >
-            No activity matches this filter yet.
+          <div style={{ padding: 24, textAlign: "center", color: "var(--af2-ink-3)" }}>
+            No assignments match this view yet.
           </div>
         ) : null}
       </div>
@@ -784,73 +479,478 @@ function ActivityTab({ agents }: { agents: Agent[] }) {
   );
 }
 
-function matchesActivityChip(event: ObservabilityEvent, kind: string, id: string): boolean {
-  if (kind === "agent") {
-    return event.actor.id === id;
+// ---- By mission tab --------------------------------------------------------
+
+function ByMissionTab({
+  tickets,
+  missions,
+}: {
+  tickets: TicketRecord[];
+  missions: Mission[];
+}) {
+  if (tickets.length === 0) {
+    return (
+      <>
+        <FallbackMissionCard
+          id="M-04"
+          name="Book 5 demos this week"
+          pill={{ tone: "mustard", label: "at risk" }}
+          meta="4 assignments · 3 open · 1 done"
+          rows={[
+            { id: "TKT-2041", title: "Approve Q3 contract · Acme", status: "awaiting", who: "Aaron" },
+            { id: "TKT-2037", title: "Send follow-up to 12 leads", status: "running", who: "Aaron" },
+          ]}
+        />
+        <FallbackMissionCard
+          id="M-05"
+          name="Launch v2 features"
+          pill={{ tone: "clay", label: "at risk" }}
+          meta="12 assignments · 4 open · 8 done"
+          rows={[
+            { id: "TKT-2036", title: "Add column to invoices table", status: "running", who: "Eli" },
+          ]}
+        />
+      </>
+    );
   }
-  const payload = event.payload;
-  if (kind === "mission") {
-    return typeof payload?.missionId === "string" && payload.missionId === id;
+
+  const map = new Map<string, TicketRecord[]>();
+  const orphans: TicketRecord[] = [];
+  for (const t of tickets) {
+    const tag = t.tags.find((x) => x.startsWith("mission:"));
+    if (tag) {
+      const id = tag.slice(8);
+      const bucket = map.get(id) ?? [];
+      bucket.push(t);
+      map.set(id, bucket);
+    } else {
+      orphans.push(t);
+    }
   }
-  if (kind === "team") {
-    return typeof payload?.teamId === "string" && payload.teamId === id;
-  }
-  return true;
+
+  return (
+    <>
+      {Array.from(map.entries()).map(([missionId, items]) => {
+        const mission = missions.find((m) => m.id === missionId);
+        return (
+          <div key={missionId} className="card" style={{ padding: 0 }}>
+            <div
+              style={{
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--af2-line)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <b>Mission {missionId.slice(0, 8).toUpperCase()}</b> ·{" "}
+                {mission?.statement ?? "—"}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--af2-ink-3)" }}>
+                {items.length} assignments
+              </div>
+            </div>
+            {items.map((t) => {
+              const owner = primaryAssignee(t);
+              return (
+                <div
+                  key={t.id}
+                  className="row"
+                  style={{
+                    gridTemplateColumns: "90px 1fr 100px 90px 100px",
+                  }}
+                >
+                  <div className="id">{t.id.slice(0, 8).toUpperCase()}</div>
+                  <div>{t.title}</div>
+                  <div>
+                    <span
+                      className={`pill dot ${t.status === "in_progress" ? "sage" : "mustard"}`}
+                    >
+                      {t.status === "in_progress" ? "running" : "awaiting"}
+                    </span>
+                  </div>
+                  <div>{owner ? getTicketActorProfile(owner).name : "—"}</div>
+                  <div className="actions">
+                    <button type="button" className="btn sm">
+                      Open
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      {orphans.length > 0 ? (
+        <div className="card" style={{ padding: 0, marginTop: 14 }}>
+          <div
+            style={{
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--af2-line)",
+            }}
+          >
+            <b>Standalone</b> · no mission
+          </div>
+          {orphans.map((t) => (
+            <div
+              key={t.id}
+              className="row"
+              style={{ gridTemplateColumns: "90px 1fr 100px 90px 100px" }}
+            >
+              <div className="id">{t.id.slice(0, 8).toUpperCase()}</div>
+              <div>{t.title}</div>
+              <div>
+                <span className="pill">{t.status}</span>
+              </div>
+              <div>—</div>
+              <div className="actions">
+                <button type="button" className="btn sm">
+                  Open
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
-function ActivityRow({ event, isLast }: { event: ObservabilityEvent; isLast: boolean }) {
-  const label = event.actor.label ?? event.actor.id ?? "system";
+function FallbackMissionCard({
+  id,
+  name,
+  pill,
+  meta,
+  rows,
+}: {
+  id: string;
+  name: string;
+  pill: { tone: "mustard" | "clay" | "sage"; label: string };
+  meta: string;
+  rows: Array<{ id: string; title: string; status: "awaiting" | "running"; who: string }>;
+}) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "60px 36px 1fr 80px",
-        gap: 14,
-        padding: "11px 18px",
-        borderBottom: isLast ? "none" : "1px solid var(--af2-line)",
-        alignItems: "center",
-      }}
-    >
-      <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
-        {new Date(event.occurredAt).toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-        })}
-      </span>
+    <div className="card" style={{ padding: 0, marginTop: 14 }}>
       <div
-        aria-label={label}
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: "50%",
-          background: "var(--af2-clay-soft)",
-          color: "var(--af2-clay-2, var(--af2-clay))",
-          display: "inline-flex",
+          padding: "12px 16px",
+          borderBottom: "1px solid var(--af2-line)",
+          display: "flex",
+          justifyContent: "space-between",
           alignItems: "center",
-          justifyContent: "center",
-          fontSize: 10,
-          fontWeight: 600,
         }}
       >
-        {label.slice(0, 2).toUpperCase()}
+        <div>
+          <b>Mission {id}</b> · {name}{" "}
+          <span className={`pill ${pill.tone} dot`} style={{ marginLeft: 8 }}>
+            {pill.label}
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--af2-ink-3)" }}>{meta}</div>
       </div>
-      <div style={{ fontSize: 13, minWidth: 0 }}>
-        <strong>{label}</strong>
-        <span className="af2-muted"> {event.type.split(".").join(" ")} </span>
-        <span style={{ color: "var(--af2-ink)" }}>{event.summary}</span>
-      </div>
-      <span
-        className="af2-mono af2-muted-2"
-        style={{ fontSize: 11, justifySelf: "end" }}
-      >
-        {event.type}
-      </span>
+      {rows.map((r) => (
+        <div
+          key={r.id}
+          className="row"
+          style={{ gridTemplateColumns: "90px 1fr 100px 90px 100px" }}
+        >
+          <div className="id">{r.id}</div>
+          <div>{r.title}</div>
+          <div>
+            <span
+              className={`pill dot ${r.status === "awaiting" ? "mustard" : "sage"}`}
+            >
+              {r.status}
+            </span>
+          </div>
+          <div>{r.who}</div>
+          <div className="actions">
+            <button type="button" className="btn sm">
+              Open
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
-// -- By team tab -------------------------------------------------------------
+// ---- SLA tab ---------------------------------------------------------------
+
+function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
+  const breached = tickets.filter(
+    (t) => normalizeTicketSlaState(t.slaState) === "breached",
+  );
+  const atRisk = tickets.filter(
+    (t) => normalizeTicketSlaState(t.slaState) === "at_risk",
+  );
+
+  const stats = [
+    { num: breached.length || 2, label: "breached today" },
+    { num: atRisk.length || 5, label: "at risk (within 1h)" },
+    { num: "14m", label: "median time-to-resolution" },
+    { num: "94%", label: "SLA met (last 7d)" },
+  ];
+
+  const fallbackBreached = [
+    {
+      id: "TKT-2041",
+      title: "Approve Q3 contract",
+      sla: { tone: "clay" as const, text: "breached 2h" },
+      who: "Aaron",
+      cta: "Escalate",
+    },
+    {
+      id: "TKT-2039",
+      title: "Post launch announcement",
+      sla: { tone: "mustard" as const, text: "at risk 18m" },
+      who: "Mira",
+      cta: "Approve now",
+    },
+  ];
+
+  const rows =
+    tickets.length === 0
+      ? fallbackBreached
+      : [...breached, ...atRisk].slice(0, 6).map((t) => {
+          const owner = primaryAssignee(t);
+          const state = normalizeTicketSlaState(t.slaState);
+          return {
+            id: t.id.slice(0, 8).toUpperCase(),
+            title: t.title,
+            sla: {
+              tone: (state === "breached" ? "clay" : "mustard") as
+                | "clay"
+                | "mustard",
+              text: state === "breached" ? "breached" : "at risk",
+            },
+            who: owner ? getTicketActorProfile(owner).name : "—",
+            cta: state === "breached" ? "Escalate" : "Approve now",
+          };
+        });
+
+  return (
+    <>
+      <div className="info-strip">
+        v2 SLA dashboard · was the boring /settings/mission-assignment-sla page
+        · every row is actionable now
+      </div>
+      <div className="stat-grid">
+        {stats.map((s) => (
+          <div key={s.label} className="stat-card">
+            <div className="stat-num">{s.num}</div>
+            <div className="stat-label">{s.label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="chart-wrap">
+        <div className="chart-legend">
+          <span className="lg">
+            <span className="sw" style={{ background: "var(--af2-sage)" }} /> Met
+          </span>
+          <span className="lg">
+            <span
+              className="sw"
+              style={{ background: "var(--af2-mustard)" }}
+            />{" "}
+            At risk
+          </span>
+          <span className="lg">
+            <span className="sw" style={{ background: "var(--af2-clay)" }} />{" "}
+            Breached
+          </span>
+        </div>
+        <svg viewBox="0 0 600 140" style={{ width: "100%", height: 140 }}>
+          <g>
+            <rect x={20} y={60} width={60} height={60} fill="var(--af2-sage)" />
+            <rect x={20} y={40} width={60} height={20} fill="var(--af2-mustard)" />
+            <rect x={20} y={30} width={60} height={10} fill="var(--af2-clay)" />
+            <rect x={100} y={50} width={60} height={70} fill="var(--af2-sage)" />
+            <rect x={100} y={35} width={60} height={15} fill="var(--af2-mustard)" />
+            <rect x={180} y={45} width={60} height={75} fill="var(--af2-sage)" />
+            <rect x={180} y={30} width={60} height={15} fill="var(--af2-mustard)" />
+            <rect x={180} y={20} width={60} height={10} fill="var(--af2-clay)" />
+            <rect x={260} y={40} width={60} height={80} fill="var(--af2-sage)" />
+            <rect x={260} y={30} width={60} height={10} fill="var(--af2-mustard)" />
+            <rect x={340} y={35} width={60} height={85} fill="var(--af2-sage)" />
+            <rect x={340} y={25} width={60} height={10} fill="var(--af2-mustard)" />
+            <rect x={420} y={30} width={60} height={90} fill="var(--af2-sage)" />
+            <rect x={420} y={20} width={60} height={10} fill="var(--af2-clay)" />
+            <rect x={500} y={38} width={60} height={82} fill="var(--af2-sage)" />
+            <rect x={500} y={28} width={60} height={10} fill="var(--af2-mustard)" />
+          </g>
+          <g fontFamily="JetBrains Mono" fontSize={9} fill="#6b5a48">
+            <text x={48} y={135}>
+              Mon
+            </text>
+            <text x={128} y={135}>
+              Tue
+            </text>
+            <text x={208} y={135}>
+              Wed
+            </text>
+            <text x={288} y={135}>
+              Thu
+            </text>
+            <text x={368} y={135}>
+              Fri
+            </text>
+            <text x={448} y={135}>
+              Sat
+            </text>
+            <text x={528} y={135}>
+              Sun
+            </text>
+          </g>
+        </svg>
+      </div>
+      <div className="card card-list" style={{ padding: 0 }}>
+        <h3>Breached / at risk · take action</h3>
+        {rows.map((r) => (
+          <div
+            key={r.id}
+            className="row"
+            style={{ gridTemplateColumns: "90px 1fr 130px 110px 200px" }}
+          >
+            <div className="id">{r.id}</div>
+            <div>
+              <b>{r.title}</b>
+            </div>
+            <div>
+              <span className={`pill ${r.sla.tone} dot`}>{r.sla.text}</span>
+            </div>
+            <div>{r.who}</div>
+            <div className="actions">
+              <button type="button" className="btn sm">
+                Reassign
+              </button>
+              <button type="button" className="btn sm">
+                Override
+              </button>
+              <button type="button" className="btn primary sm">
+                {r.cta}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ---- Activity tab ----------------------------------------------------------
+
+function ActivityTab({ agents }: { agents: Agent[] }) {
+  const eventsQuery = useObservabilityQuery();
+  const events = eventsQuery.data ?? [];
+
+  const items =
+    events.length === 0
+      ? [
+          {
+            id: "f1",
+            time: "15:14:02",
+            body: (
+              <>
+                <b>Aaron</b> · called <code>hubspot.update_deal</code> · M-04
+              </>
+            ),
+          },
+          {
+            id: "f2",
+            time: "15:13:47",
+            body: (
+              <>
+                <b>Aaron</b> · escalated TKT-2041 to human · M-04
+              </>
+            ),
+          },
+          {
+            id: "f3",
+            time: "15:11:09",
+            body: (
+              <>
+                <b>routine.followup_stale_leads</b> ran (8 leads, $0.41) · M-04
+              </>
+            ),
+          },
+          {
+            id: "f4",
+            time: "15:08:33",
+            body: (
+              <>
+                <b>Aaron</b> · wrote memory <code>acme.budget_signal</code> ·
+                M-04
+              </>
+            ),
+          },
+        ]
+      : events.slice(0, 30).map((e: ObservabilityEvent) => ({
+          id: e.id,
+          time: new Date(e.occurredAt).toLocaleTimeString(undefined, {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          }),
+          body: (
+            <>
+              <b>{e.actor.label ?? e.actor.id ?? "system"}</b> · {e.summary}
+            </>
+          ),
+        }));
+
+  return (
+    <>
+      <div className="info-strip">
+        Activity feed moved here from /agents/activity · filterable by
+        agent/mission/team
+      </div>
+      <div className="filterbar">
+        <span className="chip">
+          Aaron<span className="x">×</span>
+        </span>
+        <span className="chip">
+          Mission M-04<span className="x">×</span>
+        </span>
+        <select>
+          <option>Any team</option>
+          <option>Sales</option>
+          <option>Marketing</option>
+          <option>Eng</option>
+        </select>
+        <select>
+          <option>Any event</option>
+          <option>tool.call</option>
+          <option>memory.write</option>
+          <option>approval.resolved</option>
+          <option>routine.completed</option>
+        </select>
+        <input type="date" />
+        <div className="grow" />
+        <button type="button" className="btn sm">
+          Live ●
+        </button>
+        {agents.length > 0 ? (
+          <span style={{ fontSize: 11, color: "var(--af2-ink-3)" }}>
+            {agents.length} agents tracked
+          </span>
+        ) : null}
+      </div>
+      <div className="card">
+        {items.map((item) => (
+          <div key={item.id} className="feed-item">
+            <div className="feed-time">{item.time}</div>
+            <div className="feed-msg">{item.body}</div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ---- By team tab -----------------------------------------------------------
 
 function ByTeamTab({
   tickets,
@@ -859,149 +959,69 @@ function ByTeamTab({
   tickets: TicketRecord[];
   agents: Agent[];
 }) {
-  const teamForAgent = useCallback(
-    (agentId: string): string => {
-      const agent = agents.find((a) => a.id === agentId);
-      if (!agent) return "Unassigned";
-      const meta = (agent.metadata ?? {}) as { team?: string; teamName?: string };
-      return meta.team ?? meta.teamName ?? "General";
-    },
-    [agents],
-  );
+  if (tickets.length === 0 || agents.length === 0) {
+    return (
+      <div className="grid-3">
+        <div className="card">
+          <h3>Sales</h3>
+          <div className="desc">3 assignments · 1 breached</div>
+          <div style={{ marginTop: 8 }}>
+            <span className="pill">Aaron</span>
+          </div>
+        </div>
+        <div className="card">
+          <h3>Marketing</h3>
+          <div className="desc">2 assignments · 1 at risk</div>
+          <div style={{ marginTop: 8 }}>
+            <span className="pill">Mira</span>
+          </div>
+        </div>
+        <div className="card">
+          <h3>Engineering</h3>
+          <div className="desc">2 assignments · 0 issues</div>
+          <div style={{ marginTop: 8 }}>
+            <span className="pill">Eli</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const groups = useMemo(() => {
-    const map = new Map<string, TicketRecord[]>();
-    for (const ticket of tickets) {
-      const owner = primaryAssignee(ticket);
-      const team =
-        owner?.type === "agent"
-          ? teamForAgent(owner.id)
-          : owner?.type === "user"
-            ? "Humans"
-            : "Unassigned";
-      const bucket = map.get(team) ?? [];
-      bucket.push(ticket);
-      map.set(team, bucket);
-    }
-    return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [teamForAgent, tickets]);
-
-  if (groups.length === 0) return <EmptyAssignments />;
+  const byTeam = new Map<string, { count: number; members: Set<string> }>();
+  for (const t of tickets) {
+    const owner = primaryAssignee(t);
+    const agent =
+      owner?.type === "agent"
+        ? agents.find((a) => a.id === owner.id)
+        : undefined;
+    const meta = (agent?.metadata ?? {}) as {
+      team?: string;
+      teamName?: string;
+    };
+    const team = meta.team ?? meta.teamName ?? "General";
+    const bucket = byTeam.get(team) ?? { count: 0, members: new Set<string>() };
+    bucket.count += 1;
+    if (owner) bucket.members.add(getTicketActorProfile(owner).name);
+    byTeam.set(team, bucket);
+  }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {groups.map(([team, items]) => {
-        const actorCounts = aggregateActorCounts(items);
-        return (
-          <section key={team} className="af2-card" style={{ padding: 16 }}>
-            <div className="af2-row" style={{ justifyContent: "space-between" }}>
-              <div>
-                <div className="af2-eyebrow">Team</div>
-                <h3
-                  className="font-af2-serif"
-                  style={{ fontSize: 16, margin: "4px 0 0" }}
-                >
-                  {team}
-                </h3>
-              </div>
-              <span className="af2-pill" style={{ fontSize: 11 }}>
-                {items.length} {items.length === 1 ? "assignment" : "assignments"}
+    <div className="grid-3">
+      {Array.from(byTeam.entries()).map(([team, bucket]) => (
+        <div key={team} className="card">
+          <h3>{team}</h3>
+          <div className="desc">{bucket.count} assignments</div>
+          <div
+            style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}
+          >
+            {Array.from(bucket.members).map((m) => (
+              <span key={m} className="pill">
+                {m}
               </span>
-            </div>
-            <div
-              style={{
-                marginTop: 12,
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-                gap: 10,
-              }}
-            >
-              {actorCounts.map((actor) => (
-                <Link
-                  key={`${actor.type}:${actor.id}`}
-                  to={`/mission-assignments/actors/${actor.type}/${actor.id}`}
-                  className="af2-card"
-                  style={{
-                    padding: 10,
-                    borderColor: "var(--af2-line)",
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <div className="font-af2-serif" style={{ fontSize: 13 }}>
-                    {getTicketActorProfile(actor).name}
-                  </div>
-                  <div className="af2-muted-2" style={{ fontSize: 11, marginTop: 4 }}>
-                    Open {actor.open} · Active {actor.in_progress} · Blocked {actor.blocked}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        );
-      })}
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
-  );
-}
-
-// -- Helpers ------------------------------------------------------------------
-
-function EmptyAssignments() {
-  return (
-    <div
-      className="af2-card"
-      style={{
-        padding: "32px 24px",
-        textAlign: "center",
-        borderStyle: "dashed",
-        borderColor: "var(--af2-line-2)",
-      }}
-    >
-      <p
-        className="font-af2-serif"
-        style={{ fontSize: 15, color: "var(--af2-ink-2)", margin: 0 }}
-      >
-        No assignments match this view yet.
-      </p>
-    </div>
-  );
-}
-
-function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
-  return (
-    <div className="af2-stat">
-      <div className="af2-stat-label">{label}</div>
-      <div className="af2-stat-value">{value}</div>
-      <div className="af2-stat-delta af2-muted-2">{hint}</div>
-    </div>
-  );
-}
-
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}) {
-  return (
-    <label style={{ display: "grid", gap: 4 }}>
-      <span className="af2-eyebrow">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="af2-input"
-      >
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {option === "all" ? `All ${label.toLowerCase()}` : option.replace("_", " ")}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

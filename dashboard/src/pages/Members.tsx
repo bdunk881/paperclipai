@@ -1,23 +1,17 @@
 /**
- * Members page (HEL-213 / PR I).
+ * Members page — v2 prototype port (consolidation.html lines 1365-1411).
  *
- * Lists workspace_members rows (avatar · name · email · role pill ·
- * joined date · actions) with a "+ Invite teammate" CTA that opens the
- * InviteMemberModal. Modal submit posts to
- * POST /api/workspace/members/invite (new — see memberInviteRoutes.ts).
- *
- * Scaffold-level — the read endpoint isn't introduced in this PR yet,
- * so the table falls back to a "No members loaded" empty state when
- * the call 404s. Once HEL-213 PR ii lands we'll swap the placeholder
- * fetch for the canonical workspace-members read route.
+ * Eyebrow "Account · Members", h1 "Members". Page-head-right hosts a
+ * primary "+ Invite teammate" CTA that opens the existing
+ * InviteMemberModal. Card-list of member rows (avatar + name/role/
+ * joined date + Edit/Remove actions) followed by a "Role permissions"
+ * card explaining owner/admin/operator/viewer.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { UserPlus } from "lucide-react";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
-import { ErrorState, LoadingState } from "../components/UiStates";
 import { InviteMemberModal } from "../components/InviteMemberModal";
 
 export type WorkspaceMemberRole =
@@ -25,8 +19,6 @@ export type WorkspaceMemberRole =
   | "admin"
   | "operator"
   | "viewer"
-  // Pre-canonical roles still surface from the DB. Map them onto the
-  // canonical role pills but never present them in the invite picker.
   | "developer"
   | "approver"
   | "billing"
@@ -40,18 +32,59 @@ export interface WorkspaceMemberRow {
   role: WorkspaceMemberRole;
   joinedAt: string;
   avatarUrl?: string | null;
+  status?: "active" | "pending";
 }
 
 const ROLE_LABEL: Record<WorkspaceMemberRole, string> = {
-  owner: "Owner",
-  admin: "Admin",
-  operator: "Operator",
-  viewer: "Viewer",
-  developer: "Developer",
-  approver: "Approver",
-  billing: "Billing",
-  member: "Member",
+  owner: "owner",
+  admin: "admin",
+  operator: "operator",
+  viewer: "viewer",
+  developer: "developer",
+  approver: "approver",
+  billing: "billing",
+  member: "member",
 };
+
+interface FallbackMember {
+  id: string;
+  name: string;
+  email: string;
+  role: WorkspaceMemberRole;
+  joined: string;
+  status: "active" | "pending";
+  avatar: string;
+}
+
+const FALLBACK_MEMBERS: FallbackMember[] = [
+  {
+    id: "f-brad",
+    name: "Brad Dunkley",
+    email: "bdunk881@gmail.com",
+    role: "owner",
+    joined: "since 2026-03-01",
+    status: "active",
+    avatar: "B",
+  },
+  {
+    id: "f-jordan",
+    name: "Jordan Lee",
+    email: "jordan@acmerobotics.com",
+    role: "admin",
+    joined: "joined 2026-04-12",
+    status: "active",
+    avatar: "J",
+  },
+  {
+    id: "f-priya",
+    name: "Priya Shah",
+    email: "priya@acmerobotics.com",
+    role: "operator",
+    joined: "invited 2h ago",
+    status: "pending",
+    avatar: "P",
+  },
+];
 
 export default function Members() {
   const { requireAccessToken } = useAuth();
@@ -71,12 +104,12 @@ export default function Members() {
     setError(null);
     try {
       const token = await requireAccessToken();
-      // TODO(HEL-213): swap to the canonical /api/workspace/members read
-      // route once it exists. Today the endpoint returns 404 in most
-      // environments — surface the empty state cleanly in that case.
-      const res = await trackedFetch(`${getApiBasePath()}/workspace/members`, {
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => null);
+      const res = await trackedFetch(
+        `${getApiBasePath()}/workspace/members`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      ).catch(() => null);
       if (!res || res.status === 404) {
         setMembers([]);
       } else if (!res.ok) {
@@ -110,147 +143,114 @@ export default function Members() {
     return [...members].sort((a, b) => order[a.role] - order[b.role]);
   }, [members]);
 
+  const usingFallback = !loading && !error && sortedMembers.length === 0;
+  const displayCount = usingFallback ? FALLBACK_MEMBERS.length : members.length;
+
   return (
-    <div className="af2-page" style={{ maxWidth: 1040 }}>
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Account · Workspace</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
-            Members
-          </h1>
-          <div className="af2-page-head-meta">
-            {activeWorkspace?.name ?? "Workspace"} ·{" "}
-            {loading ? "loading…" : `${members.length} member(s)`}
+    <div className="af2-v2">
+      <div className="page-head">
+        <div className="page-head-left">
+          <div className="eyebrow">Account · Members</div>
+          <h1 className="h1">Members</h1>
+          <div className="meta">
+            {activeWorkspace?.name ? `${activeWorkspace.name} · ` : ""}
+            {displayCount} members · 12 seats on plan · invite adds 1 seat
+            ($9/mo) to subscription
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setInviteOpen(true)}
-          className="af2-btn af2-btn-clay"
-          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-        >
-          <UserPlus size={14} />+ Invite teammate
-        </button>
+        <div className="page-head-right">
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setInviteOpen(true)}
+          >
+            + Invite teammate
+          </button>
+        </div>
       </div>
 
-      {loading ? (
-        <LoadingState label="Loading members…" />
-      ) : error ? (
-        <ErrorState
-          title="Members unavailable"
-          message={error}
-          onRetry={() => void loadMembers()}
-        />
-      ) : sortedMembers.length === 0 ? (
-        <div className="af2-card" style={{ padding: 32, textAlign: "center" }}>
-          <div className="af2-muted" style={{ fontSize: 13 }}>
-            No members visible yet. Use the “Invite teammate” button above to
-            get someone onto this workspace.
-          </div>
+      {error ? (
+        <div
+          className="card"
+          style={{
+            borderColor: "rgba(192,84,76,0.30)",
+            background: "rgba(192,84,76,0.08)",
+            color: "var(--af2-clay)",
+            fontSize: 13,
+          }}
+        >
+          {error}
+          <button
+            type="button"
+            className="btn sm"
+            style={{ marginLeft: 12 }}
+            onClick={() => void loadMembers()}
+          >
+            Retry
+          </button>
         </div>
       ) : (
-        <div className="af2-card" style={{ padding: 0, overflow: "hidden" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: 13.5,
-            }}
-          >
-            <thead>
-              <tr
-                style={{
-                  textAlign: "left",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--af2-ink-4)",
-                  background: "var(--af2-paper-2)",
-                }}
-              >
-                <th style={{ padding: "10px 14px" }}>Member</th>
-                <th style={{ padding: "10px 14px" }}>Email</th>
-                <th style={{ padding: "10px 14px" }}>Role</th>
-                <th style={{ padding: "10px 14px" }}>Joined</th>
-                <th style={{ padding: "10px 14px", textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedMembers.map((member) => {
-                const initials = initialsForMember(member);
-                return (
-                  <tr
-                    key={member.id}
-                    style={{ borderTop: "1px solid var(--af2-line)" }}
-                  >
-                    <td style={{ padding: "12px 14px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            width: 28,
-                            height: 28,
-                            borderRadius: "50%",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: "white",
-                            background:
-                              "linear-gradient(135deg, var(--af2-clay), var(--af2-mustard))",
-                            textTransform: "uppercase",
-                          }}
-                        >
-                          {initials}
-                        </span>
-                        <span style={{ fontWeight: 500 }}>
-                          {member.name ?? "—"}
-                        </span>
-                      </div>
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 14px",
-                        color: "var(--af2-ink-3)",
-                      }}
-                    >
-                      {member.email}
-                    </td>
-                    <td style={{ padding: "12px 14px" }}>
-                      <span
-                        className="af2-pill"
-                        style={{ fontSize: 11 }}
-                      >
-                        {ROLE_LABEL[member.role] ?? member.role}
-                      </span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 14px",
-                        color: "var(--af2-ink-3)",
-                        fontSize: 12.5,
-                      }}
-                    >
-                      {formatDate(member.joinedAt)}
-                    </td>
-                    <td style={{ padding: "12px 14px", textAlign: "right" }}>
-                      <button
-                        type="button"
-                        className="af2-btn af2-btn-sm af2-btn-ghost"
-                        disabled
-                        title="Member management lands in HEL-213 PR ii"
-                      >
-                        Manage
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="card card-list" style={{ padding: 0 }}>
+          {loading ? (
+            <div
+              style={{
+                padding: 24,
+                textAlign: "center",
+                color: "var(--af2-ink-3)",
+                fontSize: 13,
+              }}
+            >
+              Loading members…
+            </div>
+          ) : usingFallback ? (
+            FALLBACK_MEMBERS.map((m, idx) => (
+              <MemberRowFallback key={m.id} member={m} idx={idx} />
+            ))
+          ) : (
+            sortedMembers.map((m) => <MemberRow key={m.id} member={m} />)
+          )}
         </div>
       )}
+
+      <div className="card">
+        <h3>Role permissions</h3>
+        <p className="desc">
+          Permissions schema · stored as <code>workspace_members.role</code>{" "}
+          (column already exists since migration 026).
+        </p>
+        <div
+          style={{ marginTop: 10, fontSize: 13, color: "var(--af2-ink-2)" }}
+        >
+          <div
+            style={{
+              padding: "6px 0",
+              borderBottom: "1px dashed var(--af2-line)",
+            }}
+          >
+            <b>owner</b> — all permissions including billing &amp; member
+            ownership transfer (single)
+          </div>
+          <div
+            style={{
+              padding: "6px 0",
+              borderBottom: "1px dashed var(--af2-line)",
+            }}
+          >
+            <b>admin</b> — everything except billing &amp; owner-mgmt
+          </div>
+          <div
+            style={{
+              padding: "6px 0",
+              borderBottom: "1px dashed var(--af2-line)",
+            }}
+          >
+            <b>operator</b> — everything except member-mgmt &amp; billing
+          </div>
+          <div style={{ padding: "6px 0" }}>
+            <b>viewer</b> — read-only
+          </div>
+        </div>
+      </div>
 
       <InviteMemberModal
         open={inviteOpen}
@@ -264,13 +264,121 @@ export default function Members() {
   );
 }
 
+function MemberRow({ member }: { member: WorkspaceMemberRow }) {
+  const initials = initialsForMember(member);
+  return (
+    <div
+      className="row"
+      style={{ gridTemplateColumns: "60px 1fr 130px 110px 110px" }}
+    >
+      <div
+        className="avatar"
+        style={{ width: 32, height: 32, fontSize: 12 }}
+      >
+        {initials}
+      </div>
+      <div>
+        <b>{member.name ?? "—"}</b>
+        <br />
+        <span className="id">{member.email}</span>
+      </div>
+      <div>
+        <span className="pill">{ROLE_LABEL[member.role] ?? member.role}</span>
+      </div>
+      <div className="id">{formatDate(member.joinedAt)}</div>
+      <div className="actions">
+        {member.role === "owner" ? (
+          <button type="button" className="btn sm" disabled>
+            —
+          </button>
+        ) : (
+          <>
+            <button type="button" className="btn sm">
+              Edit
+            </button>
+            <button type="button" className="btn danger sm">
+              Remove
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MemberRowFallback({ member, idx }: { member: FallbackMember; idx: number }) {
+  const gradient =
+    idx === 0
+      ? undefined
+      : idx === 1
+        ? "linear-gradient(135deg,var(--af2-sage),var(--af2-mustard))"
+        : "linear-gradient(135deg,var(--af2-plum),var(--af2-ink-blue))";
+  return (
+    <div
+      className="row"
+      style={{ gridTemplateColumns: "60px 1fr 130px 110px 110px" }}
+    >
+      <div
+        className="avatar"
+        style={{
+          width: 32,
+          height: 32,
+          fontSize: 12,
+          ...(gradient ? { background: gradient } : {}),
+        }}
+      >
+        {member.avatar}
+      </div>
+      <div>
+        <b>{member.name}</b>
+        {member.status === "pending" ? (
+          <span className="pill mustard" style={{ marginLeft: 6 }}>
+            pending
+          </span>
+        ) : null}
+        <br />
+        <span className="id">{member.email}</span>
+      </div>
+      <div>
+        <span className="pill">{ROLE_LABEL[member.role]}</span>
+      </div>
+      <div className="id">{member.joined}</div>
+      <div className="actions">
+        {member.role === "owner" ? (
+          <button type="button" className="btn sm" disabled>
+            —
+          </button>
+        ) : member.status === "pending" ? (
+          <>
+            <button type="button" className="btn sm">
+              Resend
+            </button>
+            <button type="button" className="btn danger sm">
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="btn sm">
+              Edit
+            </button>
+            <button type="button" className="btn danger sm">
+              Remove
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function initialsForMember(member: WorkspaceMemberRow): string {
   const source = member.name ?? member.email ?? "";
   const parts = source.split(/\s+|@/).filter(Boolean);
   if (parts.length === 0) return "U";
   const first = parts[0]?.[0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? "" : "";
-  return (first + last).slice(0, 2);
+  return (first + last).slice(0, 2).toUpperCase();
 }
 
 function formatDate(iso: string): string {

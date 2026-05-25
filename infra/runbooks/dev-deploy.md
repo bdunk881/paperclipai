@@ -8,7 +8,7 @@ How to get the latest `dev` branch running on the dev environment end-to-end. Ca
 
 | Surface | Where | Pulls secrets from |
 |---|---|---|
-| Backend API | `autoflow-fastapi-dev` Fly app | Infisical `dev` env via `infisical run` in Dockerfile entrypoint |
+| Backend API | `autoflow-api-dev` Fly app | Infisical `dev` env via `infisical run` in `docker/api/entrypoint.sh` |
 | Dashboard | `autoflow-dashboard` Cloudflare Pages (preview branch = `dev`) | Infisical → CF Pages env-var sync |
 | Landing | `autoflow-landing` Cloudflare Pages (preview branch = `dev`) | Same |
 | Docs | `autoflow-docs` Cloudflare Pages (preview branch = `dev`) | Same |
@@ -24,17 +24,17 @@ Per [HEL-56](https://linear.app/helloautoflow/issue/HEL-56). The `Infisical/secr
 
 **Verify:** GitHub Settings → Secrets and variables → Actions. Both should be present at the repo level.
 
-**Smoke check:** `gh workflow run deploy-fly-fastapi-dev.yml --ref dev` and watch the `Pull dev secrets from Infisical` step. If it fails with `Missing universal auth credentials`, the machine identity isn't set up.
+**Smoke check:** `gh workflow run deploy-fly-api-dev.yml --ref dev` and watch the `Pull dev secrets from Infisical` step. If it fails with `Missing universal auth credentials`, the machine identity isn't set up.
 
 ### 2. Infisical token for Fly machines
 
 Each Fly app needs `INFISICAL_TOKEN` set as a Fly secret so its Dockerfile entrypoint (`infisical run`) can authenticate at startup.
 
-**Verify:** `fly secrets list -a autoflow-fastapi-dev` shows `INFISICAL_TOKEN`.
+**Verify:** `fly secrets list -a autoflow-api-dev` shows `INFISICAL_TOKEN`.
 
 **Set:** Create a service token in Infisical scoped read-only on the `dev` env, then:
 ```bash
-fly secrets set INFISICAL_TOKEN=<token> -a autoflow-fastapi-dev
+fly secrets set INFISICAL_TOKEN=<token> -a autoflow-api-dev
 ```
 
 ### 3. Cloudflare Pages → Infisical sync
@@ -49,18 +49,19 @@ Per [HEL-7](https://linear.app/helloautoflow/issue/HEL-7). `dev` requires CI gre
 
 ## Deploying changes to dev
 
-### Backend (FastAPI on Fly)
+### Backend (TS Express on Fly)
 
 Triggered automatically on every push to `dev` that touches:
-- `backend/**`
-- `docker/backend/Dockerfile`
-- `fly.dev.toml`
-- `infra/scripts/fly_fastapi_smoke.sh`
-- `.github/workflows/deploy-fly-fastapi-dev.yml`
+- `src/**`
+- `docker/api/**`
+- `fly.api.dev.toml`
+- `infra/scripts/fly_api_smoke.sh`
+- `.github/workflows/deploy-fly-api-dev.yml`
+- `migrations/**`
 
 **Manual trigger:**
 ```bash
-gh workflow run deploy-fly-fastapi-dev.yml --ref dev
+gh workflow run deploy-fly-api-dev.yml --ref dev
 ```
 
 **Watch:**
@@ -69,14 +70,15 @@ gh run watch
 ```
 
 **What happens:**
-1. `validate-backend` — pytest runs against `backend/tests/test_knowledge_api.py`
-2. `deploy` job — pulls secrets from Infisical via the action, validates the required env vars are present, sets up `flyctl`, ensures the Fly app exists, sets `INFISICAL_PROJECT_ID` + `INFISICAL_TOKEN` on the Fly machine, runs `flyctl deploy --config fly.dev.toml`, and runs smoke checks against `https://autoflow-fastapi-dev.fly.dev`.
-3. Drains legacy per-secret values from Fly (`APP_ENV`, `DATABASE_URL`, etc.) since those now flow from Infisical at runtime.
+1. Pulls secrets from Infisical via `Infisical/secrets-action@v1`.
+2. Validates the required env vars are present (`FLY_API_TOKEN`, `DATABASE_URL`, `DEV_SUPABASE_URL`, `DEV_SUPABASE_PUBLISHABLE_KEY`).
+3. Sets up `flyctl`, ensures the Fly app exists, sets every runtime env var on the Fly machine via `flyctl secrets set`, runs `flyctl deploy --config fly.api.dev.toml`, and runs `infra/scripts/fly_api_smoke.sh` against `https://autoflow-api-dev.fly.dev` and `https://dev-api.helloautoflow.com`.
 
 **On failure:**
 - "Missing universal auth credentials" → fix HEL-56
 - "Missing required Infisical secret X" → add `X` to Infisical `dev` env
-- Fly deploy fails on container build → check `docker/backend/Dockerfile` and the `fly.dev.toml`
+- Fly deploy fails on container build → check `docker/api/Dockerfile` and `fly.api.dev.toml`
+- Migration crash on boot → see `infra/runbooks/fly-api-dev.md` for log inspection
 
 ### Dashboard / Landing / Docs (Cloudflare Pages)
 
@@ -97,22 +99,9 @@ Auto-deploys on push to `dev`. Each project has its own workflow:
 
 ### Database migrations (Supabase)
 
-**Not auto-applied.** This is intentional — schema changes need supervised application.
+The Express backend applies migrations from `migrations/0NN_*.sql` automatically on startup (`src/db/sqlMigrations.ts`). New migrations land with their feature PRs and apply on the next deploy.
 
-When a migration PR lands on `dev`, manually apply it to the dev Supabase project:
-
-```bash
-# Via Supabase CLI (preferred for the supabase/ migrations)
-supabase link --project-ref <autoflow-dev-project-ref>
-supabase db push
-
-# Or manually via psql for the legacy migrations/ directory
-psql $DEV_DATABASE_URL -f migrations/0NN_<name>.sql
-```
-
-**Verify:** check the `_migrations` or `schema_migrations` table on dev Supabase to see what's applied.
-
-**Future automation:** worth filing a follow-up to wire migration application into the deploy workflow so it's harder to forget.
+**Verify what's applied:** query `public.schema_migrations` on the dev Supabase project (`pjbpcfmidpxplcrwpcyk`) — every applied file is listed there.
 
 ## Smoke-testing the deploy
 
@@ -120,15 +109,18 @@ Once backend + dashboard are deployed:
 
 ```bash
 # Backend health
-curl https://autoflow-fastapi-dev.fly.dev/health
-# expected: {"status": "ok", ...}
-
-# Dashboard loads
-curl -I https://dev.app.helloautoflow.com    # or whatever the dev preview URL is
+curl https://dev-api.helloautoflow.com/api/health
 # expected: 200 OK
 
-# A protected route returns 401 without auth (proves the chain is wired)
-curl https://autoflow-fastapi-dev.fly.dev/api/workspaces
+# Backend smoke script (CORS preflight, /api/protected → 401, OAuth surfaces alive)
+bash infra/scripts/fly_api_smoke.sh https://dev-api.helloautoflow.com
+
+# Dashboard loads
+curl -I https://dev.helloautoflow.com
+# expected: 200 OK
+
+# A protected route returns 401 without auth (proves auth is wired)
+curl https://dev-api.helloautoflow.com/api/workspaces
 # expected: 401 Unauthorized
 ```
 
@@ -140,10 +132,10 @@ If a dev deploy breaks something:
 
 ```bash
 # List recent Fly releases
-flyctl releases -a autoflow-fastapi-dev | head
+flyctl releases -a autoflow-api-dev | head
 
-# Roll back
-flyctl deploy --image registry.fly.io/autoflow-fastapi-dev:v<previous> -a autoflow-fastapi-dev
+# Roll back to a prior version
+flyctl releases rollback <prior-version> -a autoflow-api-dev
 ```
 
 For Cloudflare Pages, every deploy is a standalone build — point the `dev` alias at an earlier deploy via the CF Pages dashboard.

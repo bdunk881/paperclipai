@@ -1,10 +1,9 @@
 name: Deploy TS Express API to Fly (production)
 
 # HEL-96 — deploys the consolidated AutoFlow Express backend to
-# `autoflow-api-production`. Cutover happens when api.helloautoflow.com's
-# Cloudflare CNAME swaps from autoflow-fastapi-production.fly.dev →
-# autoflow-api-production.fly.dev. Provider OAuth callback URLs + Stripe
-# webhook URLs do NOT change — only the Fly app behind the hostname does.
+# `autoflow-api-production`. The legacy `autoflow-fastapi-production`
+# relay shim was retired in HEL-97; api.helloautoflow.com's Cloudflare
+# CNAME points directly at autoflow-api-production.fly.dev.
 
 on:
   push:
@@ -122,5 +121,5 @@ jobs:
             echo "## Deploy: ${FLY_APP}"
             echo
             echo "- Health: $(curl -s -o /dev/null -w '%{http_code}' https://${FLY_APP}.fly.dev/health)"
-            echo "- Custom domain (post-cutover): https://api.helloautoflow.com"
+            echo "- Custom domain: https://api.helloautoflow.com"
           } >> "$GITHUB_STEP_SUMMARY"

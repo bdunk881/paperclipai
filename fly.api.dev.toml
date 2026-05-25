@@ -4,9 +4,8 @@
 # Public hostname: dev-api.helloautoflow.com (Cloudflare CNAME to <app>.fly.dev,
 # Fly cert allocated separately).
 #
-# Replaces autoflow-fastapi-dev (which is the relay shim from the aborted
-# Phase-3 cutover — see backend/fly-cutover-probe-matrix.md). FastAPI app
-# stays running in parallel until HEL-97 cleanup.
+# Replaces autoflow-fastapi-dev (the relay shim from the aborted Phase-3
+# cutover, retired in HEL-97).
 
 app = "autoflow-api-dev"
 primary_region = "ord"

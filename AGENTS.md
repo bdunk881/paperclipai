@@ -58,7 +58,7 @@ Compress a sprawling but mature open-source codebase into one sharp customer loo
 | Layer | Service |
 |---|---|
 | Frontend hosting | Cloudflare Pages/Workers |
-| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — consolidated TS Express per the [P2.5 backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). Legacy `autoflow-fastapi-*` apps retired in HEL-97.) |
+| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — consolidated TS Express per the [P2.5 backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). Legacy `autoflow-fastapi-*` relay shims retired in HEL-97 — `api.{dev-,staging-,}helloautoflow.com` now point straight at the Express.) |
 | Database + auth (CIAM) | Supabase |
 | Cache + queue broker | Upstash Redis (BullMQ in P3) |
 | Object storage | Cloudflare R2 |

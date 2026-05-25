@@ -2,8 +2,7 @@
 # Smoke test for the consolidated TS Express API on Fly (HEL-83).
 #
 # Verifies the deploy is healthy + that the public route surfaces respond
-# the way Express would (not the way FastAPI used to). Run from CI after
-# every deploy, also runnable manually:
+# as expected. Run from CI after every deploy, also runnable manually:
 #   bash infra/scripts/fly_api_smoke.sh https://autoflow-api-dev.fly.dev
 
 set -euo pipefail
@@ -115,9 +114,7 @@ require_status_in "$oauth_status" "200,302,307,400,401,404" "slack_oauth_callbac
 #    The smoke test's purpose here is to confirm the route is WIRED, not to
 #    validate Stripe behaviour. Express returns 503 from the webhook handler
 #    when the signing secret env var is missing — which is the expected dev
-#    state until we wire Stripe into the dev Fly app. The old FastAPI app
-#    returned 404 for any missing route, so accepting 503 here still proves
-#    we're hitting Express rather than a stale relay.
+#    state until we wire Stripe into the dev Fly app.
 # ---------------------------------------------------------------------------
 echo '{}' > "$tmp_dir/stripe-webhook.json"
 stripe_status=$(

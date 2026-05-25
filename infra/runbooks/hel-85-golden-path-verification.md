@@ -11,7 +11,7 @@ sub-tickets are Done or explicitly deferred.
 |---|---|
 | Dev backend healthy | `curl -i https://dev-api.helloautoflow.com/health` → 200, `{"status":"ok"}` |
 | Dev backend smoke | `bash infra/scripts/fly_api_smoke.sh https://dev-api.helloautoflow.com` → all green |
-| Dashboard pointing at dev backend | Reload `dev.helloautoflow.com` → Network tab shows requests to `dev-api.helloautoflow.com` (not `autoflow-fastapi-dev.fly.dev`) |
+| Dashboard pointing at dev backend | Reload `dev.helloautoflow.com` → Network tab shows requests to `dev-api.helloautoflow.com` |
 | Sentry env tag | Sentry → AutoFlow project → filter by env `dev` is non-empty (recent errors logged) |
 | Workspace seed | One test workspace exists with a test user that has `admin` role |
 

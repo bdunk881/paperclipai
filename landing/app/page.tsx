@@ -3,7 +3,7 @@
  *
  * Editorial port of `Projects/AutoFlow/v2/AutoFlow Landing.html`. Design
  * tokens + the `.lp-*` / `.af2-*` classes live in `./v2.css`. Real form
- * submissions still hit the FastAPI backend via `buildLandingApiUrl()`
+ * submissions hit the Express backend via `buildLandingApiUrl()`
  * (see `landing/lib/publicApi.ts`).
  */
 
@@ -402,7 +402,7 @@ function BrandLogo({ name, size = 20 }: { name: string; size?: number }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hero CTA: routes to /signup. Clicking "Hire your first agent" also pings
-// the FastAPI waitlist-signup endpoint as a top-of-funnel intent log
+// the Express waitlist-signup endpoint as a top-of-funnel intent log
 // (anonymous click; backend tolerates empty/missing email).
 
 function HireAgentCta() {
@@ -414,7 +414,7 @@ function HireAgentCta() {
 }
 
 // Pricing CTA → Stripe Checkout (production-wired) or a /signup fallback for
-// Tinker tier. The checkout endpoint lives in the FastAPI backend.
+// Tinker tier. The checkout endpoint lives in the Express backend.
 function PricingCta({
   tier,
 }: {

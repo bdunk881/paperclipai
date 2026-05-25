@@ -369,12 +369,16 @@ describe("P1 table RLS integration (HEL-70)", () => {
     // ---- NULL workspace context denies all ---------------------------------
     // Use a transaction with SET LOCAL ROLE autoflow_api so the null-context
     // check runs under a role that is actually subject to RLS policies.
+    // We do NOT attempt "SET LOCAL app.current_workspace_id TO DEFAULT" here
+    // because that statement errors on PostgreSQL 16 when the custom GUC
+    // placeholder has never been set in this session.  A fresh or recycled
+    // pool connection already has an unset (or '') app.current_workspace_id
+    // at the session level, so app_current_workspace_id() returns NULL and
+    // all tenant-isolation policies deny access — no explicit reset needed.
     const nullClient = await pool.connect();
     try {
       await nullClient.query("BEGIN");
       await nullClient.query("SET LOCAL ROLE autoflow_api");
-      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
-      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       for (const [table, id] of [
         ["workflows", wfA],
         ["workflow_versions", wfvA],
@@ -550,8 +554,6 @@ describe("P1 table RLS integration (HEL-70)", () => {
     try {
       await nullClient.query("BEGIN");
       await nullClient.query("SET LOCAL ROLE autoflow_api");
-      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
-      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       for (const [table, id] of [
         ["activity_events", actEvtA],
         ["connector_connections", connA],
@@ -616,8 +618,6 @@ describe("P1 table RLS integration (HEL-70)", () => {
     try {
       await nullClient.query("BEGIN");
       await nullClient.query("SET LOCAL ROLE autoflow_api");
-      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
-      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       const r = await nullClient.query(`SELECT id FROM approvals WHERE id = $1`, [approvalA]);
       expect(r.rowCount ?? r.rows.length).toBe(0);
       await nullClient.query("COMMIT");
@@ -667,8 +667,6 @@ describe("P1 table RLS integration (HEL-70)", () => {
     try {
       await nullClient.query("BEGIN");
       await nullClient.query("SET LOCAL ROLE autoflow_api");
-      await nullClient.query("SET LOCAL app.current_workspace_id TO DEFAULT");
-      await nullClient.query("SET LOCAL app.current_user_id TO DEFAULT");
       const r = await nullClient.query(`SELECT id FROM audit_log WHERE id = $1`, [auditA]);
       expect(r.rowCount ?? r.rows.length).toBe(0);
       await nullClient.query("COMMIT");

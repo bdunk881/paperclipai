@@ -12,6 +12,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY dashboard/ ./
+# tsconfig.json maps @autoflow/logo-dev → ../shared/logoDev/index.ts
+# With baseUrl="." (→ /app/), that resolves to /shared/logoDev/index.ts
+COPY shared/ /shared/
 
 ARG BUILD_SHA=unknown
 ARG BUILD_DATE=unknown

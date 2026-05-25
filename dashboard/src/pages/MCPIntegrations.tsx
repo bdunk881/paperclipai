@@ -46,7 +46,7 @@ import { getApiBasePath } from "../api/baseUrl";
 import { trackedFetch } from "../api/trackedFetch";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
-import { CompanyLogo } from "../components/CompanyLogo";
+import { CompanyLogo } from "@autoflow/logo-dev";
 import {
   LIVE_CONNECTOR_PROVIDER_BY_KEY,
   type ProviderKey,

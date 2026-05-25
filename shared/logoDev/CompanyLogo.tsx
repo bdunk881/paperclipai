@@ -4,7 +4,7 @@ import {
   buildLogoDevUrl,
   getLogoDevPublishableKey,
   resolveIntegrationLogoDomain,
-} from "../lib/logoDev";
+} from "./logoDev";
 
 export interface CompanyLogoProps {
   /** Brand display name (also used for alt text and initials fallback). */

@@ -14,6 +14,11 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_LOGO_DEV_PUBLISHABLE_KEY":
         JSON.stringify(logoDevPublishableKey),
     },
+    resolve: {
+      alias: {
+        "@autoflow/logo-dev": path.resolve(__dirname, "../shared/logoDev/index.ts"),
+      },
+    },
     plugins: [
       react(),
       // sentryVitePlugin must come last; only runs when SENTRY_AUTH_TOKEN is set
@@ -39,6 +44,7 @@ export default defineConfig(({ mode }) => {
         allow: [
           path.resolve(__dirname),
           path.resolve(__dirname, "../infra/brand-assets"),
+          path.resolve(__dirname, "../shared"),
         ],
       },
       proxy: {

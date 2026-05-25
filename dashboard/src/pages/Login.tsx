@@ -12,13 +12,12 @@ import {
   signUpWithSupabasePassword,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 type AuthMode = "signin" | "signup" | "magic-link";
 
 // HEL-76: noise overlay + obsidian lockup dropped for v2 cream/clay aesthetic.
 // Inline AutoFlowMark + cream paper backdrop match the landing's editorial style.
-const googleLogoUrl = new URL("../../../infra/brand-assets/payload/logos/integrations/google/logo.svg", import.meta.url).href;
-const githubLogoUrl = new URL("../assets/integrations/github.svg", import.meta.url).href;
 
 function AutoFlowMark({ size = 28 }: { size?: number }) {
   return (
@@ -493,14 +492,14 @@ function Field({
 }
 
 function ProviderIcon({ provider, disabled }: { provider: SupabaseOAuthProvider; disabled: boolean }) {
-  const logoSrc = provider === "google" ? googleLogoUrl : githubLogoUrl;
+  const label = provider === "google" ? "Google" : "GitHub";
 
   return (
-    <img
-      src={logoSrc}
-      alt=""
-      aria-hidden="true"
-      className={`h-6 w-6 object-contain ${disabled ? "grayscale opacity-60" : ""}`}
+    <CompanyLogo
+      integrationId={provider}
+      name={label}
+      size={24}
+      className={disabled ? "grayscale opacity-60" : undefined}
     />
   );
 }

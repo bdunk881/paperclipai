@@ -1,38 +1,38 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useId, useState } from "react";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 const MARKETPLACE_TILES = [
   {
     name: "Slack",
-    logo: "/integrations/slack.svg",
+    integrationId: "slack",
     description: "Route approvals, launch agent handoffs, and keep the team in sync automatically.",
   },
   {
     name: "GitHub",
-    logo: "/integrations/github.svg",
+    integrationId: "github",
     description: "Trigger build reviews, ship fixes, and keep release status attached to every PR.",
   },
   {
     name: "Linear",
-    logo: "/integrations/linear.svg",
+    integrationId: "linear",
     description: "Automate triage, status changes, and escalation paths across your sprint board.",
   },
   {
     name: "Notion",
-    logo: "/integrations/notion.svg",
+    integrationId: "notion",
     description: "Turn operating docs into action and sync project context directly into live runs.",
   },
   {
     name: "Stripe",
-    logo: "/integrations/stripe.svg",
+    integrationId: "stripe",
     description: "Connect revenue events to onboarding, retention, and expansion workflows.",
   },
   {
     name: "PostgreSQL",
-    logo: "/integrations/postgresql.svg",
+    integrationId: "postgresql",
     description: "Query system state, persist execution data, and close the loop on every workflow.",
   },
 ];
@@ -291,7 +291,11 @@ export default function Home() {
           {MARKETPLACE_TILES.map((tile) => (
             <article key={tile.name} className="marketplace-tile">
               <div className="marketplace-tile__logo">
-                <Image alt={`${tile.name} logo`} src={tile.logo} width={48} height={48} />
+                <CompanyLogo
+                  name={tile.name}
+                  integrationId={tile.integrationId}
+                  size={48}
+                />
               </div>
               <div className="marketplace-tile__badge">MCP verified</div>
               <h3>{tile.name}</h3>

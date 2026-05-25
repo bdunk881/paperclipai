@@ -25,7 +25,7 @@ import {
   type ConnectorHealthSummary,
 } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
-import { CompanyLogo } from "../components/CompanyLogo";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 const POLL_INTERVAL_MS = 30_000;
 

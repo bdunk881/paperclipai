@@ -2,7 +2,7 @@ import {
   buildIntegrationLogoUrl,
   buildLogoDevUrl,
   resolveIntegrationLogoDomain,
-} from "./logoDev";
+} from "@autoflow/logo-dev";
 
 describe("logoDev", () => {
   const token = "pk_test_key";
@@ -10,6 +10,7 @@ describe("logoDev", () => {
   it("resolves known integration domains", () => {
     expect(resolveIntegrationLogoDomain("slack")).toBe("slack.com");
     expect(resolveIntegrationLogoDomain("STRIPE")).toBe("stripe.com");
+    expect(resolveIntegrationLogoDomain("attio")).toBe("attio.com");
     expect(resolveIntegrationLogoDomain("unknown-tool")).toBeUndefined();
   });
 

@@ -24,6 +24,7 @@ export const INTEGRATION_LOGO_DOMAINS: Record<string, string> = {
   intercom: "intercom.com",
   sanity: "sanity.io",
   composio: "composio.dev",
+  attio: "attio.com",
   google: "google.com",
   postgresql: "postgresql.org",
   posthog: "posthog.com",
@@ -70,7 +71,22 @@ export interface LogoDevUrlOptions {
 }
 
 export function getLogoDevPublishableKey(): string {
-  return String(import.meta.env.VITE_LOGO_DEV_PUBLISHABLE_KEY ?? "").trim();
+  const viteEnv =
+    typeof import.meta !== "undefined"
+      ? (import.meta as unknown as { env?: { VITE_LOGO_DEV_PUBLISHABLE_KEY?: string } }).env
+      : undefined;
+  const viteKey = viteEnv?.VITE_LOGO_DEV_PUBLISHABLE_KEY
+    ? String(viteEnv.VITE_LOGO_DEV_PUBLISHABLE_KEY)
+    : "";
+  if (viteKey.trim()) return viteKey.trim();
+
+  const nextKey =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY
+      ? String(process.env.NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY)
+      : "";
+  if (nextKey.trim()) return nextKey.trim();
+
+  return "";
 }
 
 export function resolveIntegrationLogoDomain(idOrKey: string): string | undefined {

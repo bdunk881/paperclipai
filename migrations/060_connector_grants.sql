@@ -40,7 +40,19 @@ end $$;
 alter table connector_grants enable row level security;
 alter table connector_grants force row level security;
 drop policy if exists connector_grants_workspace_isolation on connector_grants;
+-- Use the app_current_workspace_id() / withWorkspaceContext() pattern that
+-- the rest of the codebase relies on (migrations 014, 017, 061, 064). The
+-- earlier "user_id = auth.uid()" join is Supabase-flavoured and breaks on
+-- dev/CI where the auth.uid() stub returns text while workspace_members.user_id
+-- is uuid — Postgres aborts CREATE POLICY with `operator does not exist: text = uuid`.
 create policy connector_grants_workspace_isolation on connector_grants
-  using (workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()));
+  using (
+    app_current_workspace_id() is not null
+    and workspace_id = app_current_workspace_id()
+  )
+  with check (
+    app_current_workspace_id() is not null
+    and workspace_id = app_current_workspace_id()
+  );
 create index if not exists connector_grants_workspace_connector_idx
   on connector_grants (workspace_id, connector_id);

@@ -42,8 +42,20 @@ alter table workspace_member_invites enable row level security;
 alter table workspace_member_invites force row level security;
 
 drop policy if exists invites_ws on workspace_member_invites;
+-- Use the app_current_workspace_id() / withWorkspaceContext() pattern that
+-- the rest of the codebase relies on (migrations 014, 017, 061, 064). The
+-- earlier "user_id = auth.uid()" join breaks on dev/CI where auth.uid()
+-- returns text while workspace_members.user_id is uuid — Postgres aborts
+-- CREATE POLICY with `operator does not exist: text = uuid`.
 create policy invites_ws on workspace_member_invites
-  using (workspace_id in (select workspace_id from workspace_members where user_id = auth.uid()));
+  using (
+    app_current_workspace_id() is not null
+    and workspace_id = app_current_workspace_id()
+  )
+  with check (
+    app_current_workspace_id() is not null
+    and workspace_id = app_current_workspace_id()
+  );
 
 create index if not exists workspace_member_invites_workspace_idx
   on workspace_member_invites (workspace_id);

@@ -1,13 +1,15 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useExperienceMode } from "../context/ExperienceModeContext";
+import { useWorkspace } from "../context/useWorkspace";
 
 /**
- * Af2UserMenu — popover that anchors under the topbar avatar (HEL-203 / PR 1).
+ * Af2UserMenu — popover that anchors under the topbar avatar (HEL-213 / PR I).
  *
- * Items: Account · Members · Billing · Sign out. Routes target /settings/*
- * which already exist in the router; PR 11 (HEL-213) will introduce
- * dedicated Account/Members/Billing pages and update these targets.
+ * Items: Account · Members · Billing · Sign out. Routes target the
+ * top-level /account, /members, /billing pages added in router.tsx (the
+ * old /settings/* paths now redirect to these).
  *
  * Visibility/positioning is controlled by the caller — this component
  * renders nothing when `open` is false. The caller passes an `anchorRect`
@@ -35,6 +37,13 @@ type MenuItem = {
 export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  // Workspace + plan are surfaced in the menu header beneath the user's
+  // name/email. Both contexts wrap the entire authenticated shell where
+  // this menu mounts, so reading them here is safe.
+  const { activeWorkspace } = useWorkspace();
+  const { mode: experienceMode } = useExperienceMode();
+  const workspaceName = activeWorkspace?.name ?? null;
+  const planLabel = experienceMode === "pro" ? "Pro" : "Simple";
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   // Esc to close, regardless of focus location.
@@ -74,7 +83,7 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
       key: "account",
       label: "Account",
       action: () => {
-        navigate("/settings/profile");
+        navigate("/account");
         onClose();
       },
     },
@@ -82,7 +91,7 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
       key: "members",
       label: "Members",
       action: () => {
-        navigate("/settings");
+        navigate("/members");
         onClose();
       },
     },
@@ -90,7 +99,7 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
       key: "billing",
       label: "Billing",
       action: () => {
-        navigate("/settings");
+        navigate("/billing");
         onClose();
       },
     },
@@ -141,11 +150,24 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
             marginBottom: 4,
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--af2-ink)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--af2-ink)" }}>
             {user.name || user.email}
           </div>
-          {user.name && user.email ? (
-            <div style={{ fontSize: 11.5, color: "var(--af2-ink-4)" }}>{user.email}</div>
+          {user.email ? (
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "var(--af2-ink-4)",
+                fontFamily: "var(--af2-mono)",
+              }}
+            >
+              {user.email}
+            </div>
+          ) : null}
+          {workspaceName ? (
+            <div style={{ fontSize: 11.5, color: "var(--af2-ink-4)", marginTop: 2 }}>
+              {workspaceName} · {planLabel}
+            </div>
           ) : null}
         </div>
       ) : null}

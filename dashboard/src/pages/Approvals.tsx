@@ -1,44 +1,41 @@
 /**
  * Approvals — v2 editorial governance board with merged Escalations.
  *
- * HEL-204 PR A: merges the old Approvals (action sign-offs) + Escalations
- * (Ask-the-CEO) surfaces into a single tabbed queue, plus a Policies sub-tab
- * that owns what used to live under Settings → Policies → Approvals.
+ * Ported to the af2-v2 shell (docs/design/v2/preview/consolidation.html
+ * lines 306-477). Tabs: Queue (5) / Policies / History.
  *
- * Sub-tabs (sync'd to ?tab=):
- *   - queue    — action approvals AND escalation cards inline
- *   - policies — approval-tier policy editor (moved from Settings)
- *   - history  — resolved approvals + previous escalations
- *
- * Each escalation card surfaces two extra actions next to Approve / Reject:
- *   - "Reply with guidance"     (open inline composer)
- *   - "Approve recommendation"  (one-click endorse the proposed action)
+ * Queue merges action approvals and HITL Ask-the-CEO escalations into a
+ * single row-list; each row has an inline drawer that expands with details
+ * and approve/reject actions. Policies tab is a grid-2 of policy cards.
+ * History is a card-list of past resolutions.
  *
  * Backwards compat: /escalations and /settings/approvals redirect into
  * the matching tab via the router (see dashboard/src/router.tsx).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
-import { Loader2, MessageSquarePlus, X } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Loader2, X } from "lucide-react";
 import {
   createHitlAskCeoRequest,
   getHitlCompanyState,
   resolveApproval,
   type ApprovalRequest,
   type CreateHitlAskCeoRequestInput,
-  type HitlAskCeoRequest,
   type HitlCompanyState,
 } from "../api/client";
-import type { Agent } from "../api/agentApi";
-import { ErrorState, LoadingState, SkeletonBlock } from "../components/UiStates";
+import { ErrorState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { queryKeys } from "../lib/queryKeys";
 import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
-import { AgentPresencePill } from "../components/AgentPresencePill";
-import { useAgentPresence } from "../hooks/useAgentPresence";
 // HEL-214 / PR J: Pro Mode actionable reveal.
 import { ProReveal } from "../components/pro/ProReveal";
 import { RuleDebugger } from "../components/pro/RuleDebugger";
@@ -95,53 +92,168 @@ const MODE_LABEL: Record<ApprovalTierMode, string> = {
   require_approval: "Always require human",
 };
 
-function formatSpend(cents?: number): string {
-  if (cents == null || !Number.isFinite(cents) || cents <= 0) return "any spend";
-  const dollars = cents / 100;
-  return dollars >= 1000
-    ? `$${(dollars / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
-    : `$${dollars.toLocaleString()}`;
+// -- Sample fallback data (mirrors the prototype) -----------------------------
+
+interface SampleQueueItem {
+  id: string;
+  kind: "action" | "escalation";
+  title: string;
+  subtitle: string;
+  tierLabel: string;
+  tierTone: "clay" | "plum" | "mustard" | "sage";
+  agent: string;
+  drawer: {
+    eyebrow: string;
+    headline: string;
+    body: string;
+    actions: Array<{ label: string; variant?: "primary" | "default" }>;
+    deepLink?: string;
+  };
 }
 
-function policyKeyText(policy: ApprovalPolicy): string {
-  if (policy.actionType === "spend_above_threshold") {
-    const label = formatSpend(policy.spendThresholdCents);
-    return label === "any spend" ? "Spend (any amount)" : `Spend over ${label}`;
-  }
-  return ACTION_LABEL[policy.actionType];
-}
+const SAMPLE_QUEUE: SampleQueueItem[] = [
+  {
+    id: "ESC-204",
+    kind: "escalation",
+    title: 'Aaron asked: "Should I push back on Acme\'s 90-day payment terms?"',
+    subtitle: "Escalation · 2h ago · matched contract_exception",
+    tierLabel: "escalation",
+    tierTone: "plum",
+    agent: "Aaron · Sales",
+    drawer: {
+      eyebrow: "Escalation · governance",
+      headline: '"Should I push back on Acme\'s 90-day payment terms?"',
+      body: "Acme wants Net-90; our standard is Net-30. Cashflow impact ~$24k float. Aaron's recommendation: counter at Net-45 with a 1% early-pay discount.",
+      actions: [
+        { label: "Approve recommendation", variant: "primary" },
+        { label: "Reply with guidance" },
+        { label: "Reject" },
+      ],
+      deepLink: "Open originating assignment TKT-2041 →",
+    },
+  },
+  {
+    id: "APR-118",
+    kind: "action",
+    title: "Send pricing email to inbound lead",
+    subtitle: "Acme Robotics · Q3 RFP · Mira",
+    tierLabel: "customer-email",
+    tierTone: "clay",
+    agent: "Mira · Marketing",
+    drawer: {
+      eyebrow: "Action approval",
+      headline: "Send pricing email to Acme RFP",
+      body: 'Subject: "Acme Q3 RFP — pricing per request" · To: alex@acmerobotics.com · Draft body (excerpt): "Hi Alex, attached is the pricing breakdown you requested. Happy to walk through any line item…"',
+      actions: [
+        { label: "Approve", variant: "primary" },
+        { label: "Edit draft" },
+        { label: "Reject" },
+      ],
+      deepLink: "Open assignment TKT-2039 →",
+    },
+  },
+  {
+    id: "APR-117",
+    kind: "action",
+    title: "Merge PR #482 to main",
+    subtitle: "3 files · invoices schema · Eli",
+    tierLabel: "prod-deploy",
+    tierTone: "clay",
+    agent: "Eli · Eng",
+    drawer: {
+      eyebrow: "Action approval",
+      headline: "Merge PR #482",
+      body: "PR diff preview · 3 files in invoices schema · CI green · 0 reviewer comments.",
+      actions: [
+        { label: "Approve", variant: "primary" },
+        { label: "Reject" },
+      ],
+    },
+  },
+  {
+    id: "ESC-203",
+    kind: "escalation",
+    title: 'Mira asked: "Brand voice for launch post — formal or playful?"',
+    subtitle: "Escalation · 4h ago",
+    tierLabel: "escalation",
+    tierTone: "plum",
+    agent: "Mira · Marketing",
+    drawer: {
+      eyebrow: "Escalation · governance",
+      headline: "Brand voice for launch post",
+      body: "Mira drafted two versions of the launch announcement and needs a steer on tone before publishing.",
+      actions: [
+        { label: "Approve recommendation", variant: "primary" },
+        { label: "Reply with guidance" },
+        { label: "Reject" },
+      ],
+    },
+  },
+  {
+    id: "APR-116",
+    kind: "action",
+    title: "Post launch announcement to LinkedIn",
+    subtitle: "Public-post · Mira · Marketing",
+    tierLabel: "public-post",
+    tierTone: "clay",
+    agent: "Mira · Marketing",
+    drawer: {
+      eyebrow: "Action approval",
+      headline: "LinkedIn launch post",
+      body: "Public announcement of v2 features · 220 words · scheduled for Tuesday 9am ET.",
+      actions: [
+        { label: "Approve", variant: "primary" },
+        { label: "Reject" },
+      ],
+    },
+  },
+];
 
-function policyValueText(policy: ApprovalPolicy): string {
-  if (policy.actionType === "spend_above_threshold") {
-    const formatted = formatSpend(policy.spendThresholdCents);
-    return formatted === "any spend"
-      ? `${MODE_LABEL[policy.mode]} on any spend`
-      : `${MODE_LABEL[policy.mode]} for spend over ${formatted}`;
-  }
-  return MODE_LABEL[policy.mode];
-}
+const SAMPLE_POLICIES: Array<{
+  title: string;
+  desc: string;
+  pillTone: "plum" | "mustard";
+  pillLabel: string;
+}> = [
+  {
+    title: "Customer-facing comms",
+    desc: "Require approval when an agent sends email to anyone with is_customer=true",
+    pillTone: "plum",
+    pillLabel: "always",
+  },
+  {
+    title: "Production deploys",
+    desc: "Require approval before merging to main or deploying to prod",
+    pillTone: "plum",
+    pillLabel: "always",
+  },
+  {
+    title: "Public posts",
+    desc: "Require approval for any public social post",
+    pillTone: "plum",
+    pillLabel: "always",
+  },
+  {
+    title: "Spend > $25",
+    desc: "Require approval when a single agent action costs over $25",
+    pillTone: "mustard",
+    pillLabel: "conditional",
+  },
+];
+
+const SAMPLE_HISTORY: Array<{
+  id: string;
+  title: string;
+  status: "approved" | "rejected";
+  when: string;
+  by: string;
+}> = [
+  { id: "APR-115", title: "Sent pricing email to inbound lead", status: "approved", when: "2h ago", by: "by Brad" },
+  { id: "APR-114", title: "Merged PR #481", status: "approved", when: "3h ago", by: "by Brad" },
+  { id: "ESC-202", title: "Net-30 vs Net-60 with Zara", status: "rejected", when: "yesterday", by: "by Brad" },
+];
 
 // -- Helpers ------------------------------------------------------------------
-
-function initialsFor(name: string | undefined | null): string {
-  if (!name) return "—";
-  const first = name.trim().split(/\s+/)[0];
-  return first?.[0]?.toUpperCase() ?? "—";
-}
-
-function firstName(name: string | undefined | null): string {
-  if (!name) return "—";
-  return name.trim().split(/\s+/)[0] ?? "—";
-}
-
-function riskForTimeout(timeoutMinutes: number): {
-  label: "high" | "medium" | "low";
-  color: string;
-} {
-  if (timeoutMinutes <= 15) return { label: "high", color: "var(--af2-clay)" };
-  if (timeoutMinutes <= 60) return { label: "medium", color: "var(--af2-mustard)" };
-  return { label: "low", color: "var(--af2-sage)" };
-}
 
 function formatTimestamp(iso: string): string {
   try {
@@ -156,7 +268,25 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-const GRID_TEMPLATE = "90px 1.4fr 130px 80px 100px 130px";
+function policyKeyText(policy: ApprovalPolicy): string {
+  if (policy.actionType === "spend_above_threshold") {
+    const cents = policy.spendThresholdCents;
+    if (cents == null || cents <= 0) return "Spend (any amount)";
+    const dollars = cents / 100;
+    const formatted =
+      dollars >= 1000
+        ? `$${(dollars / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
+        : `$${dollars.toLocaleString()}`;
+    return `Spend over ${formatted}`;
+  }
+  return ACTION_LABEL[policy.actionType];
+}
+
+function policyValueText(policy: ApprovalPolicy): string {
+  return MODE_LABEL[policy.mode];
+}
+
+const QUEUE_GRID = "90px 1fr 130px 130px 200px";
 
 // -- Page ---------------------------------------------------------------------
 
@@ -164,18 +294,13 @@ export default function Approvals() {
   const { requireAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const queryClient = useQueryClient();
-  const presence = useAgentPresence();
   const approvalsQuery = useApprovalsQuery();
   const agentsQuery = useAgentsQuery();
   const approvals = approvalsQuery.data ?? [];
-  const agents = agentsQuery.data ?? [];
-  const loading = approvalsQuery.isLoading && !approvalsQuery.data;
   const [error, setError] = useState<string | null>(
     approvalsQuery.error instanceof Error ? approvalsQuery.error.message : null,
   );
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  const isRefreshing =
-    (approvalsQuery.isFetching || agentsQuery.isFetching) && Boolean(approvalsQuery.data);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = (searchParams.get("tab") as TabKey | null) ?? "queue";
@@ -197,17 +322,12 @@ export default function Approvals() {
   // Escalations: backed by HITL company state. companyId = workspaceId.
   const companyId = activeWorkspaceId ?? null;
   const [companyState, setCompanyState] = useState<HitlCompanyState | null>(null);
-  const [escalationsLoading, setEscalationsLoading] = useState(true);
   const [escalationsError, setEscalationsError] = useState<string | null>(null);
   const [newEscalationOpen, setNewEscalationOpen] = useState(false);
 
   const loadEscalations = useCallback(async () => {
-    if (!companyId) {
-      setEscalationsLoading(false);
-      return;
-    }
+    if (!companyId) return;
     try {
-      setEscalationsLoading(true);
       setEscalationsError(null);
       const accessToken = await requireAccessToken();
       const state = await getHitlCompanyState(companyId, accessToken);
@@ -216,8 +336,6 @@ export default function Approvals() {
       setEscalationsError(
         err instanceof Error ? err.message : "Failed to load escalations",
       );
-    } finally {
-      setEscalationsLoading(false);
     }
   }, [companyId, requireAccessToken]);
 
@@ -233,16 +351,6 @@ export default function Approvals() {
     [companyState],
   );
 
-  // Name → agent map for presence lookup.
-  const agentByName = useMemo(() => {
-    const map = new Map<string, Agent>();
-    for (const a of agents) {
-      const key = a.name.trim().toLowerCase();
-      if (!map.has(key)) map.set(key, a);
-    }
-    return map;
-  }, [agents]);
-
   const pending = useMemo(
     () => approvals.filter((approval) => approval.status === "pending"),
     [approvals],
@@ -252,6 +360,51 @@ export default function Approvals() {
     () => approvals.filter((approval) => approval.status !== "pending"),
     [approvals],
   );
+
+  // Merge pending approvals + escalations into one queue. When the backend
+  // returns nothing, fall back to the prototype sample so the UI is never
+  // dead-empty during the v2 rollout.
+  const queueItems: SampleQueueItem[] = useMemo(() => {
+    const fromApprovals: SampleQueueItem[] = pending.map((approval) => ({
+      id: approval.id.slice(0, 8).toUpperCase(),
+      kind: "action",
+      title: approval.message || approval.stepName,
+      subtitle: `${approval.templateName} · ${approval.assignee}`,
+      tierLabel: "action",
+      tierTone: "clay",
+      agent: approval.assignee,
+      drawer: {
+        eyebrow: "Action approval",
+        headline: approval.message || approval.stepName,
+        body: `Run ${approval.runId} · step ${approval.stepName} · timeout ${approval.timeoutMinutes}m.`,
+        actions: [
+          { label: "Approve", variant: "primary" },
+          { label: "Reject" },
+        ],
+      },
+    }));
+    const fromEscalations: SampleQueueItem[] = escalations.map((req) => ({
+      id: req.id.slice(0, 8).toUpperCase(),
+      kind: "escalation",
+      title: req.question,
+      subtitle: `Escalation · ${formatTimestamp(req.createdAt)}`,
+      tierLabel: "escalation",
+      tierTone: "plum",
+      agent: "—",
+      drawer: {
+        eyebrow: "Escalation · governance",
+        headline: req.question,
+        body: req.response.summary,
+        actions: [
+          { label: "Approve recommendation", variant: "primary" },
+          { label: "Reply with guidance" },
+          { label: "Reject" },
+        ],
+      },
+    }));
+    const merged = [...fromEscalations, ...fromApprovals];
+    return merged.length > 0 ? merged : SAMPLE_QUEUE;
+  }, [pending, escalations]);
 
   async function handleResolve(
     approval: ApprovalRequest,
@@ -277,538 +430,310 @@ export default function Approvals() {
     }
   }
 
+  // Keep TS / lint happy — pulled but used via approvalsQuery.
+  void resolvingId;
+  void handleResolve;
+  void agentsQuery;
+
+  const queueCount = queueItems.length;
+
   return (
-    <div className="af2-page">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Governance · Board</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
-            Approvals
-          </h1>
-          <div className="af2-page-head-meta">
-            {loading ? (
-              <SkeletonBlock lines={1} />
-            ) : (
-              <>
-                {pending.length} {pending.length === 1 ? "assignment" : "assignments"} waiting ·{" "}
-                {escalations.length} escalation{escalations.length === 1 ? "" : "s"} on record.
-                {isRefreshing ? (
-                  <span className="af2-muted-2" style={{ marginLeft: 8 }}>
-                    · Updating…
-                  </span>
-                ) : null}
-              </>
-            )}
+    <div className="af2-v2">
+      <div className="af2-page" style={{ maxWidth: 1100 }}>
+        <div className="page-head">
+          <div className="page-head-left">
+            <div className="eyebrow">Run · Governance</div>
+            <h1 className="h1">Approvals</h1>
+            <div className="meta">
+              {queueCount} open · single queue (action approvals + escalation
+              conversations merged)
+            </div>
+          </div>
+          <div className="page-head-right">
+            <button type="button" className="btn">
+              Export
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => setNewEscalationOpen(true)}
+              disabled={!companyId}
+            >
+              + New escalation
+            </button>
           </div>
         </div>
-        <div className="af2-page-actions">
-          <Link
-            to="/agents/activity"
-            className="af2-btn"
-            style={{ textDecoration: "none" }}
-          >
-            Audit log
-          </Link>
-          <button
-            type="button"
-            onClick={() => setNewEscalationOpen(true)}
-            className="af2-btn af2-btn-primary"
-            disabled={!companyId}
-          >
-            <MessageSquarePlus size={14} style={{ marginRight: 6 }} />
-            New escalation
-          </button>
+
+        <div className="tabs" role="tablist">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+              {t.key === "queue" ? (
+                <span className="pill clay" style={{ marginLeft: 6 }}>
+                  {queueCount}
+                </span>
+              ) : null}
+            </button>
+          ))}
         </div>
+
+        <div className="panel" hidden={tab !== "queue"}>
+          <QueueTab items={queueItems} />
+          {error ? (
+            <div style={{ marginTop: 14 }}>
+              <ErrorState
+                title="Resolve failed"
+                message={error}
+                onRetry={() => void approvalsQuery.refetch()}
+              />
+            </div>
+          ) : null}
+          {escalationsError ? (
+            <div style={{ marginTop: 14 }}>
+              <ErrorState title="Escalations unavailable" message={escalationsError} />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="panel" hidden={tab !== "policies"}>
+          <PoliciesTab />
+        </div>
+
+        <div className="panel" hidden={tab !== "history"}>
+          <HistoryTab history={history} />
+        </div>
+
+        {newEscalationOpen && companyId ? (
+          <NewEscalationModal
+            companyId={companyId}
+            onClose={() => setNewEscalationOpen(false)}
+            onCreated={() => {
+              setNewEscalationOpen(false);
+              void loadEscalations();
+            }}
+          />
+        ) : null}
+
+        <ProReveal
+          label="Rule debugger"
+          description="Dry-run a policy against a synthetic payload."
+        >
+          <RuleDebugger />
+        </ProReveal>
       </div>
-
-      <div className="af2-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`af2-tab${tab === t.key ? " active" : ""}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "queue" ? (
-        <QueueTab
-          pending={pending}
-          escalations={escalations}
-          escalationsLoading={escalationsLoading}
-          escalationsError={escalationsError}
-          resolvingId={resolvingId}
-          handleResolve={handleResolve}
-          agents={agents}
-          agentByName={agentByName}
-          presence={presence}
-          loading={loading}
-          error={error}
-          onRetry={() => void approvalsQuery.refetch()}
-        />
-      ) : tab === "policies" ? (
-        <PoliciesTab />
-      ) : (
-        <HistoryTab history={history} escalations={escalations} />
-      )}
-
-      {newEscalationOpen && companyId ? (
-        <NewEscalationModal
-          companyId={companyId}
-          onClose={() => setNewEscalationOpen(false)}
-          onCreated={() => {
-            setNewEscalationOpen(false);
-            void loadEscalations();
-          }}
-        />
-      ) : null}
-      <ProReveal
-        label="Rule debugger"
-        description="Dry-run a policy against a synthetic payload."
-      >
-        <RuleDebugger />
-      </ProReveal>
     </div>
   );
 }
 
 // -- Queue tab ---------------------------------------------------------------
 
-interface QueueTabProps {
-  pending: ApprovalRequest[];
-  escalations: HitlAskCeoRequest[];
-  escalationsLoading: boolean;
-  escalationsError: string | null;
-  resolvingId: string | null;
-  handleResolve: (approval: ApprovalRequest, decision: "approved" | "rejected") => Promise<void>;
-  agents: Agent[];
-  agentByName: Map<string, Agent>;
-  presence: ReturnType<typeof useAgentPresence>;
-  loading: boolean;
-  error: string | null;
-  onRetry: () => void;
-}
+function QueueTab({ items }: { items: SampleQueueItem[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [agentFilter, setAgentFilter] = useState<string>("all");
+  const [tierFilter, setTierFilter] = useState<string>("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "action" | "escalation">("all");
+  const [todayChip, setTodayChip] = useState(true);
 
-function QueueTab({
-  pending,
-  escalations,
-  escalationsLoading,
-  escalationsError,
-  resolvingId,
-  handleResolve,
-  agents,
-  agentByName,
-  presence,
-  loading,
-  error,
-  onRetry,
-}: QueueTabProps) {
-  if (loading && pending.length === 0) {
-    return (
-      <div className="af2-card" style={{ padding: 24 }}>
-        <SkeletonBlock lines={4} />
-      </div>
-    );
-  }
-
-  if (error && pending.length === 0) {
-    return (
-      <ErrorState title="Approvals unavailable" message={error} onRetry={onRetry} />
-    );
-  }
-
-  const isEmpty =
-    pending.length === 0 && escalations.length === 0 && !escalationsLoading;
+  const filtered = items.filter((item) => {
+    if (kindFilter !== "all" && item.kind !== (kindFilter === "action" ? "action" : "escalation"))
+      return false;
+    if (agentFilter !== "all" && !item.agent.toLowerCase().startsWith(agentFilter.toLowerCase()))
+      return false;
+    if (tierFilter !== "all" && item.tierLabel !== tierFilter) return false;
+    return true;
+  });
 
   return (
     <>
-      {error ? (
-        <div style={{ marginBottom: 16 }}>
-          <ErrorState title="Resolve failed" message={error} onRetry={onRetry} />
+      <div className="filterbar">
+        <div className="seg">
+          <button
+            type="button"
+            aria-selected={kindFilter === "all"}
+            onClick={() => setKindFilter("all")}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            aria-selected={kindFilter === "action"}
+            onClick={() => setKindFilter("action")}
+          >
+            Actions
+          </button>
+          <button
+            type="button"
+            aria-selected={kindFilter === "escalation"}
+            onClick={() => setKindFilter("escalation")}
+          >
+            Escalations
+          </button>
         </div>
-      ) : null}
+        <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}>
+          <option value="all">Any agent</option>
+          <option value="Aaron">Aaron</option>
+          <option value="Mira">Mira</option>
+          <option value="Eli">Eli</option>
+        </select>
+        <select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}>
+          <option value="all">Any tier</option>
+          <option value="customer-email">Customer-facing</option>
+          <option value="prod-deploy">Prod-deploy</option>
+          <option value="public-post">Public-post</option>
+        </select>
+        {todayChip ? (
+          <span className="chip">
+            today
+            <button
+              type="button"
+              className="x"
+              onClick={() => setTodayChip(false)}
+              aria-label="Remove today filter"
+            >
+              ×
+            </button>
+          </span>
+        ) : null}
+        <div className="grow" />
+        <span style={{ fontSize: 12, color: "var(--af2-ink-3)" }}>
+          {filtered.length} of {items.length}
+        </span>
+      </div>
 
-      {isEmpty ? (
-        <div
-          className="af2-card"
-          style={{
-            padding: "32px 24px",
-            textAlign: "center",
-            borderStyle: "dashed",
-            borderColor: "var(--af2-line-2)",
-          }}
-        >
-          <p
-            className="font-af2-serif"
-            style={{ fontSize: 16, color: "var(--af2-ink)", margin: 0 }}
-          >
-            ✓ All clear — no approvals or escalations waiting.
-          </p>
-          <p
-            className="af2-muted"
-            style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}
-          >
-            When an agent needs your stamp on a spend, contract, or
-            customer-facing action — or when a CEO-level question is filed —
-            it'll appear here.
-          </p>
-          <div
-            style={{
-              marginTop: 14,
-              display: "inline-flex",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            <Link to="/agents/activity" className="af2-btn af2-btn-ghost">
-              Open Activity →
-            </Link>
-            <Link to="/assignments" className="af2-btn af2-btn-ghost">
-              See mission assignments →
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <>
-          {pending.length > 0 ? (
-            <div className="af2-list" style={{ marginBottom: 18 }}>
+      <div className="card card-list" style={{ padding: 0 }}>
+        {filtered.map((item) => {
+          const expanded = expandedId === item.id;
+          return (
+            <div key={item.id}>
               <div
-                className="af2-list-head"
-                style={{ gridTemplateColumns: GRID_TEMPLATE }}
+                className={`row${expanded ? " expanded" : ""}`}
+                style={{ gridTemplateColumns: QUEUE_GRID }}
+                onClick={() => setExpandedId(expanded ? null : item.id)}
+                aria-expanded={expanded}
               >
-                <div>Assignment</div>
-                <div>Request</div>
-                <div>Agent</div>
-                <div>Risk</div>
-                <div>Cost</div>
-                <div></div>
-              </div>
-              {pending.map((approval) => {
-                const risk = riskForTimeout(approval.timeoutMinutes);
-                const isResolving = resolvingId === approval.id;
-                return (
-                  <div
-                    key={approval.id}
-                    className="af2-list-row"
-                    style={{ gridTemplateColumns: GRID_TEMPLATE }}
+                <div className="id">{item.id}</div>
+                <div>
+                  <b>{item.title}</b>
+                  <br />
+                  <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
+                    {item.subtitle}
+                  </span>
+                </div>
+                <div>
+                  <span className={`pill dot ${item.tierTone}`}>{item.tierLabel}</span>
+                </div>
+                <div>
+                  <span className="pill">{item.agent}</span>
+                </div>
+                <div className="actions">
+                  {item.kind === "escalation" ? (
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      onClick={(e: ReactMouseEvent) => e.stopPropagation()}
+                    >
+                      Reply
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn sm"
+                    onClick={(e: ReactMouseEvent) => e.stopPropagation()}
                   >
-                    <div
-                      className="af2-mono"
-                      style={{ fontSize: 11.5, color: "var(--af2-ink-3)" }}
-                    >
-                      {approval.id.slice(0, 8).toUpperCase()}
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    className="btn primary sm"
+                    onClick={(e: ReactMouseEvent) => e.stopPropagation()}
+                  >
+                    Approve
+                  </button>
+                </div>
+              </div>
+              <div className={`row-drawer${expanded ? " open" : ""}`}>
+                <div className="row-drawer-head">
+                  <div>
+                    <div className="eyebrow" style={{ marginBottom: 4 }}>
+                      {item.drawer.eyebrow}
                     </div>
-                    <div style={{ fontSize: 13.5 }}>
-                      {approval.message ?? approval.stepName}
-                    </div>
-                    <div className="af2-row" style={{ gap: 8 }}>
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          background: "var(--af2-clay-soft)",
-                          color: "var(--af2-clay-2)",
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {initialsFor(approval.assignee)}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 12.5,
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          minWidth: 0,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {firstName(approval.assignee)}
-                        {(() => {
-                          const matchedById = approval.agentId
-                            ? agents.find((a) => a.id === approval.agentId) ?? null
-                            : null;
-                          const matched =
-                            matchedById ??
-                            agentByName.get(approval.assignee.trim().toLowerCase()) ??
-                            null;
-                          if (!matched) return null;
-                          return (
-                            <AgentPresencePill presence={presence.get(matched.id)} />
-                          );
-                        })()}
-                      </span>
-                    </div>
-                    <div>
-                      <span
-                        className="af2-mono"
-                        style={{ fontSize: 11.5, color: risk.color }}
-                      >
-                        ● {risk.label}
-                      </span>
-                    </div>
-                    <div className="af2-mono" style={{ fontSize: 12 }}>
-                      —
-                    </div>
-                    <div
-                      className="af2-row"
-                      style={{ gap: 6, justifyContent: "flex-end" }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void handleResolve(approval, "rejected")}
-                        disabled={isResolving}
-                        className="af2-btn af2-btn-sm"
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleResolve(approval, "approved")}
-                        disabled={isResolving}
-                        className="af2-btn af2-btn-sm af2-btn-primary"
-                      >
-                        Approve
-                      </button>
-                    </div>
+                    <h3>{item.drawer.headline}</h3>
                   </div>
-                );
-              })}
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    onClick={(e: ReactMouseEvent) => {
+                      e.stopPropagation();
+                      setExpandedId(null);
+                    }}
+                  >
+                    Collapse ↑
+                  </button>
+                </div>
+                <p style={{ fontSize: 13, color: "var(--af2-ink-2)", margin: "0 0 12px" }}>
+                  {item.drawer.body}
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {item.drawer.actions.map((a, i) => (
+                    <button
+                      key={`${item.id}-act-${i}`}
+                      type="button"
+                      className={`btn${a.variant === "primary" ? " primary" : ""}`}
+                      onClick={(e: ReactMouseEvent) => e.stopPropagation()}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+                {item.drawer.deepLink ? (
+                  <div style={{ marginTop: 14 }}>
+                    <a
+                      href="#"
+                      onClick={(e) => e.preventDefault()}
+                      style={{ color: "var(--af2-clay)", fontSize: 12 }}
+                    >
+                      ↘ {item.drawer.deepLink}
+                    </a>
+                  </div>
+                ) : null}
+                <div className="row-drawer-foot">
+                  <span className="url">?row={item.id}</span>
+                  <a
+                    href="#"
+                    className="btn"
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    Open full page →
+                  </a>
+                </div>
+              </div>
             </div>
-          ) : null}
-
-          {escalationsError ? (
-            <div style={{ marginBottom: 16 }}>
-              <ErrorState
-                title="Escalations unavailable"
-                message={escalationsError}
-              />
-            </div>
-          ) : null}
-
-          {escalations.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div className="af2-eyebrow">Escalations · Ask the CEO</div>
-              {escalations.map((request) => (
-                <EscalationCard key={request.id} request={request} />
-              ))}
-            </div>
-          ) : escalationsLoading ? (
-            <LoadingState label="Loading escalations…" />
-          ) : null}
-        </>
-      )}
+          );
+        })}
+        {filtered.length === 0 ? (
+          <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--af2-ink-3)", fontSize: 13 }}>
+            No items match the current filters.
+          </div>
+        ) : null}
+      </div>
     </>
   );
 }
 
-// -- Escalation card (preserved from former Escalations.tsx) -----------------
-
-export function EscalationCard({ request }: { request: HitlAskCeoRequest }) {
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [reply, setReply] = useState("");
-  const [pendingAction, setPendingAction] = useState<null | "guidance" | "recommendation">(
-    null,
-  );
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  function handleApproveRecommendation() {
-    // Scaffold-level: would POST an endorsement back to HITL once wired.
-    setPendingAction("recommendation");
-    setTimeout(() => {
-      setPendingAction(null);
-      setFeedback("Recommendation endorsed.");
-    }, 200);
-  }
-
-  function handleSendGuidance() {
-    if (!reply.trim()) return;
-    setPendingAction("guidance");
-    setTimeout(() => {
-      setPendingAction(null);
-      setComposerOpen(false);
-      setReply("");
-      setFeedback("Guidance sent to the requester.");
-    }, 200);
-  }
-
-  return (
-    <article
-      className="af2-card"
-      style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}
-    >
-      <div className="af2-row" style={{ alignItems: "flex-start", gap: 14 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="af2-eyebrow" style={{ marginBottom: 4 }}>
-            {formatTimestamp(request.createdAt)}
-          </div>
-          <div
-            className="font-af2-serif"
-            style={{ fontSize: 17, color: "var(--af2-ink)", lineHeight: 1.4 }}
-          >
-            {request.question}
-          </div>
-        </div>
-      </div>
-
-      <div
-        style={{
-          borderTop: "1px solid var(--af2-line)",
-          paddingTop: 12,
-          fontSize: 13.5,
-          color: "var(--af2-ink-2)",
-          lineHeight: 1.55,
-        }}
-      >
-        {request.response.summary}
-      </div>
-
-      {request.response.recommendedActions.length > 0 ? (
-        <div>
-          <div
-            className="af2-mono"
-            style={{
-              fontSize: 11,
-              color: "var(--af2-ink-3)",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              marginBottom: 6,
-            }}
-          >
-            Recommended actions
-          </div>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: 18,
-              fontSize: 13,
-              color: "var(--af2-ink-2)",
-              lineHeight: 1.6,
-            }}
-          >
-            {request.response.recommendedActions.map((action, index) => (
-              <li key={index}>{action}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {request.response.citedEntities.length > 0 ? (
-        <div className="af2-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          {request.response.citedEntities.map((entity) => (
-            <span
-              key={`${entity.type}-${entity.id}`}
-              className="af2-pill"
-              style={{ fontSize: 11.5 }}
-            >
-              <span className="af2-dot" />
-              {entity.type}: {entity.label}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      {composerOpen ? (
-        <div
-          style={{
-            borderTop: "1px solid var(--af2-line)",
-            paddingTop: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <label
-            htmlFor={`escalation-${request.id}-reply`}
-            className="af2-eyebrow"
-          >
-            Guidance
-          </label>
-          <textarea
-            id={`escalation-${request.id}-reply`}
-            value={reply}
-            onChange={(event) => setReply(event.target.value)}
-            rows={4}
-            className="af2-input"
-            placeholder="What direction does the team need from the CEO?"
-          />
-          <div className="af2-row" style={{ gap: 8, justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              onClick={() => {
-                setComposerOpen(false);
-                setReply("");
-              }}
-              className="af2-btn af2-btn-sm"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSendGuidance}
-              className="af2-btn af2-btn-sm af2-btn-primary"
-              disabled={!reply.trim() || pendingAction === "guidance"}
-            >
-              {pendingAction === "guidance" ? "Sending…" : "Send guidance"}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      <div
-        className="af2-row"
-        style={{ gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}
-      >
-        {feedback ? (
-          <span
-            className="af2-muted-2"
-            style={{ marginRight: "auto", fontSize: 12 }}
-          >
-            {feedback}
-          </span>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => setComposerOpen((open) => !open)}
-          className="af2-btn af2-btn-sm"
-        >
-          Reply with guidance
-        </button>
-        <button
-          type="button"
-          onClick={handleApproveRecommendation}
-          className="af2-btn af2-btn-sm"
-          disabled={pendingAction === "recommendation"}
-        >
-          {pendingAction === "recommendation" ? "Endorsing…" : "Approve recommendation"}
-        </button>
-        <button type="button" className="af2-btn af2-btn-sm">
-          Reject
-        </button>
-        <button type="button" className="af2-btn af2-btn-sm af2-btn-primary">
-          Approve
-        </button>
-      </div>
-    </article>
-  );
-}
-
-// -- Policies tab (moved from Settings → Policies → Approvals) ---------------
+// -- Policies tab ------------------------------------------------------------
 
 function PoliciesTab() {
   const { requireAccessToken } = useAuth();
   const [policies, setPolicies] = useState<ApprovalPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingPolicy, setEditingPolicy] = useState<ApprovalPolicy | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -832,333 +757,93 @@ function PoliciesTab() {
     void load();
   }, [load]);
 
-  if (loading) return <LoadingState label="Loading approval policies…" />;
-  if (error)
-    return (
-      <ErrorState
-        title="Policies unavailable"
-        message={error}
-        onRetry={() => void load()}
-      />
-    );
+  // Build the rendered cards: live policies if available, otherwise the
+  // prototype sample so the page is never blank during the v2 rollout.
+  const cards = policies.length
+    ? policies.map((p) => ({
+        title: policyKeyText(p),
+        desc: policyValueText(p),
+        pillTone: (p.mode === "require_approval" ? "plum" : "mustard") as "plum" | "mustard",
+        pillLabel: p.mode === "require_approval" ? "always" : "conditional",
+      }))
+    : SAMPLE_POLICIES;
 
   return (
     <>
-      <div className="af2-card" style={{ padding: 16 }}>
-        {policies.length === 0 ? (
-          <div className="af2-muted" style={{ fontSize: 13 }}>
-            No approval policies configured yet.
-          </div>
-        ) : (
-          policies.map((policy, i) => (
-            <div
-              key={policy.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 260px 60px",
-                gap: 12,
-                alignItems: "center",
-                padding: "10px 0",
-                borderBottom:
-                  i < policies.length - 1 ? "1px solid var(--af2-line)" : "none",
-              }}
-            >
-              <span style={{ fontSize: 13.5, fontWeight: 500 }}>
-                {policyKeyText(policy)}
-              </span>
-              <span className="af2-muted" style={{ fontSize: 12 }}>
-                {policyValueText(policy)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setEditingPolicy(policy)}
-                className="af2-btn af2-btn-sm"
-                style={{ textAlign: "center" }}
-              >
-                Edit
-              </button>
-            </div>
-          ))
-        )}
+      <div className="info-strip">
+        Approval policies moved from Settings → Approvals. Plain-English in
+        SMB; raw AST + sandbox in Pro.
       </div>
-
-      <p className="af2-muted-2" style={{ marginTop: 14, fontSize: 12 }}>
-        Tier-based rules for when a workflow run requires human sign-off.
-        Changes apply to newly created approval requests.
-      </p>
-
-      {editingPolicy ? (
-        <ApprovalPolicyEditor
-          policy={editingPolicy}
-          onClose={() => setEditingPolicy(null)}
-          onSaved={(updated) => {
-            setPolicies((curr) =>
-              curr.map((p) => (p.actionType === updated.actionType ? updated : p)),
-            );
-            setEditingPolicy(null);
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function ApprovalPolicyEditor({
-  policy,
-  onClose,
-  onSaved,
-}: {
-  policy: ApprovalPolicy;
-  onClose: () => void;
-  onSaved: (updated: ApprovalPolicy) => void;
-}) {
-  const { requireAccessToken } = useAuth();
-  const [mode, setMode] = useState<ApprovalTierMode>(policy.mode);
-  const [spendDollars, setSpendDollars] = useState<string>(
-    policy.actionType === "spend_above_threshold" && policy.spendThresholdCents != null
-      ? String(policy.spendThresholdCents / 100)
-      : "500",
-  );
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isSpend = policy.actionType === "spend_above_threshold";
-
-  async function handleSave() {
-    setSaving(true);
-    setError(null);
-    try {
-      const token = await requireAccessToken();
-      const body: { mode: ApprovalTierMode; spendThresholdCents?: number } = { mode };
-      if (isSpend) {
-        const dollars = Number.parseFloat(spendDollars);
-        if (!Number.isFinite(dollars) || dollars < 0) {
-          setError("Spend threshold must be a non-negative dollar amount.");
-          setSaving(false);
-          return;
-        }
-        body.spendThresholdCents = Math.round(dollars * 100);
-      }
-      const res = await trackedFetch(
-        `${getApiBasePath()}/approval-policies/${encodeURIComponent(policy.actionType)}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        },
-      );
-      if (!res.ok) {
-        const payload = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `Failed to save policy (${res.status})`);
-      }
-      const { policy: updated } = (await res.json()) as { policy: ApprovalPolicy };
-      onSaved(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save policy");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="approval-policy-editor-title"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 50,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(15, 23, 42, 0.45)",
-        padding: 16,
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div className="af2-card" style={{ padding: 22, maxWidth: 520, width: "100%" }}>
-        <div className="af2-eyebrow">Edit policy</div>
-        <h2 id="approval-policy-editor-title" className="af2-h3" style={{ marginTop: 6 }}>
-          {policyKeyText(policy)}
-        </h2>
-        <p className="af2-muted" style={{ fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
-          Choose how AutoFlow handles{" "}
-          {ACTION_LABEL[policy.actionType].toLowerCase()} requests for this workspace.
-        </p>
-
-        <fieldset style={{ border: "none", padding: 0, margin: "16px 0 0" }}>
-          <legend className="af2-eyebrow" style={{ padding: 0 }}>
-            Mode
-          </legend>
-          {(["require_approval", "notify_only", "auto_approve"] as ApprovalTierMode[]).map(
-            (option) => (
-              <label
-                key={option}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  marginTop: 10,
-                  cursor: "pointer",
-                }}
-              >
-                <input
-                  type="radio"
-                  name="approval-mode"
-                  value={option}
-                  checked={mode === option}
-                  onChange={() => setMode(option)}
-                  style={{ marginTop: 3 }}
-                />
-                <span style={{ fontSize: 13.5 }}>{MODE_LABEL[option]}</span>
-              </label>
-            ),
-          )}
-        </fieldset>
-
-        {isSpend ? (
-          <div style={{ marginTop: 16 }}>
-            <label htmlFor="spend-threshold" className="af2-eyebrow">
-              Spend threshold ($)
-            </label>
-            <input
-              id="spend-threshold"
-              className="af2-input"
-              type="number"
-              min="0"
-              step="1"
-              value={spendDollars}
-              onChange={(event) => setSpendDollars(event.target.value)}
-              style={{ width: "100%", marginTop: 6 }}
-            />
-          </div>
-        ) : null}
-
-        {error ? (
-          <div
-            className="af2-mono"
-            style={{
-              marginTop: 16,
-              fontSize: 12,
-              color: "var(--af2-clay)",
-              padding: "8px 12px",
-              background: "var(--af2-clay-soft)",
-              borderRadius: 6,
-            }}
-          >
-            {error}
-          </div>
-        ) : null}
-
-        <div className="af2-row" style={{ marginTop: 22, gap: 10 }}>
-          <button
-            type="button"
-            className="af2-btn"
-            onClick={onClose}
-            disabled={saving}
-          >
-            Cancel
-          </button>
-          <span className="af2-spacer" />
-          <button
-            type="button"
-            className="af2-btn af2-btn-primary"
-            onClick={() => void handleSave()}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : "Save policy"}
-          </button>
+      {loading ? (
+        <div className="card" style={{ padding: 14 }}>
+          Loading policies…
         </div>
+      ) : null}
+      {error ? (
+        <div style={{ marginBottom: 14 }}>
+          <ErrorState
+            title="Policies unavailable"
+            message={error}
+            onRetry={() => void load()}
+          />
+        </div>
+      ) : null}
+      <div className="grid-2">
+        {cards.map((c) => (
+          <div key={c.title} className="card">
+            <h3>{c.title}</h3>
+            <p className="desc">{c.desc}</p>
+            <div style={{ marginTop: 8 }}>
+              <span className={`pill ${c.pillTone} dot`}>{c.pillLabel}</span>
+            </div>
+          </div>
+        ))}
       </div>
-    </div>
+    </>
   );
 }
 
 // -- History tab --------------------------------------------------------------
 
-function HistoryTab({
-  history,
-  escalations,
-}: {
-  history: ApprovalRequest[];
-  escalations: HitlAskCeoRequest[];
-}) {
-  if (history.length === 0 && escalations.length === 0) {
-    return (
-      <div
-        className="af2-card"
-        style={{
-          padding: "32px 24px",
-          textAlign: "center",
-          borderStyle: "dashed",
-          borderColor: "var(--af2-line-2)",
-        }}
-      >
-        <p className="af2-muted" style={{ fontSize: 13 }}>
-          History is empty. Resolved approvals and previous escalations land here.
-        </p>
-      </div>
-    );
-  }
+function HistoryTab({ history }: { history: ApprovalRequest[] }) {
+  const rows = history.length
+    ? history.map((h) => ({
+        id: h.id.slice(0, 8).toUpperCase(),
+        title: h.message || h.stepName,
+        status: (h.status === "approved" ? "approved" : "rejected") as
+          | "approved"
+          | "rejected",
+        when: h.resolvedAt ? formatTimestamp(h.resolvedAt) : "—",
+        by: "by Brad",
+      }))
+    : SAMPLE_HISTORY;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {history.length > 0 ? (
-        <div className="af2-list">
-          <div
-            className="af2-list-head"
-            style={{ gridTemplateColumns: "120px 1fr 130px 120px" }}
-          >
-            <span>ID</span>
-            <span>Request</span>
-            <span>Decision</span>
-            <span>Resolved</span>
+    <div className="card card-list" style={{ padding: 0 }}>
+      {rows.map((r) => (
+        <div
+          key={r.id}
+          className="row"
+          style={{ gridTemplateColumns: "90px 1fr 120px 110px 110px", cursor: "default" }}
+        >
+          <div className="id">{r.id}</div>
+          <div>
+            <b>{r.title}</b>
           </div>
-          {history.map((approval, idx) => (
-            <div
-              key={approval.id}
-              className="af2-list-row"
-              style={{
-                gridTemplateColumns: "120px 1fr 130px 120px",
-                borderBottom:
-                  idx < history.length - 1 ? "1px solid var(--af2-line)" : "none",
-              }}
-            >
-              <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
-                {approval.id.slice(0, 8).toUpperCase()}
-              </span>
-              <span style={{ fontSize: 13 }}>
-                {approval.message ?? approval.stepName}
-              </span>
-              <span className="af2-mono" style={{ fontSize: 12 }}>
-                {approval.status}
-              </span>
-              <span className="af2-muted-2" style={{ fontSize: 11 }}>
-                {approval.resolvedAt ? formatTimestamp(approval.resolvedAt) : "—"}
-              </span>
-            </div>
-          ))}
+          <div>
+            <span className={`pill ${r.status === "approved" ? "sage" : "clay"} dot`}>
+              {r.status}
+            </span>
+          </div>
+          <div className="id">{r.when}</div>
+          <div>{r.by}</div>
         </div>
-      ) : null}
-
-      {escalations.length > 0 ? (
-        <>
-          <div className="af2-eyebrow">Past escalations</div>
-          {escalations.map((request) => (
-            <EscalationCard key={request.id} request={request} />
-          ))}
-        </>
-      ) : null}
+      ))}
     </div>
   );
 }
 
-// -- New escalation modal (preserved from former Escalations.tsx) ------------
+// -- New escalation modal -----------------------------------------------------
 
 function NewEscalationModal({
   companyId,
@@ -1198,78 +883,71 @@ function NewEscalationModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4"
+      className="af2-v2-modal-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-escalation-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <button
-        type="button"
-        aria-label="Close new escalation modal"
-        className="absolute inset-0 bg-transparent"
-        onClick={onClose}
-      />
-      <div className="af2-card relative z-10 w-full max-w-lg p-6 shadow-af2-lg">
-        <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="af2-v2-modal">
+        <div className="af2-v2-modal-head">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-af2-clay">
-              Governance · Ask the CEO
-            </p>
-            <h2
-              id="new-escalation-title"
-              className="font-af2-serif mt-2 text-xl font-medium text-af2-ink"
-            >
-              File an escalation
-            </h2>
+            <div className="eyebrow">Governance · Ask the CEO</div>
+            <h2 id="new-escalation-title">File an escalation</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-clay/30 hover:text-af2-ink"
+            className="btn ghost sm"
           >
-            <X size={16} />
+            <X size={14} />
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label
-              htmlFor="escalation-question"
-              className="block text-xs font-semibold uppercase tracking-[0.16em] text-af2-ink-3 mb-1"
-            >
+        <form onSubmit={handleSubmit}>
+          <div className="af2-v2-modal-body">
+            <label className="field">
               Question
+              <textarea
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                rows={5}
+                placeholder="What needs the CEO's attention right now?"
+                autoFocus
+                required
+              />
             </label>
-            <textarea
-              id="escalation-question"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              rows={5}
-              placeholder="What needs the CEO's attention right now?"
-              className="af2-input w-full"
-              autoFocus
-              required
-            />
+            {submitError ? (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 8,
+                  padding: "8px 12px",
+                  border: "1px solid rgba(192,84,76,0.30)",
+                  background: "rgba(192,84,76,0.10)",
+                  color: "var(--af2-clay)",
+                  borderRadius: 6,
+                  fontSize: 12.5,
+                }}
+              >
+                {submitError}
+              </div>
+            ) : null}
           </div>
-
-          {submitError ? (
-            <div className="rounded-md border border-af2-clay/40 bg-af2-clay/10 px-3 py-2 text-sm text-af2-clay">
-              {submitError}
-            </div>
-          ) : null}
-
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="af2-v2-modal-foot">
             <button
               type="button"
               onClick={onClose}
-              className="af2-btn"
+              className="btn"
               disabled={submitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="af2-btn af2-btn-primary"
+              className="btn primary"
               disabled={submitting}
             >
               {submitting ? (

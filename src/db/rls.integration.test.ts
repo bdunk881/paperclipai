@@ -891,17 +891,13 @@ describe("P1 table RLS integration (HEL-70)", () => {
         "audit_log",
       ];
 
-      const result = await pg.queryPostgres<{
-        relname: string;
-        rowsecurity: boolean;
-        forcerowsecurity: boolean;
-      }>(
+      const result = (await pg.queryPostgres(
         `SELECT relname, relrowsecurity AS rowsecurity, relforcerowsecurity AS forcerowsecurity
        FROM pg_class
        WHERE relname = ANY($1)
          AND relkind = 'r'`,
         [p1Tables],
-      );
+      )) as { rows: Array<{ relname: string; rowsecurity: boolean; forcerowsecurity: boolean }> };
 
       for (const row of result.rows) {
         expect({ table: row.relname, rowsecurity: row.rowsecurity }).toMatchObject({

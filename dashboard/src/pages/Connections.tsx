@@ -415,7 +415,6 @@ interface ModelEntry {
 interface ProviderCatalogEntry {
   provider: ProviderName;
   category: string;
-  logo: string;
   models: ModelEntry[];
 }
 
@@ -423,7 +422,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "anthropic",
     category: "Anthropic",
-    logo: "A",
     models: [
       {
         id: "claude-opus-4-7",
@@ -448,7 +446,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "openai",
     category: "OpenAI",
-    logo: "O",
     models: [
       {
         id: "gpt-5.5",
@@ -479,7 +476,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "gemini",
     category: "Google Gemini",
-    logo: "G",
     models: [
       {
         id: "gemini-2.5-pro",
@@ -504,7 +500,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "mistral",
     category: "Mistral",
-    logo: "M",
     models: [
       {
         id: "mistral-large-latest",
@@ -529,7 +524,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "xai",
     category: "xAI",
-    logo: "X",
     models: [
       {
         id: "grok-4",
@@ -548,7 +542,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "deepseek",
     category: "DeepSeek",
-    logo: "D",
     models: [
       {
         id: "deepseek-v3",
@@ -567,7 +560,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "groq",
     category: "Groq · open-weight (served fast)",
-    logo: "Q",
     models: [
       {
         id: "openai/gpt-oss-120b",
@@ -1454,7 +1446,7 @@ function ModelsPanel() {
           <IntegrationRow
             key={entry.provider}
             id={entry.provider}
-            logo={entry.logo}
+            logo={integrationLogo(entry.provider, entry.category)}
             name={entry.category}
             desc={`${entry.models.length} models — ${modelSummary}`}
             pill={

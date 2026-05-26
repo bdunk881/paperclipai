@@ -14,11 +14,13 @@
  * mutate in-place so QA can exercise the slider UI.
  */
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
 import { useExperienceMode } from "../context/ExperienceModeContext";
 import {
+  createLLMConfig,
+  deleteLLMConfig,
   getConnectorHealth,
   listLLMConfigs,
+  setDefaultLLMConfig,
   type ConnectorHealthRecord,
   type LLMConfig,
   type ProviderName,
@@ -471,28 +473,416 @@ function useLLMConfigs(): { configs: LLMConfig[]; loading: boolean; error: strin
   return { configs, loading, error };
 }
 
-function ModelsPanel() {
-  const { configs, loading, error } = useLLMConfigs();
-  const navigate = useNavigate();
+// ---------------------------------------------------------------------------
+// Models panel — provider-based int-row layout. One row per provider; click
+// to expand the drawer which holds either the inline connect form (when not
+// yet configured) or the per-credential management list (when configured).
+// A tier-routing card at the top surfaces the workspace's current Lite /
+// Standard / Power assignments. Phase 1: read-only auto-derived routing.
+// Phase 2 will add an explicit per-tier override + drag-and-drop UI once
+// the backend exposes GET/PATCH /api/tier-routing (no route mounted today,
+// only internal helpers in src/llmConfig/tierRouter.ts).
+// ---------------------------------------------------------------------------
 
-  // Index configs by `${provider}:${model}` for O(1) lookup. A provider is
-  // "connected" overall iff at least one credential exists for it; an
-  // individual model is "connected" iff a credential exists for that exact
-  // (provider, model) pair.
-  const connectedKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of configs) set.add(`${c.provider}:${c.model}`);
-    return set;
-  }, [configs]);
+function tierCandidateFromConfigs(
+  configs: LLMConfig[],
+  tier: ModelEntry["tier"],
+): { providerName: string; modelName: string; modelId: string } | null {
+  // Find the first connected model in the catalog that maps to the requested
+  // tier. Matches the spirit of `inferDefaultTierMatrix` in tierRouter.ts but
+  // computed client-side from the surfaced catalog instead of taking a
+  // dependency on the server route (which doesn't exist yet).
+  const connectedKeys = new Set(configs.map((c) => `${c.provider}:${c.model}`));
+  for (const entry of MODEL_CATALOG) {
+    for (const model of entry.models) {
+      if (model.tier !== tier) continue;
+      if (connectedKeys.has(`${entry.provider}:${model.id}`)) {
+        return {
+          providerName: entry.category,
+          modelName: model.name,
+          modelId: model.id,
+        };
+      }
+    }
+  }
+  return null;
+}
 
-  const connectedProviders = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of configs) set.add(c.provider);
-    return set;
-  }, [configs]);
+function TierRoutingCard({ configs }: { configs: LLMConfig[] }) {
+  const tiers: ModelEntry["tier"][] = ["Lite", "Standard", "Power"];
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <h3>Tier routing</h3>
+      <p className="desc" style={{ marginBottom: 12 }}>
+        When agents request a tier (Lite / Standard / Power), AutoFlow picks
+        the matching model below. Today this is auto-derived from your
+        connected providers; explicit per-tier overrides and drag-and-drop
+        assignment land in a follow-up.
+      </p>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 12,
+        }}
+      >
+        {tiers.map((tier) => {
+          const candidate = tierCandidateFromConfigs(configs, tier);
+          return (
+            <div
+              key={tier}
+              style={{
+                background: "var(--af2-paper-2)",
+                border: "1px solid var(--af2-line)",
+                borderRadius: 6,
+                padding: "10px 12px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 6,
+                }}
+              >
+                <span className={`pill ${TIER_PILL_TONE[tier]}`}>{tier}</span>
+              </div>
+              {candidate ? (
+                <>
+                  <div style={{ fontWeight: 500, fontSize: 13 }}>
+                    {candidate.modelName}
+                  </div>
+                  <div className="int-desc">via {candidate.providerName}</div>
+                </>
+              ) : (
+                <div className="int-desc" style={{ fontStyle: "italic" }}>
+                  No connected provider supplies a {tier.toLowerCase()} model
+                  yet
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+interface ConnectProviderFormProps {
+  entry: ProviderCatalogEntry;
+  onSuccess: () => void;
+}
+
+function ConnectProviderForm({ entry, onSuccess }: ConnectProviderFormProps) {
+  const { getAccessToken } = useAuth();
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState<string>(entry.models[0]?.id ?? "");
+  const [label, setLabel] = useState<string>(`${entry.category} primary`);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!apiKey.trim()) {
+      setError("API key is required.");
+      return;
+    }
+    if (!model) {
+      setError("Pick an initial model to verify the key against.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await createLLMConfig(
+        {
+          label: label.trim() || `${entry.category} primary`,
+          provider: entry.provider,
+          model,
+          apiKey: apiKey.trim(),
+        },
+        token,
+      );
+      setApiKey("");
+      onSuccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to connect provider.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
-    <div className="panel" role="tabpanel" id="con-models">
+    <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()}>
+      <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
+        Paste an {entry.category} API key. Stored encrypted at rest and used
+        only when agents route to this provider.
+      </p>
+      <div className="field-grid" style={{ marginTop: 12 }}>
+        <label className="field">
+          Label (optional)
+          <input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={`${entry.category} primary`}
+          />
+        </label>
+        <label className="field">
+          Initial model (used to validate the key)
+          <select value={model} onChange={(e) => setModel(e.target.value)}>
+            {entry.models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} — {m.tier.toLowerCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <label className="field">
+        API key
+        <input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={entry.provider === "anthropic" ? "sk-ant-…" : "sk-…"}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </label>
+      {error ? (
+        <p
+          className="desc"
+          style={{ color: "var(--af2-clay)", marginTop: -4, marginBottom: 8 }}
+        >
+          {error}
+        </p>
+      ) : null}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="submit"
+          className="btn primary"
+          disabled={submitting || !apiKey.trim()}
+        >
+          {submitting ? "Connecting…" : `Connect ${entry.category}`}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface ProviderManageBodyProps {
+  entry: ProviderCatalogEntry;
+  configs: LLMConfig[];
+  onChange: () => void;
+}
+
+function ProviderManageBody({ entry, configs, onChange }: ProviderManageBodyProps) {
+  const { getAccessToken } = useAuth();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [showAddAnother, setShowAddAnother] = useState(false);
+
+  async function setDefault(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await setDefaultLLMConfig(id, token);
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to set default.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function disconnect(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await deleteLLMConfig(id, token);
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to disconnect.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <p style={{ fontSize: 13, color: "var(--af2-ink-2)", marginTop: 0 }}>
+        Configured credentials for {entry.category}. Multiple keys are
+        supported (e.g. one Opus key + one Haiku key); the workspace default
+        controls which key is used when no explicit per-agent override is
+        set.
+      </p>
+      {error ? (
+        <p
+          className="desc"
+          style={{ color: "var(--af2-clay)", marginBottom: 8 }}
+        >
+          {error}
+        </p>
+      ) : null}
+      <div className="card card-list" style={{ padding: 0, margin: "10px 0" }}>
+        {configs.map((c) => (
+          <div
+            key={c.id}
+            className="row"
+            style={{
+              gridTemplateColumns: "1fr 160px 120px 160px",
+              padding: "10px 14px",
+              cursor: "default",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <div style={{ fontWeight: 500 }}>{c.label}</div>
+              <div
+                className="id"
+                style={{ marginTop: 2 }}
+              >{`${c.model} · ${c.apiKeyMasked}`}</div>
+            </div>
+            <div>
+              {c.isDefault ? (
+                <span className="pill sage dot">workspace default</span>
+              ) : (
+                <span className="pill">alternate</span>
+              )}
+            </div>
+            <div className="id" style={{ fontSize: 11 }}>
+              {new Date(c.createdAt).toLocaleDateString()}
+            </div>
+            <div className="actions">
+              {!c.isDefault ? (
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={busyId === c.id}
+                  onClick={() => void setDefault(c.id)}
+                >
+                  Set default
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn danger sm"
+                disabled={busyId === c.id}
+                onClick={() => void disconnect(c.id)}
+              >
+                Disconnect
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--af2-ink-3)",
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            marginBottom: 8,
+          }}
+        >
+          Models you can route to with this provider
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            marginBottom: 12,
+          }}
+        >
+          {entry.models.map((m) => (
+            <span
+              key={m.id}
+              className={`pill ${TIER_PILL_TONE[m.tier]}`}
+              title={m.desc}
+            >
+              {m.name}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {showAddAnother ? (
+        <div
+          style={{
+            marginTop: 10,
+            padding: 12,
+            background: "var(--af2-paper-2)",
+            borderRadius: 6,
+          }}
+        >
+          <ConnectProviderForm
+            entry={entry}
+            onSuccess={() => {
+              setShowAddAnother(false);
+              onChange();
+            }}
+          />
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ marginTop: 8 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowAddAnother(false);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="btn sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowAddAnother(true);
+          }}
+        >
+          + Add another key
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ModelsPanel() {
+  const { configs, loading, error } = useLLMConfigs();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  // Re-fetch by remounting useLLMConfigs via a key change. Simplest hack;
+  // keeps the hook's internal state pristine without exposing a refetch
+  // function.
+  const refresh = () => setRefreshTick((n) => n + 1);
+
+  const configsByProvider = useMemo(() => {
+    const map = new Map<string, LLMConfig[]>();
+    for (const c of configs) {
+      const list = map.get(c.provider) ?? [];
+      list.push(c);
+      map.set(c.provider, list);
+    }
+    return map;
+  }, [configs]);
+
+  // Force the hook to re-run when refreshTick changes.
+  // (useLLMConfigs depends on getAccessToken only; we coerce a re-mount.)
+  return (
+    <div className="panel" role="tabpanel" id="con-models" key={refreshTick}>
+      <TierRoutingCard configs={configs} />
+
       {error ? (
         <div className="card">
           <p className="desc" style={{ color: "var(--af2-clay)" }}>
@@ -501,67 +891,85 @@ function ModelsPanel() {
         </div>
       ) : null}
 
+      <div className="int-cat">Providers</div>
+
       {MODEL_CATALOG.map((entry) => {
-        const providerConnected = connectedProviders.has(entry.provider);
+        const providerConfigs = configsByProvider.get(entry.provider) ?? [];
+        const isConnected = providerConfigs.length > 0;
+        const expanded = openId === entry.provider;
+        const modelSummary = entry.models
+          .slice(0, 3)
+          .map((m) => m.name.replace(/^Claude |^Gemini |^GPT-|^Mistral /, ""))
+          .join(" · ");
+
         return (
-          <div key={entry.provider}>
-            <div className="int-cat">
-              {entry.category}
-              {providerConnected ? (
-                <span className="pill sage dot" style={{ marginLeft: 10 }}>
-                  key configured
+          <IntegrationRow
+            key={entry.provider}
+            id={entry.provider}
+            logo={entry.logo}
+            name={entry.category}
+            desc={`${entry.models.length} models — ${modelSummary}`}
+            pill={
+              isConnected ? (
+                <span className="pill sage dot">
+                  connected · {providerConfigs.length} key
+                  {providerConfigs.length === 1 ? "" : "s"}
                 </span>
-              ) : null}
-            </div>
-            {entry.models.map((model) => {
-              const isConnected = connectedKeys.has(`${entry.provider}:${model.id}`);
-              return (
-                <div
-                  key={model.id}
-                  className="int-row"
-                  style={{ gridTemplateColumns: "36px 1fr 90px auto auto" }}
-                >
-                  <div className="int-logo">{entry.logo}</div>
-                  <div>
-                    <div className="int-name">
-                      {model.name}{" "}
-                      <code
-                        style={{
-                          color: "var(--af2-ink-4)",
-                          fontSize: 11,
-                          marginLeft: 4,
-                        }}
-                      >
-                        {model.id}
-                      </code>
-                    </div>
-                    <div className="int-desc">{model.desc}</div>
-                  </div>
-                  <span className={`pill ${TIER_PILL_TONE[model.tier]}`}>
-                    {model.tier}
-                  </span>
-                  {isConnected ? (
-                    <span className="pill sage dot">connected</span>
-                  ) : (
-                    <span className="pill">not connected</span>
-                  )}
-                  <button
-                    type="button"
-                    className={`btn sm${isConnected ? "" : " primary"}`}
-                    onClick={() =>
-                      navigate(
-                        `/settings/llm-providers?provider=${encodeURIComponent(
-                          entry.provider,
-                        )}&model=${encodeURIComponent(model.id)}`,
-                      )
-                    }
-                  >
-                    {isConnected ? "Manage" : "Connect"}
-                  </button>
+              ) : (
+                <span className="pill">not connected</span>
+              )
+            }
+            action={
+              <button
+                type="button"
+                className={`btn sm${isConnected ? "" : " primary"}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenId((cur) => (cur === entry.provider ? null : entry.provider));
+                }}
+              >
+                {isConnected ? "Manage" : "Connect"}
+              </button>
+            }
+            expanded={expanded}
+            onToggle={(id) => setOpenId((cur) => (cur === id ? null : id))}
+          >
+            <div className="row-drawer-head">
+              <div>
+                <div className="eyebrow" style={{ marginBottom: 4 }}>
+                  Provider · {isConnected ? "connected" : "not connected"}
                 </div>
-              );
-            })}
-          </div>
+                <h3>{entry.category}</h3>
+              </div>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpenId(null);
+                }}
+              >
+                Collapse ↑
+              </button>
+            </div>
+
+            {isConnected ? (
+              <ProviderManageBody
+                entry={entry}
+                configs={providerConfigs}
+                onChange={refresh}
+              />
+            ) : (
+              <ConnectProviderForm
+                entry={entry}
+                onSuccess={() => {
+                  refresh();
+                  // Keep the drawer open so the user sees the freshly-added
+                  // key in the management body that now renders.
+                }}
+              />
+            )}
+          </IntegrationRow>
         );
       })}
 

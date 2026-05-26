@@ -528,6 +528,39 @@
       opacity: 1;
     }
   }
+
+  /* ApprovalDrawer slide-in (right edge) + backdrop fade. */
+  @keyframes af2-drawer-slide-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0.6;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes af2-backdrop-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Wake-strip entry fade-up — used when an approval-driven agent
+     starts working. */
+  @keyframes af2-wake-in {
+    from {
+      transform: translateY(4px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }
 
 @tailwind utilities;

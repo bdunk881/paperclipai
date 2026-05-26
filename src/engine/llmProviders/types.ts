@@ -151,23 +151,16 @@ export interface LLMProviderConfig {
    */
   onText?: (delta: string, accumulated: string) => void;
   /**
-   * Optional agentic tool loop. When at least one tool is supplied,
-   * the provider runs a multi-turn loop: model emits a tool call →
-   * provider invokes the matching handler → handler's result is fed
-   * back as a tool message → model continues until it stops calling
-   * tools. The final assistant text is returned in `LLMResponse.text`.
-   *
-   * Mutually exclusive with `responseFormat` (JSON-mode forces tool
-   * use to a single fixed tool — there's no loop). Providers that
-   * haven't been wired (everything except Anthropic today) silently
-   * ignore `tools` and fall back to the single-turn completion path.
-   *
-   * `maxToolIterations` caps the loop to prevent runaway agents — a
-   * model that keeps emitting tool calls past the cap returns its
-   * last text turn with an `[interrupted: max iterations]` suffix.
-   * Defaults to 8 when omitted.
+   * @deprecated The agentic tool-loop now lives in
+   * `src/agents/runtime/fallbackAgentBackend.ts` (and the SDK backends).
+   * Passing `tools` to `getProvider(...)` throws at runtime — route
+   * agent runs through `runAgent()` instead. Field kept on the type
+   * temporarily so external schemas / serialized configs that still
+   * include it don't blow up at compile time; remove once HEL-82.x is
+   * archived.
    */
   tools?: AgentTool[];
+  /** @deprecated See `tools` above. */
   maxToolIterations?: number;
   /**
    * Optional system prompt. When set, Anthropic receives this in its

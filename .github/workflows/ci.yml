@@ -111,16 +111,20 @@ jobs:
           # implementation used dynamic import as the lazy-load mechanism,
           # so leaving that pattern uncovered would let the exact regression
           # the guard exists to prevent slip through.
-          # planApprovalBridge.ts is the in-worker resume primitive —
-          # it dynamic-imports runAgentTurn from the periodic sweep
-          # that runs inside the worker process. Same "we're already
-          # in the worker" carve-out as delegateToSubagentTool.
+          # delegateToSubagentTool.ts and planApprovalBridge.ts are
+          # the two legitimate in-process re-entries: both are invoked
+          # from INSIDE an already-running agent turn (so we're already
+          # in the worker). Delegate recursively calls runAgentTurn for
+          # a subordinate; the plan-approval bridge replays the agent
+          # after a human signs off on the plan. The HEL-177 guard's
+          # spirit — "routes only enqueue" — isn't violated here.
           violations=$(git grep -lnE '(from\s+"[^"]*(agentPromptExecution|runAgentTurn)"|from\s+'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'|import\s*\(\s*"[^"]*(agentPromptExecution|runAgentTurn)"|import\s*\(\s*'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"')' -- 'src/*.ts' 'src/**/*.ts' \
             | grep -v '^src/worker\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.test\.ts$' \
+            | grep -v '^src/agents/runtime/delegateToSubagentTool\.ts$' \
             | grep -v '^src/agents/runtime/planApprovalBridge\.ts$' \
             | grep -v '\.test\.ts$' \
             || true)

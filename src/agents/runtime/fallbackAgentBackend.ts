@@ -29,6 +29,7 @@ import {
   resolveSkills,
   type LoadedSkill,
 } from "../../skills/skillsLoader";
+import { buildMcpToolBridge } from "./mcpToolBridge";
 import { executeToolCalls } from "./executeToolCalls";
 import type {
   AgentBackend,
@@ -50,7 +51,22 @@ export class FallbackAgentBackend implements AgentBackend {
     binding: ResolvedModelBinding,
   ): Promise<AgentRunResult> {
     const adapter = getProviderAdapter(binding.provider);
-    const tools = input.tools ?? [];
+
+    // External MCP bridge: for every MCP server the caller passed,
+    // connect, list tools, and merge them into the agent's tool set.
+    // The Claude SDK and OpenAI Agents SDK do this natively; here we
+    // do it manually so customers on Gemini / Mistral / Bedrock /
+    // Vertex don't lose their connected MCP servers when their
+    // workspace falls through to this backend.
+    const bridge = await buildMcpToolBridge(input.mcpServers ?? []);
+    for (const failure of bridge.failures) {
+      console.warn(
+        `[fallbackAgentBackend] MCP server "${failure.serverName}" unreachable: ${failure.error}`,
+      );
+    }
+
+    const callerTools = input.tools ?? [];
+    const tools = [...callerTools, ...bridge.tools];
     const wrappedTools = wrapWithHooks(tools, input);
     const toolsByName = new Map(wrappedTools.map((t) => [t.name, t]));
     const toolSpecs: ToolSpec[] = wrappedTools.map((t) => ({
@@ -62,6 +78,33 @@ export class FallbackAgentBackend implements AgentBackend {
     const loadedSkills = resolveSkills(input.skills ?? []);
     const system = appendSkillsToPrompt(input.systemPrompt, loadedSkills);
 
+    try {
+      return await this.runInner({
+        input,
+        binding,
+        adapter,
+        system,
+        wrappedTools,
+        toolsByName,
+        toolSpecs,
+        maxIterations,
+      });
+    } finally {
+      await bridge.close();
+    }
+  }
+
+  private async runInner(args: {
+    input: AgentRunInput;
+    binding: ResolvedModelBinding;
+    adapter: ReturnType<typeof getProviderAdapter>;
+    system: string;
+    wrappedTools: AgentTool[];
+    toolsByName: Map<string, AgentTool>;
+    toolSpecs: ToolSpec[];
+    maxIterations: number;
+  }): Promise<AgentRunResult> {
+    const { input, binding, adapter, system, toolsByName, toolSpecs, maxIterations } = args;
     if (input.permissionMode === "plan") {
       // Plan mode: don't run tools — produce a plan and stop. The fallback
       // backend doesn't have a native plan mode like the Claude SDK, so we

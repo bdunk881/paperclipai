@@ -182,8 +182,7 @@
 /* Page chrome ---------------------------------------------- */
 .af2-page {
   padding: 28px 36px 80px;
-  max-width: 1280px;
-  margin: 0 auto;
+  margin: 0;
 }
 .af2-page-head {
   display: flex;

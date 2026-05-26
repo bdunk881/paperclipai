@@ -359,7 +359,7 @@ export default function Hire() {
 
   return (
     <div className="af2-v2">
-      <div>
+      <div className="af2-page">
         <div className="page-head">
           <div className="page-head-left">
             <h1 className="h1">Hire</h1>

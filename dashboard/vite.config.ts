@@ -7,7 +7,11 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const isProd = mode === "production";
   const logoDevPublishableKey =
-    env.VITE_LOGO_DEV_PUBLISHABLE_KEY || env.LOGO_DEV_PUBLISHABLE_KEY || "";
+    env.VITE_LOGO_DEV_PUBLISHABLE_KEY ||
+    env.LOGO_DEV_PUBLISHABLE_KEY ||
+    process.env.VITE_LOGO_DEV_PUBLISHABLE_KEY ||
+    process.env.LOGO_DEV_PUBLISHABLE_KEY ||
+    "";
 
   return {
     define: {

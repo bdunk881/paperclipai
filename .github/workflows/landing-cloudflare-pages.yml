@@ -62,6 +62,18 @@ jobs:
             echo "NEXT_PUBLIC_API_URL=https://api.helloautoflow.com" >> "$GITHUB_ENV"
           fi
 
+      - name: Prepare landing build environment
+        run: |
+          set -euo pipefail
+          logo_key="${LOGO_DEV_PUBLISHABLE_KEY:-${VITE_LOGO_DEV_PUBLISHABLE_KEY:-}}"
+          if [[ -n "$logo_key" ]]; then
+            echo "LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+            echo "VITE_LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+            echo "NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+          else
+            echo "::warning::LOGO_DEV_PUBLISHABLE_KEY is unset — CompanyLogo will fall back to initials"
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22

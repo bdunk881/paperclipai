@@ -76,10 +76,13 @@ Non-secret runtime values such as `APP_ENV`, `INFISICAL_ENV`, and allowed origin
 - **Rollback:** redeploy the last healthy Fly release for backend or re-run the previous Pages deployment for the affected frontend app.
 ## Protected Preview QA Access
 
-- Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- On the dashboard Cloudflare Pages project, set these env vars **only on preview deployments**:
+  - `QA_PREVIEW_ACCESS_TOKEN` — shared secret QA hits the endpoint with.
+  - `QA_PREVIEW_DEPLOYMENT_KIND=preview` — gates the endpoint to preview-only.
+  - `APP_JWT_SECRET` — same value the Express backend uses; tokens issued by the Pages Function are verified by Express.
 - Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
-- The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
-- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
+- The dashboard validates the token through the same-origin `/api/qa-preview-access` endpoint (a Cloudflare Pages Function at `dashboard/functions/api/qa-preview-access.ts`), seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
+- Do **not** set `QA_PREVIEW_ACCESS_TOKEN` on the production Pages deployment (or, if you must, set `QA_PREVIEW_DEPLOYMENT_KIND=production` so the function refuses even with a valid token).
 
 ## DNS
 

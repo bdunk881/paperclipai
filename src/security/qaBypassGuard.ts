@@ -50,7 +50,7 @@ export const QA_BYPASS_FLAGS: ReadonlyArray<BypassFlagDefinition> = [
   {
     envVar: "QA_PREVIEW_ACCESS_ALLOW_NON_PREVIEW",
     description:
-      "Dashboard QA preview-access endpoint: when true, accepts the preview token outside Vercel preview deployments",
+      "Dashboard QA preview-access endpoint: when true, accepts the preview token outside Cloudflare Pages preview deployments",
     isActive: truthyExact,
   },
 ];

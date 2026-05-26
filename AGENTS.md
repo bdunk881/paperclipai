@@ -67,7 +67,7 @@ Compress a sprawling but mature open-source codebase into one sharp customer loo
 | Billing | Stripe |
 | Support | Intercom (we eat our own integration) |
 
-Azure is being dropped (per [HEL-11](https://linear.app/helloautoflow/issue/HEL-11)) — pricing untenable. Vercel is sundowning where landing isn't already on Cloudflare Pages.
+Azure is being dropped (per [HEL-11](https://linear.app/helloautoflow/issue/HEL-11)) — pricing untenable. Vercel was fully retired in HEL-todo-vercel-retire: dashboard + landing + docs all serve from Cloudflare Pages now, with the QA-preview-access edge handler running as a Cloudflare Pages Function (`dashboard/functions/api/qa-preview-access.ts`).
 
 ---
 

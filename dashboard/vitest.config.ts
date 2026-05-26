@@ -24,6 +24,10 @@ export default defineConfig({
     globalTeardown: ["./src/test-global-teardown.ts"],
     include: [
       "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      // Cloudflare Pages Functions live outside src/. They run at the edge,
+      // not in the React bundle, so they don't ship with the dashboard JS —
+      // but their tests still belong in vitest alongside everything else.
+      "functions/**/*.{test,spec}.?(c|m)[jt]s?(x)",
     ],
     exclude: ["node_modules/**", "e2e/**"],
     pool: "forks",

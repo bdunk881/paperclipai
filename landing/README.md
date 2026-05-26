@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AutoFlow landing site
 
-## Getting Started
+The landing page at [helloautoflow.com](https://helloautoflow.com). Built as a React Router 7 app, deployed via Cloudflare Pages.
 
-First, run the development server:
+## Local dev
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:5173](http://localhost:5173) to view it. Edits to `app/page.tsx` (and its children in `app/components/`) hot-reload.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The page calls into the Express backend's public endpoints via `buildLandingApiUrl()` (see `landing/lib/publicApi.ts`):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `POST /api/public/landing/waitlist-signup`
+- `POST /api/public/landing/subscribe`
+- `POST /api/public/landing/checkout` (Stripe checkout session)
 
-## Learn More
+Locally, requests fall back to `http://localhost:3000` (the Express dev port). In production they go to `https://api.helloautoflow.com` via `NEXT_PUBLIC_API_URL` set at build time on Cloudflare Pages.
 
-To learn more about Next.js, take a look at the following resources:
+## Deploy
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Pushes to `dev` / `staging` / `master` trigger `.github/workflows/landing-cloudflare-pages.yml`, which builds with Vite and deploys to the matching Cloudflare Pages project. The landing replaced the legacy Vercel deployment (retired alongside the dashboard Vercel target).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Layout
 
-## Deploy on Vercel
+```
+landing/
+  app/                # React Router routes (page.tsx, signup/, blog/, demo/, privacy/, terms/)
+  app/components/     # Section components used by page.tsx
+  lib/                # publicApi.ts, resend.ts (helpers)
+  public/             # static assets copied verbatim to the deploy
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The design tokens + the `.lp-*` / `.af2-*` classes live in `app/v2.css`. The page renders at build time with zero runtime data fetching — Cloudflare Pages prerenders it to static HTML.

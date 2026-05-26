@@ -1,0 +1,12 @@
+# Cloudflare Pages SPA fallback. The React Router app handles every non-API
+# path client-side; CF Pages would otherwise 404 on direct loads of, e.g.,
+# /approvals, /missions, etc. Replaces the Vercel rewrites block that used
+# to live in dashboard/vercel.json (retired alongside the Vercel deploy
+# target — see infra/README.md).
+#
+# API paths are NOT rewritten here. The dashboard's JS prepends the correct
+# backend origin (dev-api / staging-api / api .helloautoflow.com) via
+# dashboard/src/api/baseUrl.ts, so /api/* fetches go straight to Express on
+# Fly. Static-side rewrites are no longer needed for that.
+
+/*    /index.html   200

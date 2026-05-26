@@ -25,6 +25,13 @@ import {
   type LLMConfig,
   type ProviderName,
 } from "../api/client";
+import {
+  getTierRouting,
+  setTierRouting,
+  type TierBinding,
+  type TierMatrix,
+  type TierKey as TierMatrixKey,
+} from "../api/tierRoutingApi";
 import { useAuth } from "../context/AuthContext";
 
 // ---------------------------------------------------------------------------
@@ -484,41 +491,185 @@ function useLLMConfigs(): { configs: LLMConfig[]; loading: boolean; error: strin
 // only internal helpers in src/llmConfig/tierRouter.ts).
 // ---------------------------------------------------------------------------
 
-function tierCandidateFromConfigs(
+// UI tier labels ↔ backend tier keys
+const UI_TIER_TO_KEY: Record<ModelEntry["tier"], TierMatrixKey> = {
+  Lite: "small",
+  Standard: "medium",
+  Power: "large",
+};
+interface TierSlotState {
+  tier: ModelEntry["tier"];
+  binding: TierBinding | null;
+  /** Whether this slot was set by the user (true) or auto-derived (false). */
+  manual: boolean;
+}
+
+function autoDeriveSlot(
   configs: LLMConfig[],
-  tier: ModelEntry["tier"],
-): { providerName: string; modelName: string; modelId: string } | null {
-  // Find the first connected model in the catalog that maps to the requested
-  // tier. Matches the spirit of `inferDefaultTierMatrix` in tierRouter.ts but
-  // computed client-side from the surfaced catalog instead of taking a
-  // dependency on the server route (which doesn't exist yet).
+  uiTier: ModelEntry["tier"],
+): TierBinding | null {
   const connectedKeys = new Set(configs.map((c) => `${c.provider}:${c.model}`));
   for (const entry of MODEL_CATALOG) {
-    for (const model of entry.models) {
-      if (model.tier !== tier) continue;
-      if (connectedKeys.has(`${entry.provider}:${model.id}`)) {
-        return {
-          providerName: entry.category,
-          modelName: model.name,
-          modelId: model.id,
-        };
+    for (const m of entry.models) {
+      if (m.tier !== uiTier) continue;
+      if (connectedKeys.has(`${entry.provider}:${m.id}`)) {
+        return { provider: entry.provider, model: m.id };
       }
     }
   }
   return null;
 }
 
-function TierRoutingCard({ configs }: { configs: LLMConfig[] }) {
-  const tiers: ModelEntry["tier"][] = ["Lite", "Standard", "Power"];
+function findModelMeta(provider: ProviderName, modelId: string): {
+  providerCategory: string;
+  modelName: string;
+} | null {
+  for (const entry of MODEL_CATALOG) {
+    if (entry.provider !== provider) continue;
+    const m = entry.models.find((x) => x.id === modelId);
+    if (m) return { providerCategory: entry.category, modelName: m.name };
+  }
+  return null;
+}
+
+interface TierRoutingCardProps {
+  configs: LLMConfig[];
+}
+
+function TierRoutingCard({ configs }: TierRoutingCardProps) {
+  const { getAccessToken } = useAuth();
+  const [serverMatrix, setServerMatrix] = useState<TierMatrix>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedChip, setSelectedChip] = useState<TierBinding | null>(null);
+  const [dragChip, setDragChip] = useState<TierBinding | null>(null);
+
+  // Load saved matrix once configs are available.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        const res = await getTierRouting(token);
+        if (!cancelled) setServerMatrix(res.matrix);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : "Failed to load tier routing.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken]);
+
+  const slots = useMemo<TierSlotState[]>(() => {
+    const out: TierSlotState[] = [];
+    for (const uiTier of ["Lite", "Standard", "Power"] as const) {
+      const key = UI_TIER_TO_KEY[uiTier];
+      const manualBinding = serverMatrix[key];
+      if (manualBinding) {
+        out.push({ tier: uiTier, binding: manualBinding, manual: true });
+      } else {
+        out.push({
+          tier: uiTier,
+          binding: autoDeriveSlot(configs, uiTier),
+          manual: false,
+        });
+      }
+    }
+    return out;
+  }, [serverMatrix, configs]);
+
+  // Catalog of chips the user can assign — only connected (provider,model)
+  // pairs. Grouped by provider for the chip strip.
+  const connectedChips = useMemo(() => {
+    const connectedKeys = new Set(configs.map((c) => `${c.provider}:${c.model}`));
+    return MODEL_CATALOG.map((entry) => ({
+      entry,
+      models: entry.models.filter((m) =>
+        connectedKeys.has(`${entry.provider}:${m.id}`),
+      ),
+    })).filter((g) => g.models.length > 0);
+  }, [configs]);
+
+  async function commit(next: TierMatrix) {
+    setBusy(true);
+    setError(null);
+    const previous = serverMatrix;
+    setServerMatrix(next); // optimistic
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error("Sign in required.");
+      const res = await setTierRouting(next, token);
+      setServerMatrix(res.matrix);
+    } catch (err) {
+      setServerMatrix(previous);
+      setError(err instanceof Error ? err.message : "Failed to update tier routing.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assign(uiTier: ModelEntry["tier"], binding: TierBinding) {
+    const key = UI_TIER_TO_KEY[uiTier];
+    await commit({ ...serverMatrix, [key]: binding });
+    setSelectedChip(null);
+  }
+
+  async function clearSlot(uiTier: ModelEntry["tier"]) {
+    const key = UI_TIER_TO_KEY[uiTier];
+    const next = { ...serverMatrix };
+    delete next[key];
+    await commit(next);
+  }
+
+  async function resetAll() {
+    await commit({});
+    setSelectedChip(null);
+  }
+
+  function isChipSelected(b: TierBinding): boolean {
+    return (
+      selectedChip?.provider === b.provider && selectedChip.model === b.model
+    );
+  }
+
+  function onChipClick(b: TierBinding) {
+    if (isChipSelected(b)) {
+      setSelectedChip(null);
+    } else {
+      setSelectedChip(b);
+    }
+  }
+
+  function onSlotClick(uiTier: ModelEntry["tier"]) {
+    if (selectedChip) {
+      void assign(uiTier, selectedChip);
+    }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <h3>Tier routing</h3>
       <p className="desc" style={{ marginBottom: 12 }}>
-        When agents request a tier (Lite / Standard / Power), AutoFlow picks
-        the matching model below. Today this is auto-derived from your
-        connected providers; explicit per-tier overrides and drag-and-drop
-        assignment land in a follow-up.
+        Drag a model from the catalog below into a tier slot, or tap a model
+        and then tap a slot. Each tier holds one model. Slots showing
+        <span className="pill" style={{ marginLeft: 4, marginRight: 4 }}>
+          auto
+        </span>
+        fall back to the first matching connected model.
       </p>
+
+      {error ? (
+        <p
+          className="desc"
+          style={{ color: "var(--af2-clay)", marginBottom: 8 }}
+        >
+          {error}
+        </p>
+      ) : null}
+
       <div
         style={{
           display: "grid",
@@ -526,16 +677,34 @@ function TierRoutingCard({ configs }: { configs: LLMConfig[] }) {
           gap: 12,
         }}
       >
-        {tiers.map((tier) => {
-          const candidate = tierCandidateFromConfigs(configs, tier);
+        {slots.map((slot) => {
+          const meta = slot.binding
+            ? findModelMeta(slot.binding.provider, slot.binding.model)
+            : null;
+          const isDropTargetActive = dragChip !== null;
           return (
             <div
-              key={tier}
+              key={slot.tier}
+              onClick={() => onSlotClick(slot.tier)}
+              onDragOver={(e) => {
+                if (dragChip) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (dragChip) {
+                  void assign(slot.tier, dragChip);
+                  setDragChip(null);
+                }
+              }}
               style={{
                 background: "var(--af2-paper-2)",
-                border: "1px solid var(--af2-line)",
+                border: `1px ${isDropTargetActive ? "dashed" : "solid"} ${
+                  isDropTargetActive ? "var(--af2-clay)" : "var(--af2-line)"
+                }`,
                 borderRadius: 6,
                 padding: "10px 12px",
+                cursor: selectedChip || isDropTargetActive ? "copy" : "default",
+                minHeight: 70,
               }}
             >
               <div
@@ -546,24 +715,142 @@ function TierRoutingCard({ configs }: { configs: LLMConfig[] }) {
                   marginBottom: 6,
                 }}
               >
-                <span className={`pill ${TIER_PILL_TONE[tier]}`}>{tier}</span>
+                <span className={`pill ${TIER_PILL_TONE[slot.tier]}`}>
+                  {slot.tier}
+                </span>
+                {!slot.manual && slot.binding ? (
+                  <span className="pill" style={{ fontSize: 10 }}>
+                    auto
+                  </span>
+                ) : null}
+                {slot.manual ? (
+                  <button
+                    type="button"
+                    className="btn ghost sm"
+                    style={{ marginLeft: "auto", padding: "1px 6px" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void clearSlot(slot.tier);
+                    }}
+                    title="Reset this slot to auto-routing"
+                    disabled={busy}
+                  >
+                    ×
+                  </button>
+                ) : null}
               </div>
-              {candidate ? (
+              {slot.binding && meta ? (
                 <>
                   <div style={{ fontWeight: 500, fontSize: 13 }}>
-                    {candidate.modelName}
+                    {meta.modelName}
                   </div>
-                  <div className="int-desc">via {candidate.providerName}</div>
+                  <div className="int-desc">via {meta.providerCategory}</div>
                 </>
               ) : (
                 <div className="int-desc" style={{ fontStyle: "italic" }}>
-                  No connected provider supplies a {tier.toLowerCase()} model
-                  yet
+                  No model assigned — drop a chip here
                 </div>
               )}
             </div>
           );
         })}
+      </div>
+
+      {connectedChips.length > 0 ? (
+        <>
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: 11,
+              color: "var(--af2-ink-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+            }}
+          >
+            Catalog · connected models
+          </div>
+          {connectedChips.map(({ entry, models }) => (
+            <div key={entry.provider} style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--af2-ink-4)",
+                  marginBottom: 4,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                {entry.category}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {models.map((m) => {
+                  const binding: TierBinding = {
+                    provider: entry.provider,
+                    model: m.id,
+                  };
+                  const isSelected = isChipSelected(binding);
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      draggable
+                      onDragStart={() => setDragChip(binding)}
+                      onDragEnd={() => setDragChip(null)}
+                      onClick={() => onChipClick(binding)}
+                      disabled={busy}
+                      className={`pill ${TIER_PILL_TONE[m.tier]}`}
+                      style={{
+                        cursor: "grab",
+                        border: isSelected
+                          ? "1px solid var(--af2-clay)"
+                          : undefined,
+                        boxShadow: isSelected
+                          ? "0 0 0 2px var(--af2-clay-soft)"
+                          : undefined,
+                      }}
+                      title={`Drag onto a slot, or click then click a slot. ${m.desc}`}
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div
+          className="desc"
+          style={{
+            marginTop: 14,
+            fontStyle: "italic",
+            color: "var(--af2-ink-3)",
+          }}
+        >
+          Connect a provider below to populate the catalog.
+        </div>
+      )}
+
+      <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          className="btn ghost sm"
+          onClick={() => void resetAll()}
+          disabled={
+            busy || Object.keys(serverMatrix).length === 0
+          }
+        >
+          Reset to auto-routing
+        </button>
+        {selectedChip ? (
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => setSelectedChip(null)}
+          >
+            Clear selection
+          </button>
+        ) : null}
       </div>
     </div>
   );

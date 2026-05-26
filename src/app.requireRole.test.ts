@@ -59,6 +59,11 @@ const ALLOWLIST = new Set<string>([
   // /api/user above. The CI grep allowlist in .github/workflows/ci.yml
   // already covers this path; keep this set in sync.
   "/api/user-profile",
+  // HEL-credits-mvp: read-only wallet balance for the authenticated
+  // workspace. The /api/credits/checkout sibling that mutates the
+  // wallet composes requireRole("billing"); the balance read is
+  // analogous to /api/entitlements and is open to any member.
+  "/api/credits/wallet",
 ]);
 
 interface AuthenticatedMount {

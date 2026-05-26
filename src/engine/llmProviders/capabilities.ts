@@ -70,6 +70,7 @@ export const PROVIDER_STREAM_CAPABILITIES: Record<ProviderName, ProviderStreamCa
   xai: OPENAI_COMPAT,
   deepseek: OPENAI_COMPAT,
   opencode_zen: OPENAI_COMPAT,
+  openrouter: OPENAI_COMPAT,
 };
 
 export function getProviderStreamCapabilities(

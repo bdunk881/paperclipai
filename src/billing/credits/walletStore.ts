@@ -1,0 +1,495 @@
+/**
+ * Wallet store — TypeScript shim around the SQL RPCs in migration 068.
+ *
+ * Every wallet movement (reserve / commit / release / grant) goes
+ * through here. The Postgres functions enforce the invariants
+ * (balance >= 0, idempotency, atomic reservation against concurrent
+ * spend); this module is responsible for:
+ *
+ *   - establishing the workspace RLS context
+ *   - producing idempotency keys when the caller hasn't
+ *   - falling back to an in-memory store for AUTOFLOW_ALLOW_INMEMORY mode
+ *     (CI, local dev) — same shape, same invariants, no SQL
+ *
+ * All numeric balances are bigint. Credit-USD conversion lives in
+ * costCalculator.ts; this file only moves credits around.
+ */
+import { randomUUID } from "node:crypto";
+
+import {
+  getPostgresPool,
+  inMemoryAllowed,
+  isPostgresPersistenceEnabled,
+} from "../../db/postgres";
+import { withWorkspaceContext } from "../../middleware/workspaceContext";
+
+export interface WalletBalance {
+  workspaceId: string;
+  balanceCredits: bigint;
+  lifetimePurchasedCredits: bigint;
+  lifetimeConsumedCredits: bigint;
+  autoTopupEnabled: boolean;
+  autoTopupTriggerCredits: bigint | null;
+  autoTopupAmountCredits: bigint | null;
+  updatedAt: string;
+}
+
+export interface ReserveResult {
+  reserved: boolean;
+  balanceAfter: bigint | null;
+  reason: "reserved" | "duplicate" | "insufficient_credits" | "error";
+  reservationKey: string;
+}
+
+export interface CommitResult {
+  committed: boolean;
+  balanceAfter: bigint | null;
+  reason: "committed" | "duplicate" | "no_reservation" | "wallet_missing" | "error";
+}
+
+export interface ReleaseResult {
+  released: boolean;
+  balanceAfter: bigint | null;
+  reason: "released" | "duplicate" | "no_reservation" | "wallet_missing" | "error";
+}
+
+export interface GrantResult {
+  granted: boolean;
+  balanceAfter: bigint | null;
+  reason: "granted" | "duplicate" | "error";
+}
+
+export type GrantType = "purchase" | "grant" | "refund" | "adjustment";
+
+interface ReservationRecord {
+  workspaceId: string;
+  credits: bigint;
+  idempotencyKey: string;
+  provider: string | null;
+  model: string | null;
+}
+
+interface LedgerRow {
+  type:
+    | "purchase"
+    | "consumption"
+    | "refund"
+    | "grant"
+    | "expiration"
+    | "adjustment"
+    | "reservation"
+    | "reservation_release";
+  creditsDelta: bigint;
+  balanceAfter: bigint;
+  idempotencyKey: string;
+}
+
+// allowlist: rolling counter / cached config; process-local by design
+const inMemoryWallets = new Map<string, WalletBalance>();
+// allowlist: rolling counter / cached config; process-local by design
+const inMemoryReservations = new Map<string, ReservationRecord>();
+// allowlist: rolling counter / cached config; process-local by design
+const inMemoryLedger = new Map<string, LedgerRow[]>();
+// allowlist: rolling counter / cached config; process-local by design
+const inMemoryIdempotencyIndex = new Set<string>();
+
+function persistenceAvailable(): boolean {
+  if (isPostgresPersistenceEnabled()) return true;
+  if (inMemoryAllowed()) return false;
+  throw new Error("credits wallet requires DATABASE_URL outside development/test.");
+}
+
+function ensureInMemoryWallet(workspaceId: string): WalletBalance {
+  let row = inMemoryWallets.get(workspaceId);
+  if (!row) {
+    row = {
+      workspaceId,
+      balanceCredits: 0n,
+      lifetimePurchasedCredits: 0n,
+      lifetimeConsumedCredits: 0n,
+      autoTopupEnabled: false,
+      autoTopupTriggerCredits: null,
+      autoTopupAmountCredits: null,
+      updatedAt: new Date().toISOString(),
+    };
+    inMemoryWallets.set(workspaceId, row);
+  }
+  return row;
+}
+
+function pushInMemoryLedger(workspaceId: string, row: LedgerRow): void {
+  const list = inMemoryLedger.get(workspaceId) ?? [];
+  list.push(row);
+  inMemoryLedger.set(workspaceId, list);
+  inMemoryIdempotencyIndex.add(row.idempotencyKey);
+}
+
+export async function getWalletBalance(
+  workspaceId: string,
+  userId: string,
+): Promise<WalletBalance | null> {
+  if (!persistenceAvailable()) {
+    return inMemoryWallets.get(workspaceId) ?? null;
+  }
+  const pool = getPostgresPool();
+  return withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+    const result = await client.query<{
+      balance_credits: string;
+      lifetime_purchased_credits: string;
+      lifetime_consumed_credits: string;
+      auto_topup_enabled: boolean;
+      auto_topup_trigger_credits: string | null;
+      auto_topup_amount_credits: string | null;
+      updated_at: Date;
+    }>(
+      `SELECT balance_credits, lifetime_purchased_credits, lifetime_consumed_credits,
+              auto_topup_enabled, auto_topup_trigger_credits, auto_topup_amount_credits,
+              updated_at
+         FROM workspace_credit_wallets
+        WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    if (result.rowCount === 0) {
+      return null;
+    }
+    const row = result.rows[0];
+    return {
+      workspaceId,
+      balanceCredits: BigInt(row.balance_credits),
+      lifetimePurchasedCredits: BigInt(row.lifetime_purchased_credits),
+      lifetimeConsumedCredits: BigInt(row.lifetime_consumed_credits),
+      autoTopupEnabled: row.auto_topup_enabled,
+      autoTopupTriggerCredits: row.auto_topup_trigger_credits != null
+        ? BigInt(row.auto_topup_trigger_credits)
+        : null,
+      autoTopupAmountCredits: row.auto_topup_amount_credits != null
+        ? BigInt(row.auto_topup_amount_credits)
+        : null,
+      updatedAt: row.updated_at.toISOString(),
+    };
+  });
+}
+
+export interface ReserveArgs {
+  workspaceId: string;
+  userId: string;
+  credits: bigint;
+  /** Optional caller-supplied idempotency key. Auto-generated when omitted. */
+  reservationKey?: string;
+  provider?: string;
+  model?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export async function reserveCredits(args: ReserveArgs): Promise<ReserveResult> {
+  const reservationKey = args.reservationKey ?? `reserve_${randomUUID()}`;
+
+  if (!persistenceAvailable()) {
+    // In-memory path. Mirrors the SQL function's semantics.
+    if (inMemoryIdempotencyIndex.has(reservationKey)) {
+      const wallet = inMemoryWallets.get(args.workspaceId);
+      return {
+        reserved: true,
+        balanceAfter: wallet?.balanceCredits ?? null,
+        reason: "duplicate",
+        reservationKey,
+      };
+    }
+    if (args.credits <= 0n) {
+      throw new Error(`reserveCredits: credits must be positive (got ${args.credits})`);
+    }
+    const wallet = ensureInMemoryWallet(args.workspaceId);
+    if (wallet.balanceCredits < args.credits) {
+      return {
+        reserved: false,
+        balanceAfter: wallet.balanceCredits,
+        reason: "insufficient_credits",
+        reservationKey,
+      };
+    }
+    wallet.balanceCredits -= args.credits;
+    wallet.updatedAt = new Date().toISOString();
+    inMemoryReservations.set(reservationKey, {
+      workspaceId: args.workspaceId,
+      credits: args.credits,
+      idempotencyKey: reservationKey,
+      provider: args.provider ?? null,
+      model: args.model ?? null,
+    });
+    pushInMemoryLedger(args.workspaceId, {
+      type: "reservation",
+      creditsDelta: -args.credits,
+      balanceAfter: wallet.balanceCredits,
+      idempotencyKey: reservationKey,
+    });
+    return {
+      reserved: true,
+      balanceAfter: wallet.balanceCredits,
+      reason: "reserved",
+      reservationKey,
+    };
+  }
+
+  const pool = getPostgresPool();
+  return withWorkspaceContext(pool, { workspaceId: args.workspaceId, userId: args.userId }, async (client) => {
+    const result = await client.query<{
+      reserved: boolean;
+      balance_after: string | null;
+      reason: string;
+    }>(
+      `SELECT reserved, balance_after, reason
+         FROM reserve_credits($1, $2::bigint, $3, $4, $5, $6::jsonb)`,
+      [
+        args.workspaceId,
+        args.credits.toString(),
+        reservationKey,
+        args.provider ?? null,
+        args.model ?? null,
+        args.metadata ? JSON.stringify(args.metadata) : null,
+      ],
+    );
+    const row = result.rows[0];
+    return {
+      reserved: row.reserved,
+      balanceAfter: row.balance_after != null ? BigInt(row.balance_after) : null,
+      reason: row.reason as ReserveResult["reason"],
+      reservationKey,
+    };
+  });
+}
+
+export interface CommitArgs {
+  workspaceId: string;
+  userId: string;
+  reservationKey: string;
+  commitKey?: string;
+  actualCredits: bigint;
+  provider: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens?: number;
+  wholesaleCostUsd: number;
+  retailCostUsd: number;
+  markupMultiplier: number;
+  relatedKind?: string;
+  relatedId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export async function commitCredits(args: CommitArgs): Promise<CommitResult> {
+  const commitKey = args.commitKey ?? `commit_${args.reservationKey}`;
+
+  if (!persistenceAvailable()) {
+    if (inMemoryIdempotencyIndex.has(commitKey)) {
+      const wallet = inMemoryWallets.get(args.workspaceId);
+      return {
+        committed: true,
+        balanceAfter: wallet?.balanceCredits ?? null,
+        reason: "duplicate",
+      };
+    }
+    const reservation = inMemoryReservations.get(args.reservationKey);
+    if (!reservation) {
+      return { committed: false, balanceAfter: null, reason: "no_reservation" };
+    }
+    const wallet = ensureInMemoryWallet(args.workspaceId);
+    const reserved = reservation.credits;
+    const diff = args.actualCredits - reserved;
+    if (diff > 0n) {
+      const take = diff > wallet.balanceCredits ? wallet.balanceCredits : diff;
+      wallet.balanceCredits -= take;
+      wallet.lifetimeConsumedCredits += reserved + take;
+    } else {
+      wallet.balanceCredits += -diff;
+      wallet.lifetimeConsumedCredits += args.actualCredits;
+    }
+    wallet.updatedAt = new Date().toISOString();
+    inMemoryReservations.delete(args.reservationKey);
+    inMemoryIdempotencyIndex.delete(args.reservationKey);
+    pushInMemoryLedger(args.workspaceId, {
+      type: "consumption",
+      creditsDelta: -args.actualCredits,
+      balanceAfter: wallet.balanceCredits,
+      idempotencyKey: commitKey,
+    });
+    return { committed: true, balanceAfter: wallet.balanceCredits, reason: "committed" };
+  }
+
+  const pool = getPostgresPool();
+  return withWorkspaceContext(pool, { workspaceId: args.workspaceId, userId: args.userId }, async (client) => {
+    const result = await client.query<{
+      committed: boolean;
+      balance_after: string | null;
+      reason: string;
+    }>(
+      `SELECT committed, balance_after, reason
+         FROM commit_credits(
+           $1, $2, $3, $4::bigint,
+           $5, $6,
+           $7, $8, $9,
+           $10::numeric, $11::numeric, $12::numeric,
+           $13, $14, $15::jsonb
+         )`,
+      [
+        args.workspaceId,
+        args.reservationKey,
+        commitKey,
+        args.actualCredits.toString(),
+        args.provider,
+        args.model,
+        args.promptTokens,
+        args.completionTokens,
+        args.cachedPromptTokens ?? null,
+        args.wholesaleCostUsd,
+        args.retailCostUsd,
+        args.markupMultiplier,
+        args.relatedKind ?? null,
+        args.relatedId ?? null,
+        args.metadata ? JSON.stringify(args.metadata) : null,
+      ],
+    );
+    const row = result.rows[0];
+    return {
+      committed: row.committed,
+      balanceAfter: row.balance_after != null ? BigInt(row.balance_after) : null,
+      reason: row.reason as CommitResult["reason"],
+    };
+  });
+}
+
+export interface ReleaseArgs {
+  workspaceId: string;
+  userId: string;
+  reservationKey: string;
+  releaseKey?: string;
+  reason?: string;
+}
+
+export async function releaseCredits(args: ReleaseArgs): Promise<ReleaseResult> {
+  const releaseKey = args.releaseKey ?? `release_${args.reservationKey}`;
+
+  if (!persistenceAvailable()) {
+    if (inMemoryIdempotencyIndex.has(releaseKey)) {
+      const wallet = inMemoryWallets.get(args.workspaceId);
+      return {
+        released: true,
+        balanceAfter: wallet?.balanceCredits ?? null,
+        reason: "duplicate",
+      };
+    }
+    const reservation = inMemoryReservations.get(args.reservationKey);
+    if (!reservation) {
+      return { released: false, balanceAfter: null, reason: "no_reservation" };
+    }
+    const wallet = ensureInMemoryWallet(args.workspaceId);
+    wallet.balanceCredits += reservation.credits;
+    wallet.updatedAt = new Date().toISOString();
+    inMemoryReservations.delete(args.reservationKey);
+    inMemoryIdempotencyIndex.delete(args.reservationKey);
+    pushInMemoryLedger(args.workspaceId, {
+      type: "reservation_release",
+      creditsDelta: reservation.credits,
+      balanceAfter: wallet.balanceCredits,
+      idempotencyKey: releaseKey,
+    });
+    return { released: true, balanceAfter: wallet.balanceCredits, reason: "released" };
+  }
+
+  const pool = getPostgresPool();
+  return withWorkspaceContext(pool, { workspaceId: args.workspaceId, userId: args.userId }, async (client) => {
+    const result = await client.query<{
+      released: boolean;
+      balance_after: string | null;
+      reason: string;
+    }>(
+      `SELECT released, balance_after, reason
+         FROM release_credits($1, $2, $3, $4)`,
+      [args.workspaceId, args.reservationKey, releaseKey, args.reason ?? null],
+    );
+    const row = result.rows[0];
+    return {
+      released: row.released,
+      balanceAfter: row.balance_after != null ? BigInt(row.balance_after) : null,
+      reason: row.reason as ReleaseResult["reason"],
+    };
+  });
+}
+
+export interface GrantArgs {
+  workspaceId: string;
+  /** Optional — grants are server-driven (Stripe webhook / admin), userId may not exist. */
+  userId?: string;
+  credits: bigint;
+  grantType: GrantType;
+  idempotencyKey: string;
+  relatedKind?: string;
+  relatedId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Grants are written WITHOUT requiring a workspace_id RLS context match
+ * because credit purchases land via Stripe webhooks which have no user
+ * session. The grant_credits RPC enforces the invariants; we just call
+ * it through the privileged pool connection.
+ */
+export async function grantCredits(args: GrantArgs): Promise<GrantResult> {
+  if (!persistenceAvailable()) {
+    if (inMemoryIdempotencyIndex.has(args.idempotencyKey)) {
+      const wallet = inMemoryWallets.get(args.workspaceId);
+      return {
+        granted: true,
+        balanceAfter: wallet?.balanceCredits ?? null,
+        reason: "duplicate",
+      };
+    }
+    if (args.credits <= 0n) {
+      throw new Error(`grantCredits: credits must be positive (got ${args.credits})`);
+    }
+    const wallet = ensureInMemoryWallet(args.workspaceId);
+    wallet.balanceCredits += args.credits;
+    if (args.grantType === "purchase") {
+      wallet.lifetimePurchasedCredits += args.credits;
+    }
+    wallet.updatedAt = new Date().toISOString();
+    pushInMemoryLedger(args.workspaceId, {
+      type: args.grantType,
+      creditsDelta: args.credits,
+      balanceAfter: wallet.balanceCredits,
+      idempotencyKey: args.idempotencyKey,
+    });
+    return { granted: true, balanceAfter: wallet.balanceCredits, reason: "granted" };
+  }
+
+  const result = await getPostgresPool().query<{
+    granted: boolean;
+    balance_after: string | null;
+    reason: string;
+  }>(
+    `SELECT granted, balance_after, reason
+       FROM grant_credits($1, $2::bigint, $3, $4, $5, $6, $7::jsonb)`,
+    [
+      args.workspaceId,
+      args.credits.toString(),
+      args.grantType,
+      args.idempotencyKey,
+      args.relatedKind ?? null,
+      args.relatedId ?? null,
+      args.metadata ? JSON.stringify(args.metadata) : null,
+    ],
+  );
+  const row = result.rows[0];
+  return {
+    granted: row.granted,
+    balanceAfter: row.balance_after != null ? BigInt(row.balance_after) : null,
+    reason: row.reason as GrantResult["reason"],
+  };
+}
+
+export function __resetInMemoryStateForTests(): void {
+  inMemoryWallets.clear();
+  inMemoryReservations.clear();
+  inMemoryLedger.clear();
+  inMemoryIdempotencyIndex.clear();
+}

@@ -10,6 +10,7 @@ import type {
   AgentTraceScope,
 } from "./types";
 import { redactToolArguments, previewToolOutput } from "./redact";
+import { publishWorkspaceStreamEvent } from "./streamPublisher";
 
 export function agentTraceChannel(workspaceId: string): string {
   return `workspace:${workspaceId}:agent-trace`;
@@ -88,6 +89,20 @@ export class AgentTracePublisher {
           // Subscriber errors must not break the LLM path.
         }
       }
+    }
+
+    // Forward to the workspace stream so per-routine / per-ticket SSE
+    // endpoints surface the transcript inline. Skipped when the run isn't
+    // linked to either resource (the per-run trace endpoint still works).
+    if (this.scope.routineId || this.scope.ticketId) {
+      void publishWorkspaceStreamEvent(this.scope.workspaceId, {
+        kind: "trace.forward",
+        runId: this.scope.runId,
+        agentId: this.scope.agentId,
+        routineId: this.scope.routineId ?? null,
+        ticketId: this.scope.ticketId ?? null,
+        envelope,
+      });
     }
 
     return envelope;

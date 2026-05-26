@@ -40,6 +40,7 @@ import { randomUUID } from "node:crypto";
 
 import { runAgentTurn, type AgentRunTier, type RunAgentTurnResult } from "./runAgentTurn";
 import { ticketStore } from "../tickets/ticketStore";
+import { publishWorkspaceStreamEvent } from "../engine/agentTrace/streamPublisher";
 
 export interface ExecuteAgentPromptInput {
   pool: Pool;
@@ -312,10 +313,11 @@ async function appendStructuredUpdate(input: {
     needsHumanInput: input.needsHumanInput,
     source: "agent_prompt_execution",
   };
+  const updateId = randomUUID();
   await input.pool.query(
     `INSERT INTO ticket_updates (id, ticket_id, actor_type, actor_id, update_type, content, metadata_json, created_at)
-       VALUES (gen_random_uuid(), $1::uuid, 'agent', $2::text, 'structured_update', $3, $4::jsonb, now())`,
-    [input.ticketId, input.agentId, content, JSON.stringify(metadata)],
+       VALUES ($1::uuid, $2::uuid, 'agent', $3::text, 'structured_update', $4, $5::jsonb, now())`,
+    [updateId, input.ticketId, input.agentId, content, JSON.stringify(metadata)],
   );
 
   // If the agent finished cleanly, advance ticket status from open →
@@ -327,6 +329,16 @@ async function appendStructuredUpdate(input: {
         AND status = 'open'`,
     [input.ticketId],
   );
+
+  // Fan out for the per-ticket SSE stream.
+  void publishWorkspaceStreamEvent(input.workspaceId, {
+    kind: "ticket.update.appended",
+    ticketId: input.ticketId,
+    updateId,
+    updateType: "structured_update",
+    actor: { type: "agent", id: input.agentId },
+    runId: input.runId,
+  });
 }
 
 /**
@@ -359,6 +371,17 @@ async function emitActivityEvent(input: {
       }),
     ],
   );
+
+  // Fan out for the activity firehose SSE stream.
+  void publishWorkspaceStreamEvent(input.workspaceId, {
+    kind: "activity.event",
+    activityKind: "agent.prompt_executed",
+    runId: input.runId,
+    agentId: input.agentId,
+    routineId: input.sourceRoutineId ?? null,
+    ticketId: input.sourceTicketId ?? null,
+    label: input.actionSummary,
+  });
 }
 
 /**
@@ -460,6 +483,15 @@ export async function executeAgentPrompt(
       status: "canceled",
       output: { reason: "cancelled_before_llm_call" },
     });
+    void publishWorkspaceStreamEvent(input.workspaceId, {
+      kind: "run.lifecycle",
+      phase: "canceled",
+      runId,
+      agentId: input.agentId,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: sourceTicketId ?? null,
+      triggerKind: input.triggerKind,
+    });
     return {
       runId,
       result: "",
@@ -470,6 +502,19 @@ export async function executeAgentPrompt(
       cancelled: true,
     };
   }
+
+  // Lifecycle: announce the run on the workspace stream. Subscribers
+  // listening on /api/routines/:id/stream, /api/tickets/:id/stream,
+  // and the workspace firehoses use this to show a row going live.
+  void publishWorkspaceStreamEvent(input.workspaceId, {
+    kind: "run.lifecycle",
+    phase: "started",
+    runId,
+    agentId: input.agentId,
+    routineId: input.sourceRoutineId ?? null,
+    ticketId: sourceTicketId ?? null,
+    triggerKind: input.triggerKind,
+  });
 
   // 2. Run the agentic turn.
   let turnResult: RunAgentTurnResult;
@@ -487,6 +532,8 @@ export async function executeAgentPrompt(
       tier: input.llmTier ?? "standard",
       includeSaveMemory: true,
       streamTrace: true,
+      sourceRoutineId: input.sourceRoutineId ?? null,
+      sourceTicketId: sourceTicketId ?? null,
     });
   } catch (err) {
     const message = (err as Error).message;
@@ -496,6 +543,16 @@ export async function executeAgentPrompt(
       status: "failed",
       output: { error: message },
       error: message.slice(0, 1000),
+    });
+    void publishWorkspaceStreamEvent(input.workspaceId, {
+      kind: "run.lifecycle",
+      phase: "failed",
+      runId,
+      agentId: input.agentId,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: sourceTicketId ?? null,
+      triggerKind: input.triggerKind,
+      error: message.slice(0, 500),
     });
     if (sourceTicketId) {
       await appendStructuredUpdate({
@@ -536,6 +593,18 @@ export async function executeAgentPrompt(
         usage: turnResult.usage,
       },
     });
+    void publishWorkspaceStreamEvent(input.workspaceId, {
+      kind: "run.lifecycle",
+      phase: "canceled",
+      runId,
+      agentId: input.agentId,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: sourceTicketId ?? null,
+      triggerKind: input.triggerKind,
+      provider: turnResult.provider,
+      model: turnResult.model,
+      usage: turnResult.usage,
+    });
     return {
       runId,
       result: turnResult.text,
@@ -562,6 +631,21 @@ export async function executeAgentPrompt(
       usage: turnResult.usage,
       actionSummary: parsed.actionSummary,
     },
+  });
+
+  void publishWorkspaceStreamEvent(input.workspaceId, {
+    kind: "run.lifecycle",
+    phase: "completed",
+    runId,
+    agentId: input.agentId,
+    routineId: input.sourceRoutineId ?? null,
+    ticketId: sourceTicketId ?? null,
+    triggerKind: input.triggerKind,
+    actionSummary: parsed.actionSummary,
+    needsHumanInput: parsed.needsHumanInput,
+    provider: turnResult.provider,
+    model: turnResult.model,
+    usage: turnResult.usage,
   });
 
   // 5. Document on ticket — always set when assignment-triggered, and
@@ -643,6 +727,19 @@ async function autoCreateAssignmentTicket(input: {
         { type: "agent", id: input.agentId, role: "primary" },
       ],
       context: { workspaceId: input.workspaceId, userId: input.userId },
+    });
+    void publishWorkspaceStreamEvent(input.workspaceId, {
+      kind: "ticket.created",
+      ticketId: aggregate.ticket.id,
+      title: aggregate.ticket.title,
+      status: aggregate.ticket.status,
+      priority: aggregate.ticket.priority,
+      creatorId: aggregate.ticket.creatorId,
+      assignees: aggregate.ticket.assignees.map((a) => ({
+        type: a.type,
+        id: a.id,
+        role: a.role,
+      })),
     });
     return aggregate.ticket.id;
   } catch (err) {

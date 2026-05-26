@@ -69,6 +69,14 @@ export interface RunAgentTurnInput {
   /** @deprecated Prefer `streamTrace` — kept for backward compatibility. */
   streamToPresence?: boolean;
   requestTimeoutMs?: number;
+  /**
+   * Optional routine / ticket context. When set, the trace publisher
+   * forwards each trace envelope to the workspace stream channel so the
+   * per-routine and per-ticket SSE endpoints can surface the transcript
+   * inline.
+   */
+  sourceRoutineId?: string | null;
+  sourceTicketId?: string | null;
 }
 
 export interface RunAgentTurnResult {
@@ -150,6 +158,8 @@ export async function runAgentTurn(
       turnId,
       provider: providerName,
       model,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: input.sourceTicketId ?? null,
     });
     await tracePublisher.publish({
       type: "turn.started",

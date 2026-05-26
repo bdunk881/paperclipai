@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => {
     env.VITE_LOGO_DEV_PUBLISHABLE_KEY ||
     env.LOGO_DEV_PUBLISHABLE_KEY ||
     env.NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY ||
+    process.env.VITE_LOGO_DEV_PUBLISHABLE_KEY ||
+    process.env.LOGO_DEV_PUBLISHABLE_KEY ||
+    process.env.NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY ||
     "";
 
   return {

@@ -1127,13 +1127,75 @@ export function createHiringPlanRoutes(
       return;
     }
 
-    const { includedRoleKeys } = req.body as { includedRoleKeys?: unknown };
-    if (
-      !Array.isArray(includedRoleKeys) ||
-      includedRoleKeys.some((key) => typeof key !== "string")
-    ) {
-      res.status(400).json({ error: "includedRoleKeys must be an array of strings" });
+    // Two optional fields on this PATCH:
+    //   - includedRoleKeys: which agents the reviewer wants to provision
+    //   - tierOverrides:    per-agent tier reassignment (Phase 2b, HEL-todo).
+    //                        Reviewer picks "use Power instead of Standard"
+    //                        for a specific agent, on top of the LLM-suggested
+    //                        tier. We mutate the draft's
+    //                        provisioningPlan.agents[].modelTier in place so
+    //                        the existing confirm path picks them up without
+    //                        any further wiring — same {provider, model}
+    //                        resolution applies via the workspace's tier
+    //                        routing matrix.
+    const body = req.body as {
+      includedRoleKeys?: unknown;
+      tierOverrides?: unknown;
+    };
+
+    const wantsIncluded = body.includedRoleKeys !== undefined;
+    const wantsOverrides = body.tierOverrides !== undefined;
+    if (!wantsIncluded && !wantsOverrides) {
+      res.status(400).json({
+        error: "Provide at least one of includedRoleKeys or tierOverrides.",
+      });
       return;
+    }
+
+    let includedRoleKeys: string[] | null = null;
+    if (wantsIncluded) {
+      if (
+        !Array.isArray(body.includedRoleKeys) ||
+        (body.includedRoleKeys as unknown[]).some((key) => typeof key !== "string")
+      ) {
+        res
+          .status(400)
+          .json({ error: "includedRoleKeys must be an array of strings" });
+        return;
+      }
+      includedRoleKeys = body.includedRoleKeys as string[];
+    }
+
+    let tierOverrides: Record<string, "lite" | "standard" | "power"> | null = null;
+    if (wantsOverrides) {
+      if (
+        !body.tierOverrides ||
+        typeof body.tierOverrides !== "object" ||
+        Array.isArray(body.tierOverrides)
+      ) {
+        res
+          .status(400)
+          .json({ error: "tierOverrides must be an object keyed by roleKey" });
+        return;
+      }
+      const validTiers = new Set(["lite", "standard", "power"]);
+      const out: Record<string, "lite" | "standard" | "power"> = {};
+      for (const [roleKey, tier] of Object.entries(
+        body.tierOverrides as Record<string, unknown>,
+      )) {
+        if (typeof roleKey !== "string" || roleKey.trim() === "") {
+          res.status(400).json({ error: "tierOverrides keys must be non-empty role keys" });
+          return;
+        }
+        if (typeof tier !== "string" || !validTiers.has(tier)) {
+          res.status(400).json({
+            error: `tierOverrides.${roleKey} must be one of "lite" | "standard" | "power"`,
+          });
+          return;
+        }
+        out[roleKey] = tier as "lite" | "standard" | "power";
+      }
+      tierOverrides = out;
     }
 
     try {
@@ -1148,15 +1210,78 @@ export function createHiringPlanRoutes(
       }
 
       const draft = lookup.draft as HiringPlanDraft;
-      const selectionError = validateIncludedRoleKeys(draft, includedRoleKeys);
-      if (selectionError) {
-        res.status(400).json({ error: selectionError });
-        return;
+
+      // Validate selection if provided. (We still validate even when only
+      // overrides are sent because resolveIncludedRoleKeys may default the
+      // selection to "all," but the existing helper only validates an
+      // explicit array.)
+      if (includedRoleKeys !== null) {
+        const selectionError = validateIncludedRoleKeys(draft, includedRoleKeys);
+        if (selectionError) {
+          res.status(400).json({ error: selectionError });
+          return;
+        }
       }
+
+      // Validate every tierOverride key matches an agent in the draft.
+      if (tierOverrides !== null) {
+        const knownRoles = new Set(
+          draft.provisioningPlan.agents.map((a) => a.roleKey),
+        );
+        const unknown = Object.keys(tierOverrides).filter(
+          (k) => !knownRoles.has(k),
+        );
+        if (unknown.length > 0) {
+          res.status(400).json({
+            error: `tierOverrides references unknown role keys: ${unknown.join(", ")}`,
+          });
+          return;
+        }
+      }
+
+      // Build the next draft. Selection changes nest under draft.selection.
+      // Tier overrides are applied directly onto provisioningPlan.agents (+
+      // orgChart.executives / operators where the same role exists), so the
+      // existing confirm path picks them up without conditional logic.
+      const nextAgents = tierOverrides
+        ? draft.provisioningPlan.agents.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.provisioningPlan.agents;
+
+      const nextExecutives = tierOverrides
+        ? draft.orgChart.executives.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.orgChart.executives;
+
+      const nextOperators = tierOverrides
+        ? draft.orgChart.operators.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.orgChart.operators;
 
       const updated: HiringPlanDraft = {
         ...draft,
-        selection: { includedRoleKeys },
+        orgChart: {
+          ...draft.orgChart,
+          executives: nextExecutives,
+          operators: nextOperators,
+        },
+        provisioningPlan: {
+          ...draft.provisioningPlan,
+          agents: nextAgents,
+        },
+        selection:
+          includedRoleKeys !== null
+            ? { includedRoleKeys }
+            : draft.selection,
       };
 
       await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {

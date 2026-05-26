@@ -155,6 +155,20 @@ export async function saveImportedTemplate(
   await persistImportedTemplate(template, importedBy);
 }
 
+export async function deleteImportedTemplate(id: string): Promise<boolean> {
+  const hadInMemory = importedTemplates.delete(id);
+  if (!postgresPersistenceAvailable()) {
+    return hadInMemory;
+  }
+  const result = await queryPostgres<{ id: string }>(
+    `DELETE FROM workflows
+       WHERE external_template_id = $1
+       RETURNING id`,
+    [id],
+  );
+  return hadInMemory || (result.rowCount ?? 0) > 0;
+}
+
 export function resetImportedTemplatesForTests(): void {
   importedTemplates.clear();
 }

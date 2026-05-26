@@ -124,9 +124,6 @@ export default function Assignments() {
           </div>
         </div>
         <div className="page-head-right">
-          <button type="button" className="btn">
-            Filters
-          </button>
           <button
             type="button"
             className="btn primary"

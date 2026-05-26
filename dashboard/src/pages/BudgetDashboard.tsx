@@ -27,7 +27,6 @@ import {
   type BudgetBreakdownScope,
   type BudgetRow,
   getBudgetBreakdown,
-  predictMissionCost,
   setBudgetCeiling,
 } from "../api/canonicalApi";
 import { PROVIDER_MODELS } from "../api/client";
@@ -388,12 +387,11 @@ export default function BudgetDashboard() {
     <div className="af2-page af2-v2" data-pro={isPro ? "on" : undefined}>
       <div className="page-head">
         <div className="page-head-left">
-          <div className="eyebrow af2-eyebrow">Workforce · Spend</div>
           <h1 className="h1 af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
             Budget
           </h1>
           <div className="meta af2-page-head-meta">
-            {totalSpentLabel} / {totalCapLabel} spent · filterable by date · model · scope
+            {totalSpentLabel} / {totalCapLabel} spent
           </div>
         </div>
       </div>
@@ -838,7 +836,8 @@ export default function BudgetDashboard() {
       </div>
 
       {/* ---------------- Pro: cost predictor (prototype layout) ---------------- */}
-      {isPro ? <CostPredictorPanel /> : null}
+      {/* Pro cost-predictor scaffold removed — re-add when wired to a real
+          /api/budget/predict endpoint instead of client-side heuristics. */}
     </div>
   );
 }
@@ -847,81 +846,3 @@ export default function BudgetDashboard() {
 // Pro-only cost predictor (prototype-styled scaffold)
 // ---------------------------------------------------------------------------
 
-function CostPredictorPanel() {
-  const { getAccessToken } = useAuth();
-  const [statement, setStatement] = useState("");
-  const [agentCount, setAgentCount] = useState(3);
-  const [durationDays, setDurationDays] = useState(7);
-  const [result, setResult] = useState<{ loUsd: number; hiUsd: number; basis: string } | null>(null);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setRunning(true);
-    setError(null);
-    try {
-      const token = (await getAccessToken()) ?? "";
-      const response = await predictMissionCost(token, {
-        statement,
-        agentCount,
-        durationDays,
-      });
-      setResult(response);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Prediction failed");
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="pro-block" style={{ marginTop: 22 }}>
-      <div className="label">Pro · Cost predictor</div>
-      <p style={{ fontSize: 12 }}>Sketch a mission shape and predict cost before launching:</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 120px", gap: 8 }}>
-        <input
-          placeholder="Mission statement…"
-          value={statement}
-          onChange={(e) => setStatement(e.target.value)}
-          style={{
-            border: "1px solid var(--af2-line-2)",
-            borderRadius: 6,
-            padding: "6px 10px",
-          }}
-        />
-        <select
-          value={agentCount}
-          onChange={(e) => setAgentCount(Math.max(1, Number(e.target.value) || 1))}
-        >
-          <option value={3}>3 agents</option>
-          <option value={5}>5 agents</option>
-          <option value={10}>10 agents</option>
-        </select>
-        <select
-          value={durationDays}
-          onChange={(e) => setDurationDays(Math.max(1, Number(e.target.value) || 1))}
-        >
-          <option value={2}>2 days</option>
-          <option value={7}>1 week</option>
-          <option value={30}>1 month</option>
-        </select>
-        <button type="submit" className="btn primary sm" disabled={running}>
-          {running ? "Predicting…" : "Predict ▸"}
-        </button>
-      </div>
-      {result ? (
-        <pre>
-          predicted: ${result.loUsd.toFixed(0)}–${result.hiUsd.toFixed(0)} ({result.basis})
-          {"\n"}range based on similar past missions · ±18% confidence
-        </pre>
-      ) : (
-        <pre>
-          predicted: $42–$71 (claude-opus-4-7 + gpt-4o-mini){"\n"}
-          range based on similar past missions · ±18% confidence
-        </pre>
-      )}
-      {error ? <div style={{ color: "var(--af2-clay)", fontSize: 12 }}>{error}</div> : null}
-    </form>
-  );
-}

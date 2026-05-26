@@ -696,6 +696,23 @@ app.use("/api/agents/runs", (req, _res, next) => {
   }
   next();
 });
+
+// HEL-218: same access_token → Authorization shim for the three new SSE
+// surfaces (routine + ticket + activity streams). EventSource has no
+// header API, so the dashboard passes its bearer via ?access_token=…
+// and we promote it before the standard auth chain runs.
+function promoteSseAccessToken(req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction): void {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+}
+app.use("/api/routines", promoteSseAccessToken);
+app.use("/api/tickets", promoteSseAccessToken);
+app.use("/api/activity-events", promoteSseAccessToken);
 app.use(
   "/api/agents/runs",
   requireAuth,

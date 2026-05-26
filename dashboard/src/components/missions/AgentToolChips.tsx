@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
+import { CompanyLogo } from "@autoflow/logo-dev";
 import {
   isToolSlugInCatalog,
   resolveConnectorKeyForToolSlug,
@@ -30,6 +31,30 @@ function chipStyle(background: string, color: string): CSSProperties {
   };
 }
 
+function ToolChipLabel({
+  tool,
+  connectorKey,
+  suffix,
+}: {
+  tool: string;
+  connectorKey: string | null;
+  suffix: string;
+}) {
+  return (
+    <>
+      <CompanyLogo
+        integrationId={connectorKey ?? tool.trim().toLowerCase()}
+        name={tool}
+        size={14}
+        style={{ borderRadius: 4, flexShrink: 0 }}
+      />
+      <span>
+        {tool} · {suffix}
+      </span>
+    </>
+  );
+}
+
 export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) {
   if (tools.length === 0) return null;
 
@@ -45,7 +70,7 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
               style={chipStyle("var(--af2-paper-2)", "var(--af2-ink-3)")}
               title="This integration is not available in AutoFlow yet"
             >
-              {tool} · Not available yet
+              <ToolChipLabel tool={tool} connectorKey={null} suffix="Not available yet" />
             </span>
           );
         }
@@ -58,7 +83,7 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
               key={tool}
               style={chipStyle("rgba(90,120,90,0.15)", "var(--af2-sage)")}
             >
-              {tool} · Connected
+              <ToolChipLabel tool={tool} connectorKey={connectorKey} suffix="Connected" />
             </span>
           );
         }
@@ -66,10 +91,10 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
         return (
           <Link
             key={tool}
-            to={`/integrations/mcp?reconnect=${encodeURIComponent(connectorKey)}`}
+            to={`/connections?tab=integrations&reconnect=${encodeURIComponent(connectorKey)}`}
             style={chipStyle("rgba(194,80,43,0.12)", "var(--af2-clay)")}
           >
-            {tool} · Connect
+            <ToolChipLabel tool={tool} connectorKey={connectorKey} suffix="Connect" />
           </Link>
         );
       })}

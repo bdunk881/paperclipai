@@ -43,6 +43,7 @@ import {
   type TierKey as TierMatrixKey,
 } from "../api/tierRoutingApi";
 import { useAuth } from "../context/AuthContext";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -70,7 +71,7 @@ const TABS: readonly TabDef[] = [
 
 interface IntegrationRowProps {
   id: string;
-  logo: string;
+  logo: ReactNode;
   name: string;
   desc: string;
   pill: ReactNode;
@@ -152,8 +153,15 @@ function stateToPill(state: ConnectorHealthRecord["state"]): ReactNode {
   return <span className="pill">not connected</span>;
 }
 
-function logoLetter(name: string): string {
-  return name.trim().charAt(0).toUpperCase() || "?";
+function integrationLogo(integrationId: string, name: string): ReactNode {
+  return (
+    <CompanyLogo
+      integrationId={integrationId}
+      name={name}
+      size={32}
+      style={{ borderRadius: 8 }}
+    />
+  );
 }
 
 const CONNECTOR_POLL_MS = 30_000;
@@ -342,7 +350,7 @@ function IntegrationsPanel() {
           <IntegrationRow
             key={c.connectorKey}
             id={c.connectorKey}
-            logo={logoLetter(c.connectorName)}
+            logo={integrationLogo(c.connectorKey, c.connectorName)}
             name={c.connectorName}
             desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet synced"}
             highlight={recentlyChangedKeys.has(c.connectorKey)}
@@ -407,7 +415,6 @@ interface ModelEntry {
 interface ProviderCatalogEntry {
   provider: ProviderName;
   category: string;
-  logo: string;
   models: ModelEntry[];
 }
 
@@ -415,7 +422,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "anthropic",
     category: "Anthropic",
-    logo: "A",
     models: [
       {
         id: "claude-opus-4-7",
@@ -440,7 +446,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "openai",
     category: "OpenAI",
-    logo: "O",
     models: [
       {
         id: "gpt-5.5",
@@ -471,7 +476,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "gemini",
     category: "Google Gemini",
-    logo: "G",
     models: [
       {
         id: "gemini-2.5-pro",
@@ -496,7 +500,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "mistral",
     category: "Mistral",
-    logo: "M",
     models: [
       {
         id: "mistral-large-latest",
@@ -521,7 +524,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "xai",
     category: "xAI",
-    logo: "X",
     models: [
       {
         id: "grok-4",
@@ -540,7 +542,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "deepseek",
     category: "DeepSeek",
-    logo: "D",
     models: [
       {
         id: "deepseek-v3",
@@ -559,7 +560,6 @@ const MODEL_CATALOG: ProviderCatalogEntry[] = [
   {
     provider: "groq",
     category: "Groq · open-weight (served fast)",
-    logo: "Q",
     models: [
       {
         id: "openai/gpt-oss-120b",
@@ -1446,7 +1446,7 @@ function ModelsPanel() {
           <IntegrationRow
             key={entry.provider}
             id={entry.provider}
-            logo={entry.logo}
+            logo={integrationLogo(entry.provider, entry.category)}
             name={entry.category}
             desc={`${entry.models.length} models — ${modelSummary}`}
             pill={
@@ -1581,10 +1581,18 @@ function HealthPanel() {
                 className="row"
                 style={{ gridTemplateColumns: "1fr 130px 110px 110px 110px" }}
               >
-                <div>
-                  <b>{c.connectorName}</b>
-                  <br />
-                  <span className="id">{c.connectorKey}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CompanyLogo
+                    integrationId={c.connectorKey}
+                    name={c.connectorName}
+                    size={24}
+                    style={{ borderRadius: 6, flexShrink: 0 }}
+                  />
+                  <div>
+                    <b>{c.connectorName}</b>
+                    <br />
+                    <span className="id">{c.connectorKey}</span>
+                  </div>
                 </div>
                 <div>{stateToPill(c.state)}</div>
                 <div className="id">

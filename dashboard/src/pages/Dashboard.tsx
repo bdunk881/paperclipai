@@ -17,7 +17,7 @@
  * verbatim from the prototype when the snapshot is empty, so the
  * layout demos cleanly for new workspaces.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { ApprovalRequest } from "../api/client";
 import type { Mission } from "../api/missionsApi";
@@ -26,6 +26,8 @@ import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { useHomeSnapshotQuery } from "../hooks/queries/useHomeSnapshotQuery";
 import { OnboardingBanner } from "../components/OnboardingBanner";
+import { AnimatedNumber } from "../components/AnimatedNumber";
+import { Sparkline } from "../components/Sparkline";
 
 function formatTodayChrome(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -99,6 +101,26 @@ const FALLBACK_MISSIONS = [
   { id: "M-05", body: "Launch v2 features · 8/12 · at risk" },
 ] as const;
 
+// Capacity of the in-memory history buffer that feeds the sparklines.
+// At a 60s poll, 20 samples ≈ 20 minutes of trailing data.
+const STAT_HISTORY_LIMIT = 20;
+
+function useStatHistory(value: number): number[] {
+  const [history, setHistory] = useState<number[]>([]);
+  const lastRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!Number.isFinite(value)) return;
+    if (lastRef.current === value) return;
+    lastRef.current = value;
+    setHistory((prev) => {
+      const next = [...prev, value];
+      if (next.length > STAT_HISTORY_LIMIT) next.shift();
+      return next;
+    });
+  }, [value]);
+  return history;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -135,6 +157,21 @@ export default function Dashboard() {
       todaySpend,
     };
   }, [missions, approvals, budgets]);
+
+  // Track recent values so each stat tile can render a trailing
+  // sparkline. The first sample lands when the snapshot data arrives.
+  const approvalsHistory = useStatHistory(totals.pendingApprovals.length);
+  const assignmentsHistory = useStatHistory(
+    totals.liveMissions.length * 3 + totals.pendingApprovals.length,
+  );
+  const spendHistory = useStatHistory(totals.todaySpend);
+  const missionsHistory = useStatHistory(totals.liveMissions.length);
+
+  // True only during a background refetch (i.e. while polling), so we
+  // can pulse a live-indicator dot without flashing during the first
+  // load.
+  const isRefreshing =
+    snapshotQuery.isFetching && !snapshotQuery.isLoading;
 
   if (error && !snapshotQuery.data) {
     return (
@@ -173,31 +210,63 @@ export default function Dashboard() {
         firstName={greetingName === "there" ? "" : greetingName}
       />
 
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          margin: "0 0 8px",
+          fontSize: 11,
+          color: "var(--af2-ink-3)",
+        }}
+      >
+        <span
+          aria-label={isRefreshing ? "Refreshing" : "Live"}
+          style={{
+            display: "inline-block",
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: isRefreshing
+              ? "var(--af2-clay, #c25b3a)"
+              : "var(--af2-sage, #6b9e5e)",
+            animation: isRefreshing
+              ? "af2-pulse 1.2s ease-out infinite"
+              : "none",
+          }}
+        />
+        <span>
+          {isRefreshing
+            ? "Refreshing…"
+            : `Live · auto-refreshing every 60s`}
+        </span>
+      </div>
       <div className="stat-grid">
-        <div className="stat-card">
-          <div className="stat-num">
-            {loading ? <SkeletonBlock lines={1} /> : totals.pendingApprovals.length}
-          </div>
-          <div className="stat-label">approvals waiting</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-num">
-            {loading ? <SkeletonBlock lines={1} /> : totals.liveMissions.length * 3 + totals.pendingApprovals.length}
-          </div>
-          <div className="stat-label">assignments open</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-num">
-            {loading ? <SkeletonBlock lines={1} /> : formatCurrency(totals.todaySpend, 2)}
-          </div>
-          <div className="stat-label">spent today</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-num">
-            {loading ? <SkeletonBlock lines={1} /> : totals.liveMissions.length}
-          </div>
-          <div className="stat-label">missions live</div>
-        </div>
+        <StatTile
+          label="approvals waiting"
+          value={totals.pendingApprovals.length}
+          history={approvalsHistory}
+          loading={loading}
+        />
+        <StatTile
+          label="assignments open"
+          value={totals.liveMissions.length * 3 + totals.pendingApprovals.length}
+          history={assignmentsHistory}
+          loading={loading}
+        />
+        <StatTile
+          label="spent today"
+          value={totals.todaySpend}
+          history={spendHistory}
+          loading={loading}
+          format={(v) => formatCurrency(v, 2)}
+        />
+        <StatTile
+          label="missions live"
+          value={totals.liveMissions.length}
+          history={missionsHistory}
+          loading={loading}
+        />
       </div>
 
       <div className="desc-grid">
@@ -276,6 +345,54 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  history,
+  loading,
+  format,
+}: {
+  label: string;
+  value: number;
+  history: number[];
+  loading: boolean;
+  format?: (value: number) => string;
+}) {
+  // Render the sparkline only once we have at least 2 samples — a single
+  // dot would be visually noisy and dishonest.
+  const showSpark = history.length >= 2;
+  return (
+    <div className="stat-card" style={{ position: "relative" }}>
+      <div className="stat-num">
+        {loading ? (
+          <SkeletonBlock lines={1} />
+        ) : (
+          <AnimatedNumber value={value} format={format} />
+        )}
+      </div>
+      <div className="stat-label">{label}</div>
+      {showSpark ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            bottom: 10,
+            opacity: 0.85,
+            pointerEvents: "none",
+          }}
+        >
+          <Sparkline
+            values={history}
+            width={72}
+            height={20}
+            label={`${label} trend`}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

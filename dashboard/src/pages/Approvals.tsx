@@ -17,6 +17,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,6 +37,8 @@ import { useWorkspace } from "../context/useWorkspace";
 import { queryKeys } from "../lib/queryKeys";
 import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
+import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
+import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
 // HEL-214 / PR J: Pro Mode actionable reveal.
 import { ProReveal } from "../components/pro/ProReveal";
 import { RuleDebugger } from "../components/pro/RuleDebugger";
@@ -411,6 +414,13 @@ function QueueTab({ items }: { items: QueueItem[] }) {
     return true;
   });
 
+  const filteredIds = useMemo(() => filtered.map((i) => i.id), [filtered]);
+  const { focusedId, helpOpen, setHelpOpen } = useListKeyboardNav({
+    ids: filteredIds,
+    expandedId,
+    setExpandedId,
+  });
+
   return (
     <>
       <div className="filterbar">
@@ -467,11 +477,20 @@ function QueueTab({ items }: { items: QueueItem[] }) {
       <div className="card card-list" style={{ padding: 0 }}>
         {filtered.map((item) => {
           const expanded = expandedId === item.id;
+          const focused = focusedId === item.id;
           return (
-            <div key={item.id}>
+            <div key={item.id} data-keyboard-row-id={item.id}>
               <div
                 className={`row${expanded ? " expanded" : ""}`}
-                style={{ gridTemplateColumns: QUEUE_GRID }}
+                style={{
+                  gridTemplateColumns: QUEUE_GRID,
+                  ...(focused
+                    ? {
+                        outline: "2px solid var(--af2-clay)",
+                        outlineOffset: -2,
+                      }
+                    : null),
+                }}
                 onClick={() => setExpandedId(expanded ? null : item.id)}
                 aria-expanded={expanded}
               >
@@ -582,9 +601,42 @@ function QueueTab({ items }: { items: QueueItem[] }) {
           </div>
         ) : null}
       </div>
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 11,
+          color: "var(--af2-ink-4)",
+        }}
+      >
+        Tip: <kbd style={kbdStyle}>j</kbd>/<kbd style={kbdStyle}>k</kbd> to
+        navigate, <kbd style={kbdStyle}>enter</kbd> to expand,{" "}
+        <kbd style={kbdStyle}>?</kbd> for all shortcuts.
+      </div>
+      <KeyboardShortcutsOverlay
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="Approval queue shortcuts"
+        shortcuts={[
+          { keys: "j / ↓", label: "Next item" },
+          { keys: "k / ↑", label: "Previous item" },
+          { keys: "enter / o", label: "Expand focused item" },
+          { keys: "esc", label: "Collapse" },
+          { keys: "?", label: "Toggle this help" },
+        ]}
+      />
     </>
   );
 }
+
+const kbdStyle: CSSProperties = {
+  fontFamily: "var(--af2-mono, ui-monospace, SFMono-Regular, monospace)",
+  fontSize: 10,
+  background: "var(--af2-paper-2)",
+  border: "1px solid var(--af2-line-2)",
+  borderRadius: 3,
+  padding: "0 4px",
+  color: "var(--af2-ink-2)",
+};
 
 // -- Policies tab ------------------------------------------------------------
 

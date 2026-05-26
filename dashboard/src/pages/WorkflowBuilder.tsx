@@ -45,6 +45,7 @@ import {
   type Node,
   type NodeProps,
   type NodeTypes,
+  type ReactFlowInstance,
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
@@ -537,6 +538,13 @@ export default function WorkflowBuilder() {
   const [canonicalWorkflowId, setCanonicalWorkflowId] = useState<string | null>(null);
   const studioHeaderRef = useRef<HTMLDivElement | null>(null);
   const [studioHeaderHeight, setStudioHeaderHeight] = useState(0);
+  // Palette → canvas drag-drop (HTML5 DnD). The palette button sets a kind
+  // on dataTransfer; the canvas wrapper reads it on drop and uses xyflow's
+  // screenToFlowPosition() so the new step lands where the cursor released.
+  const reactFlowInstanceRef = useRef<ReactFlowInstance<WorkflowFlowNode, Edge> | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [paletteDragKind, setPaletteDragKind] = useState<StepKind | null>(null);
+  const [canvasDropActive, setCanvasDropActive] = useState(false);
   const workflowStudioStyle = useMemo(
     () =>
       ({
@@ -916,15 +924,17 @@ export default function WorkflowBuilder() {
     }));
   }, [copilotInput, template.steps]);
 
-  function addStep(kind: StepKind) {
+  function addStep(kind: StepKind, dropPosition?: XYPosition) {
     const newStepId = "step-" + Date.now();
     let autoLinkError: string | null = null;
     setTemplate((t) => {
       const nextIndex = t.steps.length;
-      const defaultPosition = {
-        x: FLOW_STEP_X,
-        y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
-      };
+      const defaultPosition = dropPosition
+        ? { x: Math.round(dropPosition.x), y: Math.round(dropPosition.y) }
+        : {
+            x: FLOW_STEP_X,
+            y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
+          };
       const newStep = buildDefaultStep(kind, newStepId, defaultPosition);
       const nextSteps = [...t.steps, newStep];
       if (nextSteps.length < 2) {
@@ -1354,7 +1364,9 @@ export default function WorkflowBuilder() {
           an item adds that step kind via the same `addStep` handler the
           inline AddStepMenu uses. Hidden in builder pop-out (?popout=1)
           so the canvas can go full-bleed. */}
-      {!isBuilderPopout && <StudioPalette onAdd={addStep} />}
+      {!isBuilderPopout && (
+        <StudioPalette onAdd={addStep} onDragKind={setPaletteDragKind} />
+      )}
 
       {/* Left panel — canvas */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -1654,7 +1666,49 @@ export default function WorkflowBuilder() {
         {/* Canvas — HEL-100 v2: paper-2 surface with the existing dot
             grid (Background gap=20) matches docs/design/v2/styles.css
             (radial-gradient over var(--af2-paper-2)). */}
-        <div className="relative flex-1 overflow-hidden bg-af2-paper-2">
+        <div
+          ref={canvasWrapperRef}
+          className={clsx(
+            "relative flex-1 overflow-hidden bg-af2-paper-2 transition-colors",
+            canvasDropActive &&
+              "ring-2 ring-inset ring-af2-clay/40 bg-af2-clay-soft/20",
+          )}
+          onDragOver={(e) => {
+            if (!paletteDragKind && !e.dataTransfer.types.includes("application/x-autoflow-step")) {
+              return;
+            }
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!canvasDropActive) setCanvasDropActive(true);
+          }}
+          onDragLeave={(e) => {
+            // Only clear when the pointer leaves the wrapper itself, not a child.
+            if (e.currentTarget === e.target) setCanvasDropActive(false);
+          }}
+          onDrop={(e) => {
+            const kind =
+              (e.dataTransfer.getData("application/x-autoflow-step") as StepKind) ||
+              paletteDragKind;
+            setCanvasDropActive(false);
+            setPaletteDragKind(null);
+            if (!kind) return;
+            e.preventDefault();
+            const instance = reactFlowInstanceRef.current;
+            const wrapper = canvasWrapperRef.current;
+            if (instance && wrapper) {
+              const rect = wrapper.getBoundingClientRect();
+              const position = instance.screenToFlowPosition({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+              });
+              // Nudge left/up by half a node so the cursor lands at the
+              // visual center rather than the top-left corner.
+              addStep(kind, { x: position.x - 110, y: position.y - 36 });
+            } else {
+              addStep(kind);
+            }
+          }}
+        >
           {template.steps.length === 0 ? (
             <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
@@ -1668,6 +1722,10 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
+                onInit={(instance) =>
+                  (reactFlowInstanceRef.current =
+                    instance as ReactFlowInstance<WorkflowFlowNode, Edge>)
+                }
                 onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
                 onPaneClick={() => setSelectedStepId(null)}
                 onConnect={handleConnect}
@@ -3186,7 +3244,17 @@ function formatRunMs(ms: number): string {
 // label + a one-line subtitle so first-time users understand what each
 // kind actually does without opening it. The underlying `StepKind` enum
 // is unchanged — `stepHandlers.ts` is untouched.
-function StudioPalette({ onAdd }: { onAdd: (kind: StepKind) => void }) {
+//
+// Drag-from-palette: each item is draggable and sets the kind on
+// dataTransfer + paletteDragKind. The canvas wrapper reads either and
+// drops a node at the cursor via xyflow's screenToFlowPosition.
+function StudioPalette({
+  onAdd,
+  onDragKind,
+}: {
+  onAdd: (kind: StepKind) => void;
+  onDragKind: (kind: StepKind | null) => void;
+}) {
   return (
     <aside
       data-testid="studio-palette"
@@ -3216,9 +3284,17 @@ function StudioPalette({ onAdd }: { onAdd: (kind: StepKind) => void }) {
                 <li key={kind}>
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "copy";
+                      e.dataTransfer.setData("application/x-autoflow-step", kind);
+                      onDragKind(kind);
+                    }}
+                    onDragEnd={() => onDragKind(null)}
                     onClick={() => onAdd(kind)}
                     aria-label={`Add ${copy.displayLabel} step`}
-                    className="flex w-full items-start gap-2.5 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-left text-[13px] text-af2-ink-2 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
+                    title="Click to add, or drag onto the canvas"
+                    className="flex w-full items-start gap-2.5 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-left text-[13px] text-af2-ink-2 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink active:cursor-grabbing cursor-grab"
                   >
                     <span
                       className={clsx(

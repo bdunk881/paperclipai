@@ -30,6 +30,7 @@ import {
 } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
 import {
   AgentToolChips,
   type ConnectorHealthByKey,
@@ -79,6 +80,55 @@ function buildMineRows(templates: TemplateSummary[]): MineRow[] {
   }));
 }
 
+// Workspace-scoped local ordering for the Mine tab. There's no
+// `display_order` column on templates today, so we persist the
+// user-preferred order client-side and reapply it on the next mount.
+// Swap to a server-backed PATCH /api/templates/:id { displayOrder } when
+// the backend lands that field.
+const ROUTINE_ORDER_STORAGE_PREFIX = "af2.routines.order.v1";
+
+function loadRoutineOrder(workspaceId: string | null): string[] {
+  if (typeof window === "undefined" || !workspaceId) return [];
+  try {
+    const raw = window.localStorage.getItem(
+      `${ROUTINE_ORDER_STORAGE_PREFIX}.${workspaceId}`,
+    );
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRoutineOrder(workspaceId: string | null, order: string[]) {
+  if (typeof window === "undefined" || !workspaceId) return;
+  try {
+    window.localStorage.setItem(
+      `${ROUTINE_ORDER_STORAGE_PREFIX}.${workspaceId}`,
+      JSON.stringify(order),
+    );
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function applyOrder(rows: MineRow[], order: string[]): MineRow[] {
+  if (order.length === 0) return rows;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const ordered: MineRow[] = [];
+  for (const id of order) {
+    const row = byId.get(id);
+    if (row) {
+      ordered.push(row);
+      byId.delete(id);
+    }
+  }
+  // Append any new rows that weren't in the saved order yet.
+  for (const remaining of byId.values()) ordered.push(remaining);
+  return ordered;
+}
+
 function suggestIntegrationsForCategory(category: string): string[] {
   const normalized = (category || "").toLowerCase();
   if (normalized.includes("sales")) return ["hubspot", "gmail", "slack"];
@@ -102,6 +152,7 @@ export default function Routines({
   initialTemplates?: TemplateSummary[];
 } = {}) {
   const { getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const { mode: experienceMode } = useExperienceMode();
   const isPro = experienceMode === "pro";
 
@@ -171,11 +222,40 @@ export default function Routines({
     };
   }, [getAccessToken]);
 
-  const mineRows = useMemo(() => buildMineRows(templates), [templates]);
+  const [routineOrder, setRoutineOrder] = useState<string[]>(() =>
+    loadRoutineOrder(activeWorkspaceId ?? null),
+  );
+
+  // If the workspace changes (sign-out → sign-in, switch), refresh
+  // the persisted order.
+  useEffect(() => {
+    setRoutineOrder(loadRoutineOrder(activeWorkspaceId ?? null));
+  }, [activeWorkspaceId]);
+
+  const mineRows = useMemo(
+    () => applyOrder(buildMineRows(templates), routineOrder),
+    [templates, routineOrder],
+  );
   const expandedRow = useMemo(
     () => mineRows.find((r) => r.id === expandedRowId) ?? null,
     [mineRows, expandedRowId],
   );
+
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  function handleReorder(sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    const currentOrder = mineRows.map((r) => r.id);
+    const fromIdx = currentOrder.indexOf(sourceId);
+    const toIdx = currentOrder.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const next = currentOrder.slice();
+    next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, sourceId);
+    setRoutineOrder(next);
+    saveRoutineOrder(activeWorkspaceId ?? null, next);
+  }
 
   async function toggleDrawer(row: MineRow) {
     if (expandedRowId === row.id) {
@@ -317,6 +397,21 @@ export default function Routines({
                   runs={expanded ? drawerRuns : []}
                   runsLoading={expanded ? drawerLoading : false}
                   expandedRow={expandedRow}
+                  dragging={dragId === row.id}
+                  dropBefore={dragOverId === row.id && dragId !== row.id}
+                  onDragStart={() => setDragId(row.id)}
+                  onDragEnd={() => {
+                    setDragId(null);
+                    setDragOverId(null);
+                  }}
+                  onDragEnter={() => {
+                    if (dragId && dragId !== row.id) setDragOverId(row.id);
+                  }}
+                  onDrop={(sourceId) => {
+                    handleReorder(sourceId, row.id);
+                    setDragId(null);
+                    setDragOverId(null);
+                  }}
                 />
               );
             })}
@@ -371,6 +466,12 @@ function RoutineRowWithDrawer({
   runs,
   runsLoading,
   expandedRow,
+  dragging,
+  dropBefore,
+  onDragStart,
+  onDragEnd,
+  onDragEnter,
+  onDrop,
 }: {
   row: MineRow;
   expanded: boolean;
@@ -378,17 +479,68 @@ function RoutineRowWithDrawer({
   runs: WorkflowRun[];
   runsLoading: boolean;
   expandedRow: MineRow | null;
+  dragging: boolean;
+  dropBefore: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDragEnter: () => void;
+  onDrop: (sourceId: string) => void;
 }) {
-  const rowGrid = "1fr 110px 100px 130px 190px";
+  const rowGrid = "26px 1fr 110px 100px 130px 190px";
   const isDraft = row.status === "draft";
 
   return (
     <>
       <div
         className={`row${expanded ? " expanded" : ""}`}
-        style={{ gridTemplateColumns: rowGrid }}
+        style={{
+          gridTemplateColumns: rowGrid,
+          opacity: dragging ? 0.4 : 1,
+          borderTop: dropBefore ? "2px solid var(--af2-clay)" : undefined,
+          transition: "opacity 0.15s",
+        }}
         onClick={onToggle}
+        onDragOver={(e) => {
+          // Only accept routine reorder payloads.
+          if (e.dataTransfer.types.includes("application/x-autoflow-routine")) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            onDragEnter();
+          }
+        }}
+        onDrop={(e) => {
+          const id = e.dataTransfer.getData("application/x-autoflow-routine");
+          if (id) {
+            e.preventDefault();
+            e.stopPropagation();
+            onDrop(id);
+          }
+        }}
       >
+        <div
+          draggable
+          onClick={(e) => e.stopPropagation()}
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("application/x-autoflow-routine", row.id);
+            onDragStart();
+          }}
+          onDragEnd={onDragEnd}
+          title="Drag to reorder"
+          aria-label="Reorder routine"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "grab",
+            color: "var(--af2-ink-4)",
+            fontSize: 16,
+            userSelect: "none",
+            lineHeight: 1,
+          }}
+        >
+          ⋮⋮
+        </div>
         <div>
           <b>{row.name}</b>
           {row.schedule ? (

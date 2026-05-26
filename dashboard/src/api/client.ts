@@ -803,6 +803,8 @@ export interface TemplateSummary {
   version: string;
   stepCount: number;
   configFieldCount: number;
+  /** True for the built-in library templates; false for user-imported/created. */
+  seeded?: boolean;
 }
 
 export type ControlPlaneAgentLifecycleStatus = "active" | "paused" | "terminated";
@@ -1138,6 +1140,35 @@ export async function createTemplate(input: CreateTemplateInput, accessToken?: s
     },
     () => createMockTemplate(input)
   );
+}
+
+/** DELETE /api/templates/:id */
+export async function deleteTemplate(id: string, accessToken?: string): Promise<void> {
+  const res = await trackedFetch(`${BASE}/templates/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok && res.status !== 204) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to delete template: ${res.status}`);
+  }
+}
+
+/** POST /api/templates/import — accepts a portable workflow bundle JSON. */
+export async function importTemplate(
+  bundle: unknown,
+  accessToken?: string,
+): Promise<{ imported: boolean; template: WorkflowTemplate }> {
+  const res = await trackedFetch(`${BASE}/templates/import`, {
+    method: "POST",
+    headers: buildJsonHeaders(accessToken),
+    body: JSON.stringify(bundle),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error ?? `Failed to import template: ${res.status}`);
+  }
+  return res.json() as Promise<{ imported: boolean; template: WorkflowTemplate }>;
 }
 
 /** GET /api/templates/:id */

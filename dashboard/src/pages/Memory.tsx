@@ -114,13 +114,12 @@ export default function Memory() {
 
   return (
     <div className="af2-v2">
-      <div className="af2-page" style={{ maxWidth: 1100 }}>
+      <div className="af2-page">
         <div className="page-head">
           <div className="page-head-left">
-            <div className="eyebrow">Run · Memory</div>
             <h1 className="h1">Memory</h1>
             <div className="meta">
-              Scope-aware · mission · team · agent · Workspace-wide.
+              What agents know — scoped to a mission, team, or single agent.
             </div>
           </div>
         </div>
@@ -288,9 +287,7 @@ function InstructionsTab({
     <div className="card">
       <h3>{headline}</h3>
       <p className="desc">
-        Always-on prompt steering for agents working on this scope · stored in{" "}
-        <code>workspace_instructions</code> with <code>mission_id</code> / <code>agent_id</code>{" "}
-        scoping.
+        Standing instructions agents read on every run for this scope.
       </p>
       {loading ? (
         <p className="desc" style={{ marginTop: 10 }}>

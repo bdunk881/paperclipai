@@ -16,6 +16,7 @@ import {
   getTemplatesByCategory,
   listTemplates,
   TEMPLATE_MAP,
+  WORKFLOW_TEMPLATES,
 } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
@@ -146,7 +147,7 @@ import { randomUUID } from "crypto";
 import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
 import { getRunQueue } from "./queue/queues";
 
-import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
+import { deleteImportedTemplate, getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 requirePersistence();
@@ -996,6 +997,11 @@ app.get("/api/templates", (req, res) => {
     templates = listTemplates();
   }
 
+  // Distinguish seeded (built-in library) templates from user-imported/created
+  // ones. The dashboard puts seeded templates on the Library tab only; the
+  // Mine tab shows the user-owned set.
+  const seededIds = new Set(WORKFLOW_TEMPLATES.map((t) => t.id));
+
   res.json({
     templates: templates.map((t) => ({
       id: t.id,
@@ -1005,6 +1011,7 @@ app.get("/api/templates", (req, res) => {
       version: t.version,
       stepCount: t.steps.length,
       configFieldCount: t.configFields.length,
+      seeded: seededIds.has(t.id),
     })),
     total: templates.length,
   });
@@ -1091,6 +1098,20 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
+app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "Template id is required" });
+    return;
+  }
+  const removed = await deleteImportedTemplate(id);
+  if (!removed) {
+    res.status(404).json({ error: "Template not found" });
+    return;
+  }
+  res.status(204).end();
+}));
+
 app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
   let bundle;
   try {

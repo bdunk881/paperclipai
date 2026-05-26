@@ -39,9 +39,6 @@ import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
 import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
-// HEL-214 / PR J: Pro Mode actionable reveal.
-import { ProReveal } from "../components/pro/ProReveal";
-import { RuleDebugger } from "../components/pro/RuleDebugger";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 
@@ -130,6 +127,29 @@ function formatTimestamp(iso: string): string {
 }
 
 const QUEUE_GRID = "90px 1fr 130px 130px 200px";
+
+function exportQueueCsv(items: QueueItem[]) {
+  const header = ["id", "kind", "agent", "title", "subtitle"];
+  const escape = (v: string) =>
+    /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  const rows = [header.join(",")];
+  for (const item of items) {
+    rows.push(
+      [item.id, item.kind, item.agent, item.title, item.subtitle]
+        .map((v) => escape(String(v ?? "")))
+        .join(","),
+    );
+  }
+  const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `approvals-queue-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 // -- Page ---------------------------------------------------------------------
 
@@ -287,7 +307,17 @@ export default function Approvals() {
             <div className="meta">{queueCount} open</div>
           </div>
           <div className="page-head-right">
-            <button type="button" className="btn">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => exportQueueCsv(queueItems)}
+              disabled={queueItems.length === 0}
+              title={
+                queueItems.length === 0
+                  ? "Nothing to export yet"
+                  : "Download the current queue as CSV"
+              }
+            >
               Export
             </button>
             {tab !== "policies" ? (
@@ -297,7 +327,7 @@ export default function Approvals() {
                 onClick={() => setNewEscalationOpen(true)}
                 disabled={!companyId}
               >
-                + New escalation
+                + Ask the team
               </button>
             ) : null}
           </div>
@@ -363,12 +393,6 @@ export default function Approvals() {
           />
         ) : null}
 
-        <ProReveal
-          label="Rule debugger"
-          description="Dry-run a policy against a synthetic payload."
-        >
-          <RuleDebugger />
-        </ProReveal>
       </div>
     </div>
   );
@@ -863,7 +887,7 @@ function NewEscalationModal({
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!question.trim()) {
-      setSubmitError("Please describe what needs the CEO's attention.");
+      setSubmitError("Please describe what you'd like the team to weigh in on.");
       return;
     }
     setSubmitting(true);
@@ -895,8 +919,7 @@ function NewEscalationModal({
       <div className="af2-v2-modal">
         <div className="af2-v2-modal-head">
           <div>
-            <div className="eyebrow">Governance · Ask the CEO</div>
-            <h2 id="new-escalation-title">File an escalation</h2>
+            <h2 id="new-escalation-title">Ask the team</h2>
           </div>
           <button
             type="button"
@@ -915,7 +938,7 @@ function NewEscalationModal({
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 rows={5}
-                placeholder="What needs the CEO's attention right now?"
+                placeholder="What should the team weigh in on?"
                 autoFocus
                 required
               />
@@ -954,7 +977,7 @@ function NewEscalationModal({
               {submitting ? (
                 <Loader2 size={14} className="animate-spin" style={{ marginRight: 6 }} />
               ) : null}
-              File escalation
+              Send
             </button>
           </div>
         </form>

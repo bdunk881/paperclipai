@@ -47,47 +47,66 @@ import { CompanyLogo } from "@autoflow/logo-dev";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
 import { useToast } from "../components/ToastProvider";
+import McpServers from "./McpServers";
 
 // ---------------------------------------------------------------------------
 // Per-connector auth metadata. OAuth connectors call POST
 // /api/integrations/:key/connect → { redirectUrl }; API-key connectors call
 // POST /api/integrations/:key/connect-api-key → { apiKey }. Disconnect is
 // uniform: DELETE /api/integrations/:key/disconnect.
+//
+// Most providers support a single connection method. The few that support
+// both (Apollo, Linear, Stripe) expose `oauth: true` AND `apiKey: {...}` so
+// the dashboard can render a small "choose method" picker.
 // ---------------------------------------------------------------------------
 
-type ConnectAuth =
-  | { kind: "oauth" }
-  | { kind: "api-key"; placeholder: string; where: string; docsUrl: string };
+interface ApiKeyHelp {
+  placeholder: string;
+  where: string;
+  docsUrl: string;
+}
+
+interface ConnectAuth {
+  oauth?: boolean;
+  apiKey?: ApiKeyHelp;
+}
 
 const CONNECT_META: Record<string, ConnectAuth> = {
-  slack: { kind: "oauth" },
-  gmail: { kind: "oauth" },
-  hubspot: { kind: "oauth" },
-  sentry: { kind: "oauth" },
-  teams: { kind: "oauth" },
+  slack: { oauth: true },
+  gmail: { oauth: true },
+  hubspot: { oauth: true },
+  sentry: { oauth: true },
+  teams: { oauth: true },
   apollo: {
-    kind: "api-key",
-    placeholder: "Paste your Apollo API key",
-    where: "Apollo → Profile → API → Settings",
-    docsUrl: "https://apolloio.github.io/apollo-api-docs/?shell#authentication",
+    oauth: true,
+    apiKey: {
+      placeholder: "Paste your Apollo API key",
+      where: "Apollo → Profile → API → Settings",
+      docsUrl: "https://apolloio.github.io/apollo-api-docs/?shell#authentication",
+    },
   },
   linear: {
-    kind: "api-key",
-    placeholder: "lin_api_…",
-    where: "Linear → Settings → API → Personal API keys",
-    docsUrl: "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+    oauth: true,
+    apiKey: {
+      placeholder: "lin_api_…",
+      where: "Linear → Settings → API → Personal API keys",
+      docsUrl: "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+    },
   },
   stripe: {
-    kind: "api-key",
-    placeholder: "rk_live_… (restricted key recommended)",
-    where: "Stripe Dashboard → Developers → API keys → Restricted keys",
-    docsUrl: "https://stripe.com/docs/keys",
+    oauth: true,
+    apiKey: {
+      placeholder: "rk_live_… (restricted key recommended)",
+      where: "Stripe Dashboard → Developers → API keys → Restricted keys",
+      docsUrl: "https://stripe.com/docs/keys",
+    },
   },
   composio: {
-    kind: "api-key",
-    placeholder: "Paste your Composio API key",
-    where: "Composio Dashboard → Settings → API keys",
-    docsUrl: "https://docs.composio.dev/",
+    apiKey: {
+      placeholder: "Paste your Composio API key",
+      where: "Composio Dashboard → Settings → API keys",
+      docsUrl: "https://docs.composio.dev/",
+    },
   },
 };
 
@@ -326,10 +345,10 @@ function IntegrationsPanel() {
   const toast = useToast();
   const [openId, setOpenId] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [apiKeyTarget, setApiKeyTarget] = useState<{
+  const [connectTarget, setConnectTarget] = useState<{
     connectorKey: string;
     connectorName: string;
-    meta: Extract<ConnectAuth, { kind: "api-key" }>;
+    meta: ConnectAuth;
   } | null>(null);
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
   const collapse = () => setOpenId(null);
@@ -356,7 +375,25 @@ function IntegrationsPanel() {
       const res = await authedFetch(`/integrations/${connectorKey}/connect`, {
         method: "POST",
       });
-      if (!res.ok) throw new Error(`Connect failed (${res.status})`);
+      if (!res.ok) {
+        // Try to surface the real reason (e.g. "Slack OAuth client
+        // credentials are not configured") rather than just the status.
+        let detail: string | null = null;
+        try {
+          const body = (await res.json()) as { error?: string };
+          detail = body?.error ?? null;
+        } catch {
+          /* not JSON */
+        }
+        if (res.status === 500 || res.status === 503) {
+          throw new Error(
+            detail
+              ? `${name} OAuth isn't configured on this environment: ${detail}`
+              : `${name} OAuth isn't configured on this environment yet.`,
+          );
+        }
+        throw new Error(detail ?? `Connect failed (${res.status})`);
+      }
       const payload = (await res.json()) as {
         redirectUrl?: string;
         authUrl?: string;
@@ -390,11 +427,11 @@ function IntegrationsPanel() {
   }
 
   async function submitApiKey(apiKey: string) {
-    if (!apiKeyTarget) return;
-    setBusyKey(apiKeyTarget.connectorKey);
+    if (!connectTarget) return;
+    setBusyKey(connectTarget.connectorKey);
     try {
       const res = await authedFetch(
-        `/integrations/${apiKeyTarget.connectorKey}/connect-api-key`,
+        `/integrations/${connectTarget.connectorKey}/connect-api-key`,
         {
           method: "POST",
           body: JSON.stringify({ apiKey }),
@@ -404,12 +441,12 @@ function IntegrationsPanel() {
         const body = await res.text();
         throw new Error(`Save failed (${res.status}): ${body.slice(0, 200)}`);
       }
-      toast.success(`${apiKeyTarget.connectorName} connected`);
-      setApiKeyTarget(null);
+      toast.success(`${connectTarget.connectorName} connected`);
+      setConnectTarget(null);
       refresh();
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : `Couldn't save ${apiKeyTarget.connectorName} key`,
+        err instanceof Error ? err.message : `Couldn't save ${connectTarget.connectorName} key`,
       );
     } finally {
       setBusyKey(null);
@@ -448,10 +485,18 @@ function IntegrationsPanel() {
 
     const label = needsReconnect ? "Reconnect" : "Connect";
     const onClick = () => {
-      if (meta.kind === "oauth") {
+      const hasBoth = meta.oauth && meta.apiKey;
+      if (hasBoth) {
+        // Show the picker so the user can choose OAuth vs API key.
+        setConnectTarget({
+          connectorKey: c.connectorKey,
+          connectorName: c.connectorName,
+          meta,
+        });
+      } else if (meta.oauth) {
         void startOAuth(c.connectorKey, c.connectorName);
-      } else {
-        setApiKeyTarget({
+      } else if (meta.apiKey) {
+        setConnectTarget({
           connectorKey: c.connectorKey,
           connectorName: c.connectorName,
           meta,
@@ -461,7 +506,7 @@ function IntegrationsPanel() {
     return (
       <button
         type="button"
-        className={`btn sm${needsReconnect ? " primary" : " primary"}`}
+        className="btn sm primary"
         onClick={(e) => {
           e.stopPropagation();
           onClick();
@@ -574,31 +619,50 @@ function IntegrationsPanel() {
           </IntegrationRow>
         ))
       )}
-      {apiKeyTarget ? (
-        <ApiKeyConnectModal
-          target={apiKeyTarget}
-          busy={busyKey === apiKeyTarget.connectorKey}
-          onClose={() => setApiKeyTarget(null)}
-          onSubmit={(key) => void submitApiKey(key)}
+      {connectTarget ? (
+        <ConnectModal
+          target={connectTarget}
+          busy={busyKey === connectTarget.connectorKey}
+          onClose={() => setConnectTarget(null)}
+          onUseOAuth={() => {
+            const t = connectTarget;
+            setConnectTarget(null);
+            void startOAuth(t.connectorKey, t.connectorName);
+          }}
+          onSubmitApiKey={(key) => void submitApiKey(key)}
         />
       ) : null}
     </div>
   );
 }
 
-interface ApiKeyConnectModalProps {
+interface ConnectModalProps {
   target: {
     connectorKey: string;
     connectorName: string;
-    meta: Extract<ConnectAuth, { kind: "api-key" }>;
+    meta: ConnectAuth;
   };
   busy: boolean;
   onClose: () => void;
-  onSubmit: (apiKey: string) => void;
+  onUseOAuth: () => void;
+  onSubmitApiKey: (apiKey: string) => void;
 }
 
-function ApiKeyConnectModal({ target, busy, onClose, onSubmit }: ApiKeyConnectModalProps) {
+function ConnectModal({
+  target,
+  busy,
+  onClose,
+  onUseOAuth,
+  onSubmitApiKey,
+}: ConnectModalProps) {
+  const hasBoth = Boolean(target.meta.oauth && target.meta.apiKey);
+  // For "both" providers, start on the picker step; for api-key-only,
+  // skip straight to the input.
+  const [step, setStep] = useState<"choose" | "api-key">(
+    hasBoth ? "choose" : "api-key",
+  );
   const [apiKey, setApiKey] = useState("");
+
   return (
     <div
       className="af2-v2-modal-overlay"
@@ -611,52 +675,110 @@ function ApiKeyConnectModal({ target, busy, onClose, onSubmit }: ApiKeyConnectMo
       <div className="af2-v2-modal" style={{ maxWidth: 480 }}>
         <div className="af2-v2-modal-head">
           <div>
-            <div className="eyebrow">Connect via API key</div>
+            <div className="eyebrow">Connect</div>
             <h2 style={{ margin: 0 }}>{target.connectorName}</h2>
           </div>
           <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (apiKey.trim()) onSubmit(apiKey.trim());
-          }}
-        >
-          <div className="af2-v2-modal-body">
-            <p className="desc" style={{ marginTop: 0 }}>
-              Find your key at <b>{target.meta.where}</b>.{" "}
-              <a
-                href={target.meta.docsUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="link-clay"
-              >
-                Docs ↗
-              </a>
-            </p>
-            <label className="field">
-              API key
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={target.meta.placeholder}
-                autoFocus
-                required
-              />
-            </label>
-          </div>
-          <div className="af2-v2-modal-foot">
-            <button type="button" className="btn" onClick={onClose} disabled={busy}>
-              Cancel
-            </button>
-            <button type="submit" className="btn primary" disabled={busy || !apiKey.trim()}>
-              {busy ? "Saving…" : "Connect"}
-            </button>
-          </div>
-        </form>
+
+        {step === "choose" ? (
+          <>
+            <div className="af2-v2-modal-body">
+              <p className="desc" style={{ marginTop: 0 }}>
+                How would you like to connect?
+              </p>
+              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ justifyContent: "flex-start", textAlign: "left", padding: "14px 16px" }}
+                  onClick={onUseOAuth}
+                  disabled={busy}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500 }}>Sign in with {target.connectorName}</div>
+                    <div className="desc" style={{ marginTop: 2 }}>
+                      Use your existing login. Recommended.
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ justifyContent: "flex-start", textAlign: "left", padding: "14px 16px" }}
+                  onClick={() => setStep("api-key")}
+                  disabled={busy}
+                >
+                  <div>
+                    <div style={{ fontWeight: 500 }}>Paste an API key</div>
+                    <div className="desc" style={{ marginTop: 2 }}>
+                      For service accounts or environments where OAuth isn&apos;t set up.
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+            <div className="af2-v2-modal-foot">
+              <button type="button" className="btn" onClick={onClose} disabled={busy}>
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (apiKey.trim()) onSubmitApiKey(apiKey.trim());
+            }}
+          >
+            <div className="af2-v2-modal-body">
+              {target.meta.apiKey ? (
+                <p className="desc" style={{ marginTop: 0 }}>
+                  Find your key at <b>{target.meta.apiKey.where}</b>.{" "}
+                  <a
+                    href={target.meta.apiKey.docsUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="link-clay"
+                  >
+                    Docs ↗
+                  </a>
+                </p>
+              ) : null}
+              <label className="field">
+                API key
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={target.meta.apiKey?.placeholder ?? ""}
+                  autoFocus
+                  required
+                />
+              </label>
+            </div>
+            <div className="af2-v2-modal-foot">
+              {hasBoth ? (
+                <button
+                  type="button"
+                  className="btn ghost"
+                  onClick={() => setStep("choose")}
+                  disabled={busy}
+                >
+                  ← Back
+                </button>
+              ) : null}
+              <button type="button" className="btn" onClick={onClose} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" className="btn primary" disabled={busy || !apiKey.trim()}>
+                {busy ? "Saving…" : "Connect"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -1788,16 +1910,7 @@ function ModelsPanel() {
 function McpPanel() {
   return (
     <div className="panel" role="tabpanel" id="con-mcp">
-      <div className="card">
-        <h3>Custom MCP servers</h3>
-        <p className="desc">
-          Bring your own MCP server (stdio or HTTP). Each server&apos;s tools get a
-          scope-permission slider just like integrations.
-        </p>
-        <p className="desc" style={{ marginTop: 10 }}>
-          No MCP servers added yet.
-        </p>
-      </div>
+      <McpServers />
     </div>
   );
 }
@@ -1884,18 +1997,18 @@ function HealthPanel() {
 function EnvVarsPanel() {
   return (
     <div className="panel" role="tabpanel" id="con-env">
-      <div className="info-strip">
-        Encrypted at rest (pgcrypto, mirrors <code>provisioned_company_secrets</code>) ·
-        values are <b>write-only</b> · agents get short-lived signed deref tokens at
-        execution time · audit row on every grant change · <b>cannot drift</b>.
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-        <button type="button" className="btn primary">
-          + Add env var
-        </button>
-      </div>
       <div className="card">
+        <h3>Environment variables</h3>
         <p className="desc">
+          Secrets your agents can dereference at runtime. Values are stored
+          encrypted and never returned to the dashboard after they&apos;re saved.
+        </p>
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+          <button type="button" className="btn primary" disabled title="Env-var management ships in a follow-up">
+            + Add env var
+          </button>
+        </div>
+        <p className="desc" style={{ marginTop: 14, fontStyle: "italic" }}>
           No environment variables saved yet.
         </p>
       </div>

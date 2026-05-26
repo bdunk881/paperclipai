@@ -111,12 +111,20 @@ jobs:
           # implementation used dynamic import as the lazy-load mechanism,
           # so leaving that pattern uncovered would let the exact regression
           # the guard exists to prevent slip through.
+          # src/agents/runtime/delegateToSubagentTool.ts is the one
+          # legitimate in-process re-entry: it's a tool handler invoked
+          # from INSIDE an already-running agent turn (so we're already
+          # in the worker), and its job is to recursively call
+          # runAgentTurn for a subordinate agent. The HEL-177 guard's
+          # spirit — "routes only enqueue" — isn't violated here; the
+          # call happens inside the same worker run.
           violations=$(git grep -lnE '(from\s+"[^"]*(agentPromptExecution|runAgentTurn)"|from\s+'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'|import\s*\(\s*"[^"]*(agentPromptExecution|runAgentTurn)"|import\s*\(\s*'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"')' -- 'src/*.ts' 'src/**/*.ts' \
             | grep -v '^src/worker\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.test\.ts$' \
+            | grep -v '^src/agents/runtime/delegateToSubagentTool\.ts$' \
             | grep -v '\.test\.ts$' \
             || true)
           if [ -n "$violations" ]; then

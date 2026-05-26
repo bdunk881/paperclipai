@@ -111,12 +111,17 @@ jobs:
           # implementation used dynamic import as the lazy-load mechanism,
           # so leaving that pattern uncovered would let the exact regression
           # the guard exists to prevent slip through.
+          # planApprovalBridge.ts is the in-worker resume primitive —
+          # it dynamic-imports runAgentTurn from the periodic sweep
+          # that runs inside the worker process. Same "we're already
+          # in the worker" carve-out as delegateToSubagentTool.
           violations=$(git grep -lnE '(from\s+"[^"]*(agentPromptExecution|runAgentTurn)"|from\s+'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"'|import\s*\(\s*"[^"]*(agentPromptExecution|runAgentTurn)"|import\s*\(\s*'"'"'[^'"'"']*(agentPromptExecution|runAgentTurn)'"'"')' -- 'src/*.ts' 'src/**/*.ts' \
             | grep -v '^src/worker\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.ts$' \
             | grep -v '^src/agents/agentPromptExecution\.test\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.ts$' \
             | grep -v '^src/agents/runAgentTurn\.test\.ts$' \
+            | grep -v '^src/agents/runtime/planApprovalBridge\.ts$' \
             | grep -v '\.test\.ts$' \
             || true)
           if [ -n "$violations" ]; then

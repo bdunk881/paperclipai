@@ -58,19 +58,54 @@ interface Manifest {
 // Bootstrap set — small, vetted, known-clean skills for the first scan pass.
 // Extend by editing this list or passing refs on the CLI. For the full
 // 34K+ skills.sh registry pass IMPORT_SKILLS_FULL + a list file.
+//
+// Curation criteria (Brad): only include refs whose subject matter actually
+// shows up in AutoFlow workflows. Drop drive-by additions ("canva", etc.)
+// that aren't on the v1 customer loop. Each entry below has a one-line
+// rationale tying it back to a code path in this repo.
+//
+// Hand-authored AutoFlow skills (NOT imported here; live in skills/ already):
+//   - autoflow-backend            (TS Express, RLS workspace context, middleware)
+//   - autoflow-frontend           (Vite + React dashboard, af2 design tokens)
+//   - autoflow-llm-stack          (tier router, provider adapters, agent runtime)
+//   - autoflow-supabase-rls       (workspace_id RLS pattern, JWT verification)
+//   - autoflow-billing            (Stripe, entitlements, plan tiers, 402 payload)
+//   - autoflow-queue-workers      (BullMQ, Redis, src/worker.ts, scheduler)
+//   - autoflow-testing            (Jest, in-memory fallback, supertest patterns)
+//   - autoflow-product-model      (canonical glossary, product loop, forbidden words)
+//   - native-auth-ciam            (Microsoft Entra External ID reference)
 // ---------------------------------------------------------------------------
 
 const BOOTSTRAP_REFS: string[] = [
+  // — Document processing — useful for connectors that ingest customer files
+  //   (Gmail attachments, HubSpot docs, Linear file uploads, etc.) and for
+  //   producing customer deliverables (reports, invoices).
   "anthropics/skills@pdf",
   "anthropics/skills@docx",
   "anthropics/skills@xlsx",
   "anthropics/skills@pptx",
-  "anthropics/skills@artifacts-builder",
-  "anthropics/skills@brand-guidelines",
-  "anthropics/skills@canva",
+
+  // — Platform-internal skills —
+  //   webdev: react/vite/tailwind patterns, used by the dashboard +
+  //     landing teams (dashboard/ + landing/).
+  //   mcp-builder: AutoFlow exposes + consumes MCP servers (src/mcp/,
+  //     src/agents/runtime/mcpClient.ts). Build new MCP integrations
+  //     against this skill's conventions.
+  //   skill-creator: this repo has its own skills system (src/skills/);
+  //     use this when authoring or scaffolding new ones.
+  //   brand-guidelines + artifacts-builder: support the v2 editorial
+  //     brand direction (autoflow-brand/, docs/design/v2/) when an agent
+  //     is asked to produce on-brand assets or rich artifacts.
+  "anthropics/skills@webdev",
   "anthropics/skills@mcp-builder",
   "anthropics/skills@skill-creator",
-  "anthropics/skills@webdev",
+  "anthropics/skills@brand-guidelines",
+  "anthropics/skills@artifacts-builder",
+
+  // — Dropped from the original bootstrap —
+  //   anthropics/skills@canva — AutoFlow doesn't integrate with Canva and
+  //     has its own brand asset pipeline (autoflow-brand/, infra/brand-assets/).
+  //     Re-add only if a Canva connector lands.
 ];
 
 // ---------------------------------------------------------------------------

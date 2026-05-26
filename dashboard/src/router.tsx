@@ -44,6 +44,7 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
+import SkillsTriage from "./pages/SkillsTriage";
 import MissionState from "./pages/MissionState";
 import MissionDetail from "./pages/MissionDetail";
 import NotificationsSettings from "./pages/NotificationsSettings";
@@ -304,6 +305,7 @@ const routes: RouteObject[] = [
       { path: "settings/api-keys", element: <ApiKeys /> },
       { path: "settings/llm-providers", element: <LLMProviders /> },
       { path: "settings/mcp-servers", element: <McpServers /> },
+      { path: "settings/skills", element: <SkillsTriage /> },
       { path: "settings/notifications", element: <NotificationsSettings /> },
       { path: "settings/mission-assignment-sla", element: <TicketSlaSettings /> },
 

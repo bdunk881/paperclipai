@@ -23,6 +23,10 @@ export const PROVIDER_NAMES = [
   // OpenAI-compatible. Used by the hosted free tier (Big Pickle) — see
   // src/hostedFreeModels/providers.ts.
   "opencode_zen",
+  // OpenAI-compatible multi-vendor gateway. Used as the Phase 1 backbone
+  // for hosted-credits routing — see src/billing/credits/creditsRouter.ts.
+  // Single prepaid balance fronts every underlying provider.
+  "openrouter",
 ] as const;
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
@@ -438,5 +442,18 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   ],
   opencode_zen: [
     "big-pickle",
+  ],
+  // Multi-vendor gateway — model IDs use OpenRouter's
+  // `vendor/model-slug` convention. The credits router translates from
+  // our internal { provider, model } pairs at call time.
+  openrouter: [
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.7",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "google/gemini-3.5-flash",
+    "deepseek/deepseek-v4-pro",
+    "meta-llama/llama-3.3-70b-instruct",
   ],
 };

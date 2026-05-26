@@ -73,6 +73,8 @@ import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import creditsCheckoutRoutes from "./billing/credits/checkoutRoutes";
+import creditsWalletRoutes from "./billing/credits/walletRoutes";
 import {
   buildTeamAssemblyPrompt,
   parseTeamAssemblyResponse,
@@ -582,6 +584,12 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ensures only members with the billing role can manage subscriptions.
 app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
+// HEL-credits-mvp: hosted-credits pack purchases. Same role + rate-limit
+// gates as subscription checkout — billing role required.
+app.use("/api/credits/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);
+// Wallet balance is readable by any authenticated workspace member —
+// it's analogous to the subscription tier read, not a billing action.
+app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------

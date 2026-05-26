@@ -17,6 +17,9 @@ import { billingRepository, effectiveEntitlementPlan } from "./billingRepository
 import { entitlementStore } from "./entitlements";
 import { hasNewerEventForResource, recordEventOnce } from "./stripeWebhookEventLog";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { getPackById } from "./credits/packCatalog";
+import { claimSessionForGrant } from "./credits/purchaseEventLog";
+import { grantCredits } from "./credits/walletStore";
 
 const router = Router();
 
@@ -314,6 +317,14 @@ function buildSubscriptionRecord(params: {
  * Creates the internal subscription record linking Stripe to our user model.
  */
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session): Promise<void> {
+  // Credit-pack purchases are one-time payments (mode='payment') marked
+  // by metadata.kind='credit_pack'. Handle them ahead of the subscription
+  // branch so we don't fall through to the no-op early-return below.
+  const sessionMeta = (session.metadata ?? {}) as Record<string, string>;
+  if (sessionMeta.kind === "credit_pack") {
+    await handleCreditPackCheckout(session, sessionMeta);
+    return;
+  }
   if (session.mode !== "subscription") return;
 
   const meta = (session.metadata ?? {}) as Record<string, string>;
@@ -362,6 +373,66 @@ async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session):
       console.error("[paperclip] notifyCSM error:", error);
     });
   }
+}
+
+/**
+ * Credit-pack purchase finalization. The synchronous confirm endpoint
+ * (POST /api/credits/checkout/confirm) typically races and grants the
+ * credits first; we still run the same dedupe so the webhook re-arriving
+ * later is safe to retry, and we cover the case where the buyer never
+ * loads the success page.
+ */
+async function handleCreditPackCheckout(
+  session: Stripe.Checkout.Session,
+  meta: Record<string, string>,
+): Promise<void> {
+  if (session.payment_status !== "paid") {
+    console.log(`[stripe/webhook] credit pack session ${session.id} not paid yet (${session.payment_status})`);
+    return;
+  }
+  const workspaceId = meta.workspaceId;
+  const packId = meta.packId;
+  if (!workspaceId || !packId) {
+    console.error(`[stripe/webhook] credit pack session ${session.id} missing workspaceId/packId in metadata`);
+    return;
+  }
+  const pack = await getPackById(packId);
+  if (!pack) {
+    console.error(`[stripe/webhook] credit pack ${packId} (session ${session.id}) not found in catalog`);
+    return;
+  }
+
+  const claimed = await claimSessionForGrant({
+    sessionId: session.id,
+    workspaceId,
+    packId,
+    creditsGranted: pack.creditsGranted,
+    amountUsdCents: pack.priceUsdCents,
+    grantedVia: "webhook",
+  });
+  if (!claimed) {
+    console.log(`[stripe/webhook] credit pack ${packId} already granted via confirm endpoint for session ${session.id}`);
+    return;
+  }
+
+  const result = await grantCredits({
+    workspaceId,
+    credits: pack.creditsGranted,
+    grantType: "purchase",
+    idempotencyKey: `credit_purchase__${session.id}`,
+    relatedKind: "stripe_checkout_session",
+    relatedId: session.id,
+    metadata: {
+      packId,
+      amountUsdCents: pack.priceUsdCents,
+      stripePaymentIntent: typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id,
+    },
+  });
+  console.log(
+    `[stripe/webhook] credit pack ${packId} granted ${pack.creditsGranted} credits to workspace ${workspaceId} (session ${session.id}, balance_after=${result.balanceAfter})`,
+  );
 }
 
 /**

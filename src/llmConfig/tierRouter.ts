@@ -116,6 +116,12 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   // modelId in src/hostedFreeModels/providers.ts — so we leave the
   // tier map empty.
   opencode_zen: {},
+  // Hosted-credits gateway (Phase 1). Tier routing for credits-mode
+  // callers happens in src/billing/credits/creditsRouter.ts, which
+  // resolves a logical tier → underlying { provider, model } and then
+  // emits an OpenRouter slug. BYOK callers don't go through OpenRouter,
+  // so the tier defaults stay empty here.
+  openrouter: {},
 };
 
 /**
@@ -145,6 +151,10 @@ const SMALL_TIER_COST_RANK: Record<ProviderName, number> = {
   // closer to "free until rate-limited or shut off", but for the
   // ordering heuristic this is correct.
   opencode_zen: 0,
+  // Hosted-credits gateway (Phase 1) — pure pass-through, not
+  // surfaced for BYOK tier inference. Rank value is unused but the
+  // exhaustiveness check requires it.
+  openrouter: 100,
 };
 
 // ---------------------------------------------------------------------------

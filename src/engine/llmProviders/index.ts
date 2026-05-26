@@ -16,6 +16,7 @@ import {
   createVertexAIProvider,
   createXAIProvider,
 } from "./compatProviders";
+import { createOpenRouterProvider } from "./openrouter";
 import { LLMProvider, LLMProviderConfig } from "./types";
 
 export { LLMProviderConfig, LLMResponse, LLMProvider, PROVIDER_MODELS } from "./types";
@@ -58,6 +59,8 @@ export function getProvider(config: LLMProviderConfig): LLMProvider {
       return createDeepSeekProvider(config);
     case "opencode_zen":
       return createOpenCodeZenProvider(config);
+    case "openrouter":
+      return createOpenRouterProvider(config);
     default: {
       const exhaustive: never = config.provider;
       throw new Error(`Unknown LLM provider: ${String(exhaustive)}`);

@@ -4,6 +4,10 @@
  * one canonical place that knows the formulae. Integer credit math
  * throughout: the wallet holds bigint counts, never floats.
  */
+import {
+  isPostgresConfigured,
+  queryPostgres,
+} from "../../db/postgres";
 import { CREDIT_USD_VALUE, ModelRate, getDefaultModelRate, getModelRate } from "./modelPricing";
 
 export interface TokenCounts {
@@ -57,31 +61,65 @@ export function applyMarkup(wholesaleUsd: number, markup: number): number {
 }
 
 /**
+ * Returns the workspace's `credits_markup_override` (per migration 072)
+ * or null if unset / unavailable. Null means "use the model rate's
+ * default markup" (typically 1.50× per the launch decision).
+ *
+ * Reads via the privileged pool connection — this is platform metadata
+ * lookup, not workspace-isolated user content.
+ */
+export async function getWorkspaceMarkupOverride(
+  workspaceId: string,
+): Promise<number | null> {
+  if (!isPostgresConfigured()) return null;
+  const result = await queryPostgres<{ credits_markup_override: string | null }>(
+    `SELECT credits_markup_override::text AS credits_markup_override
+       FROM workspaces
+      WHERE id = $1`,
+    [workspaceId],
+  );
+  if (result.rowCount === 0) return null;
+  const raw = result.rows[0].credits_markup_override;
+  if (raw == null) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
  * Reserve-time worst-case estimate. The caller hasn't fired the LLM
  * call yet, so we don't have completionTokens — we assume the model
  * uses its full output budget. This deliberately overshoots; commit
  * time refunds the difference.
+ *
+ * `workspaceId` is optional — when present we honor a per-workspace
+ * `credits_markup_override` (migration 072). Falls back to the rate's
+ * default multiplier (uniform 1.50× at launch) when absent or unset.
  */
 export async function estimateWorstCaseCredits(args: {
   provider: string;
   model: string;
   promptTokens: number;
   maxOutputTokens: number;
+  workspaceId?: string;
 }): Promise<CostBreakdown | null> {
   const rate = (await getModelRate(args.provider, args.model))
     ?? getDefaultModelRate(args.provider, args.model);
   if (!rate || !rate.enabled) {
     return null;
   }
+  const override = args.workspaceId
+    ? await getWorkspaceMarkupOverride(args.workspaceId)
+    : null;
+  const markup = override ?? rate.markupMultiplier;
   const wholesale = computeWholesaleUsd(rate, {
     promptTokens: args.promptTokens,
     completionTokens: args.maxOutputTokens,
   });
-  const retail = applyMarkup(wholesale, rate.markupMultiplier);
+  const retail = applyMarkup(wholesale, markup);
   return {
     wholesaleUsd: wholesale,
     retailUsd: retail,
-    markupMultiplier: rate.markupMultiplier,
+    markupMultiplier: markup,
     credits: usdToCredits(retail),
     rate,
   };
@@ -89,24 +127,31 @@ export async function estimateWorstCaseCredits(args: {
 
 /**
  * Commit-time actual cost. The caller has the real usage from the LLM
- * response and uses this to compute the final ledger row.
+ * response and uses this to compute the final ledger row. `workspaceId`
+ * threading mirrors estimateWorstCaseCredits — same per-workspace
+ * markup-override semantics.
  */
 export async function actualCallCredits(args: {
   provider: string;
   model: string;
   usage: TokenCounts;
+  workspaceId?: string;
 }): Promise<CostBreakdown | null> {
   const rate = (await getModelRate(args.provider, args.model))
     ?? getDefaultModelRate(args.provider, args.model);
   if (!rate || !rate.enabled) {
     return null;
   }
+  const override = args.workspaceId
+    ? await getWorkspaceMarkupOverride(args.workspaceId)
+    : null;
+  const markup = override ?? rate.markupMultiplier;
   const wholesale = computeWholesaleUsd(rate, args.usage);
-  const retail = applyMarkup(wholesale, rate.markupMultiplier);
+  const retail = applyMarkup(wholesale, markup);
   return {
     wholesaleUsd: wholesale,
     retailUsd: retail,
-    markupMultiplier: rate.markupMultiplier,
+    markupMultiplier: markup,
     credits: usdToCredits(retail),
     rate,
   };

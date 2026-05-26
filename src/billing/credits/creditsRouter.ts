@@ -137,6 +137,7 @@ export async function callWithCredits(args: CreditsCallArgs): Promise<CreditsCal
     model: args.model,
     promptTokens: args.promptTokensEstimate,
     maxOutputTokens: args.maxOutputTokens,
+    workspaceId: args.workspaceId,
   });
   if (!estimate) {
     return { ok: false, error: { kind: "no_pricing", provider: args.provider, model: args.model } };
@@ -205,6 +206,7 @@ export async function callWithCredits(args: CreditsCallArgs): Promise<CreditsCal
     provider: args.provider,
     model: args.model,
     usage,
+    workspaceId: args.workspaceId,
   });
   // actualCallCredits can only return null if the (provider, model) is
   // missing from the rate card — but we already passed the same

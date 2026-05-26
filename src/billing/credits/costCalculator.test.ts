@@ -110,6 +110,19 @@ describe("credits cost calculator", () => {
     expect(result?.credits).toBe(188n);
   });
 
+  it("falls back to the rate's default markup when workspaceId is omitted", async () => {
+    // Same call as the basic estimate above — should match the no-override
+    // path exactly.
+    const estimate = await estimateWorstCaseCredits({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      promptTokens: 1000,
+      maxOutputTokens: 1000,
+    });
+    expect(estimate?.markupMultiplier).toBe(1.5);
+    expect(estimate?.credits).toBe(270n);
+  });
+
   it("rate card covers the launch tier targets across all 5 providers", () => {
     const required: Array<[string, string]> = [
       ["anthropic", "claude-opus-4-7"],

@@ -32,6 +32,7 @@ import AuthConfirm from "./pages/AuthConfirm";
 import EnvVars from "./pages/EnvVars";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
+import CreditPackSuccess from "./pages/CreditPackSuccess";
 import Hire from "./pages/Hire";
 import HiringPlanReview from "./pages/HiringPlanReview";
 import Dashboard from "./pages/Dashboard";
@@ -181,6 +182,15 @@ function TicketDetailRoute() {
 const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage />, errorElement: <RouteErrorBoundary /> },
   { path: "/checkout/success", element: <CheckoutSuccess />, errorElement: <RouteErrorBoundary /> },
+  {
+    path: "/billing/credits/success",
+    element: (
+      <PrivateRoute>
+        <CreditPackSuccess />
+      </PrivateRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   { path: "/auth/callback", element: <AuthCallback />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/confirm", element: <AuthConfirm />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/social-callback", element: <SocialAuthCallback />, errorElement: <RouteErrorBoundary /> },

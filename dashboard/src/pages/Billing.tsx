@@ -21,6 +21,7 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { CreditsPanel } from "../components/billing/CreditsPanel";
 
 interface PaymentMethod {
   brand: string;
@@ -272,22 +273,8 @@ export default function Billing() {
                   {subscription ? "Upgrade →" : "View pricing →"}
                 </Link>
               </div>
-              {/* ============ Top up tokens ============ */}
-              <div className="card">
-                <h3>Buy more tokens</h3>
-                <p className="desc">
-                  One-time top-up for hosted-model usage. $20 = 5M tokens
-                  (haiku-equiv).
-                </p>
-                <Link
-                  to="/pricing?topup=tokens"
-                  className="btn"
-                  style={{ marginTop: 8 }}
-                  title="One-time top-up — does not change your subscription tier"
-                >
-                  Top up
-                </Link>
-              </div>
+              {/* ============ Hosted credits ============ */}
+              <CreditsPanel />
               {/* ============ Cancel ============ */}
               <div
                 className="card"

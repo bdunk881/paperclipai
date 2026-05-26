@@ -30,6 +30,13 @@ function loadAppWithAllowedOrigins(allowedOrigins?: string, extraEnv: Record<str
 }
 
 describe("app security middleware", () => {
+  // Each test in here calls `loadAppWithAllowedOrigins` which triggers a full
+  // cold module-load of src/app.ts (route imports, Sentry init, etc.) — that
+  // takes ~1.3s locally and has tipped over Jest's 5s default on CI slow
+  // runners as more routes have been added. Bump to 20s for the whole
+  // describe so this stops being a flaky timeout source.
+  jest.setTimeout(20000);
+
   afterEach(() => {
     jest.resetModules();
     jest.restoreAllMocks();

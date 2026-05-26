@@ -199,7 +199,47 @@ jobs:
           node-version: "24"
           cache: npm
       - run: npm ci
-      - run: npm run test:coverage
+      # Run tests with output captured to a log file so we can surface what
+      # actually failed in the GH Actions log (which has truncated test
+      # failures for months — see PRs #1003 / #1004 / #1008 / #1010 / #1015
+      # / #1017 / #1018 / #1020 / #1021, all of which admin-merged because
+      # the failure was opaque). `tee` preserves the live stream and
+      # `pipefail` makes the step fail when jest fails (without it the
+      # pipeline would succeed off of tee's exit code).
+      - name: Run test:coverage with capture
+        id: test-run
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:coverage 2>&1 | tee jest-output.log
+      # On failure, surface a focused tail of the log inline so the failing
+      # test name is visible in the GH Actions UI without needing to
+      # download the artifact below.
+      - name: Surface failed-test diagnostics on failure
+        if: failure() && steps.test-run.conclusion == 'failure'
+        shell: bash
+        run: |
+          set +e
+          echo "::group::Failed test files (grep '^FAIL ')"
+          grep -E '^FAIL ' jest-output.log | head -30 || echo '(no FAIL lines found)'
+          echo "::endgroup::"
+          echo "::group::Failed assertions (grep '●')"
+          grep -E '● ' jest-output.log | head -50 || echo '(no ● lines found)'
+          echo "::endgroup::"
+          echo "::group::Last 120 lines of jest output"
+          tail -120 jest-output.log
+          echo "::endgroup::"
+      # Always upload the full log so the user can download it from the
+      # workflow run page even when the inline groups are too short to
+      # show the full context.
+      - name: Upload jest output artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-output
+          path: jest-output.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload API coverage to Codecov
         continue-on-error: true
         uses: codecov/codecov-action@v5

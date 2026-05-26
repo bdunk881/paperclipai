@@ -21,6 +21,7 @@ import {
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
@@ -2273,6 +2274,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
   startTicketNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_PROMPT_ROUTINE_SCHEDULER !== "false") {
+  startPromptRoutineCoordinator();
 }
 
 // Sentry error handler must come before other error handlers

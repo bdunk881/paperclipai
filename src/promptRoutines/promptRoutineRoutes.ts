@@ -37,6 +37,7 @@ interface PromptRoutineRow {
   ends_at: string | null;
   status: PromptRoutineStatus;
   last_fired_at: string | null;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +55,7 @@ export interface PromptRoutineResponse {
   endsAt: string | null;
   status: PromptRoutineStatus;
   lastFiredAt: string | null;
+  createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -72,6 +74,7 @@ function rowToResponse(row: PromptRoutineRow): PromptRoutineResponse {
     endsAt: row.ends_at,
     status: row.status,
     lastFiredAt: row.last_fired_at,
+    createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -212,8 +215,9 @@ export function createPromptRoutineRoutes(pool: Pool): Router {
           const result = await client.query<PromptRoutineRow>(
             `INSERT INTO prompt_routines (
                workspace_id, name, prompt, mission_id, agent_id,
-               days_of_week, time_of_day, timezone, starts_at, ends_at
-             ) VALUES ($1, $2, $3, $4, $5, $6::int[], $7::time, $8, $9, $10)
+               days_of_week, time_of_day, timezone, starts_at, ends_at,
+               created_by
+             ) VALUES ($1, $2, $3, $4, $5, $6::int[], $7::time, $8, $9, $10, $11)
              RETURNING *`,
             [
               workspaceId,
@@ -226,6 +230,7 @@ export function createPromptRoutineRoutes(pool: Pool): Router {
               timezone,
               startsAt,
               endsCheck.value,
+              userId,
             ],
           );
           return result.rows[0];

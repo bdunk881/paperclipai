@@ -101,6 +101,7 @@ export interface WorkspaceStreamEnvelope {
 // Sequence counter — per-workspace so the SSE client can detect gaps
 // ---------------------------------------------------------------------------
 
+// allowlist: process-local monotonic counter for SSE seq numbers — clients use it to detect gaps, not customer data
 const seqByWorkspace = new Map<string, number>();
 function nextSeq(workspaceId: string): number {
   const current = seqByWorkspace.get(workspaceId) ?? 0;
@@ -113,6 +114,7 @@ function nextSeq(workspaceId: string): number {
 // In-memory subscribers — used in tests and the in-memory dev/CI fallback
 // ---------------------------------------------------------------------------
 
+// allowlist: process-local SSE subscriber registry — Redis pub/sub is used in prod; this is the dev/test fallback
 const inMemorySubscribers = new Map<
   string,
   Set<(envelope: WorkspaceStreamEnvelope) => void>

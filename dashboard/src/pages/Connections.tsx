@@ -43,6 +43,7 @@ import {
   type TierKey as TierMatrixKey,
 } from "../api/tierRoutingApi";
 import { useAuth } from "../context/AuthContext";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -70,7 +71,7 @@ const TABS: readonly TabDef[] = [
 
 interface IntegrationRowProps {
   id: string;
-  logo: string;
+  logo: ReactNode;
   name: string;
   desc: string;
   pill: ReactNode;
@@ -152,8 +153,15 @@ function stateToPill(state: ConnectorHealthRecord["state"]): ReactNode {
   return <span className="pill">not connected</span>;
 }
 
-function logoLetter(name: string): string {
-  return name.trim().charAt(0).toUpperCase() || "?";
+function integrationLogo(integrationId: string, name: string): ReactNode {
+  return (
+    <CompanyLogo
+      integrationId={integrationId}
+      name={name}
+      size={32}
+      style={{ borderRadius: 8 }}
+    />
+  );
 }
 
 const CONNECTOR_POLL_MS = 30_000;
@@ -342,7 +350,7 @@ function IntegrationsPanel() {
           <IntegrationRow
             key={c.connectorKey}
             id={c.connectorKey}
-            logo={logoLetter(c.connectorName)}
+            logo={integrationLogo(c.connectorKey, c.connectorName)}
             name={c.connectorName}
             desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet synced"}
             highlight={recentlyChangedKeys.has(c.connectorKey)}
@@ -1581,10 +1589,18 @@ function HealthPanel() {
                 className="row"
                 style={{ gridTemplateColumns: "1fr 130px 110px 110px 110px" }}
               >
-                <div>
-                  <b>{c.connectorName}</b>
-                  <br />
-                  <span className="id">{c.connectorKey}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CompanyLogo
+                    integrationId={c.connectorKey}
+                    name={c.connectorName}
+                    size={24}
+                    style={{ borderRadius: 6, flexShrink: 0 }}
+                  />
+                  <div>
+                    <b>{c.connectorName}</b>
+                    <br />
+                    <span className="id">{c.connectorKey}</span>
+                  </div>
                 </div>
                 <div>{stateToPill(c.state)}</div>
                 <div className="id">

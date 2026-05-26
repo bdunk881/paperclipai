@@ -30,6 +30,7 @@ import {
 } from "../../skills/skillsLoader";
 import type {
   AgentBackend,
+  AgentMcpServer,
   AgentRunInput,
   AgentRunResult,
   ResolvedModelBinding,
@@ -72,12 +73,21 @@ export class OpenAIAgentsBackend implements AgentBackend {
         buildHandoffAgent(sdk, sub, binding.model, loadedSkills),
       );
 
+      // HEL-222: pass through the user's connected MCP servers to the
+      // OpenAI Agents SDK's native MCP support. The SDK opens the
+      // streamable-HTTP connection, lists the remote tools, and
+      // registers them on the agent — no manual bridge needed.
+      const mcpServers = (input.mcpServers ?? []).map((s) =>
+        buildSdkMcpServer(sdk, s),
+      );
+
       const agent = new sdk.Agent({
         name: input.agentName,
         instructions: systemWithSkills,
         model: binding.model,
         tools: sdkTools,
         handoffs: handoffAgents,
+        mcpServers,
       });
 
       if (input.onTrace) {
@@ -180,5 +190,29 @@ function buildHandoffAgent(
     name: sub.name,
     instructions: appendSkillsToPrompt(base, parentSkills),
     model: parentModel,
+  });
+}
+
+/**
+ * Build an OpenAI Agents SDK MCP server from our AgentMcpServer shape.
+ * The SDK speaks Streamable HTTP MCP natively — it connects, lists
+ * remote tools, registers them on the agent, and routes tool calls
+ * through `callTool`. Auth headers (when set) ride on `requestInit`.
+ *
+ * `cacheToolsList: true` is on by default — tools rarely change at
+ * runtime and the cache cuts a connect-per-call to once-per-server.
+ */
+function buildSdkMcpServer(
+  sdk: typeof import("@openai/agents"),
+  server: AgentMcpServer,
+) {
+  const requestInit = server.authorization
+    ? { headers: { Authorization: server.authorization } }
+    : undefined;
+  return new sdk.MCPServerStreamableHttp({
+    name: server.name,
+    url: server.url,
+    cacheToolsList: true,
+    requestInit,
   });
 }

@@ -61,6 +61,7 @@ import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
 import Routines from "./pages/Routines";
+import PromptRoutineNew from "./pages/PromptRoutineNew";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import WorkflowBuilderSetupCoachDemo from "./pages/WorkflowBuilderSetupCoachDemo";
 import {
@@ -217,6 +218,7 @@ const routes: RouteObject[] = [
       // `/templates/:templateId` Studio-landing shortcut has been removed
       // alongside it. `/templates` still redirects below for stale links.
       { path: "routines", element: <Routines /> },
+      { path: "routines/new-prompt", element: <PromptRoutineNew /> },
 
       // Run pillar
       // HEL-204 PR A: /agents/activity merged into Assignments → Activity tab.

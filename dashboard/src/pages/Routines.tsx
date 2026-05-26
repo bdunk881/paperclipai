@@ -20,7 +20,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   createTemplate,
   deleteTemplate,
@@ -428,14 +428,7 @@ export default function Routines({
           >
             {importing ? "Importing…" : "Import"}
           </button>
-          <Link
-            to="/builder"
-            className="btn primary"
-            style={{ textDecoration: "none" }}
-            title="Open a blank Studio canvas."
-          >
-            + Blank routine →
-          </Link>
+          <CreateRoutineDropdown />
         </div>
       </div>
 
@@ -968,5 +961,122 @@ function EmptyState({ label }: { label: string }) {
         Switch tabs or open the builder to create a new workflow.
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create-routine dropdown — two paths: full Workflow Studio (existing
+// /builder), or a lightweight scheduled prompt (/routines/new-prompt).
+// ---------------------------------------------------------------------------
+
+function CreateRoutineDropdown() {
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!open) return;
+    function close(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-routine-create-menu]")) return;
+      setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div style={{ position: "relative" }} data-routine-create-menu>
+      <button
+        type="button"
+        className="btn primary"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        + Create routine ▾
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            right: 0,
+            zIndex: 30,
+            minWidth: 320,
+            background: "var(--af2-paper)",
+            border: "1px solid var(--af2-line)",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(26,20,16,0.14)",
+            padding: 6,
+          }}
+        >
+          <CreateMenuItem
+            title="Create in Workflow Studio"
+            description="Multi-step workflow with triggers, branches, AI calls, integrations, and approvals."
+            onClick={() => {
+              setOpen(false);
+              navigate("/builder");
+            }}
+          />
+          <CreateMenuItem
+            title="Create a prompt routine"
+            description="Send a prompt to an agent on a schedule. Each fire creates an assignment in the queue."
+            onClick={() => {
+              setOpen(false);
+              navigate("/routines/new-prompt");
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CreateMenuItem({
+  title,
+  description,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      style={{
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "10px 12px",
+        borderRadius: 6,
+        border: 0,
+        background: "transparent",
+        cursor: "pointer",
+        font: "inherit",
+        color: "inherit",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "var(--af2-paper-2)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+      }}
+    >
+      <div style={{ fontWeight: 500, fontSize: 13.5 }}>{title}</div>
+      <div style={{ marginTop: 3, fontSize: 12, color: "var(--af2-ink-3)" }}>
+        {description}
+      </div>
+    </button>
   );
 }

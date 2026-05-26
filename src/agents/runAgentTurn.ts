@@ -39,6 +39,7 @@ import {
 import { pickBackend } from "./runtime/runAgent";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
 import { createBudgetHook } from "./runtime/budgetHook";
+import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
@@ -98,6 +99,19 @@ export interface RunAgentTurnInput {
    * agent.
    */
   enforceBudget?: boolean;
+  /**
+   * Depth in the `delegate_to_subagent` call chain. 0 (or undefined)
+   * means "top-level run." Each recursive runAgentTurn call from the
+   * delegate tool increments this. The delegate tool refuses at the
+   * cap (MAX_DELEGATION_DEPTH = 3).
+   */
+  delegationDepth?: number;
+  /**
+   * The set of agent IDs already on the current delegation call stack.
+   * The delegate tool refuses to call any agent already in this set,
+   * which prevents A→B→A loops.
+   */
+  delegationLineage?: ReadonlySet<string>;
 }
 
 export interface RunAgentTurnResult {
@@ -134,6 +148,22 @@ export async function runAgentTurn(
       }),
     );
   }
+  // Org-chart delegation: when this agent has direct reports, give it
+  // a `delegate_to_subagent` tool. The factory returns null for
+  // non-managers, so we add an undefined-skipping push.
+  const delegateTool = await createDelegateToSubagentTool({
+    pool: input.pool,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    parentAgentId: input.agentId,
+    depth: input.delegationDepth ?? 0,
+    lineage: input.delegationLineage,
+    sourceRoutineId: input.sourceRoutineId ?? null,
+    sourceTicketId: input.sourceTicketId ?? null,
+    tier: input.tier,
+    permissionMode: input.permissionMode,
+  });
+  if (delegateTool) candidateTools.push(delegateTool);
   if (input.extraTools) candidateTools.push(...input.extraTools);
 
   const permissions = await loadAgentIntegrationPermissions({

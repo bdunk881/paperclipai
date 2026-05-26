@@ -260,6 +260,33 @@ describe("POST /api/mcp/servers/:id/test", () => {
     const res = await request(app).post(`/api/mcp/servers/${s.id}/test`).set(H);
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+    expect(res.body.toolCount).toBe(0);
+  });
+
+  it("returns toolCount reflecting the server's tool list (HEL-220)", async () => {
+    const s = await mcpStore.add(USER, { name: "x", url: "https://mcp.example.com" });
+    global.fetch = jest.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          tools: [
+            { name: "search" },
+            { name: "send_message" },
+            { name: "list_channels" },
+          ],
+        },
+      }),
+    }) as unknown as typeof fetch;
+
+    const res = await request(app).post(`/api/mcp/servers/${s.id}/test`).set(H);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      ok: true,
+      message: "Connection successful",
+      toolCount: 3,
+    });
   });
 
   it("returns 502 and ok=false on connection failure", async () => {

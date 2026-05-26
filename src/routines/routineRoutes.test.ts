@@ -255,3 +255,29 @@ describe("PATCH /api/routines/:id", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("GET /api/routines/:id/stream", () => {
+  it("rejects an invalid routine ID", async () => {
+    const pool = makePool([]);
+    const app = buildApp(pool);
+
+    const res = await request(app)
+      .get("/api/routines/not-a-uuid/stream")
+      .set("Accept", "text/event-stream");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Invalid routine ID/);
+  });
+
+  it("returns 404 when the routine doesn't belong to the workspace", async () => {
+    const pool = makePool([]); // ownership lookup returns 0 rows
+    const app = buildApp(pool);
+
+    const res = await request(app)
+      .get(`/api/routines/${ROUTINE_ID}/stream`)
+      .set("Accept", "text/event-stream");
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Routine not found/);
+  });
+});

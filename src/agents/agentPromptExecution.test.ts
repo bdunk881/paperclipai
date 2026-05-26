@@ -160,12 +160,16 @@ describe("executeAgentPrompt", () => {
 
     expect(result.needsHumanInput).toBe(false);
 
-    // ticket_updates INSERT — call index 5 (was 2 pre-HEL-175).
+    // ticket_updates INSERT — call index 5 (was 2 pre-HEL-175). params[0]
+    // is the freshly-generated update UUID now that the INSERT names it
+    // explicitly (rather than relying on gen_random_uuid()), so we just
+    // sanity-check shape and assert on ticketId + agentId at [1] and [2].
     const updateInsertCall = pool._recorder.calls[5]!;
     expect(updateInsertCall.sql).toContain("INSERT INTO ticket_updates");
     expect(updateInsertCall.sql).toContain("'structured_update'");
-    expect(updateInsertCall.params[0]).toBe(TICKET_ID);
-    expect(updateInsertCall.params[1]).toBe(AGENT_ID);
+    expect(typeof updateInsertCall.params[0]).toBe("string");
+    expect(updateInsertCall.params[1]).toBe(TICKET_ID);
+    expect(updateInsertCall.params[2]).toBe(AGENT_ID);
 
     // tickets UPDATE — call index 6.
     const ticketUpdateCall = pool._recorder.calls[6]!;

@@ -17,6 +17,8 @@ import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import type { RunJobPayload } from "../queue/queues";
 import { addRepeatableJob, removeRepeatableJob } from "../queue/scheduler";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { handleStreamSse } from "../engine/agentTrace/streamSseHandler";
+import type { WorkspaceStreamEnvelope } from "../engine/agentTrace/streamPublisher";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -398,6 +400,67 @@ export function createRoutineRoutes(
     }
 
     res.status(200).json({ runId, mode, steps: baseSteps });
+  }));
+
+  // -------------------------------------------------------------------------
+  // GET /api/routines/stream — workspace-wide firehose of routine activity.
+  // Emits run.lifecycle and forwarded trace events for every routine in the
+  // workspace. Useful for list-view live status badges.
+  // -------------------------------------------------------------------------
+  router.get("/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Workspace required" });
+      return;
+    }
+    await handleStreamSse(req, res, {
+      workspaceId,
+      filter: (envelope: WorkspaceStreamEnvelope) => {
+        const { event } = envelope;
+        if (event.kind === "run.lifecycle" || event.kind === "trace.forward") {
+          return Boolean(event.routineId);
+        }
+        return false;
+      },
+    });
+  }));
+
+  // -------------------------------------------------------------------------
+  // GET /api/routines/:id/stream — scoped to a single routine.
+  // Emits the lifecycle events for runs of THIS routine plus the forwarded
+  // trace events from in-flight runs so the detail page can render the
+  // live transcript inline.
+  // -------------------------------------------------------------------------
+  router.get("/:id/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    const routineId = req.params.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Workspace required" });
+      return;
+    }
+    if (!UUID_RE.test(routineId)) {
+      res.status(400).json({ error: "Invalid routine ID format" });
+      return;
+    }
+    const ownership = await pool.query<{ id: string }>(
+      `SELECT id::text FROM routines
+        WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+      [routineId, workspaceId],
+    );
+    if (!ownership.rows[0]) {
+      res.status(404).json({ error: "Routine not found" });
+      return;
+    }
+    await handleStreamSse(req, res, {
+      workspaceId,
+      filter: (envelope: WorkspaceStreamEnvelope) => {
+        const { event } = envelope;
+        if (event.kind === "run.lifecycle" || event.kind === "trace.forward") {
+          return event.routineId === routineId;
+        }
+        return false;
+      },
+    });
   }));
 
   return router;

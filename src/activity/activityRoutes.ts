@@ -22,6 +22,7 @@ import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { handleStreamSse } from "../engine/agentTrace/streamSseHandler";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -97,6 +98,24 @@ export function createActivityRoutes(pool: Pool) {
         console.error(`[activity] list failed: ${(err as Error).message}`);
         res.status(500).json({ error: "Failed to load activity feed" });
       }
+    }),
+  );
+
+  // GET /api/activity-events/stream — live SSE of activity_events as they
+  // land in the workspace. Subscribers are the dashboard's Activity page
+  // when it wants real-time updates instead of polling every 5s.
+  router.get(
+    "/stream",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!workspaceId) {
+        res.status(401).json({ error: "Workspace required" });
+        return;
+      }
+      await handleStreamSse(req, res, {
+        workspaceId,
+        filter: (envelope) => envelope.event.kind === "activity.event",
+      });
     }),
   );
 

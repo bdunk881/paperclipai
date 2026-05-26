@@ -95,8 +95,11 @@ describe("provider adapter registry (HEL-82)", () => {
     expect(typeof adapter.invoke).toBe("function");
   });
 
-  it("throws a clear error for unimplemented providers (e.g., cohere)", () => {
-    expect(() => getProviderAdapter("cohere")).toThrow(/not implemented/);
+  it("returns a working adapter for every wired provider (HEL-224 closed the cohere + long-tail gap)", () => {
+    // Spot-check the providers that were previously throwing.
+    expect(getProviderAdapter("cohere").provider).toBe("cohere");
+    expect(getProviderAdapter("groq").provider).toBe("groq");
+    expect(getProviderAdapter("xai").provider).toBe("xai");
   });
 
   it("lists every wired provider", () => {
@@ -105,10 +108,20 @@ describe("provider adapter registry (HEL-82)", () => {
       expect.arrayContaining([
         "anthropic",
         "bedrock",
+        "cohere",
+        "deepseek",
+        "fireworks",
         "gemini",
+        "groq",
+        "localai",
         "mistral",
+        "ollama",
+        "opencode_zen",
         "openai",
+        "perplexity",
+        "together",
         "vertex-ai",
+        "xai",
       ]),
     );
   });

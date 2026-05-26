@@ -49,8 +49,16 @@ export default function McpServers() {
   const [formError, setFormError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // Per-server UI state
-  const [testResults, setTestResults] = useState<Record<string, { ok: boolean; message: string } | "loading">>({});
+  // Per-server UI state. testResults caches the most recent probe
+  // result; we auto-test once per server on initial load so the page
+  // can render a persistent health badge per row (HEL-220) without
+  // forcing the user to click Test on every visit.
+  const [testResults, setTestResults] = useState<
+    Record<
+      string,
+      { ok: boolean; message: string; toolCount?: number } | "loading"
+    >
+  >({});
   const [tools, setTools] = useState<Record<string, McpTool[] | "loading" | "error">>({});
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [showHelp, setShowHelp] = useState(false);
@@ -137,12 +145,11 @@ export default function McpServers() {
     setTestResults((prev) => ({ ...prev, [id]: "loading" }));
     try {
       const accessToken = await requireAccessToken();
-      const res = await apiPost<{ ok: boolean; message: string }>(
-        `/api/mcp/servers/${id}/test`,
-        {},
-        user,
-        accessToken
-      );
+      const res = await apiPost<{
+        ok: boolean;
+        message: string;
+        toolCount?: number;
+      }>(`/api/mcp/servers/${id}/test`, {}, user, accessToken);
       setTestResults((prev) => ({ ...prev, [id]: res }));
     } catch (e) {
       setTestResults((prev) => ({
@@ -151,6 +158,18 @@ export default function McpServers() {
       }));
     }
   }
+
+  // HEL-220: auto-probe every server once on first load so the row
+  // badges aren't all neutral. We only run this when the server count
+  // changes (initial load + after add/delete) so repeated re-renders
+  // don't hammer the test endpoint.
+  useEffect(() => {
+    if (servers.length === 0) return;
+    const untested = servers.filter((s) => !(s.id in testResults));
+    if (untested.length === 0) return;
+    void Promise.allSettled(untested.map((s) => handleTest(s.id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [servers]);
 
   async function handleDiscoverTools(id: string) {
     setTools((prev) => ({ ...prev, [id]: "loading" }));
@@ -306,7 +325,10 @@ export default function McpServers() {
                       <PlugZap size={16} className="text-af2-clay" />
                     </div>
                     <div>
-                      <p className="font-semibold text-af2-ink text-sm">{server.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-af2-ink text-sm">{server.name}</p>
+                        <ConnectionHealthBadge result={testResult} />
+                      </div>
                       <p className="text-xs text-af2-ink-3 font-mono mt-0.5 truncate max-w-xs">{server.url}</p>
                     </div>
                   </div>
@@ -443,5 +465,67 @@ export default function McpServers() {
         </div>
       )}
     </div>
+  );
+}
+
+// -- Connection health badge (HEL-220) ---------------------------------------
+
+/**
+ * Per-row health dot that reflects the most recent connectivity probe.
+ * Auto-populated on first page load so users get an at-a-glance view
+ * of which integrations are live without clicking Test connection.
+ *
+ *   - loading   small spinner + "Testing…"
+ *   - ok        green dot + "Live · N tools" (N from the test endpoint)
+ *   - failed    red dot + short error message (title-attribute holds full)
+ *   - unknown   neutral dot + "Untested" (e.g. first render before probe)
+ */
+function ConnectionHealthBadge({
+  result,
+}: {
+  result: { ok: boolean; message: string; toolCount?: number } | "loading" | undefined;
+}) {
+  if (result === "loading") {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-af2-line bg-af2-paper-2 text-[10px] font-medium text-af2-ink-3">
+        <Loader2 size={10} className="animate-spin" />
+        Testing…
+      </span>
+    );
+  }
+  if (!result) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-af2-line bg-af2-paper-2 text-[10px] font-medium text-af2-ink-3"
+        title="Connection health not yet probed"
+      >
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-af2-ink-3/60" />
+        Untested
+      </span>
+    );
+  }
+  if (result.ok) {
+    const label =
+      typeof result.toolCount === "number"
+        ? `Live · ${result.toolCount} tool${result.toolCount === 1 ? "" : "s"}`
+        : "Live";
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-af2-sage/40 bg-af2-sage/10 text-[10px] font-medium text-af2-sage"
+        title={result.message}
+      >
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-af2-sage" />
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-af2-clay/40 bg-af2-clay/10 text-[10px] font-medium text-af2-clay"
+      title={result.message}
+    >
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-af2-clay" />
+      Unreachable
+    </span>
   );
 }

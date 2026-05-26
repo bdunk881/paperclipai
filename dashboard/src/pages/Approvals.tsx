@@ -50,6 +50,28 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "history", label: "History" },
 ];
 
+// HEL-217: matches `PLAN_APPROVAL_TEMPLATE_NAME` in
+// src/agents/runtime/planApprovalBridge.ts. Kept inline because the
+// dashboard and backend don't share a constants module today.
+const PLAN_APPROVAL_TEMPLATE_NAME = "__autoflow_plan_approval__";
+const PLAN_APPROVAL_MESSAGE_DELIMITER = "\n\n---ORIGINAL_PROMPT---\n\n";
+
+interface ParsedPlanApprovalMessage {
+  planText: string;
+  originalPrompt: string;
+}
+
+function parsePlanApprovalMessage(message: string): ParsedPlanApprovalMessage {
+  const idx = message.indexOf(PLAN_APPROVAL_MESSAGE_DELIMITER);
+  if (idx === -1) {
+    return { planText: message, originalPrompt: "" };
+  }
+  return {
+    planText: message.slice(0, idx),
+    originalPrompt: message.slice(idx + PLAN_APPROVAL_MESSAGE_DELIMITER.length),
+  };
+}
+
 // -- Approvals-policy types (mirrors src/approvals/policyTypes.ts) ------------
 
 type ApprovalTierActionType =
@@ -96,7 +118,7 @@ const MODE_LABEL: Record<ApprovalTierMode, string> = {
 
 interface QueueItem {
   id: string;
-  kind: "action" | "escalation";
+  kind: "action" | "escalation" | "plan_approval";
   title: string;
   subtitle: string;
   tierLabel: string;
@@ -106,9 +128,15 @@ interface QueueItem {
     eyebrow: string;
     headline: string;
     body: string;
+    /** For plan-mode rows: the parsed plan text rendered in a preformatted block. */
+    planText?: string;
+    /** For plan-mode rows: the original user prompt shown below the plan. */
+    originalPrompt?: string;
     actions: Array<{ label: string; variant?: "primary" | "default" }>;
     deepLink?: string;
   };
+  /** Raw approval row — present when the item came from `approvals` (action or plan_approval). */
+  rawApproval?: ApprovalRequest;
 }
 
 // -- Helpers ------------------------------------------------------------------
@@ -227,24 +255,59 @@ export default function Approvals() {
 
   // Merge pending approvals + escalations into one queue.
   const queueItems: QueueItem[] = useMemo(() => {
-    const fromApprovals: QueueItem[] = pending.map((approval) => ({
-      id: approval.id.slice(0, 8).toUpperCase(),
-      kind: "action",
-      title: approval.message || approval.stepName,
-      subtitle: `${approval.templateName} · ${approval.assignee}`,
-      tierLabel: "action",
-      tierTone: "clay",
-      agent: approval.assignee,
-      drawer: {
-        eyebrow: "Action approval",
-        headline: approval.message || approval.stepName,
-        body: `Run ${approval.runId} · step ${approval.stepName} · timeout ${approval.timeoutMinutes}m.`,
-        actions: [
-          { label: "Approve", variant: "primary" },
-          { label: "Reject" },
-        ],
-      },
-    }));
+    const fromApprovals: QueueItem[] = pending.map((approval) => {
+      const isPlanApproval = approval.templateName === PLAN_APPROVAL_TEMPLATE_NAME;
+      if (isPlanApproval) {
+        // HEL-217: plan-mode approval rows carry the plan text + the
+        // original prompt encoded in `message` with a delimiter. Render
+        // the plan as the headline content and surface the original
+        // prompt in the drawer body so reviewers can sanity-check the
+        // plan against what the user asked for.
+        const { planText, originalPrompt } = parsePlanApprovalMessage(
+          approval.message,
+        );
+        return {
+          id: approval.id.slice(0, 8).toUpperCase(),
+          kind: "plan_approval",
+          title: approval.stepName,
+          subtitle: `Plan approval · ${approval.assignee}`,
+          tierLabel: "plan",
+          tierTone: "mustard",
+          agent: approval.assignee,
+          drawer: {
+            eyebrow: "Plan approval · agent paused for review",
+            headline: approval.stepName,
+            body: "The agent produced this plan and stopped before executing any tools. Approve to let it replay with execution enabled, or reject to keep it paused.",
+            planText,
+            originalPrompt,
+            actions: [
+              { label: "Approve plan", variant: "primary" },
+              { label: "Reject" },
+            ],
+          },
+          rawApproval: approval,
+        };
+      }
+      return {
+        id: approval.id.slice(0, 8).toUpperCase(),
+        kind: "action",
+        title: approval.message || approval.stepName,
+        subtitle: `${approval.templateName} · ${approval.assignee}`,
+        tierLabel: "action",
+        tierTone: "clay",
+        agent: approval.assignee,
+        drawer: {
+          eyebrow: "Action approval",
+          headline: approval.message || approval.stepName,
+          body: `Run ${approval.runId} · step ${approval.stepName} · timeout ${approval.timeoutMinutes}m.`,
+          actions: [
+            { label: "Approve", variant: "primary" },
+            { label: "Reject" },
+          ],
+        },
+        rawApproval: approval,
+      };
+    });
     const fromEscalations: QueueItem[] = escalations.map((req) => ({
       id: req.id.slice(0, 8).toUpperCase(),
       kind: "escalation",
@@ -291,9 +354,8 @@ export default function Approvals() {
     }
   }
 
-  // Keep TS / lint happy — pulled but used via approvalsQuery.
-  void resolvingId;
-  void handleResolve;
+  // agentsQuery is fetched here so the page reuses the cached agents
+  // when other components ask. Read-through only.
   void agentsQuery;
 
   const queueCount = queueItems.length;
@@ -354,7 +416,11 @@ export default function Approvals() {
         </div>
 
         <div className="panel" hidden={tab !== "queue"}>
-          <QueueTab items={queueItems} />
+          <QueueTab
+            items={queueItems}
+            resolvingId={resolvingId}
+            onResolve={handleResolve}
+          />
           {error ? (
             <div style={{ marginTop: 14 }}>
               <ErrorState
@@ -400,11 +466,34 @@ export default function Approvals() {
 
 // -- Queue tab ---------------------------------------------------------------
 
-function QueueTab({ items }: { items: QueueItem[] }) {
+function QueueTab({
+  items,
+  resolvingId,
+  onResolve,
+}: {
+  items: QueueItem[];
+  resolvingId: string | null;
+  onResolve: (approval: ApprovalRequest, decision: "approved" | "rejected") => Promise<void>;
+}) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [agentFilter, setAgentFilter] = useState<string>("all");
-  const [kindFilter, setKindFilter] = useState<"all" | "action" | "escalation">("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "action" | "escalation" | "plan_approval">(
+    "all",
+  );
   const [todayChip, setTodayChip] = useState(true);
+  // Set of approval IDs the user just approved — drives the "replay
+  // within ~30s" callout. Cleared when the approvals query refetches
+  // (the row disappears from `items` once it's resolved).
+  const [recentlyApproved, setRecentlyApproved] = useState<Set<string>>(new Set());
+
+  const visibleIds = useMemo(() => new Set(items.map((i) => i.id)), [items]);
+  useEffect(() => {
+    setRecentlyApproved((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) if (visibleIds.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleIds]);
 
   const agentOptions = useMemo(() => {
     const set = new Set<string>();
@@ -415,12 +504,35 @@ function QueueTab({ items }: { items: QueueItem[] }) {
   }, [items]);
 
   const filtered = items.filter((item) => {
-    if (kindFilter !== "all" && item.kind !== (kindFilter === "action" ? "action" : "escalation"))
-      return false;
-    if (agentFilter !== "all" && item.agent !== agentFilter)
-      return false;
+    if (kindFilter !== "all" && item.kind !== kindFilter) return false;
+    if (agentFilter !== "all" && item.agent !== agentFilter) return false;
     return true;
   });
+
+  const runResolve = async (
+    approval: ApprovalRequest,
+    decision: "approved" | "rejected",
+  ) => {
+    const itemId = approval.id.slice(0, 8).toUpperCase();
+    if (decision === "approved") {
+      setRecentlyApproved((prev) => {
+        const next = new Set(prev);
+        next.add(itemId);
+        return next;
+      });
+    }
+    try {
+      await onResolve(approval, decision);
+    } catch {
+      // Roll back the optimistic banner if the call failed.
+      setRecentlyApproved((prev) => {
+        if (!prev.has(itemId)) return prev;
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  };
 
   const filteredIds = useMemo(() => filtered.map((i) => i.id), [filtered]);
   const { focusedId, helpOpen, setHelpOpen } = useListKeyboardNav({
@@ -453,6 +565,13 @@ function QueueTab({ items }: { items: QueueItem[] }) {
             onClick={() => setKindFilter("escalation")}
           >
             Escalations
+          </button>
+          <button
+            type="button"
+            aria-selected={kindFilter === "plan_approval"}
+            onClick={() => setKindFilter("plan_approval")}
+          >
+            Plans
           </button>
         </div>
         <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}>
@@ -529,16 +648,28 @@ function QueueTab({ items }: { items: QueueItem[] }) {
                   <button
                     type="button"
                     className="btn sm"
-                    onClick={(e: ReactMouseEvent) => e.stopPropagation()}
+                    disabled={!item.rawApproval || resolvingId === item.rawApproval.id}
+                    onClick={(e: ReactMouseEvent) => {
+                      e.stopPropagation();
+                      if (item.rawApproval) {
+                        void runResolve(item.rawApproval, "rejected");
+                      }
+                    }}
                   >
                     Reject
                   </button>
                   <button
                     type="button"
                     className="btn primary sm"
-                    onClick={(e: ReactMouseEvent) => e.stopPropagation()}
+                    disabled={!item.rawApproval || resolvingId === item.rawApproval.id}
+                    onClick={(e: ReactMouseEvent) => {
+                      e.stopPropagation();
+                      if (item.rawApproval) {
+                        void runResolve(item.rawApproval, "approved");
+                      }
+                    }}
                   >
-                    Approve
+                    {item.kind === "plan_approval" ? "Approve plan" : "Approve"}
                   </button>
                 </div>
               </div>
@@ -564,17 +695,57 @@ function QueueTab({ items }: { items: QueueItem[] }) {
                 <p style={{ fontSize: 13, color: "var(--af2-ink-2)", margin: "0 0 12px" }}>
                   {item.drawer.body}
                 </p>
+                {item.kind === "plan_approval" && item.drawer.planText ? (
+                  <PlanApprovalBody
+                    planText={item.drawer.planText}
+                    originalPrompt={item.drawer.originalPrompt ?? ""}
+                  />
+                ) : null}
+                {recentlyApproved.has(item.id) ? (
+                  <div
+                    role="status"
+                    style={{
+                      margin: "0 0 12px",
+                      padding: "8px 12px",
+                      border: "1px solid rgba(115, 158, 90, 0.30)",
+                      background: "rgba(115, 158, 90, 0.10)",
+                      color: "var(--af2-sage, #4a6a36)",
+                      borderRadius: 6,
+                      fontSize: 12.5,
+                    }}
+                  >
+                    Approved — the agent will replay within ~30s.
+                  </div>
+                ) : null}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {item.drawer.actions.map((a, i) => (
-                    <button
-                      key={`${item.id}-act-${i}`}
-                      type="button"
-                      className={`btn${a.variant === "primary" ? " primary" : ""}`}
-                      onClick={(e: ReactMouseEvent) => e.stopPropagation()}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
+                  {item.drawer.actions.map((a, i) => {
+                    const isPrimary = a.variant === "primary";
+                    const handler = item.rawApproval
+                      ? () =>
+                          void runResolve(
+                            item.rawApproval!,
+                            isPrimary ? "approved" : "rejected",
+                          )
+                      : undefined;
+                    return (
+                      <button
+                        key={`${item.id}-act-${i}`}
+                        type="button"
+                        className={`btn${isPrimary ? " primary" : ""}`}
+                        disabled={
+                          !handler ||
+                          (item.rawApproval !== undefined &&
+                            resolvingId === item.rawApproval.id)
+                        }
+                        onClick={(e: ReactMouseEvent) => {
+                          e.stopPropagation();
+                          if (handler) handler();
+                        }}
+                      >
+                        {a.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 {item.drawer.deepLink ? (
                   <div style={{ marginTop: 14 }}>
@@ -982,6 +1153,91 @@ function NewEscalationModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+// -- Plan approval body (HEL-217) --------------------------------------------
+
+/**
+ * Renders a plan-mode approval's plan text + the original user prompt.
+ *
+ * The plan body comes from the agent's free-text output, so we render
+ * it in a preformatted block that preserves whitespace + step
+ * numbering. The dashboard doesn't ship a markdown renderer today; if
+ * we add one later, swap the `<pre>` for `<ReactMarkdown />` and the
+ * surrounding scaffolding stays the same.
+ */
+function PlanApprovalBody({
+  planText,
+  originalPrompt,
+}: {
+  planText: string;
+  originalPrompt: string;
+}) {
+  const [showPrompt, setShowPrompt] = useState(false);
+  return (
+    <div style={{ margin: "0 0 12px" }}>
+      <div
+        style={{
+          marginBottom: 8,
+          fontSize: 11,
+          color: "var(--af2-ink-3)",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+        }}
+      >
+        Proposed plan
+      </div>
+      <pre
+        style={{
+          margin: 0,
+          padding: "10px 12px",
+          background: "var(--af2-paper-2)",
+          border: "1px solid var(--af2-line-2)",
+          borderRadius: 6,
+          fontSize: 12.5,
+          lineHeight: 1.55,
+          color: "var(--af2-ink)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          fontFamily: "var(--af2-mono, ui-monospace, SFMono-Regular, monospace)",
+        }}
+      >
+        {planText.trim() || "(empty plan)"}
+      </pre>
+      {originalPrompt ? (
+        <div style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={(e: ReactMouseEvent) => {
+              e.stopPropagation();
+              setShowPrompt((v) => !v);
+            }}
+          >
+            {showPrompt ? "Hide original prompt" : "Show original prompt"}
+          </button>
+          {showPrompt ? (
+            <pre
+              style={{
+                marginTop: 8,
+                padding: "10px 12px",
+                background: "var(--af2-paper-3, var(--af2-paper-2))",
+                border: "1px solid var(--af2-line-2)",
+                borderRadius: 6,
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: "var(--af2-ink-2)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}
+            >
+              {originalPrompt.trim() || "(empty prompt)"}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

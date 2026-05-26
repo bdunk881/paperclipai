@@ -21,6 +21,7 @@ import {
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
@@ -129,6 +130,7 @@ import {
 import { createWorkspaceSnapshotRoutes } from "./canonical/workspaceSnapshotRoutes";
 import { createBudgetBreakdownRoute } from "./budget/budgetBreakdownRoute";
 import { createBudgetSetRoute } from "./budget/budgetSetRoute";
+import { createPromptRoutineRoutes } from "./promptRoutines/promptRoutineRoutes";
 import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
@@ -136,6 +138,7 @@ import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
+import { createSkillsRoutes } from "./skills/skillsRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
@@ -252,6 +255,11 @@ const budgetSetRoute = canonicalReadsArePostgres
   ? createBudgetSetRoute(getPostgresPool())
   : express.Router().put("/", (_req, res) =>
       res.status(501).json({ error: "Budget ceilings require PostgreSQL persistence." }),
+    );
+const promptRoutineRoutes = canonicalReadsArePostgres
+  ? createPromptRoutineRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Prompt routines require PostgreSQL persistence." }),
     );
 const entitlementsRoutes = canonicalReadsArePostgres
   ? createEntitlementsRoutes(getPostgresPool())
@@ -869,6 +877,13 @@ app.use(
   budgetSetRoute,
 );
 app.use(
+  "/api/prompt-routines",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  promptRoutineRoutes,
+);
+app.use(
   "/api/entitlements",
   requireAuth,
   workspaceResolver,
@@ -931,6 +946,9 @@ app.use(
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
 app.use("/api/episodes", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), episodeRoutes);
+// HEL-219: skills picker (loaded skills) + admin triage of the
+// scanner's manifest. Read-only for v1.
+app.use("/api/skills", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), createSkillsRoutes());
 // HEL-93: AutoFlow staff admin — curated global knowledge tier. No workspace
 // scope (cross-workspace by design); requireStaff gates access via the
 // AUTOFLOW_STAFF_USER_IDS env-var allowlist.
@@ -2260,6 +2278,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
   startTicketNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_PROMPT_ROUTINE_SCHEDULER !== "false") {
+  startPromptRoutineCoordinator();
 }
 
 // Sentry error handler must come before other error handlers

@@ -203,15 +203,19 @@ router.post("/:id/test", asyncHandler<AuthenticatedRequest>(async (req, res) => 
   }
 
   try {
-    // Try tools/list as the probe — any valid MCP server will respond.
-    await callMcpRpc(
+    // Probe via tools/list — any valid MCP server responds. We also
+    // surface the count so the dashboard can show "N tools available"
+    // on the server row's health badge without a second round-trip
+    // (HEL-220).
+    const result = (await callMcpRpc(
       server.url,
       "tools/list",
       {},
       server.authHeaderKey,
       server.authHeaderValue
-    );
-    res.json({ ok: true, message: "Connection successful" });
+    )) as { tools?: McpTool[] } | null;
+    const toolCount = Array.isArray(result?.tools) ? result.tools.length : 0;
+    res.json({ ok: true, message: "Connection successful", toolCount });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ ok: false, message: `Connection failed: ${msg}` });

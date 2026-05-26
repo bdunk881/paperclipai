@@ -61,7 +61,7 @@ export function applyMarkup(wholesaleUsd: number, markup: number): number {
 }
 
 /**
- * Returns the workspace's `credits_markup_override` (per migration 072)
+ * Returns the workspace's `credits_markup_override` (per migration 074)
  * or null if unset / unavailable. Null means "use the model rate's
  * default markup" (typically 1.50× per the launch decision).
  *
@@ -92,7 +92,7 @@ export async function getWorkspaceMarkupOverride(
  * time refunds the difference.
  *
  * `workspaceId` is optional — when present we honor a per-workspace
- * `credits_markup_override` (migration 072). Falls back to the rate's
+ * `credits_markup_override` (migration 074). Falls back to the rate's
  * default multiplier (uniform 1.50× at launch) when absent or unset.
  */
 export async function estimateWorstCaseCredits(args: {

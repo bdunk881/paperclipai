@@ -37,6 +37,10 @@ import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 import { executeAgentPrompt } from "./agents/agentPromptExecution";
+import {
+  startPlanApprovalResumeCoordinator,
+  stopPlanApprovalResumeCoordinator,
+} from "./agents/runtime/planApprovalResumeCoordinator";
 
 const redisConnection = getRedisClient();
 if (!redisConnection) {
@@ -327,6 +331,7 @@ if (isPostgresConfigured()) {
 
 async function shutdownWorker(signal: string): Promise<void> {
   console.log(`[worker] ${signal} received — closing queues`);
+  stopPlanApprovalResumeCoordinator();
   await Promise.all([runsWorker.close(), agentPromptWorker.close()]);
   await connection.quit();
   process.exit(0);
@@ -338,5 +343,12 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
   void shutdownWorker("SIGINT");
 });
+
+// HEL-216: kick off the plan-approval resume sweep. When a customer
+// approves a plan-mode agent's plan, this is what notices the
+// `approval_requests` row flipping to resolved and replays the agent
+// with permissionMode: 'auto'. Skipped silently when Postgres isn't
+// configured (in-memory dev / tests) — the sweep is a no-op there.
+startPlanApprovalResumeCoordinator();
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' queues");

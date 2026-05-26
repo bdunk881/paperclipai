@@ -17,5 +17,10 @@ export function useHomeSnapshotQuery() {
       return fetchHomeSnapshot(token);
     },
     enabled: Boolean(activeWorkspaceId) && accessMode !== "preview",
+    // Keep the home page feeling live without overwhelming the API:
+    // poll every 60s, but skip when the tab is hidden.
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.hidden ? false : 60_000,
+    refetchIntervalInBackground: false,
   });
 }

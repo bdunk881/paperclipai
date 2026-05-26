@@ -1,0 +1,62 @@
+name: CodeQL
+
+# Advanced setup for CodeQL code scanning. Replaces GitHub's "default
+# setup" (which insisted on analyzing Python even though there is no
+# Python in this repo — Express TS backend + React/Vite dashboard +
+# Astro/Next landing, all JavaScript/TypeScript).
+#
+# Languages scanned:
+#   - javascript-typescript: src/, dashboard/, landing/, agents/
+#   - actions: .github/workflows/*.yml
+#
+# To take effect, the repo's code-scanning setup must be in "Advanced"
+# mode (Settings → Code security → Code scanning → CodeQL analysis →
+# "Switch to advanced"). The default setup overrides any workflow file
+# while it's enabled.
+
+on:
+  push:
+    branches: [dev, staging, master, main]
+  pull_request:
+    branches: [dev, staging, master, main]
+  schedule:
+    # Weekly fresh scan against the default branch in case rules update
+    # without code changes triggering one of the above.
+    - cron: "37 5 * * 2"
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, actions]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality is the broader query suite (default is
+          # security-extended). Matches the noise level we'd accept from
+          # a fresh GitHub default-setup scan.
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

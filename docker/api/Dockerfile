@@ -85,6 +85,12 @@ COPY --from=build /app/dist ./dist
 # path.resolve(__dirname, "..", "..", "migrations") → /app/migrations
 COPY migrations ./migrations
 
+# Agent Skills — src/skills/skillsLoader.ts resolves
+# path.resolve(__dirname, "..", "..", "skills") which under /app/dist/
+# becomes /app/skills. Without this COPY, the loader silently returns
+# an empty map and no skill content reaches the model.
+COPY skills ./skills
+
 # Entrypoint wrapper
 COPY docker/api/entrypoint.sh /usr/local/bin/autoflow-api-entrypoint
 RUN chmod +x /usr/local/bin/autoflow-api-entrypoint

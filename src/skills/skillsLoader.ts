@@ -43,10 +43,13 @@ export interface LoadedSkill {
 const SKILLS_DIR_ENV = "AUTOFLOW_SKILLS_DIR";
 
 function defaultSkillsDir(): string {
-  // Walk up from this file to find the repo root and use `skills/`. We
-  // can't rely on process.cwd() — workers run from `dist/` and the
-  // dashboard sometimes spawns Node from a sibling directory.
-  return path.resolve(__dirname, "..", "..", "..", "skills");
+  // Walk up from this file to find the repo root and use `skills/`. In
+  // source mode `__dirname` is `<repo>/src/skills`; in production it's
+  // `<repo>/dist/skills` (tsc preserves the src layout under dist/). Two
+  // `..` reach the repo root in both cases, then we descend into
+  // `skills/`. We can't rely on process.cwd() — workers run from `dist/`
+  // and the dashboard sometimes spawns Node from a sibling directory.
+  return path.resolve(__dirname, "..", "..", "skills");
 }
 
 export function getSkillsDir(): string {
@@ -171,4 +174,32 @@ export function resolveSkills(keys: string[]): LoadedSkill[] {
 /** Test helper. */
 export function resetSkillsCacheForTests(): void {
   cache = null;
+}
+
+/**
+ * Format a list of loaded skills as a single markdown section the model
+ * can read. Vendor-agnostic by design — every backend folds this into
+ * the system prompt (or subagent prompt) the same way, so a skill works
+ * identically on Claude, OpenAI, Gemini, Bedrock, Vertex, Mistral, and
+ * every OpenAI-compatible provider.
+ *
+ * Returns an empty string when there are no skills, so callers can
+ * unconditionally append it without a guard.
+ */
+export function formatSkillsForPrompt(skills: LoadedSkill[]): string {
+  if (skills.length === 0) return "";
+  const sections = skills
+    .map((s) => `### ${s.name}\n${s.description}\n\n${s.body}`)
+    .join("\n\n---\n\n");
+  return `# SKILLS AVAILABLE\n\nThe following capability bundles are loaded for this run. Read them like reference docs — they describe how to approach specific tasks. Any "scripts/" directory referenced inside a skill is for illustration; call the tools registered on your run to actually act on the instructions.\n\n${sections}`;
+}
+
+/**
+ * Append the formatted skills section to a base prompt, separated by a
+ * blank line when the skills section is non-empty.
+ */
+export function appendSkillsToPrompt(base: string, skills: LoadedSkill[]): string {
+  const section = formatSkillsForPrompt(skills);
+  if (!section) return base;
+  return `${base}\n\n${section}`;
 }

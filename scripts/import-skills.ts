@@ -93,6 +93,14 @@ function writeManifest(manifest: Manifest): void {
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
 }
 
+// Strict allowlists for ref components. GitHub permits alphanumerics + `_`,
+// `-`, and `.` in usernames + repo names — match that and bound length so
+// the value going into `git clone https://github.com/<owner>/<repo>.git`
+// can't carry anything CodeQL's command-injection sink-tracking would
+// flag. Skill keys are directory names — same character set + no `..`.
+const SAFE_REF_COMPONENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+const SAFE_SKILL_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
 function parseRef(ref: string): { owner: string; repo: string; skill?: string } {
   const at = ref.indexOf("@");
   const head = at === -1 ? ref : ref.slice(0, at);
@@ -101,15 +109,37 @@ function parseRef(ref: string): { owner: string; repo: string; skill?: string } 
   if (!owner || !repo) {
     throw new Error(`Invalid ref "${ref}" — expected owner/repo[@skill].`);
   }
+  if (!SAFE_REF_COMPONENT.test(owner)) {
+    throw new Error(`Invalid owner "${owner}" — allowlisted to [A-Za-z0-9._-].`);
+  }
+  if (!SAFE_REF_COMPONENT.test(repo)) {
+    throw new Error(`Invalid repo "${repo}" — allowlisted to [A-Za-z0-9._-].`);
+  }
+  if (skill !== undefined && !SAFE_SKILL_KEY.test(skill)) {
+    throw new Error(`Invalid skill "${skill}" — allowlisted to [A-Za-z0-9._-].`);
+  }
   return { owner, repo, skill };
 }
 
 function cloneTo(tempDir: string, owner: string, repo: string): void {
+  // owner/repo are allowlist-checked above; pass as arguments (not via
+  // a shell) so quoting / escaping cannot affect the spawned process.
   execFileSync(
     "git",
     ["clone", "--depth=1", "--quiet", `https://github.com/${owner}/${repo}.git`, tempDir],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
+}
+
+/**
+ * Defence-in-depth path containment check. Returns true when `child` is
+ * `parent` or a descendant of it. Used so `path.join(SKILLS_DIR, key)`
+ * can never escape the repo's `skills/` directory even if the key
+ * validator drifts.
+ */
+function isWithin(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
 interface DiscoveredSkill {
@@ -176,12 +206,21 @@ function fetchRepoProvenance(
 }
 
 function copySkill(srcDir: string, destDir: string): void {
-  fs.rmSync(destDir, { recursive: true, force: true });
-  fs.mkdirSync(destDir, { recursive: true });
-  // Use cp -R for fidelity (symlinks, perms, large trees).
-  execFileSync("cp", ["-R", `${srcDir}/.`, destDir]);
+  // destDir is derived from a SKILL key. Defence-in-depth: it MUST land
+  // under SKILLS_DIR so a future regression on the key validator can't
+  // chmod / rm somewhere unexpected.
+  const resolved = path.resolve(destDir);
+  if (!isWithin(SKILLS_DIR, resolved)) {
+    throw new Error(`Refusing to copy skill outside skills/: ${destDir}`);
+  }
+  fs.rmSync(resolved, { recursive: true, force: true });
+  fs.mkdirSync(resolved, { recursive: true });
+  // Use Node's recursive copy (Node 16.7+) instead of spawning cp(1) —
+  // keeps the tree-walk in-process and avoids a child-process exec on
+  // attacker-influenced filenames inside srcDir.
+  fs.cpSync(srcDir, resolved, { recursive: true });
   // Strip .git if it leaked in.
-  fs.rmSync(path.join(destDir, ".git"), { recursive: true, force: true });
+  fs.rmSync(path.join(resolved, ".git"), { recursive: true, force: true });
 }
 
 function summarize(report: ScanReport): string {
@@ -228,6 +267,14 @@ async function processRef(
 
     for (const { name: skillName, dir: srcDir } of targets) {
       const skillKey = skillName;
+      // Belt-and-suspenders: re-validate the skill key before letting
+      // it shape any filesystem path. discoverSkills returns names from
+      // readdirSync, but the static guard here is what CodeQL's path-
+      // traversal taint tracker expects.
+      if (!SAFE_SKILL_KEY.test(skillKey)) {
+        console.log(`  • ${skillKey} — rejected (unsafe skill key)`);
+        continue;
+      }
       const destDir = path.join(SKILLS_DIR, skillKey);
 
       const previous = options.manifest.entries[skillKey];

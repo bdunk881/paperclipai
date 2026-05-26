@@ -24,7 +24,11 @@ import type {
 } from "../../llmConfig/adapters/types";
 import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
-import { resolveSkills, type LoadedSkill } from "../../skills/skillsLoader";
+import {
+  appendSkillsToPrompt,
+  resolveSkills,
+  type LoadedSkill,
+} from "../../skills/skillsLoader";
 import { executeToolCalls } from "./executeToolCalls";
 import type {
   AgentBackend,
@@ -56,7 +60,7 @@ export class FallbackAgentBackend implements AgentBackend {
     }));
     const maxIterations = input.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
     const loadedSkills = resolveSkills(input.skills ?? []);
-    const system = buildSystemWithSkills(input.systemPrompt, loadedSkills);
+    const system = appendSkillsToPrompt(input.systemPrompt, loadedSkills);
 
     if (input.permissionMode === "plan") {
       // Plan mode: don't run tools — produce a plan and stop. The fallback
@@ -188,21 +192,6 @@ export class FallbackAgentBackend implements AgentBackend {
       };
     }
   }
-}
-
-/**
- * On backends without native Claude Skills support, splice each loaded
- * skill's full SKILL.md body into the system prompt under a "SKILLS
- * AVAILABLE" section. The Claude SDK backend uses native skills wiring;
- * here we just stuff the markdown into the prompt so the model sees the
- * same content regardless of provider.
- */
-function buildSystemWithSkills(base: string, skills: LoadedSkill[]): string {
-  if (skills.length === 0) return base;
-  const sections = skills
-    .map((s) => `### ${s.name}\n${s.description}\n\n${s.body}`)
-    .join("\n\n---\n\n");
-  return `${base}\n\n# SKILLS AVAILABLE\n\n${sections}`;
 }
 
 /**

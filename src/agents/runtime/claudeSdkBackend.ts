@@ -27,7 +27,11 @@ import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
 import { previewToolOutput } from "../../engine/agentTrace/redact";
 import { jsonSchemaToZodShape } from "./jsonSchemaToZod";
-import { resolveSkills, type LoadedSkill } from "../../skills/skillsLoader";
+import {
+  appendSkillsToPrompt,
+  resolveSkills,
+  type LoadedSkill,
+} from "../../skills/skillsLoader";
 import type {
   AgentBackend,
   AgentHooks,
@@ -85,7 +89,7 @@ export class ClaudeSdkBackend implements AgentBackend {
       prompt: input.userPrompt,
       options: {
         model: binding.model,
-        systemPrompt: composeSystemPromptWithSkills(input.systemPrompt, loadedSkills),
+        systemPrompt: appendSkillsToPrompt(input.systemPrompt, loadedSkills),
         maxTurns: input.maxToolIterations ?? DEFAULT_MAX_TURNS,
         tools: [],
         mcpServers,
@@ -168,37 +172,28 @@ export class ClaudeSdkBackend implements AgentBackend {
  * a subagent when the parent model emits an Agent tool call with the
  * matching name — this is what makes org-chart delegation native.
  *
- * When the parent agent has skills attached, subagents inherit them so a
- * manager's "sales-rep" skill flows down to its delegated lead-qualifier.
+ * Skills propagate to subagents by folding the parent's loaded skill
+ * bodies into the subagent's `prompt`, NOT via the SDK's native
+ * `skills:` option. This keeps the behavior identical between the
+ * Claude SDK backend and the OpenAI Agents handoff path — same prompt
+ * structure on both, so a customer can swap providers without
+ * re-authoring any skill content.
  */
 function buildSubagentDefs(
   input: AgentRunInput,
   parentSkills: LoadedSkill[],
 ): Record<string, ClaudeAgentDef> | undefined {
   if (!input.subagents || input.subagents.length === 0) return undefined;
-  const skillKeys = parentSkills.map((s) => s.key);
   const out: Record<string, ClaudeAgentDef> = {};
   for (const sub of input.subagents) {
+    const base = `You are ${sub.name}, a ${sub.roleKey}. Carry out the task delegated to you and return a concise summary.`;
     out[sub.name] = {
       description: sub.description,
-      prompt: `You are ${sub.name}, a ${sub.roleKey}. Carry out the task delegated to you and return a concise summary.`,
+      prompt: appendSkillsToPrompt(base, parentSkills),
       tools: [],
-      ...(skillKeys.length > 0 ? { skills: skillKeys } : {}),
     };
   }
   return out;
-}
-
-/**
- * Splice each loaded skill's body into the system prompt as a SKILLS
- * section. When the SDK adds first-class skills support via the `skills:`
- * option this becomes redundant — for now this guarantees the skill
- * content reaches the model regardless of SDK version.
- */
-function composeSystemPromptWithSkills(base: string, skills: LoadedSkill[]): string {
-  if (skills.length === 0) return base;
-  const sections = skills.map((s) => `### ${s.name}\n${s.description}\n\n${s.body}`).join("\n\n---\n\n");
-  return `${base}\n\n# AVAILABLE SKILLS\n\n${sections}`;
 }
 
 /** Map our AgentPermissionMode → the SDK's permissionMode value. */

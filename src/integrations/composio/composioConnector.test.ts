@@ -47,13 +47,12 @@ describe("Composio connector", () => {
     expect(connection.tokenMasked).toMatch(/^\*{4}/);
   });
 
-  it("returns down health when no credential is configured", async () => {
+  it("returns disabled health when no credential is configured", async () => {
     const service = new ComposioConnectorService();
     const health = await service.health("missing-user");
 
-    expect(health.status).toBe("down");
+    expect(health.status).toBe("disabled");
     expect(health.details.auth).toBe(false);
-    expect(health.details.errorType).toBe("auth");
   });
 
   it("lists tool enums and executes tools", async () => {

@@ -129,24 +129,6 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-function policyKeyText(policy: ApprovalPolicy): string {
-  if (policy.actionType === "spend_above_threshold") {
-    const cents = policy.spendThresholdCents;
-    if (cents == null || cents <= 0) return "Spend (any amount)";
-    const dollars = cents / 100;
-    const formatted =
-      dollars >= 1000
-        ? `$${(dollars / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })}k`
-        : `$${dollars.toLocaleString()}`;
-    return `Spend over ${formatted}`;
-  }
-  return ACTION_LABEL[policy.actionType];
-}
-
-function policyValueText(policy: ApprovalPolicy): string {
-  return MODE_LABEL[policy.mode];
-}
-
 const QUEUE_GRID = "90px 1fr 130px 130px 200px";
 
 // -- Page ---------------------------------------------------------------------
@@ -185,6 +167,7 @@ export default function Approvals() {
   const [companyState, setCompanyState] = useState<HitlCompanyState | null>(null);
   const [escalationsError, setEscalationsError] = useState<string | null>(null);
   const [newEscalationOpen, setNewEscalationOpen] = useState(false);
+  const [policyRefreshTick, setPolicyRefreshTick] = useState(0);
 
   const loadEscalations = useCallback(async () => {
     if (!companyId) return;
@@ -297,28 +280,26 @@ export default function Approvals() {
 
   return (
     <div className="af2-v2">
-      <div className="af2-page" style={{ maxWidth: 1100 }}>
+      <div className="af2-page">
         <div className="page-head">
           <div className="page-head-left">
-            <div className="eyebrow">Run · Governance</div>
             <h1 className="h1">Approvals</h1>
-            <div className="meta">
-              {queueCount} open · single queue (action approvals + escalation
-              conversations merged)
-            </div>
+            <div className="meta">{queueCount} open</div>
           </div>
           <div className="page-head-right">
             <button type="button" className="btn">
               Export
             </button>
-            <button
-              type="button"
-              className="btn primary"
-              onClick={() => setNewEscalationOpen(true)}
-              disabled={!companyId}
-            >
-              + New escalation
-            </button>
+            {tab !== "policies" ? (
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => setNewEscalationOpen(true)}
+                disabled={!companyId}
+              >
+                + New escalation
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -361,7 +342,10 @@ export default function Approvals() {
         </div>
 
         <div className="panel" hidden={tab !== "policies"}>
-          <PoliciesTab />
+          <PoliciesTab
+            refreshTick={policyRefreshTick}
+            onChange={() => setPolicyRefreshTick((n) => n + 1)}
+          />
         </div>
 
         <div className="panel" hidden={tab !== "history"}>
@@ -640,11 +624,24 @@ const kbdStyle: CSSProperties = {
 
 // -- Policies tab ------------------------------------------------------------
 
-function PoliciesTab() {
+const MODE_OPTIONS: ApprovalTierMode[] = [
+  "require_approval",
+  "notify_only",
+  "auto_approve",
+];
+
+function PoliciesTab({
+  refreshTick,
+  onChange,
+}: {
+  refreshTick: number;
+  onChange: () => void;
+}) {
   const { requireAccessToken } = useAuth();
   const [policies, setPolicies] = useState<ApprovalPolicy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -666,21 +663,44 @@ function PoliciesTab() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshTick]);
 
-  const cards = policies.map((p) => ({
-    title: policyKeyText(p),
-    desc: policyValueText(p),
-    pillTone: (p.mode === "require_approval" ? "plum" : "mustard") as "plum" | "mustard",
-    pillLabel: p.mode === "require_approval" ? "always" : "conditional",
-  }));
+  async function updatePolicy(
+    policy: ApprovalPolicy,
+    patch: { mode?: ApprovalTierMode; spendThresholdCents?: number },
+  ) {
+    setBusyId(policy.actionType);
+    try {
+      const token = await requireAccessToken();
+      const body: Record<string, unknown> = {
+        mode: patch.mode ?? policy.mode,
+      };
+      if (policy.actionType === "spend_above_threshold") {
+        body.spendThresholdCents =
+          patch.spendThresholdCents ?? policy.spendThresholdCents ?? 0;
+      }
+      const res = await trackedFetch(
+        `${getApiBasePath()}/approval-policies/${encodeURIComponent(policy.actionType)}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!res.ok) throw new Error(`Failed to update policy (${res.status})`);
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update policy");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <>
-      <div className="info-strip">
-        Approval policies moved from Settings → Approvals. Plain-English in
-        SMB; raw AST + sandbox in Pro.
-      </div>
       {loading ? (
         <div className="card" style={{ padding: 14 }}>
           Loading policies…
@@ -695,21 +715,86 @@ function PoliciesTab() {
           />
         </div>
       ) : null}
-      {!loading && !error && cards.length === 0 ? (
-        <div className="card">
-          <p className="desc">No policies configured yet.</p>
-        </div>
-      ) : null}
       <div className="grid-2">
-        {cards.map((c) => (
-          <div key={c.title} className="card">
-            <h3>{c.title}</h3>
-            <p className="desc">{c.desc}</p>
-            <div style={{ marginTop: 8 }}>
-              <span className={`pill ${c.pillTone} dot`}>{c.pillLabel}</span>
+        {policies.map((p) => {
+          const isBusy = busyId === p.actionType;
+          return (
+            <div key={p.actionType} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <h3 style={{ margin: 0 }}>{ACTION_LABEL[p.actionType]}</h3>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--af2-ink-3)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                Mode
+                <select
+                  value={p.mode}
+                  onChange={(e) =>
+                    void updatePolicy(p, { mode: e.target.value as ApprovalTierMode })
+                  }
+                  disabled={isBusy}
+                  style={{
+                    marginTop: 4,
+                    width: "100%",
+                    padding: "6px 8px",
+                    fontSize: 13,
+                    textTransform: "none",
+                    letterSpacing: 0,
+                    color: "var(--af2-ink)",
+                  }}
+                >
+                  {MODE_OPTIONS.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {MODE_LABEL[mode]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {p.actionType === "spend_above_threshold" ? (
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: "var(--af2-ink-3)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  Threshold (USD)
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    defaultValue={
+                      p.spendThresholdCents ? Math.round(p.spendThresholdCents / 100) : 0
+                    }
+                    onBlur={(e) => {
+                      const dollars = Number(e.target.value);
+                      if (Number.isFinite(dollars) && dollars >= 0) {
+                        const cents = Math.round(dollars * 100);
+                        if (cents !== (p.spendThresholdCents ?? 0)) {
+                          void updatePolicy(p, { spendThresholdCents: cents });
+                        }
+                      }
+                    }}
+                    disabled={isBusy}
+                    style={{
+                      marginTop: 4,
+                      width: "100%",
+                      padding: "6px 8px",
+                      fontSize: 13,
+                      textTransform: "none",
+                      letterSpacing: 0,
+                      color: "var(--af2-ink)",
+                    }}
+                  />
+                </label>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

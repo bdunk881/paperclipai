@@ -97,17 +97,8 @@ function missionStatusLabel(mission: Mission): string {
   return "on track";
 }
 
-const FALLBACK_APPROVALS = [
-  { id: "APR-118", body: "Mira · pricing email to Acme" },
-  { id: "APR-117", body: "Eli · merge PR #482" },
-  { id: "ESC-204", body: "Aaron · push back on Net-90?" },
-] as const;
-
-const FALLBACK_MISSIONS = [
-  { id: "M-04", body: "Book 5 demos · 3/5 · on track" },
-  { id: "M-05", body: "Launch v2 features · 8/12 · at risk" },
-] as const;
-
+// Capacity of the in-memory history buffer that feeds the sparklines.
+// At a 60s poll, 20 samples ≈ 20 minutes of trailing data.
 const STAT_HISTORY_LIMIT = 20;
 
 function useStatHistory(value: number): number[] {
@@ -309,7 +300,6 @@ export default function Dashboard() {
     <div className="af2-v2">
       <div className="page-head">
         <div className="page-head-left">
-          <div className="eyebrow">Run</div>
           <h1 className="h1">Today</h1>
           <div className="meta">
             {workspaceName} · {formatTodayChrome()} · welcome back, {greetingName}.
@@ -425,17 +415,12 @@ export default function Dashboard() {
               No approvals match the current filters.
             </p>
           ) : (
-            FALLBACK_APPROVALS.map((row) => (
-              <div className="feed-item" key={row.id}>
-                <div className="feed-time">{row.id}</div>
-                <div
-                  className="feed-msg"
-                  dangerouslySetInnerHTML={{
-                    __html: row.body.replace(/^([A-Za-z]+)/, "<b>$1</b>"),
-                  }}
-                />
-              </div>
-            ))
+            <div
+              className="desc"
+              style={{ padding: "12px 0", color: "var(--af2-ink-3)", fontStyle: "italic" }}
+            >
+              Nothing waiting. Agents will queue items here when they need a stamp.
+            </div>
           )}
         </div>
 
@@ -464,17 +449,12 @@ export default function Dashboard() {
               No missions match the current filters.
             </p>
           ) : (
-            FALLBACK_MISSIONS.map((row) => (
-              <div className="feed-item" key={row.id}>
-                <div className="feed-time">{row.id}</div>
-                <div
-                  className="feed-msg"
-                  dangerouslySetInnerHTML={{
-                    __html: row.body.replace(/^([^·]+)/, "<b>$1</b>"),
-                  }}
-                />
-              </div>
-            ))
+            <div
+              className="desc"
+              style={{ padding: "12px 0", color: "var(--af2-ink-3)", fontStyle: "italic" }}
+            >
+              No live missions yet. <Link to="/hire" className="link-clay">Brief one →</Link>
+            </div>
           )}
           <Link
             to="/mission-state"

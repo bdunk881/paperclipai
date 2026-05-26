@@ -17,10 +17,11 @@ export function useHomeSnapshotQuery() {
       return fetchHomeSnapshot(token);
     },
     enabled: Boolean(activeWorkspaceId) && accessMode !== "preview",
-    // Keep the home page feeling live without overwhelming the API:
-    // poll every 60s, but skip when the tab is hidden.
+    // SSE drives most refreshes via invalidateQueries. We still keep a
+    // 30s background poll as a safety net for when the stream is
+    // disconnected (CORS, hot-reload, etc.). Skips when tab is hidden.
     refetchInterval: () =>
-      typeof document !== "undefined" && document.hidden ? false : 60_000,
+      typeof document !== "undefined" && document.hidden ? false : 30_000,
     refetchIntervalInBackground: false,
   });
 }

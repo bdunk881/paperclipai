@@ -1,24 +1,25 @@
 /**
- * Dashboard / Home — v2 "Consolidation Preview" port.
+ * Dashboard / Home — v2 "Consolidation Preview" port + live extensions.
  *
- * Maps to docs/design/v2/preview/consolidation.html lines 1296-1326.
+ * Maps to docs/design/v2/preview/consolidation.html lines 1296-1326 plus
+ * the second-wave interactivity work:
  *
- * Editorial layout, deliberately trim: a 4-card stat strip
- * (approvals waiting / assignments open / spent today / missions live)
- * over a 2-card desc grid ("Needs your stamp" + "Live missions").
- * The prototype's design intent — quoted from its own meta string —
- * is "all → links to the canonical owner page", so Home no longer
- * owns the per-agent budget bars, room-now agent strip, or active
- * missions table. Those live on Team / Budget / Missions where they
- * belong.
- *
- * Real backend data via `useHomeSnapshotQuery`. Sample fallback rows
- * (APR-118 Mira, ESC-204 Aaron, M-04 "Book 5 demos", etc.) render
- * verbatim from the prototype when the snapshot is empty, so the
- * layout demos cleanly for new workspaces.
+ *  - Mission selector + "All" + persisted defaults via useHomeFilters.
+ *  - Date range (Today / 7d / 30d / Custom) shared by the stat tiles,
+ *    sparkline windows, and the bottom charts.
+ *  - Live SSE subscription against /api/activity-events/stream so the
+ *    page invalidates its snapshot in real time instead of polling. The
+ *    react-query refetchInterval falls back to 60s if the stream is
+ *    disconnected.
+ *  - Inline ApprovalDrawer that resolves approvals without leaving the
+ *    page and animates the affected agent "waking up" in a strip below
+ *    the stat tiles.
+ *  - Bottom-of-page charts (spend over time, agent activity, idle
+ *    agents) so the page no longer trails off into white space.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ApprovalRequest } from "../api/client";
 import type { Mission } from "../api/missionsApi";
 import { ErrorState, SkeletonBlock } from "../components/UiStates";
@@ -28,6 +29,19 @@ import { useHomeSnapshotQuery } from "../hooks/queries/useHomeSnapshotQuery";
 import { OnboardingBanner } from "../components/OnboardingBanner";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { Sparkline } from "../components/Sparkline";
+import { HomeFilterBar } from "../components/home/HomeFilterBar";
+import {
+  isWithinRange,
+  useHomeFilters,
+  type HomeFilters,
+} from "../hooks/useHomeFilters";
+import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
+import { ApprovalDrawer } from "../components/home/ApprovalDrawer";
+import { AgentWakeStrip } from "../components/home/AgentWakeStrip";
+import { SpendChart } from "../components/charts/SpendChart";
+import { AgentActivityChart } from "../components/charts/AgentActivityChart";
+import { IdleAgentsCallout } from "../components/home/IdleAgentsCallout";
+import { queryKeys } from "../lib/queryKeys";
 
 function formatTodayChrome(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -52,9 +66,6 @@ function firstName(name: string | undefined | null): string {
 }
 
 function approvalShortId(approval: ApprovalRequest): string {
-  // Prefer a stable short id of the form APR-{6 hex}. The backend stores
-  // a UUID; mapping the first 6 hex chars keeps the prototype's tight
-  // monospace column readable.
   const id = approval.id ?? "";
   const short = id.replace(/-/g, "").slice(0, 6).toUpperCase();
   return short ? `APR-${short}` : "APR-—";
@@ -75,7 +86,6 @@ function missionShortId(mission: Mission): string {
 function missionToneClass(mission: Mission): string {
   if (mission.status === "completed") return "pill sage dot";
   if (mission.status === "archived") return "pill dot";
-  // No structured risk yet — use mustard for in-progress, plum for paused.
   if (mission.status === "paused") return "pill plum dot";
   return "pill sage dot";
 }
@@ -107,15 +117,31 @@ function useStatHistory(value: number): number[] {
   return history;
 }
 
+// Determine whether an approval belongs to a mission. Approvals don't
+// carry missionId today; we fall back to the linked agent's metadata.
+function approvalMissionId(
+  approval: ApprovalRequest,
+  agentMissionById: Map<string, string | null>,
+): string | null {
+  if (!approval.agentId) return null;
+  return agentMissionById.get(approval.agentId) ?? null;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace();
+  const queryClient = useQueryClient();
   const snapshotQuery = useHomeSnapshotQuery();
+
+  const { filters, setMissionId, setRangePreset, setCustomRange } =
+    useHomeFilters(activeWorkspaceId ?? null);
 
   const missions = snapshotQuery.data?.missions ?? [];
   const approvals = snapshotQuery.data?.approvals ?? [];
   const agents = snapshotQuery.data?.agents ?? [];
   const budgets = snapshotQuery.data?.budgets ?? [];
+  const runs = snapshotQuery.data?.runs ?? [];
+  const heartbeats = snapshotQuery.data?.heartbeats ?? {};
 
   const loading = snapshotQuery.isLoading && !snapshotQuery.data;
   const error =
@@ -125,39 +151,132 @@ export default function Dashboard() {
         ? "Failed to load dashboard"
         : null;
 
+  // --- Live stream wiring ---------------------------------------------------
+  //
+  // Subscribe to the workspace activity SSE; on any non-heartbeat event,
+  // invalidate the home snapshot so the tiles + lists refresh against
+  // the latest state. The polling interval in the query hook stays in
+  // place as a safety net for when the stream is disconnected.
+  const liveStream = useWorkspaceLiveStream({
+    path: "activity-events/stream",
+    enabled: !!activeWorkspaceId,
+    onEvent: (evt) => {
+      if (evt.name === "heartbeat") return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.home(activeWorkspaceId ?? "none"),
+      });
+    },
+  });
+  const isLive = liveStream.state === "connected";
+
+  // Map each agent to its mission so we can filter approvals + spend
+  // by the selected mission. The agent.metadata.missionId convention
+  // is the same one OrgStructure uses.
+  const agentMissionById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const a of agents) {
+      const raw = a.metadata?.missionId;
+      map.set(a.id, typeof raw === "string" && raw.length > 0 ? raw : null);
+    }
+    return map;
+  }, [agents]);
+
+  // --- Filtered slices ------------------------------------------------------
+  const filteredApprovals = useMemo(() => {
+    return approvals.filter((a) => {
+      if (filters.missionId) {
+        const mid = approvalMissionId(a, agentMissionById);
+        if (mid !== filters.missionId) return false;
+      }
+      if (a.requestedAt && !isWithinRange(a.requestedAt, filters.range)) {
+        return false;
+      }
+      return true;
+    });
+  }, [approvals, filters, agentMissionById]);
+
+  const filteredMissions = useMemo(() => {
+    if (!filters.missionId) return missions;
+    return missions.filter((m) => m.id === filters.missionId);
+  }, [missions, filters.missionId]);
+
+  const filteredAgents = useMemo(() => {
+    if (!filters.missionId) return agents;
+    return agents.filter(
+      (a) => agentMissionById.get(a.id) === filters.missionId,
+    );
+  }, [agents, filters.missionId, agentMissionById]);
+
   const totals = useMemo(() => {
-    const liveMissions = missions.filter(
+    const liveMissions = filteredMissions.filter(
       (m) => m.status !== "completed" && m.status !== "archived",
     );
-    const pendingApprovals = approvals.filter((a) => a.status === "pending");
-    // Sum from canonical budgets API. capCents is monthly; rough daily =
-    // usedCents/30 until step_results.cost_cents aggregation surfaces a
-    // real per-day figure (HEL-118).
-    const totalUsedCents = budgets
-      .filter((row) => row.scopeKind === "workspace" || row.scopeKind === "agent")
-      .reduce((sum, row) => sum + (row.usedCents ?? 0), 0);
-    const todaySpend = totalUsedCents / 100 / 30;
-    return {
-      liveMissions,
-      pendingApprovals,
-      todaySpend,
-    };
-  }, [missions, approvals, budgets]);
+    const pendingApprovals = filteredApprovals.filter(
+      (a) => a.status === "pending",
+    );
+    // Per-agent spend for the filtered scope.
+    const agentIds = new Set(filteredAgents.map((a) => a.id));
+    const totalUsedCents = budgets.reduce((sum, row) => {
+      if (row.scopeKind === "agent" && row.scopeId && agentIds.size > 0) {
+        return agentIds.has(row.scopeId) ? sum + (row.usedCents ?? 0) : sum;
+      }
+      if (
+        row.scopeKind === "workspace" &&
+        !filters.missionId &&
+        agentIds.size === 0
+      ) {
+        // Only count workspace-scope spend when nothing is filtered.
+        return sum + (row.usedCents ?? 0);
+      }
+      return sum;
+    }, 0);
+    // Daily approximation = monthly used / 30 until a real per-day
+    // figure surfaces from step_results (HEL-118).
+    const rangedSpend = totalUsedCents / 100 / 30;
+    return { liveMissions, pendingApprovals, rangedSpend };
+  }, [filteredMissions, filteredApprovals, filteredAgents, budgets, filters.missionId]);
 
-  // Track recent values so each stat tile can render a trailing
-  // sparkline. The first sample lands when the snapshot data arrives.
   const approvalsHistory = useStatHistory(totals.pendingApprovals.length);
   const assignmentsHistory = useStatHistory(
     totals.liveMissions.length * 3 + totals.pendingApprovals.length,
   );
-  const spendHistory = useStatHistory(totals.todaySpend);
+  const spendHistory = useStatHistory(totals.rangedSpend);
   const missionsHistory = useStatHistory(totals.liveMissions.length);
 
-  // True only during a background refetch (i.e. while polling), so we
-  // can pulse a live-indicator dot without flashing during the first
-  // load.
   const isRefreshing =
-    snapshotQuery.isFetching && !snapshotQuery.isLoading;
+    snapshotQuery.isFetching && !snapshotQuery.isLoading && !isLive;
+
+  // --- Approval drawer + wake animation ------------------------------------
+  const [openApprovalId, setOpenApprovalId] = useState<string | null>(null);
+  const openApproval = useMemo(
+    () => approvals.find((a) => a.id === openApprovalId) ?? null,
+    [approvals, openApprovalId],
+  );
+  const [recentlyWoken, setRecentlyWoken] = useState<
+    Array<{ agentId: string | null; agentName: string; startedAt: number }>
+  >([]);
+
+  const handleApprovalResolved = useCallback(
+    (approval: ApprovalRequest, decision: "approved" | "rejected") => {
+      if (decision === "approved") {
+        setRecentlyWoken((prev) => [
+          {
+            agentId: approval.agentId ?? null,
+            agentName: approval.assignee?.trim() || "Agent",
+            startedAt: Date.now(),
+          },
+          ...prev.filter((row) => row.agentId !== approval.agentId),
+        ].slice(0, 4));
+      }
+      setOpenApprovalId(null);
+      // Force an immediate refetch so the stat tiles + lists update
+      // before the SSE invalidation lands.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.home(activeWorkspaceId ?? "none"),
+      });
+    },
+    [queryClient, activeWorkspaceId],
+  );
 
   if (error && !snapshotQuery.data) {
     return (
@@ -188,44 +307,26 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Onboarding nudge stays for fresh workspaces (no agents AND no
-          missions). Hides itself otherwise. */}
       <OnboardingBanner
         show={agents.length === 0 && missions.length === 0}
         firstName={greetingName === "there" ? "" : greetingName}
       />
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          margin: "0 0 8px",
-          fontSize: 11,
-          color: "var(--af2-ink-3)",
-        }}
-      >
-        <span
-          aria-label={isRefreshing ? "Refreshing" : "Live"}
-          style={{
-            display: "inline-block",
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: isRefreshing
-              ? "var(--af2-clay, #c25b3a)"
-              : "var(--af2-sage, #6b9e5e)",
-            animation: isRefreshing
-              ? "af2-pulse 1.2s ease-out infinite"
-              : "none",
-          }}
-        />
-        <span>
-          {isRefreshing
-            ? "Refreshing…"
-            : `Live · auto-refreshing every 60s`}
-        </span>
-      </div>
+      <HomeFilterBar
+        missions={missions}
+        missionId={filters.missionId}
+        range={filters.range}
+        onMissionChange={setMissionId}
+        onRangePreset={setRangePreset}
+        onCustomRange={setCustomRange}
+      />
+
+      <LiveConnectionIndicator
+        state={liveStream.state}
+        isRefreshing={isRefreshing}
+        lastEventAt={liveStream.lastEventAt}
+      />
+
       <div className="stat-grid">
         <StatTile
           label="approvals waiting"
@@ -240,8 +341,8 @@ export default function Dashboard() {
           loading={loading}
         />
         <StatTile
-          label="spent today"
-          value={totals.todaySpend}
+          label="spent in range"
+          value={totals.rangedSpend}
           history={spendHistory}
           loading={loading}
           format={(v) => formatCurrency(v, 2)}
@@ -254,6 +355,8 @@ export default function Dashboard() {
         />
       </div>
 
+      <AgentWakeStrip entries={recentlyWoken} />
+
       <div className="desc-grid">
         <div className="card">
           <h3>Needs your stamp</h3>
@@ -265,11 +368,52 @@ export default function Dashboard() {
           </p>
           {topApprovals.length > 0 ? (
             topApprovals.map((approval) => (
-              <div className="feed-item" key={approval.id}>
+              <button
+                key={approval.id}
+                type="button"
+                onClick={() => setOpenApprovalId(approval.id)}
+                className="feed-item"
+                style={{
+                  display: "flex",
+                  width: "100%",
+                  textAlign: "left",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "8px 4px",
+                  borderRadius: 6,
+                  alignItems: "baseline",
+                  gap: 12,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--af2-paper-2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
                 <div className="feed-time">{approvalShortId(approval)}</div>
-                <div className="feed-msg">{approvalSummary(approval)}</div>
-              </div>
+                <div className="feed-msg" style={{ flex: 1 }}>
+                  {approvalSummary(approval)}
+                </div>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: "var(--af2-clay)",
+                    fontWeight: 500,
+                  }}
+                >
+                  review →
+                </span>
+              </button>
             ))
+          ) : approvals.length > 0 ? (
+            <p
+              className="desc"
+              style={{ fontSize: 12, color: "var(--af2-ink-3)" }}
+            >
+              No approvals match the current filters.
+            </p>
           ) : (
             <div
               className="desc"
@@ -297,6 +441,13 @@ export default function Dashboard() {
                 </div>
               ))}
             </>
+          ) : missions.length > 0 ? (
+            <p
+              className="desc"
+              style={{ fontSize: 12, color: "var(--af2-ink-3)" }}
+            >
+              No missions match the current filters.
+            </p>
           ) : (
             <div
               className="desc"
@@ -314,6 +465,23 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      {/* Bottom-of-page charts — fill the space the v2 layout left
+          deliberately empty. Each chart respects the current
+          mission + date-range filters. */}
+      <HomeAnalytics
+        filters={filters}
+        agents={filteredAgents}
+        budgets={budgets}
+        runs={runs}
+        heartbeats={heartbeats}
+      />
+
+      <ApprovalDrawer
+        approval={openApproval}
+        onClose={() => setOpenApprovalId(null)}
+        onResolved={handleApprovalResolved}
+      />
     </div>
   );
 }
@@ -331,8 +499,6 @@ function StatTile({
   loading: boolean;
   format?: (value: number) => string;
 }) {
-  // Render the sparkline only once we have at least 2 samples — a single
-  // dot would be visually noisy and dishonest.
   const showSpark = history.length >= 2;
   return (
     <div className="stat-card" style={{ position: "relative" }}>
@@ -362,6 +528,137 @@ function StatTile({
           />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function LiveConnectionIndicator({
+  state,
+  isRefreshing,
+  lastEventAt,
+}: {
+  state: ReturnType<typeof useWorkspaceLiveStream>["state"];
+  isRefreshing: boolean;
+  lastEventAt: number | null;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    // Re-render every 10s so the "last update Ns ago" label stays fresh.
+    const id = window.setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const connected = state === "connected";
+  const dotColor = connected
+    ? "var(--af2-sage, #6b9e5e)"
+    : state === "error" || state === "reconnecting"
+      ? "var(--af2-clay, #c25b3a)"
+      : "var(--af2-ink-4)";
+  const animate = !connected || isRefreshing;
+  const label = (() => {
+    if (connected) {
+      if (lastEventAt) {
+        const diff = Date.now() - lastEventAt;
+        if (diff < 5_000) return "Live · update just now";
+        if (diff < 60_000)
+          return `Live · last update ${Math.round(diff / 1000)}s ago`;
+        return `Live · last update ${Math.round(diff / 60_000)}m ago`;
+      }
+      return "Live · waiting for activity";
+    }
+    if (state === "connecting") return "Connecting to live stream…";
+    if (state === "reconnecting") return "Reconnecting…";
+    if (state === "error") return "Stream offline · polling fallback";
+    return "Polling fallback";
+  })();
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        margin: "0 0 8px",
+        fontSize: 11,
+        color: "var(--af2-ink-3)",
+      }}
+    >
+      <span
+        aria-label={connected ? "Live" : label}
+        style={{
+          display: "inline-block",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: dotColor,
+          animation: animate ? "af2-pulse 1.2s ease-out infinite" : "none",
+        }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+interface HomeAnalyticsProps {
+  filters: HomeFilters;
+  agents: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { agents: infer A }
+      ? A
+      : never
+    : never;
+  budgets: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { budgets: infer B }
+      ? B
+      : never
+    : never;
+  runs: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { runs: infer R }
+      ? R
+      : never
+    : never;
+  heartbeats: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { heartbeats: infer H }
+      ? H
+      : never
+    : never;
+}
+
+function HomeAnalytics({ filters, agents, budgets, runs, heartbeats }: HomeAnalyticsProps) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+          gap: 12,
+          alignItems: "stretch",
+        }}
+      >
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ margin: 0 }}>Spend in range</h3>
+          <p className="desc" style={{ marginTop: 4 }}>
+            Cumulative spend across the selected window.
+          </p>
+          <SpendChart
+            range={filters.range}
+            budgets={budgets}
+            runs={runs}
+            scopedAgentIds={
+              filters.missionId
+                ? new Set(agents.map((a) => a.id))
+                : undefined
+            }
+          />
+        </div>
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ margin: 0 }}>Who's working</h3>
+          <p className="desc" style={{ marginTop: 4 }}>
+            Agent presence distribution.
+          </p>
+          <AgentActivityChart agents={agents} heartbeats={heartbeats} />
+        </div>
+      </div>
+      <IdleAgentsCallout agents={agents} heartbeats={heartbeats} />
     </div>
   );
 }

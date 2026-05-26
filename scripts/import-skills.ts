@@ -36,6 +36,7 @@ import path from "path";
 
 import { scanSkill, type ScanReport, type ScanFinding } from "../src/skills/scanner";
 import { createAnthropicLlmGrader } from "../src/skills/llmGrader";
+import { fetchGithubProvenance } from "../src/skills/githubProvenance";
 
 const SKILLS_DIR = path.resolve(__dirname, "..", "skills");
 const MANIFEST_PATH = path.join(SKILLS_DIR, ".manifest.json");
@@ -189,20 +190,20 @@ function readSkillBody(skillDir: string): string {
   return fs.readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
 }
 
-function fetchRepoProvenance(
+async function fetchRepoProvenance(
   owner: string,
-  _repo: string,
-): { trustedOrigin: boolean } {
-  // Cheap version: trust on org allowlist. GitHub-API enrichment (stars,
-  // last-commit) lands as a follow-up — skipping it keeps the import
-  // self-contained and offline-runnable.
-  const trustedOrgs = [
-    "anthropics",
-    "anthropic-experimental",
-    "vercel-labs",
-    "browserbase",
-  ];
-  return { trustedOrigin: trustedOrgs.includes(owner) };
+  repo: string,
+): Promise<
+  Awaited<ReturnType<typeof fetchGithubProvenance>>
+> {
+  // Enriched provenance: hits the GitHub REST API for stars, last
+  // commit, license, and archived state. Falls back to the org-
+  // allowlist-only behavior when the API call fails (no network, rate
+  // limit, etc.) so the import script remains self-contained.
+  //
+  // Set GITHUB_TOKEN in the environment to lift the 60/hour anonymous
+  // rate limit — required for the full skills.sh registry sweep.
+  return fetchGithubProvenance(owner, repo);
 }
 
 function copySkill(srcDir: string, destDir: string): void {
@@ -263,7 +264,18 @@ async function processRef(
       return;
     }
 
-    const provenance = fetchRepoProvenance(owner, repo);
+    const provenance = await fetchRepoProvenance(owner, repo);
+    if (provenance.fetchError) {
+      console.log(`    (github-api fetch failed: ${provenance.fetchError})`);
+    } else {
+      const fields = [
+        typeof provenance.stars === "number" ? `${provenance.stars}★` : null,
+        provenance.lastCommitAt ? `last-commit ${provenance.lastCommitAt.slice(0, 10)}` : null,
+        provenance.license ? `license ${provenance.license}` : null,
+        provenance.archived ? "archived" : null,
+      ].filter(Boolean);
+      if (fields.length > 0) console.log(`    (github: ${fields.join(", ")})`);
+    }
 
     for (const { name: skillName, dir: srcDir } of targets) {
       const skillKey = skillName;
@@ -286,8 +298,10 @@ async function processRef(
       const skillBody = readSkillBody(srcDir);
       const report = await scanSkill(skillKey, srcDir, skillBody, {
         provenance: {
-          sourceRepo: `github.com/${owner}/${repo}`,
+          sourceRepo: provenance.sourceRepo,
           trustedOrigin: provenance.trustedOrigin,
+          stars: provenance.stars,
+          lastCommitAt: provenance.lastCommitAt,
         },
         gradeWithLlm: Boolean(options.grader),
         llmGrader: options.grader,

@@ -37,6 +37,16 @@ async function startServer() {
     console.log(`AutoFlow API running on port ${PORT}`);
     console.log(`Loaded ${WORKFLOW_TEMPLATES.length} workflow templates`);
   });
+
+  // HEL-credits-mvp: start the credits-mode background jobs after the
+  // server is accepting traffic. Both no-op gracefully when Postgres
+  // isn't configured (in-memory dev / test).
+  const [{ startOpenrouterHealthJob }, { startCreditExpirationJob }] = await Promise.all([
+    import("./billing/credits/openrouterHealthJob"),
+    import("./billing/credits/creditExpirationJob"),
+  ]);
+  startOpenrouterHealthJob();
+  startCreditExpirationJob();
 }
 
 void startServer();

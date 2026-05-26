@@ -35,6 +35,7 @@ import {
   confirmHiringPlan,
   generateHiringPlan,
   patchHiringPlanSelection,
+  patchHiringPlanTierOverrides,
   type HiringPlanResponse,
   type StaffingRecommendation,
   type StarterJobDescription,
@@ -63,17 +64,74 @@ interface PendingRename {
   displayName: string;
 }
 
-function ModelTierBadge({ tier }: { tier: string }) {
-  const colors: Record<string, string> = {
-    lite: "bg-af2-paper-2 text-af2-ink-3",
-    standard: "af2-tone-bg-sage",
+type AgentTier = "lite" | "standard" | "power";
+
+/**
+ * Editable tier selector — three segmented buttons (Lite / Standard / Power).
+ * Used on the AgentCard so the reviewer can override the LLM-suggested tier
+ * per agent before confirming the plan. The actual `{provider, model}` the
+ * agent runs against still flows through the workspace's tier-routing matrix
+ * (Connections > Models), so picking a tier here is enough — no model-id is
+ * captured at this layer.
+ */
+function TierSelector({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: AgentTier;
+  onChange: (next: AgentTier) => void;
+  disabled?: boolean;
+}) {
+  const tones: Record<AgentTier, string> = {
+    lite: "af2-tone-bg-sage",
+    standard: "af2-tone-bg-mustard",
     power: "af2-tone-bg-clay",
   };
+  const tiers: AgentTier[] = ["lite", "standard", "power"];
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${colors[tier] ?? "bg-af2-paper-2 text-af2-ink-3"}`}
+      role="group"
+      aria-label="Agent tier"
+      style={{
+        display: "inline-flex",
+        gap: 0,
+        padding: 2,
+        background: "var(--af2-paper-2)",
+        borderRadius: 999,
+        border: "1px solid var(--af2-line)",
+        fontSize: 11,
+        lineHeight: 1,
+      }}
     >
-      {tier}
+      {tiers.map((t) => {
+        const selected = t === value;
+        return (
+          <button
+            key={t}
+            type="button"
+            disabled={disabled}
+            aria-pressed={selected}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (t !== value) onChange(t);
+            }}
+            className={selected ? tones[t] : undefined}
+            style={{
+              padding: "3px 10px",
+              border: 0,
+              borderRadius: 999,
+              background: selected ? undefined : "transparent",
+              color: selected ? "#fff" : "var(--af2-ink-3)",
+              fontWeight: 500,
+              cursor: disabled ? "not-allowed" : "pointer",
+              opacity: disabled ? 0.5 : 1,
+            }}
+          >
+            {t}
+          </button>
+        );
+      })}
     </span>
   );
 }
@@ -82,12 +140,16 @@ function AgentCard({
   agent,
   selected,
   onToggle,
+  onTierChange,
+  tierBusy,
   connectorHealth,
   disabled,
 }: {
   agent: StaffingRecommendation;
   selected: boolean;
   onToggle: () => void;
+  onTierChange: (next: AgentTier) => void;
+  tierBusy: boolean;
   connectorHealth: ConnectorHealthByKey;
   disabled?: boolean;
 }) {
@@ -114,7 +176,11 @@ function AgentCard({
             <span className="af2-serif" style={{ fontSize: 14, fontWeight: 600 }}>
               {agent.title}
             </span>
-            <ModelTierBadge tier={agent.modelTier} />
+            <TierSelector
+              value={agent.modelTier}
+              onChange={onTierChange}
+              disabled={disabled || tierBusy}
+            />
             {agent.budgetMonthlyUsd != null ? (
               <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
                 ${agent.budgetMonthlyUsd.toLocaleString()}/mo
@@ -252,6 +318,55 @@ export default function HiringPlanReview() {
     const token = await requireAccessToken();
     const { plan: updated } = await patchHiringPlanSelection(planId, keys, token);
     setPlan((prev) => (prev ? { ...prev, plan: updated } : prev));
+  }
+
+  // Phase 2b: per-agent tier override. Reviewer flips an agent's tier on the
+  // segmented control; we optimistically mutate the plan in state, PATCH the
+  // override, then roll back if the server rejects. Buffered by roleKey so
+  // the spinner attaches to the right card during the in-flight call.
+  const [tierBusyRoleKey, setTierBusyRoleKey] = useState<string | null>(null);
+  async function overrideAgentTier(roleKey: string, next: AgentTier) {
+    if (!planId || !plan) return;
+    const prevPlan = plan;
+    const optimisticPlan: HiringPlanResponse = {
+      ...prevPlan,
+      plan: {
+        ...prevPlan.plan,
+        orgChart: {
+          ...prevPlan.plan.orgChart,
+          executives: prevPlan.plan.orgChart.executives.map((a) =>
+            a.roleKey === roleKey ? { ...a, modelTier: next } : a,
+          ),
+          operators: prevPlan.plan.orgChart.operators.map((a) =>
+            a.roleKey === roleKey ? { ...a, modelTier: next } : a,
+          ),
+        },
+        provisioningPlan: {
+          ...prevPlan.plan.provisioningPlan,
+          agents: prevPlan.plan.provisioningPlan.agents.map((a) =>
+            a.roleKey === roleKey ? { ...a, modelTier: next } : a,
+          ),
+        },
+      },
+    };
+    setPlan(optimisticPlan);
+    setTierBusyRoleKey(roleKey);
+    try {
+      const token = await requireAccessToken();
+      const { plan: updated } = await patchHiringPlanTierOverrides(
+        planId,
+        { [roleKey]: next },
+        token,
+      );
+      setPlan((prev) => (prev ? { ...prev, plan: updated } : prev));
+    } catch (err) {
+      setPlan(prevPlan);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update agent tier",
+      );
+    } finally {
+      setTierBusyRoleKey(null);
+    }
   }
 
   async function handleConfirm() {
@@ -595,6 +710,8 @@ export default function HiringPlanReview() {
                     agent={agent}
                     selected={includedRoleKeys.has(agent.roleKey)}
                     onToggle={() => toggleAgent(agent.roleKey)}
+                    onTierChange={(next) => void overrideAgentTier(agent.roleKey, next)}
+                    tierBusy={tierBusyRoleKey === agent.roleKey}
                     connectorHealth={connectorHealth}
                     disabled={Boolean(plan.acceptedAt)}
                   />

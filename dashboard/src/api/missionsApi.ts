@@ -496,3 +496,29 @@ export async function patchHiringPlanSelection(
     `Failed to update hiring plan selection: ${response.status}`,
   );
 }
+
+/**
+ * Phase 2b — per-mission tier override. The reviewer can override the
+ * LLM-suggested tier on a per-agent basis BEFORE confirming the plan; the
+ * tier change mutates the draft's provisioningPlan.agents[].modelTier in
+ * place server-side so the existing confirm path provisions with the
+ * overridden tier. Keys are `roleKey`s from `provisioningPlan.agents`.
+ */
+export async function patchHiringPlanTierOverrides(
+  hiringPlanId: string,
+  tierOverrides: Record<string, "lite" | "standard" | "power">,
+  accessToken: string,
+): Promise<{ plan: HiringPlan }> {
+  const response = await trackedFetch(
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/draft`,
+    {
+      method: "PATCH",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ tierOverrides }),
+    },
+  );
+  return parseJsonOrError<{ plan: HiringPlan }>(
+    response,
+    `Failed to update per-agent tier: ${response.status}`,
+  );
+}

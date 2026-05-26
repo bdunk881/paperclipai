@@ -336,12 +336,11 @@ export default function Routines({
     <div className="af2-page af2-v2" data-pro={isPro ? "on" : undefined}>
       <div className="page-head af2-page-head">
         <div className="page-head-left">
-          <div className="eyebrow af2-eyebrow">Build · Routines</div>
           <h1 className="h1 af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
             Routines
           </h1>
           <div className="meta af2-page-head-meta">
-            Reusable workflows your agents call as routines. Build · run · schedule · click row to expand · "Launch in Studio" inline (no extra tab)
+            Reusable workflows your agents call as routines.
           </div>
         </div>
         <div className="page-head-right af2-page-actions">

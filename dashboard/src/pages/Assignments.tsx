@@ -118,11 +118,9 @@ export default function Assignments() {
     <div className="af2-v2">
       <div className="page-head">
         <div className="page-head-left">
-          <div className="eyebrow">Run · Work</div>
           <h1 className="h1">Assignments</h1>
           <div className="meta">
-            {openCount} open · {awaiting} awaiting reply · merges /agents/activity +
-            /settings/mission-assignment-sla
+            {openCount} open · {awaiting} awaiting reply
           </div>
         </div>
         <div className="page-head-right">
@@ -200,6 +198,10 @@ export default function Assignments() {
 type DrawerSubtab = "summary" | "updates" | "memory";
 
 function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
+  const queryClient = useQueryClient();
+  const { getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
+  const toast = useToast();
   const [openId, setOpenId] = useState<string | null>(null);
   const [subtab, setSubtab] = useState<DrawerSubtab>("summary");
   const [search, setSearch] = useState("");
@@ -207,6 +209,33 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
   const [agent, setAgent] = useState("any");
   const [priority, setPriority] = useState("any");
   const [openChip, setOpenChip] = useState(true);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  async function handleCancel(ticketId: string) {
+    if (!window.confirm("Cancel this assignment? It will be removed from the open queue.")) {
+      return;
+    }
+    setCancellingId(ticketId);
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await transitionTicket(
+        ticketId,
+        { status: "cancelled", actorType: "user" },
+        token,
+      );
+      toast.success("Assignment cancelled");
+      if (activeWorkspaceId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.tickets(activeWorkspaceId),
+        });
+      }
+      setOpenId(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel assignment");
+    } finally {
+      setCancellingId(null);
+    }
+  }
 
   const rows = useMemo(() => {
     return tickets.map((t) => {
@@ -224,6 +253,7 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
             : "P2";
       return {
         id: t.id.slice(0, 8).toUpperCase(),
+        rawId: t.id,
         title: t.title,
         desc: t.description || "",
         status,
@@ -459,6 +489,18 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
                   </button>
                   <button type="button" className="btn">
                     Reassign
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginLeft: "auto", color: "var(--af2-clay)" }}
+                    disabled={cancellingId === r.rawId}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleCancel(r.rawId);
+                    }}
+                  >
+                    {cancellingId === r.rawId ? "Cancelling…" : "Cancel"}
                   </button>
                 </div>
               </div>
@@ -954,10 +996,6 @@ function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
 
   return (
     <>
-      <div className="info-strip">
-        v2 SLA dashboard · was the boring /settings/mission-assignment-sla page
-        · every row is actionable now
-      </div>
       <div className="stat-grid">
         {stats.map((s) => (
           <div key={s.label} className="stat-card">
@@ -965,67 +1003,6 @@ function SlaTab({ tickets }: { tickets: TicketRecord[] }) {
             <div className="stat-label">{s.label}</div>
           </div>
         ))}
-      </div>
-      <div className="chart-wrap">
-        <div className="chart-legend">
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-sage)" }} /> Met
-          </span>
-          <span className="lg">
-            <span
-              className="sw"
-              style={{ background: "var(--af2-mustard)" }}
-            />{" "}
-            At risk
-          </span>
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-clay)" }} />{" "}
-            Breached
-          </span>
-        </div>
-        <svg viewBox="0 0 600 140" style={{ width: "100%", height: 140 }}>
-          <g>
-            <rect x={20} y={60} width={60} height={60} fill="var(--af2-sage)" />
-            <rect x={20} y={40} width={60} height={20} fill="var(--af2-mustard)" />
-            <rect x={20} y={30} width={60} height={10} fill="var(--af2-clay)" />
-            <rect x={100} y={50} width={60} height={70} fill="var(--af2-sage)" />
-            <rect x={100} y={35} width={60} height={15} fill="var(--af2-mustard)" />
-            <rect x={180} y={45} width={60} height={75} fill="var(--af2-sage)" />
-            <rect x={180} y={30} width={60} height={15} fill="var(--af2-mustard)" />
-            <rect x={180} y={20} width={60} height={10} fill="var(--af2-clay)" />
-            <rect x={260} y={40} width={60} height={80} fill="var(--af2-sage)" />
-            <rect x={260} y={30} width={60} height={10} fill="var(--af2-mustard)" />
-            <rect x={340} y={35} width={60} height={85} fill="var(--af2-sage)" />
-            <rect x={340} y={25} width={60} height={10} fill="var(--af2-mustard)" />
-            <rect x={420} y={30} width={60} height={90} fill="var(--af2-sage)" />
-            <rect x={420} y={20} width={60} height={10} fill="var(--af2-clay)" />
-            <rect x={500} y={38} width={60} height={82} fill="var(--af2-sage)" />
-            <rect x={500} y={28} width={60} height={10} fill="var(--af2-mustard)" />
-          </g>
-          <g fontFamily="JetBrains Mono" fontSize={9} fill="#6b5a48">
-            <text x={48} y={135}>
-              Mon
-            </text>
-            <text x={128} y={135}>
-              Tue
-            </text>
-            <text x={208} y={135}>
-              Wed
-            </text>
-            <text x={288} y={135}>
-              Thu
-            </text>
-            <text x={368} y={135}>
-              Fri
-            </text>
-            <text x={448} y={135}>
-              Sat
-            </text>
-            <text x={528} y={135}>
-              Sun
-            </text>
-          </g>
-        </svg>
       </div>
       <div className="card card-list" style={{ padding: 0 }}>
         <h3>Breached / at risk · take action</h3>
@@ -1090,10 +1067,6 @@ function ActivityTab({ agents }: { agents: Agent[] }) {
 
   return (
     <>
-      <div className="info-strip">
-        Activity feed moved here from /agents/activity · filterable by
-        agent/mission/team
-      </div>
       <div className="filterbar">
         <select>
           <option>Any event</option>

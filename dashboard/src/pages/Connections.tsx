@@ -44,6 +44,52 @@ import {
 } from "../api/tierRoutingApi";
 import { useAuth } from "../context/AuthContext";
 import { CompanyLogo } from "@autoflow/logo-dev";
+import { trackedFetch } from "../api/trackedFetch";
+import { getApiBasePath } from "../api/baseUrl";
+import { useToast } from "../components/ToastProvider";
+
+// ---------------------------------------------------------------------------
+// Per-connector auth metadata. OAuth connectors call POST
+// /api/integrations/:key/connect → { redirectUrl }; API-key connectors call
+// POST /api/integrations/:key/connect-api-key → { apiKey }. Disconnect is
+// uniform: DELETE /api/integrations/:key/disconnect.
+// ---------------------------------------------------------------------------
+
+type ConnectAuth =
+  | { kind: "oauth" }
+  | { kind: "api-key"; placeholder: string; where: string; docsUrl: string };
+
+const CONNECT_META: Record<string, ConnectAuth> = {
+  slack: { kind: "oauth" },
+  gmail: { kind: "oauth" },
+  hubspot: { kind: "oauth" },
+  sentry: { kind: "oauth" },
+  teams: { kind: "oauth" },
+  apollo: {
+    kind: "api-key",
+    placeholder: "Paste your Apollo API key",
+    where: "Apollo → Profile → API → Settings",
+    docsUrl: "https://apolloio.github.io/apollo-api-docs/?shell#authentication",
+  },
+  linear: {
+    kind: "api-key",
+    placeholder: "lin_api_…",
+    where: "Linear → Settings → API → Personal API keys",
+    docsUrl: "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+  },
+  stripe: {
+    kind: "api-key",
+    placeholder: "rk_live_… (restricted key recommended)",
+    where: "Stripe Dashboard → Developers → API keys → Restricted keys",
+    docsUrl: "https://stripe.com/docs/keys",
+  },
+  composio: {
+    kind: "api-key",
+    placeholder: "Paste your Composio API key",
+    where: "Composio Dashboard → Settings → API keys",
+    docsUrl: "https://docs.composio.dev/",
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -276,7 +322,15 @@ function IntegrationsPanel() {
     refresh,
     recentlyChangedKeys,
   } = useConnectorHealth();
+  const { getAccessToken } = useAuth();
+  const toast = useToast();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [apiKeyTarget, setApiKeyTarget] = useState<{
+    connectorKey: string;
+    connectorName: string;
+    meta: Extract<ConnectAuth, { kind: "api-key" }>;
+  } | null>(null);
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
   const collapse = () => setOpenId(null);
   // Re-render every 5s so the "Last checked Ns ago" label stays fresh.
@@ -285,6 +339,139 @@ function IntegrationsPanel() {
     const id = window.setInterval(() => setNow((n) => n + 1), 5_000);
     return () => window.clearInterval(id);
   }, []);
+
+  async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
+    const accessToken = await getAccessToken();
+    const headers = new Headers(init?.headers);
+    if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+    if (init?.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    return trackedFetch(`${getApiBasePath()}${path}`, { ...init, headers });
+  }
+
+  async function startOAuth(connectorKey: string, name: string) {
+    setBusyKey(connectorKey);
+    try {
+      const res = await authedFetch(`/integrations/${connectorKey}/connect`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error(`Connect failed (${res.status})`);
+      const payload = (await res.json()) as {
+        redirectUrl?: string;
+        authUrl?: string;
+      };
+      const url = payload.redirectUrl ?? payload.authUrl;
+      if (!url) throw new Error(`No OAuth redirect URL returned for ${name}`);
+      window.location.assign(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Couldn't start ${name} OAuth`);
+      setBusyKey(null);
+    }
+  }
+
+  async function disconnect(connectorKey: string, name: string) {
+    if (!window.confirm(`Disconnect ${name}? Agents will lose access until reconnected.`)) {
+      return;
+    }
+    setBusyKey(connectorKey);
+    try {
+      const res = await authedFetch(`/integrations/${connectorKey}/disconnect`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`Disconnect failed (${res.status})`);
+      toast.success(`Disconnected ${name}`);
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Couldn't disconnect ${name}`);
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function submitApiKey(apiKey: string) {
+    if (!apiKeyTarget) return;
+    setBusyKey(apiKeyTarget.connectorKey);
+    try {
+      const res = await authedFetch(
+        `/integrations/${apiKeyTarget.connectorKey}/connect-api-key`,
+        {
+          method: "POST",
+          body: JSON.stringify({ apiKey }),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Save failed (${res.status}): ${body.slice(0, 200)}`);
+      }
+      toast.success(`${apiKeyTarget.connectorName} connected`);
+      setApiKeyTarget(null);
+      refresh();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : `Couldn't save ${apiKeyTarget.connectorName} key`,
+      );
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  function actionButton(c: ConnectorHealthRecord): ReactNode {
+    const meta = CONNECT_META[c.connectorKey];
+    const isBusy = busyKey === c.connectorKey;
+    const isConnected = c.state === "healthy" || c.state === "degraded" || c.state === "rate_limited";
+    const needsReconnect = c.state === "auth_failed";
+
+    if (!meta) {
+      return (
+        <button type="button" className="btn sm" onClick={(e) => e.stopPropagation()} disabled>
+          Manage
+        </button>
+      );
+    }
+
+    if (isConnected) {
+      return (
+        <button
+          type="button"
+          className="btn sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            void disconnect(c.connectorKey, c.connectorName);
+          }}
+          disabled={isBusy}
+        >
+          {isBusy ? "Working…" : "Disconnect"}
+        </button>
+      );
+    }
+
+    const label = needsReconnect ? "Reconnect" : "Connect";
+    const onClick = () => {
+      if (meta.kind === "oauth") {
+        void startOAuth(c.connectorKey, c.connectorName);
+      } else {
+        setApiKeyTarget({
+          connectorKey: c.connectorKey,
+          connectorName: c.connectorName,
+          meta,
+        });
+      }
+    };
+    return (
+      <button
+        type="button"
+        className={`btn sm${needsReconnect ? " primary" : " primary"}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        disabled={isBusy}
+      >
+        {isBusy ? "Working…" : label}
+      </button>
+    );
+  }
 
   return (
     <div className="panel" role="tabpanel" id="con-int">
@@ -352,18 +539,10 @@ function IntegrationsPanel() {
             id={c.connectorKey}
             logo={integrationLogo(c.connectorKey, c.connectorName)}
             name={c.connectorName}
-            desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet synced"}
+            desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet connected"}
             highlight={recentlyChangedKeys.has(c.connectorKey)}
             pill={stateToPill(c.state)}
-            action={
-              <button
-                type="button"
-                className={`btn sm${c.state === "auth_failed" ? " primary" : ""}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {c.state === "auth_failed" ? "Reconnect" : "Manage"}
-              </button>
-            }
+            action={actionButton(c)}
             expanded={openId === c.connectorKey}
             onToggle={toggle}
           >
@@ -395,6 +574,90 @@ function IntegrationsPanel() {
           </IntegrationRow>
         ))
       )}
+      {apiKeyTarget ? (
+        <ApiKeyConnectModal
+          target={apiKeyTarget}
+          busy={busyKey === apiKeyTarget.connectorKey}
+          onClose={() => setApiKeyTarget(null)}
+          onSubmit={(key) => void submitApiKey(key)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+interface ApiKeyConnectModalProps {
+  target: {
+    connectorKey: string;
+    connectorName: string;
+    meta: Extract<ConnectAuth, { kind: "api-key" }>;
+  };
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (apiKey: string) => void;
+}
+
+function ApiKeyConnectModal({ target, busy, onClose, onSubmit }: ApiKeyConnectModalProps) {
+  const [apiKey, setApiKey] = useState("");
+  return (
+    <div
+      className="af2-v2-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="af2-v2-modal" style={{ maxWidth: 480 }}>
+        <div className="af2-v2-modal-head">
+          <div>
+            <div className="eyebrow">Connect via API key</div>
+            <h2 style={{ margin: 0 }}>{target.connectorName}</h2>
+          </div>
+          <button type="button" className="btn ghost sm" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (apiKey.trim()) onSubmit(apiKey.trim());
+          }}
+        >
+          <div className="af2-v2-modal-body">
+            <p className="desc" style={{ marginTop: 0 }}>
+              Find your key at <b>{target.meta.where}</b>.{" "}
+              <a
+                href={target.meta.docsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="link-clay"
+              >
+                Docs ↗
+              </a>
+            </p>
+            <label className="field">
+              API key
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={target.meta.placeholder}
+                autoFocus
+                required
+              />
+            </label>
+          </div>
+          <div className="af2-v2-modal-foot">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>
+              Cancel
+            </button>
+            <button type="submit" className="btn primary" disabled={busy || !apiKey.trim()}>
+              {busy ? "Saving…" : "Connect"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1654,10 +1917,9 @@ export default function Connections() {
       <section className="hub" data-hub="connections">
         <div className="page-head">
           <div className="page-head-left">
-            <div className="eyebrow">Run · Connections</div>
             <h1 className="h1">Connections</h1>
             <div className="meta">
-              Per-mission / per-team / per-agent permission scoping · moved to Run pillar
+              Per-mission / per-team / per-agent permission scoping
             </div>
           </div>
         </div>

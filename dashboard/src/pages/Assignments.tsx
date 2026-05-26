@@ -6,7 +6,13 @@
  * Renders inside the `.af2-v2` shell with the prototype's vocabulary
  * (page-head, tabs, filterbar, card-list, row, row-drawer, pills…).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Agent } from "../api/agentApi";
@@ -31,6 +37,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { primaryAssignee } from "./tickets/ticketingUi.helpers";
 import { NewAssignmentModal } from "../components/assignments/NewAssignmentModal";
 import { useToast } from "../components/ToastProvider";
+import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
+import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
 import type { Mission } from "../api/missionsApi";
 
 type TabKey = "queue" | "board" | "by-mission" | "sla" | "activity" | "by-team";
@@ -265,6 +273,13 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
     }
   }
 
+  const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const { focusedId, helpOpen, setHelpOpen } = useListKeyboardNav({
+    ids: filteredIds,
+    expandedId: openId,
+    setExpandedId: setOpenId,
+  });
+
   return (
     <>
       <div className="filterbar">
@@ -316,12 +331,19 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
       <div className="card card-list" style={{ padding: 0 }}>
         {filtered.map((r) => {
           const isOpen = openId === r.id;
+          const isFocused = focusedId === r.id;
           return (
-            <div key={r.id}>
+            <div key={r.id} data-keyboard-row-id={r.id}>
               <div
                 className={`row${isOpen ? " expanded" : ""}`}
                 style={{
                   gridTemplateColumns: "90px 1fr 120px 100px 100px 110px",
+                  ...(isFocused
+                    ? {
+                        outline: "2px solid var(--af2-clay)",
+                        outlineOffset: -2,
+                      }
+                    : null),
                 }}
                 onClick={() => toggleRow(r.id)}
               >
@@ -451,9 +473,42 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
           </div>
         ) : null}
       </div>
+      <div
+        style={{
+          marginTop: 8,
+          fontSize: 11,
+          color: "var(--af2-ink-4)",
+        }}
+      >
+        Tip: <kbd style={KBD_STYLE}>j</kbd>/<kbd style={KBD_STYLE}>k</kbd>{" "}
+        to navigate, <kbd style={KBD_STYLE}>enter</kbd> to expand,{" "}
+        <kbd style={KBD_STYLE}>?</kbd> for all shortcuts.
+      </div>
+      <KeyboardShortcutsOverlay
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        title="Assignment queue shortcuts"
+        shortcuts={[
+          { keys: "j / ↓", label: "Next assignment" },
+          { keys: "k / ↑", label: "Previous assignment" },
+          { keys: "enter / o", label: "Expand focused row" },
+          { keys: "esc", label: "Collapse" },
+          { keys: "?", label: "Toggle this help" },
+        ]}
+      />
     </>
   );
 }
+
+const KBD_STYLE: CSSProperties = {
+  fontFamily: "var(--af2-mono, ui-monospace, SFMono-Regular, monospace)",
+  fontSize: 10,
+  background: "var(--af2-paper-2)",
+  border: "1px solid var(--af2-line-2)",
+  borderRadius: 3,
+  padding: "0 4px",
+  color: "var(--af2-ink-2)",
+};
 
 // ---- Board (Kanban) tab ----------------------------------------------------
 //

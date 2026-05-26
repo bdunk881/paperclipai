@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Agent } from "../api/agentApi";
 import { retireMissionTeam, type Mission } from "../api/missionsApi";
@@ -9,6 +9,7 @@ import { useOrgGraphQuery } from "../hooks/queries/useOrgGraphQuery";
 import { AddReportModal } from "../components/missions/AddReportModal";
 import { EmptyState, ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
+import { useWorkspace } from "../context/useWorkspace";
 import { useToast } from "../components/ToastProvider";
 import {
   useAgentPresence,
@@ -144,8 +145,88 @@ function isArchivedMission(mission: Mission | null): boolean {
   return mission.status === "completed" || mission.status === "archived";
 }
 
+// LocalStorage prefix for persisting the user's preferred team order
+// and per-team collapsed state. There's no backend equivalent today.
+const ORG_STORAGE_PREFIX = "af2.orgStructure.v1";
+
+function loadCollapsedTeams(workspaceId: string | null): Set<string> {
+  if (typeof window === "undefined" || !workspaceId) return new Set();
+  try {
+    const raw = window.localStorage.getItem(
+      `${ORG_STORAGE_PREFIX}.${workspaceId}.collapsed`,
+    );
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCollapsedTeams(workspaceId: string | null, ids: Set<string>) {
+  if (typeof window === "undefined" || !workspaceId) return;
+  try {
+    window.localStorage.setItem(
+      `${ORG_STORAGE_PREFIX}.${workspaceId}.collapsed`,
+      JSON.stringify([...ids]),
+    );
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function loadAgentOrder(workspaceId: string | null, teamKey: string): string[] {
+  if (typeof window === "undefined" || !workspaceId) return [];
+  try {
+    const raw = window.localStorage.getItem(
+      `${ORG_STORAGE_PREFIX}.${workspaceId}.team.${teamKey}.agentOrder`,
+    );
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s) => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAgentOrder(
+  workspaceId: string | null,
+  teamKey: string,
+  order: string[],
+) {
+  if (typeof window === "undefined" || !workspaceId) return;
+  try {
+    window.localStorage.setItem(
+      `${ORG_STORAGE_PREFIX}.${workspaceId}.team.${teamKey}.agentOrder`,
+      JSON.stringify(order),
+    );
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
+function applyAgentOrder(agents: Agent[], order: string[]): Agent[] {
+  if (order.length === 0) return agents;
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const ordered: Agent[] = [];
+  for (const id of order) {
+    const a = byId.get(id);
+    if (a) {
+      ordered.push(a);
+      byId.delete(id);
+    }
+  }
+  for (const remaining of byId.values()) ordered.push(remaining);
+  return ordered;
+}
+
+function teamStorageKey(group: TeamGroup, idx: number): string {
+  return group.mission?.id ?? `unassigned-${idx}`;
+}
+
 export default function OrgStructure() {
   const { requireAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const presence = useAgentPresence();
@@ -153,6 +234,59 @@ export default function OrgStructure() {
   const missionsQuery = useMissionsQuery();
   const orgGraphQuery = useOrgGraphQuery();
   const budgetsQuery = useBudgetsQuery();
+
+  // Persisted UI prefs — collapsed teams + intra-team agent order.
+  const [collapsedTeams, setCollapsedTeams] = useState<Set<string>>(() =>
+    loadCollapsedTeams(activeWorkspaceId ?? null),
+  );
+  useEffect(() => {
+    setCollapsedTeams(loadCollapsedTeams(activeWorkspaceId ?? null));
+  }, [activeWorkspaceId]);
+
+  function toggleTeamCollapsed(key: string) {
+    setCollapsedTeams((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveCollapsedTeams(activeWorkspaceId ?? null, next);
+      return next;
+    });
+  }
+
+  // Per-team agent ordering. Drag handle on each agent row updates the
+  // order; we persist it in localStorage scoped to (workspace, team).
+  const [dragAgentId, setDragAgentId] = useState<string | null>(null);
+  const [dragOverAgentId, setDragOverAgentId] = useState<string | null>(null);
+  const [agentOrderByTeam, setAgentOrderByTeam] = useState<Record<string, string[]>>(
+    {},
+  );
+
+  function reorderAgentsInTeam(teamKey: string, sourceId: string, targetId: string) {
+    if (sourceId === targetId) return;
+    setAgentOrderByTeam((prev) => {
+      const current = prev[teamKey] ?? [];
+      const next = current.length > 0 ? [...current] : [];
+      // If we don't have a baseline yet, fall back to the visible order
+      // captured on drag start. (We use document.querySelector to read
+      // the rendered DOM order — cheap and correct.)
+      if (next.length === 0) {
+        const nodes = document.querySelectorAll<HTMLElement>(
+          `[data-agent-row][data-team-key="${teamKey}"]`,
+        );
+        nodes.forEach((node) => {
+          const id = node.getAttribute("data-agent-id");
+          if (id) next.push(id);
+        });
+      }
+      const fromIdx = next.indexOf(sourceId);
+      const toIdx = next.indexOf(targetId);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, sourceId);
+      saveAgentOrder(activeWorkspaceId ?? null, teamKey, next);
+      return { ...prev, [teamKey]: next };
+    });
+  }
   const agents = agentsQuery.data ?? [];
   const missions = missionsQuery.data ?? [];
   const orgGraphAgents = orgGraphQuery.data?.agents ?? [];
@@ -425,6 +559,14 @@ export default function OrgStructure() {
         const isArchived = isArchivedMission(group.mission);
         const status = isArchived ? "archived" : "live";
         const pillToneClass = isArchived ? "pill mustard dot" : "pill sage dot";
+        const teamKey = teamStorageKey(group, groupIndex);
+        const isCollapsed = collapsedTeams.has(teamKey);
+        // Apply persisted intra-team ordering. Each team picks up its
+        // own saved order on first render; subsequent drags update the
+        // in-memory map (which agentOrderByTeam owns).
+        const liveOrder =
+          agentOrderByTeam[teamKey] ?? loadAgentOrder(activeWorkspaceId ?? null, teamKey);
+        const orderedAgents = applyAgentOrder(group.agents, liveOrder);
         return (
           <div key={group.mission?.id ?? `unassigned-${groupIndex}`}>
             {/* Team header card */}
@@ -437,9 +579,37 @@ export default function OrgStructure() {
                 alignItems: "center",
                 marginBottom: 8,
                 marginTop: groupIndex === 0 ? 0 : 14,
+                cursor: "pointer",
+              }}
+              onClick={(e) => {
+                // Don't toggle if the click came from one of the action
+                // buttons in the header.
+                if ((e.target as HTMLElement).closest("button")) return;
+                toggleTeamCollapsed(teamKey);
+              }}
+              role="button"
+              aria-expanded={!isCollapsed}
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  toggleTeamCollapsed(teamKey);
+                }
               }}
             >
               <div>
+                <span
+                  aria-hidden
+                  style={{
+                    display: "inline-block",
+                    marginRight: 8,
+                    color: "var(--af2-ink-3)",
+                    transform: isCollapsed ? "rotate(-90deg)" : "rotate(0)",
+                    transition: "transform 0.18s ease",
+                  }}
+                >
+                  ▾
+                </span>
                 <b>{teamLabel(group)}</b>{" "}
                 <span className={pillToneClass} style={{ marginLeft: 6 }}>
                   {status}
@@ -489,8 +659,14 @@ export default function OrgStructure() {
               </div>
             </div>
             {/* Agent rows */}
-            <div className="card card-list" style={{ padding: 0 }}>
-              {group.agents.map((agent) => {
+            <div
+              className="card card-list"
+              style={{
+                padding: 0,
+                display: isCollapsed ? "none" : undefined,
+              }}
+            >
+              {orderedAgents.map((agent) => {
                 const isExpanded = openAgentId === agent.id;
                 const snap = budgets.get(agent.id) ?? null;
                 const spentLabel =
@@ -507,13 +683,26 @@ export default function OrgStructure() {
                       : "—";
                 const tier = tierPillFor(agent);
                 const label = primaryAgentLabel(agent);
+                const isDragging = dragAgentId === agent.id;
+                const isDropTarget =
+                  dragOverAgentId === agent.id && dragAgentId !== agent.id;
                 return (
-                  <div key={agent.id}>
+                  <div
+                    key={agent.id}
+                    data-agent-row
+                    data-agent-id={agent.id}
+                    data-team-key={teamKey}
+                  >
                     <div
                       className={`row${isExpanded ? " expanded" : ""}`}
                       style={{
                         gridTemplateColumns:
-                          "60px 1fr 130px 130px 100px 110px",
+                          "26px 60px 1fr 130px 130px 100px 110px",
+                        opacity: isDragging ? 0.4 : 1,
+                        borderTop: isDropTarget
+                          ? "2px solid var(--af2-clay)"
+                          : undefined,
+                        transition: "opacity 0.15s",
                       }}
                       onClick={() => {
                         if (isExpanded) {
@@ -523,7 +712,73 @@ export default function OrgStructure() {
                           setAgentDrawerTab("overview");
                         }
                       }}
+                      onDragOver={(e) => {
+                        if (
+                          e.dataTransfer.types.includes(
+                            "application/x-autoflow-agent",
+                          )
+                        ) {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (dragAgentId && dragAgentId !== agent.id) {
+                            setDragOverAgentId(agent.id);
+                          }
+                        }
+                      }}
+                      onDrop={(e) => {
+                        const sourceId = e.dataTransfer.getData(
+                          "application/x-autoflow-agent",
+                        );
+                        const sourceTeam = e.dataTransfer.getData(
+                          "application/x-autoflow-agent-team",
+                        );
+                        if (sourceId && sourceTeam === teamKey) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          reorderAgentsInTeam(teamKey, sourceId, agent.id);
+                        } else if (sourceId && sourceTeam !== teamKey) {
+                          toast.info(
+                            "Moving agents between teams needs backend support — currently scoped to in-team reordering.",
+                          );
+                        }
+                        setDragAgentId(null);
+                        setDragOverAgentId(null);
+                      }}
                     >
+                      <div
+                        draggable
+                        onClick={(e) => e.stopPropagation()}
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData(
+                            "application/x-autoflow-agent",
+                            agent.id,
+                          );
+                          e.dataTransfer.setData(
+                            "application/x-autoflow-agent-team",
+                            teamKey,
+                          );
+                          setDragAgentId(agent.id);
+                        }}
+                        onDragEnd={() => {
+                          setDragAgentId(null);
+                          setDragOverAgentId(null);
+                        }}
+                        title="Drag to reorder within this team"
+                        aria-label="Reorder agent"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "grab",
+                          color: "var(--af2-ink-4)",
+                          fontSize: 16,
+                          userSelect: "none",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ⋮⋮
+                      </div>
                       <div
                         className="avatar"
                         style={{ width: 32, height: 32, fontSize: 12 }}

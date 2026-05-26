@@ -490,6 +490,44 @@
       box-shadow: 0 12px 28px color-mix(in srgb, var(--af2-clay) 32%, transparent);
     }
   }
+
+  /* Subtle pulsing dot — used by live-refresh indicators (Connections,
+     Dashboard stat tiles, etc.). */
+  @keyframes af2-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-clay, #c25b3a) 55%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 8px color-mix(in srgb, var(--af2-clay, #c25b3a) 0%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-clay, #c25b3a) 0%, transparent);
+    }
+  }
+
+  /* Brief warm flash for rows whose state just changed (connector health
+     change, ticket move, etc.). */
+  @keyframes af2-flash {
+    0% {
+      background-color: color-mix(in srgb, var(--af2-clay-soft, #f4e2d6) 65%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  /* Used by the dashboard stat tiles to softly bump the number when it
+     increments from a poll. */
+  @keyframes af2-count-bump {
+    0% {
+      transform: translateY(4px);
+      opacity: 0.4;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
 }
 
 @tailwind utilities;

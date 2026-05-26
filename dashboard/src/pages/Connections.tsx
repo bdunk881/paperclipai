@@ -13,7 +13,7 @@
  * to `/api/connector-grants` lands in a follow-up; until then the rows
  * mutate in-place so QA can exercise the slider UI.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useExperienceMode } from "../context/ExperienceModeContext";
 import {
   createLLMConfig,
@@ -67,6 +67,8 @@ interface IntegrationRowProps {
   action: ReactNode;
   expanded: boolean;
   onToggle: (id: string) => void;
+  /** True briefly after a poll detects a status change — used to flash the row. */
+  highlight?: boolean;
   children?: ReactNode;
 }
 
@@ -79,6 +81,7 @@ function IntegrationRow({
   action,
   expanded,
   onToggle,
+  highlight,
   children,
 }: IntegrationRowProps) {
   return (
@@ -95,6 +98,13 @@ function IntegrationRow({
             onToggle(id);
           }
         }}
+        style={
+          highlight
+            ? {
+                animation: "af2-flash 1.6s ease-out 1",
+              }
+            : undefined
+        }
       >
         <div className="int-logo">{logo}</div>
         <div>
@@ -136,48 +146,173 @@ function logoLetter(name: string): string {
   return name.trim().charAt(0).toUpperCase() || "?";
 }
 
+const CONNECTOR_POLL_MS = 30_000;
+
 function useConnectorHealth(): {
   connectors: ConnectorHealthRecord[];
   loading: boolean;
   error: string | null;
+  lastFetchedAt: number | null;
+  isRefreshing: boolean;
+  refresh: () => void;
+  recentlyChangedKeys: Set<string>;
 } {
   const { getAccessToken } = useAuth();
   const [connectors, setConnectors] = useState<ConnectorHealthRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFetchedAt, setLastFetchedAt] = useState<number | null>(null);
+  const [recentlyChangedKeys, setRecentlyChangedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    const isFirst = tick === 0;
+    if (isFirst) setLoading(true);
+    else setIsRefreshing(true);
     void (async () => {
-      setLoading(true);
-      setError(null);
       try {
         const token = (await getAccessToken()) ?? undefined;
         const result = await getConnectorHealth(token);
-        if (!cancelled) setConnectors(result.connectors ?? []);
+        if (cancelled) return;
+        const next = result.connectors ?? [];
+        // Diff against previous to flag changed connectors so the UI can
+        // briefly highlight them.
+        setConnectors((prev) => {
+          const prevByKey = new Map(prev.map((c) => [c.connectorKey, c.state]));
+          const changed = new Set<string>();
+          for (const c of next) {
+            if (prevByKey.size > 0 && prevByKey.get(c.connectorKey) !== c.state) {
+              changed.add(c.connectorKey);
+            }
+          }
+          if (changed.size > 0) {
+            setRecentlyChangedKeys(changed);
+            // Clear the highlight after a short window.
+            setTimeout(() => {
+              setRecentlyChangedKeys(new Set());
+            }, 4_000);
+          }
+          return next;
+        });
+        setLastFetchedAt(Date.now());
+        setError(null);
       } catch (err) {
-        if (!cancelled)
+        if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load connectors");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [getAccessToken]);
+  }, [getAccessToken, tick]);
 
-  return { connectors, loading, error };
+  // Background poll. Skips when the tab is hidden so we don't burn API
+  // calls while the user is in another window.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      setTick((n) => n + 1);
+    }, CONNECTOR_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+
+  return {
+    connectors,
+    loading,
+    error,
+    lastFetchedAt,
+    isRefreshing,
+    refresh,
+    recentlyChangedKeys,
+  };
+}
+
+function formatLastChecked(ts: number | null): string {
+  if (!ts) return "—";
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 5_000) return "just now";
+  if (diff < 60_000) return `${Math.round(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  return `${Math.round(diff / 3_600_000)}h ago`;
 }
 
 function IntegrationsPanel() {
-  const { connectors, loading, error } = useConnectorHealth();
+  const {
+    connectors,
+    loading,
+    error,
+    lastFetchedAt,
+    isRefreshing,
+    refresh,
+    recentlyChangedKeys,
+  } = useConnectorHealth();
   const [openId, setOpenId] = useState<string | null>(null);
   const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
   const collapse = () => setOpenId(null);
+  // Re-render every 5s so the "Last checked Ns ago" label stays fresh.
+  const [, setNow] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setNow((n) => n + 1), 5_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <div className="panel" role="tabpanel" id="con-int">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          margin: "0 0 10px",
+          fontSize: 11,
+          color: "var(--af2-ink-3)",
+        }}
+      >
+        <span
+          aria-label={isRefreshing ? "Refreshing" : "Live"}
+          style={{
+            display: "inline-block",
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: isRefreshing
+              ? "var(--af2-clay, #c25b3a)"
+              : "var(--af2-sage, #6b9e5e)",
+            boxShadow: isRefreshing
+              ? "0 0 0 0 color-mix(in srgb, var(--af2-clay) 60%, transparent)"
+              : "none",
+            animation: isRefreshing
+              ? "af2-pulse 1.2s ease-out infinite"
+              : "none",
+          }}
+        />
+        <span>
+          {isRefreshing
+            ? "Refreshing connector health…"
+            : `Last checked ${formatLastChecked(lastFetchedAt)} · auto-refreshing every 30s`}
+        </span>
+        <button
+          type="button"
+          className="btn sm"
+          onClick={refresh}
+          disabled={isRefreshing}
+          style={{ marginLeft: "auto" }}
+        >
+          Refresh
+        </button>
+      </div>
       {loading ? (
         <div className="card">
           <p className="desc">Loading…</p>
@@ -200,6 +335,7 @@ function IntegrationsPanel() {
             logo={logoLetter(c.connectorName)}
             name={c.connectorName}
             desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet synced"}
+            highlight={recentlyChangedKeys.has(c.connectorKey)}
             pill={stateToPill(c.state)}
             action={
               <button

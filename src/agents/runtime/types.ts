@@ -35,6 +35,28 @@ export interface AgentMcpServer {
   authorization?: string;
 }
 
+/** Optional pre/post-tool hook the backend calls before/after each tool invocation. */
+export interface AgentHooks {
+  /**
+   * Called before a tool invocation. Returning `{ continue: false, reason }`
+   * blocks the call and surfaces the reason to the model as a tool error.
+   */
+  preToolUse?: (input: {
+    toolName: string;
+    toolInput: Record<string, unknown>;
+  }) => Promise<{ continue: boolean; reason?: string } | void> | { continue: boolean; reason?: string } | void;
+  /** Called after a tool completes — used for spend accounting + audit log. */
+  postToolUse?: (input: {
+    toolName: string;
+    toolInput: Record<string, unknown>;
+    result: unknown;
+    error?: string;
+  }) => Promise<void> | void;
+}
+
+/** Permission mode for the agent run — maps onto the Claude Agent SDK's permission system. */
+export type AgentPermissionMode = "auto" | "plan" | "review";
+
 export interface AgentRunInput {
   pool: Pool;
   workspaceId: string;
@@ -59,6 +81,15 @@ export interface AgentRunInput {
   requestTimeoutMs?: number;
   /** Live trace callback — same shape as the rest of the platform expects. */
   onTrace?: AgentTraceCallback;
+  /**
+   * Permission mode for the run:
+   *   - "auto"   default; the agent executes tools without prompting
+   *   - "plan"   agent produces a plan and stops (Claude SDK plan mode)
+   *   - "review" agent runs but every tool call is forwarded to hooks for approval
+   */
+  permissionMode?: AgentPermissionMode;
+  /** Pre/post tool hooks. Used today for budget enforcement + audit logging. */
+  hooks?: AgentHooks;
 }
 
 export interface AgentRunResult {

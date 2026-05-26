@@ -24,6 +24,7 @@ import type {
 } from "../../llmConfig/adapters/types";
 import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
+import { resolveSkills, type LoadedSkill } from "../../skills/skillsLoader";
 import { executeToolCalls } from "./executeToolCalls";
 import type {
   AgentBackend,
@@ -46,14 +47,23 @@ export class FallbackAgentBackend implements AgentBackend {
   ): Promise<AgentRunResult> {
     const adapter = getProviderAdapter(binding.provider);
     const tools = input.tools ?? [];
-    const toolsByName = new Map(tools.map((t) => [t.name, t]));
-    const toolSpecs: ToolSpec[] = tools.map((t) => ({
+    const wrappedTools = wrapWithHooks(tools, input);
+    const toolsByName = new Map(wrappedTools.map((t) => [t.name, t]));
+    const toolSpecs: ToolSpec[] = wrappedTools.map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.inputSchema,
     }));
     const maxIterations = input.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
-    const system = buildSystemWithSkills(input.systemPrompt, input.skills);
+    const loadedSkills = resolveSkills(input.skills ?? []);
+    const system = buildSystemWithSkills(input.systemPrompt, loadedSkills);
+
+    if (input.permissionMode === "plan") {
+      // Plan mode: don't run tools — produce a plan and stop. The fallback
+      // backend doesn't have a native plan mode like the Claude SDK, so we
+      // inject an instruction into the system prompt and drop the tools.
+      return runPlanMode(input, binding, adapter, system);
+    }
 
     const messages: NormalizedMessage[] = [
       { role: "user", content: input.userPrompt },
@@ -181,13 +191,129 @@ export class FallbackAgentBackend implements AgentBackend {
 }
 
 /**
- * On backends without native Claude Skills support, fold any requested
- * skill keys into the system prompt as a "SKILLS AVAILABLE" section. The
- * skill content itself is editor-authored in the repo's `skills/` folder
- * (Phase 2) and loaded by a yet-to-build skills registry. Until that lands
- * we surface just the keys so the model knows what it has been hired for.
+ * On backends without native Claude Skills support, splice each loaded
+ * skill's full SKILL.md body into the system prompt under a "SKILLS
+ * AVAILABLE" section. The Claude SDK backend uses native skills wiring;
+ * here we just stuff the markdown into the prompt so the model sees the
+ * same content regardless of provider.
  */
-function buildSystemWithSkills(base: string, skills?: string[]): string {
-  if (!skills || skills.length === 0) return base;
-  return `${base}\n\nSKILLS AVAILABLE:\n${skills.map((s) => `- ${s}`).join("\n")}`;
+function buildSystemWithSkills(base: string, skills: LoadedSkill[]): string {
+  if (skills.length === 0) return base;
+  const sections = skills
+    .map((s) => `### ${s.name}\n${s.description}\n\n${s.body}`)
+    .join("\n\n---\n\n");
+  return `${base}\n\n# SKILLS AVAILABLE\n\n${sections}`;
+}
+
+/**
+ * Wrap each AgentTool with pre/post-tool hooks. Returning a tool whose
+ * handler short-circuits when `preToolUse` returns `{ continue: false }`
+ * keeps the loop semantics identical between backends — the wrapped
+ * handler either throws (caught by executeToolCalls and surfaced as an
+ * isError tool_result) or returns the original result.
+ */
+function wrapWithHooks(tools: AgentTool[], input: AgentRunInput): AgentTool[] {
+  if (!input.hooks?.preToolUse && !input.hooks?.postToolUse) return tools;
+  return tools.map((t) => ({
+    ...t,
+    handler: async (toolInput: Record<string, unknown>) => {
+      if (input.hooks?.preToolUse) {
+        try {
+          const decision = await input.hooks.preToolUse({
+            toolName: t.name,
+            toolInput,
+          });
+          if (decision && decision.continue === false) {
+            throw new Error(
+              decision.reason ?? "Pre-tool-use hook blocked this call.",
+            );
+          }
+        } catch (err) {
+          // PreToolUse hooks may throw; propagate to executeToolCalls
+          // which marks the tool_result as isError.
+          throw err;
+        }
+      }
+      let result: unknown;
+      try {
+        result = await t.handler(toolInput);
+      } catch (err) {
+        if (input.hooks?.postToolUse) {
+          try {
+            await input.hooks.postToolUse({
+              toolName: t.name,
+              toolInput,
+              result: null,
+              error: (err as Error).message,
+            });
+          } catch (hookErr) {
+            console.warn(
+              `[fallbackAgentBackend] postToolUse hook threw: ${(hookErr as Error).message}`,
+            );
+          }
+        }
+        throw err;
+      }
+      if (input.hooks?.postToolUse) {
+        try {
+          await input.hooks.postToolUse({ toolName: t.name, toolInput, result });
+        } catch (err) {
+          console.warn(
+            `[fallbackAgentBackend] postToolUse hook threw: ${(err as Error).message}`,
+          );
+        }
+      }
+      return result;
+    },
+  }));
+}
+
+/**
+ * Plan-mode short-circuit. Asks the model to produce a plan without
+ * executing any tools, then returns. The caller (AutoFlow's approvals
+ * subsystem) decides whether to file an approval ticket and re-run with
+ * `permissionMode: "auto"` after a human signs off.
+ */
+async function runPlanMode(
+  input: AgentRunInput,
+  binding: ResolvedModelBinding,
+  adapter: ReturnType<typeof getProviderAdapter>,
+  system: string,
+): Promise<AgentRunResult> {
+  const planSystem =
+    `${system}\n\n# PLAN MODE\n\nDo NOT execute any tools. Produce a numbered plan of steps you would take, with the first step being whichever tool you would call first. Stop after the plan. A human will review and decide whether to approve execution.`;
+  const messages: NormalizedMessage[] = [
+    { role: "user", content: input.userPrompt },
+  ];
+  if (input.onTrace) {
+    emitTrace(input.onTrace, { type: "turn.started", at: new Date().toISOString() });
+  }
+  const response = await (adapter.invokeStream ?? adapter.invoke).call(adapter, {
+    provider: binding.provider,
+    model: binding.model,
+    apiKey: binding.apiKey,
+    providerOptions: binding.providerOptions,
+    messages,
+    system: planSystem,
+    tools: undefined,
+    onTrace: input.onTrace,
+  });
+  const usage = {
+    promptTokens: response.usage.inputTokens,
+    completionTokens: response.usage.outputTokens,
+    cachedPromptTokens:
+      (response.usage.cachedInputTokens ?? 0) > 0
+        ? response.usage.cachedInputTokens
+        : undefined,
+  };
+  if (input.onTrace) {
+    emitTrace(input.onTrace, { type: "turn.completed", text: response.content, usage });
+  }
+  return {
+    text: response.content,
+    usage,
+    provider: binding.provider,
+    model: binding.model,
+    backend: "fallback",
+  };
 }

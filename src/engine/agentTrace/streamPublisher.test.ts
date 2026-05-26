@@ -1,6 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
+
+const mockGetRedisClient =
+  jest.fn<() => ReturnType<typeof import("../../queue/redisClient").getRedisClient>>(
+    () => null,
+  );
+jest.mock("../../queue/redisClient", () => ({
+  getRedisClient: () => mockGetRedisClient(),
+}));
 
 import {
+  agentStreamChannel,
   publishWorkspaceStreamEvent,
   resetWorkspaceStreamForTests,
   subscribeAgentStreamInMemory,
@@ -111,5 +120,48 @@ describe("workspace stream publisher", () => {
     });
 
     expect(received).toHaveLength(1);
+  });
+
+  it("builds the expected workspace stream channel name", () => {
+    expect(agentStreamChannel("ws-xyz")).toBe("workspace:ws-xyz:agent-stream");
+  });
+
+  it("publishes to redis when a client is available", async () => {
+    const publish = jest.fn<(channel: string, message: string) => Promise<number>>(
+      async () => 1,
+    );
+    mockGetRedisClient.mockReturnValueOnce({ publish } as never);
+
+    await publishWorkspaceStreamEvent("ws-redis", {
+      kind: "activity.event",
+      activityKind: "agent.prompt_executed",
+    });
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0]![0]).toBe("workspace:ws-redis:agent-stream");
+    mockGetRedisClient.mockReturnValue(null);
+  });
+
+  it("logs and continues when redis publish rejects", async () => {
+    const publish = jest.fn<(channel: string, message: string) => Promise<number>>(
+      async () => {
+        throw new Error("redis exploded");
+      },
+    );
+    mockGetRedisClient.mockReturnValueOnce({ publish } as never);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+
+    await expect(
+      publishWorkspaceStreamEvent("ws-redis-err", {
+        kind: "activity.event",
+        activityKind: "agent.prompt_executed",
+      }),
+    ).resolves.toBeTruthy();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[agentStream] publish failed"),
+    );
+    warn.mockRestore();
+    mockGetRedisClient.mockReturnValue(null);
   });
 });

@@ -167,3 +167,67 @@ describe("subscribeAgentTraceInMemory", () => {
     expect(calls2).toEqual([1]);
   });
 });
+
+describe("AgentTracePublisher workspace-stream forwarding", () => {
+  it("forwards trace events to the workspace stream when scope carries routineId", async () => {
+    const {
+      subscribeAgentStreamInMemory,
+      resetWorkspaceStreamForTests,
+    } = await import("./streamPublisher");
+    resetWorkspaceStreamForTests();
+    const received: unknown[] = [];
+    const unsub = subscribeAgentStreamInMemory("ws-1", (e) => received.push(e));
+
+    const publisher = new AgentTracePublisher({
+      ...SCOPE,
+      runId: "run-routine",
+      routineId: "routine-1",
+    });
+    await publisher.publish({ type: "turn.started", at: "2026-01-01T00:00:00Z" });
+    unsub();
+    resetWorkspaceStreamForTests();
+
+    expect(received).toHaveLength(1);
+    expect(
+      (received[0] as { event: { kind: string } }).event.kind,
+    ).toBe("trace.forward");
+  });
+
+  it("forwards trace events to the workspace stream when scope carries ticketId", async () => {
+    const {
+      subscribeAgentStreamInMemory,
+      resetWorkspaceStreamForTests,
+    } = await import("./streamPublisher");
+    resetWorkspaceStreamForTests();
+    const received: unknown[] = [];
+    const unsub = subscribeAgentStreamInMemory("ws-1", (e) => received.push(e));
+
+    const publisher = new AgentTracePublisher({
+      ...SCOPE,
+      runId: "run-ticket",
+      ticketId: "ticket-1",
+    });
+    await publisher.publish({ type: "iteration.started", iteration: 0 });
+    unsub();
+    resetWorkspaceStreamForTests();
+
+    expect(received).toHaveLength(1);
+  });
+
+  it("does not forward to the workspace stream when scope has neither routineId nor ticketId", async () => {
+    const {
+      subscribeAgentStreamInMemory,
+      resetWorkspaceStreamForTests,
+    } = await import("./streamPublisher");
+    resetWorkspaceStreamForTests();
+    const received: unknown[] = [];
+    const unsub = subscribeAgentStreamInMemory("ws-1", (e) => received.push(e));
+
+    const publisher = new AgentTracePublisher({ ...SCOPE, runId: "run-bare" });
+    await publisher.publish({ type: "turn.started", at: "2026-01-01T00:00:00Z" });
+    unsub();
+    resetWorkspaceStreamForTests();
+
+    expect(received).toHaveLength(0);
+  });
+});

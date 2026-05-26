@@ -129,6 +129,7 @@ import {
 import { createWorkspaceSnapshotRoutes } from "./canonical/workspaceSnapshotRoutes";
 import { createBudgetBreakdownRoute } from "./budget/budgetBreakdownRoute";
 import { createBudgetSetRoute } from "./budget/budgetSetRoute";
+import { createPromptRoutineRoutes } from "./promptRoutines/promptRoutineRoutes";
 import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
@@ -252,6 +253,11 @@ const budgetSetRoute = canonicalReadsArePostgres
   ? createBudgetSetRoute(getPostgresPool())
   : express.Router().put("/", (_req, res) =>
       res.status(501).json({ error: "Budget ceilings require PostgreSQL persistence." }),
+    );
+const promptRoutineRoutes = canonicalReadsArePostgres
+  ? createPromptRoutineRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Prompt routines require PostgreSQL persistence." }),
     );
 const entitlementsRoutes = canonicalReadsArePostgres
   ? createEntitlementsRoutes(getPostgresPool())
@@ -867,6 +873,13 @@ app.use(
   workspaceResolver,
   requireRole("admin", "operator"),
   budgetSetRoute,
+);
+app.use(
+  "/api/prompt-routines",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  promptRoutineRoutes,
 );
 app.use(
   "/api/entitlements",

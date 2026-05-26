@@ -15,8 +15,10 @@ import {
   getTicketActorProfile,
   hydrateTicketActorProfiles,
   normalizeTicketSlaState,
+  transitionTicket,
   type TicketActorRef,
   type TicketRecord,
+  type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -28,12 +30,14 @@ import type { ObservabilityEvent } from "../api/observability";
 import { queryKeys } from "../lib/queryKeys";
 import { primaryAssignee } from "./tickets/ticketingUi.helpers";
 import { NewAssignmentModal } from "../components/assignments/NewAssignmentModal";
+import { useToast } from "../components/ToastProvider";
 import type { Mission } from "../api/missionsApi";
 
-type TabKey = "queue" | "by-mission" | "sla" | "activity" | "by-team";
+type TabKey = "queue" | "board" | "by-mission" | "sla" | "activity" | "by-team";
 
 const TABS: Array<{ key: TabKey; label: string; count?: number | string }> = [
   { key: "queue", label: "Queue" },
+  { key: "board", label: "Board" },
   { key: "by-mission", label: "By mission" },
   { key: "sla", label: "SLA" },
   { key: "activity", label: "Activity" },
@@ -149,6 +153,9 @@ export default function Assignments() {
 
       <div className="panel" hidden={tab !== "queue"}>
         <QueueTab tickets={tickets} />
+      </div>
+      <div className="panel" hidden={tab !== "board"}>
+        <BoardTab tickets={tickets} />
       </div>
       <div className="panel" hidden={tab !== "by-mission"}>
         <ByMissionTab tickets={tickets} missions={missions} />
@@ -445,6 +452,294 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
         ) : null}
       </div>
     </>
+  );
+}
+
+// ---- Board (Kanban) tab ----------------------------------------------------
+//
+// Drag-between-column status board. Drops call `transitionTicket` on the
+// API with an optimistic cache update; if the request fails the cache is
+// rolled back and a toast surfaces the error.
+
+interface BoardColumnDef {
+  status: TicketStatus;
+  label: string;
+  tone: "" | "sage" | "mustard" | "clay" | "plum";
+  hint: string;
+}
+
+const BOARD_COLUMNS: BoardColumnDef[] = [
+  { status: "open", label: "Awaiting", tone: "mustard", hint: "needs pickup" },
+  { status: "in_progress", label: "In progress", tone: "sage", hint: "agent working" },
+  { status: "blocked", label: "Blocked", tone: "clay", hint: "needs human" },
+  { status: "resolved", label: "Resolved", tone: "plum", hint: "done" },
+];
+
+function BoardTab({ tickets }: { tickets: TicketRecord[] }) {
+  const queryClient = useQueryClient();
+  const { getAccessToken } = useAuth();
+  const { activeWorkspaceId } = useWorkspace();
+  const toast = useToast();
+  const [dragTicketId, setDragTicketId] = useState<string | null>(null);
+  const [hoverColumn, setHoverColumn] = useState<TicketStatus | null>(null);
+  const [pending, setPending] = useState<Record<string, TicketStatus>>({});
+
+  const grouped = useMemo(() => {
+    const map = new Map<TicketStatus, TicketRecord[]>();
+    for (const col of BOARD_COLUMNS) map.set(col.status, []);
+    for (const t of tickets) {
+      // Treat any non-board status (cancelled etc.) as resolved for display.
+      const target = (pending[t.id] ?? t.status) as TicketStatus;
+      const bucket = map.get(target) ?? map.get("resolved")!;
+      bucket.push(t);
+    }
+    return map;
+  }, [tickets, pending]);
+
+  const ticketsKey = useMemo(
+    () => queryKeys.tickets(activeWorkspaceId ?? "none"),
+    [activeWorkspaceId],
+  );
+
+  async function moveTicket(ticketId: string, toStatus: TicketStatus) {
+    const ticket = tickets.find((t) => t.id === ticketId);
+    if (!ticket || ticket.status === toStatus) return;
+    const fromStatus = ticket.status;
+
+    // Optimistic: tag pending so the card renders in the new column
+    // immediately, and patch the react-query cache so other consumers see
+    // the new status.
+    setPending((p) => ({ ...p, [ticketId]: toStatus }));
+    queryClient.setQueryData(ticketsKey, (prev: unknown) => {
+      if (!prev || typeof prev !== "object") return prev;
+      const payload = prev as { tickets?: TicketRecord[] };
+      if (!Array.isArray(payload.tickets)) return prev;
+      return {
+        ...payload,
+        tickets: payload.tickets.map((t) =>
+          t.id === ticketId ? { ...t, status: toStatus } : t,
+        ),
+      };
+    });
+
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await transitionTicket(ticketId, { status: toStatus, actorType: "user" }, token);
+      toast.success(`Moved to ${columnLabel(toStatus)}`);
+    } catch (err) {
+      // Roll back optimistic change.
+      queryClient.setQueryData(ticketsKey, (prev: unknown) => {
+        if (!prev || typeof prev !== "object") return prev;
+        const payload = prev as { tickets?: TicketRecord[] };
+        if (!Array.isArray(payload.tickets)) return prev;
+        return {
+          ...payload,
+          tickets: payload.tickets.map((t) =>
+            t.id === ticketId ? { ...t, status: fromStatus } : t,
+          ),
+        };
+      });
+      toast.error(
+        err instanceof Error ? err.message : "Failed to move assignment",
+      );
+    } finally {
+      setPending((p) => {
+        const { [ticketId]: _omit, ...rest } = p;
+        return rest;
+      });
+      if (activeWorkspaceId) {
+        void queryClient.invalidateQueries({ queryKey: ticketsKey });
+      }
+    }
+  }
+
+  if (tickets.length === 0) {
+    return (
+      <div className="card">
+        <p className="desc">No assignments yet — drop one here when you create it.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${BOARD_COLUMNS.length}, minmax(220px, 1fr))`,
+        gap: 12,
+        alignItems: "start",
+        overflowX: "auto",
+        paddingBottom: 4,
+      }}
+    >
+      {BOARD_COLUMNS.map((col) => {
+        const items = grouped.get(col.status) ?? [];
+        const isHover = hoverColumn === col.status;
+        return (
+          <div
+            key={col.status}
+            onDragOver={(e) => {
+              if (!dragTicketId) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (hoverColumn !== col.status) setHoverColumn(col.status);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget === e.target) setHoverColumn(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const id =
+                e.dataTransfer.getData("application/x-autoflow-ticket") ||
+                dragTicketId;
+              setHoverColumn(null);
+              setDragTicketId(null);
+              if (id) void moveTicket(id, col.status);
+            }}
+            style={{
+              border: "1px solid var(--af2-line)",
+              borderColor: isHover ? "var(--af2-clay)" : "var(--af2-line)",
+              borderRadius: "var(--af2-radius-lg, 12px)",
+              background: isHover
+                ? "color-mix(in srgb, var(--af2-clay-soft, var(--af2-paper-2)) 70%, transparent)"
+                : "var(--af2-card)",
+              transition: "background 0.15s, border-color 0.15s",
+              minHeight: 220,
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 12px",
+                borderBottom: "1px solid var(--af2-line)",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <span className={`pill dot ${col.tone}`}>{col.label}</span>
+              <span style={{ fontSize: 11, color: "var(--af2-ink-3)" }}>
+                {items.length} · {col.hint}
+              </span>
+            </div>
+            <div
+              style={{
+                padding: 8,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                flex: 1,
+              }}
+            >
+              {items.length === 0 ? (
+                <div
+                  style={{
+                    border: "1px dashed var(--af2-line-2)",
+                    borderRadius: "var(--af2-radius, 8px)",
+                    padding: "18px 10px",
+                    textAlign: "center",
+                    color: "var(--af2-ink-4)",
+                    fontSize: 12,
+                  }}
+                >
+                  drop here
+                </div>
+              ) : (
+                items.map((t) => {
+                  const owner = primaryAssignee(t);
+                  const assignee = owner
+                    ? getTicketActorProfile(owner).name
+                    : "—";
+                  const prio: "P0" | "P1" | "P2" =
+                    t.priority === "urgent"
+                      ? "P0"
+                      : t.priority === "high"
+                        ? "P1"
+                        : "P2";
+                  const isDragging = dragTicketId === t.id;
+                  const isPendingMove = pending[t.id] != null;
+                  return (
+                    <div
+                      key={t.id}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData(
+                          "application/x-autoflow-ticket",
+                          t.id,
+                        );
+                        setDragTicketId(t.id);
+                      }}
+                      onDragEnd={() => {
+                        setDragTicketId(null);
+                        setHoverColumn(null);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        border: "1px solid var(--af2-line)",
+                        borderRadius: "var(--af2-radius, 8px)",
+                        background: "var(--af2-paper)",
+                        cursor: "grab",
+                        opacity: isDragging ? 0.5 : isPendingMove ? 0.7 : 1,
+                        transition: "opacity 0.12s",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 6,
+                          alignItems: "baseline",
+                        }}
+                      >
+                        <div
+                          className="id"
+                          style={{ fontSize: 10.5, color: "var(--af2-ink-4)" }}
+                        >
+                          {t.id.slice(0, 8).toUpperCase()}
+                        </div>
+                        <span
+                          className={`pill ${prio === "P0" ? "clay" : prio === "P1" ? "mustard" : ""}`}
+                          style={{ fontSize: 10 }}
+                        >
+                          {prio}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: "var(--af2-ink)",
+                        }}
+                      >
+                        {t.title}
+                      </div>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          color: "var(--af2-ink-3)",
+                        }}
+                      >
+                        {assignee}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function columnLabel(status: TicketStatus): string {
+  return (
+    BOARD_COLUMNS.find((c) => c.status === status)?.label ?? status
   );
 }
 

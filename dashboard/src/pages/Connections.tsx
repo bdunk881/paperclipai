@@ -443,11 +443,22 @@ const TIER_PILL_TONE: Record<ModelEntry["tier"], string> = {
   Power: "clay",
 };
 
-function useLLMConfigs(): { configs: LLMConfig[]; loading: boolean; error: string | null } {
+function useLLMConfigs(): {
+  configs: LLMConfig[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
   const { getAccessToken } = useAuth();
   const [configs, setConfigs] = useState<LLMConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped by callers to force a re-fetch (e.g. after a Connect form
+  // submits successfully). Previously the panel tried to refresh via
+  // `key={n}` on a child div — that re-mounts the child but doesn't
+  // re-run THIS hook because the hook lives on the parent. Hence the
+  // "hard refresh required to see the new key" bug.
+  const [refetchTick, setRefetchTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,9 +486,10 @@ function useLLMConfigs(): { configs: LLMConfig[]; loading: boolean; error: strin
     return () => {
       cancelled = true;
     };
-  }, [getAccessToken]);
+  }, [getAccessToken, refetchTick]);
 
-  return { configs, loading, error };
+  const refetch = () => setRefetchTick((n) => n + 1);
+  return { configs, loading, error, refetch };
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +554,11 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedChip, setSelectedChip] = useState<TierBinding | null>(null);
-  const [dragChip, setDragChip] = useState<TierBinding | null>(null);
+  // HTML5 native drag-and-drop was the original interaction but doesn't fire
+  // touch events on iPad/iPhone, so the card was effectively unusable on
+  // tablets. The click-to-assign path (tap a chip, then tap a slot) is the
+  // primary interaction now and works on every input modality. Native DnD
+  // attributes have been removed accordingly.
 
   // Load saved matrix once configs are available.
   useEffect(() => {
@@ -581,16 +597,15 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
     return out;
   }, [serverMatrix, configs]);
 
-  // Catalog of chips the user can assign — only connected (provider,model)
-  // pairs. Grouped by provider for the chip strip.
+  // Catalog of chips the user can assign — every model from any provider
+  // the workspace has at least one credential for. Connecting a provider
+  // unlocks ALL of its catalog models (not just the specific model the
+  // initial connect form picked), so this filters by provider, not by
+  // exact (provider, model) pair.
   const connectedChips = useMemo(() => {
-    const connectedKeys = new Set(configs.map((c) => `${c.provider}:${c.model}`));
-    return MODEL_CATALOG.map((entry) => ({
-      entry,
-      models: entry.models.filter((m) =>
-        connectedKeys.has(`${entry.provider}:${m.id}`),
-      ),
-    })).filter((g) => g.models.length > 0);
+    const connectedProviders = new Set(configs.map((c) => c.provider));
+    return MODEL_CATALOG.filter((entry) => connectedProviders.has(entry.provider))
+      .map((entry) => ({ entry, models: entry.models }));
   }, [configs]);
 
   async function commit(next: TierMatrix) {
@@ -653,8 +668,8 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
     <div className="card" style={{ marginBottom: 18 }}>
       <h3>Tier routing</h3>
       <p className="desc" style={{ marginBottom: 12 }}>
-        Drag a model from the catalog below into a tier slot, or tap a model
-        and then tap a slot. Each tier holds one model. Slots showing
+        Tap a model from the catalog below to select it, then tap a tier slot
+        to assign. Each tier holds one model. Slots showing
         <span className="pill" style={{ marginLeft: 4, marginRight: 4 }}>
           auto
         </span>
@@ -681,30 +696,29 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
           const meta = slot.binding
             ? findModelMeta(slot.binding.provider, slot.binding.model)
             : null;
-          const isDropTargetActive = dragChip !== null;
+          const isAssignTarget = selectedChip !== null;
           return (
-            <div
+            <button
               key={slot.tier}
+              type="button"
               onClick={() => onSlotClick(slot.tier)}
-              onDragOver={(e) => {
-                if (dragChip) e.preventDefault();
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragChip) {
-                  void assign(slot.tier, dragChip);
-                  setDragChip(null);
-                }
-              }}
+              disabled={busy || !selectedChip}
+              aria-label={`Assign selected model to ${slot.tier} tier`}
               style={{
-                background: "var(--af2-paper-2)",
-                border: `1px ${isDropTargetActive ? "dashed" : "solid"} ${
-                  isDropTargetActive ? "var(--af2-clay)" : "var(--af2-line)"
+                background: isAssignTarget
+                  ? "var(--af2-clay-soft)"
+                  : "var(--af2-paper-2)",
+                border: `1px ${isAssignTarget ? "dashed" : "solid"} ${
+                  isAssignTarget ? "var(--af2-clay)" : "var(--af2-line)"
                 }`,
                 borderRadius: 6,
                 padding: "10px 12px",
-                cursor: selectedChip || isDropTargetActive ? "copy" : "default",
+                cursor: isAssignTarget ? "pointer" : "default",
                 minHeight: 70,
+                textAlign: "left",
+                font: "inherit",
+                color: "inherit",
+                width: "100%",
               }}
             >
               <div
@@ -748,10 +762,12 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
                 </>
               ) : (
                 <div className="int-desc" style={{ fontStyle: "italic" }}>
-                  No model assigned — drop a chip here
+                  {isAssignTarget
+                    ? "Tap to assign the selected model here"
+                    : "No model assigned — tap a model below first"}
                 </div>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -793,14 +809,11 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
                     <button
                       key={m.id}
                       type="button"
-                      draggable
-                      onDragStart={() => setDragChip(binding)}
-                      onDragEnd={() => setDragChip(null)}
                       onClick={() => onChipClick(binding)}
                       disabled={busy}
                       className={`pill ${TIER_PILL_TONE[m.tier]}`}
                       style={{
-                        cursor: "grab",
+                        cursor: "pointer",
                         border: isSelected
                           ? "1px solid var(--af2-clay)"
                           : undefined,
@@ -808,7 +821,7 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
                           ? "0 0 0 2px var(--af2-clay-soft)"
                           : undefined,
                       }}
-                      title={`Drag onto a slot, or click then click a slot. ${m.desc}`}
+                      title={`${m.desc} — tap to select, then tap a tier slot above to assign.`}
                     >
                       {m.name}
                     </button>
@@ -1145,14 +1158,8 @@ function ProviderManageBody({ entry, configs, onChange }: ProviderManageBodyProp
 }
 
 function ModelsPanel() {
-  const { configs, loading, error } = useLLMConfigs();
+  const { configs, loading, error, refetch } = useLLMConfigs();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  // Re-fetch by remounting useLLMConfigs via a key change. Simplest hack;
-  // keeps the hook's internal state pristine without exposing a refetch
-  // function.
-  const refresh = () => setRefreshTick((n) => n + 1);
 
   const configsByProvider = useMemo(() => {
     const map = new Map<string, LLMConfig[]>();
@@ -1164,10 +1171,8 @@ function ModelsPanel() {
     return map;
   }, [configs]);
 
-  // Force the hook to re-run when refreshTick changes.
-  // (useLLMConfigs depends on getAccessToken only; we coerce a re-mount.)
   return (
-    <div className="panel" role="tabpanel" id="con-models" key={refreshTick}>
+    <div className="panel" role="tabpanel" id="con-models">
       <TierRoutingCard configs={configs} />
 
       {error ? (
@@ -1244,13 +1249,13 @@ function ModelsPanel() {
               <ProviderManageBody
                 entry={entry}
                 configs={providerConfigs}
-                onChange={refresh}
+                onChange={refetch}
               />
             ) : (
               <ConnectProviderForm
                 entry={entry}
                 onSuccess={() => {
-                  refresh();
+                  refetch();
                   // Keep the drawer open so the user sees the freshly-added
                   // key in the management body that now renders.
                 }}

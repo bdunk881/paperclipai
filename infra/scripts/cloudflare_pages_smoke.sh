@@ -55,7 +55,15 @@ for path in "${paths[@]}"; do
 done
 
 if [[ "$project" == "dashboard" ]]; then
-  csp="$(/usr/bin/curl -sSI "${base_url}/" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-security-policy"{print $2; exit}')"
+  csp="$(
+    /usr/bin/curl -sSI "${base_url}/" | tr -d '\r' | awk '
+      tolower($1) == "content-security-policy:" {
+        sub(/^[^:]*:[[:space:]]*/, "");
+        print;
+        exit;
+      }
+    '
+  )"
   if [[ -z "$csp" ]]; then
     echo "::warning::dashboard CSP header missing at ${base_url}/"
   elif [[ "$csp" != *"img.logo.dev"* ]]; then

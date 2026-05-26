@@ -52,8 +52,12 @@ jobs:
           push: false
           load: true
           tags: autoflow-api:check
-          cache-from: type=gha,scope=autoflow-api
-          cache-to: type=gha,mode=max,scope=autoflow-api
+          # HEL-234: rev the cache scope to force a cold build. The previous
+          # `autoflow-api` scope was failing on every PR that touched src/**
+          # in 8-15s — too fast for a real build, consistent with a corrupted
+          # cache layer. Bumping to v2 invalidates everything.
+          cache-from: type=gha,scope=autoflow-api-v2
+          cache-to: type=gha,mode=max,scope=autoflow-api-v2
           build-args: |
             BUILD_SHA=${{ github.sha }}
             BUILD_DATE=${{ github.event.pull_request.updated_at || github.event.head_commit.timestamp }}

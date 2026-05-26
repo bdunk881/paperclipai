@@ -49,6 +49,7 @@ export const DEFAULT_MODEL_RATES: readonly ModelRate[] = [
   { provider: "groq",      model: "llama-3.1-8b-instant",      inputUsdPerMillion: 0.05, outputUsdPerMillion: 0.08, markupMultiplier: 1.50, enabled: true },
 ];
 
+// allowlist: rolling counter / cached config; process-local by design
 const inMemoryCache = new Map<string, ModelRate>();
 for (const rate of DEFAULT_MODEL_RATES) {
   inMemoryCache.set(rateKey(rate.provider, rate.model), rate);

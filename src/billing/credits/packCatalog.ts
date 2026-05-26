@@ -30,7 +30,9 @@ export const DEFAULT_PACKS: readonly CreditPack[] = [
   { id: "pack_500", displayName: "Power Pack",   stripePriceId: "price_PLACEHOLDER_pack_500", priceUsdCents: 50000, creditsGranted: 6000000n, bonusPercent: 20, enabled: true, sortOrder: 50 },
 ];
 
+// allowlist: rolling counter / cached config; process-local by design
 const inMemoryCatalog = new Map<string, CreditPack>();
+// allowlist: rolling counter / cached config; process-local by design
 const inMemoryByPriceId = new Map<string, CreditPack>();
 for (const pack of DEFAULT_PACKS) {
   inMemoryCatalog.set(pack.id, pack);

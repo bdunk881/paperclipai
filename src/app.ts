@@ -31,6 +31,7 @@ import approvalRuleDebugRoutes from "./approvals/ruleDebugRoutes";
 import missionAssignmentReplayRoutes from "./missions/missionAssignmentReplayRoutes";
 import hireTemplateRoutes from "./missions/hireTemplateRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import tierRoutingRoutes from "./llmConfig/tierRoutingRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
 import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
 import envVarRoutes from "./envVars/envVarRoutes";
@@ -591,6 +592,11 @@ app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin",
 // Both paths resolve to the same router until the dashboard fully migrates;
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
 app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+
+// HEL-todo Phase-2a: tier routing matrix (workspaces.tier_routing JSONB,
+// migration 033). GET/PATCH the customer-visible Lite/Standard/Power
+// bindings. Vision + embeddings derive from these on the consumer side.
+app.use("/api/tier-routing", requireAuth, workspaceResolver, requireRole("admin", "developer"), tierRoutingRoutes);
 
 // HEL-166: platform API keys for programmatic AutoFlow access. Keys are
 // workspace-scoped; owner/admin/developer may create, rotate, and revoke.

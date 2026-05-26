@@ -18,11 +18,8 @@ import { randomUUID } from "crypto";
 import type { Pool } from "pg";
 import type { AgentTraceEvent } from "../engine/agentTrace/types";
 import { AgentTracePublisher } from "../engine/agentTrace/tracePublisher";
-import { emitTrace } from "../engine/agentTrace/emitCallbacks";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../engine/llmRouter";
-import { getProvider } from "../engine/llmProviders";
-import { providerSupportsNativeAgentStream } from "../engine/llmProviders/capabilities";
 import type {
   AgentTool,
   LLMResponse,
@@ -39,6 +36,8 @@ import {
   filterToolsByPermissions,
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
+import { pickBackend } from "./runtime/runAgent";
+import type { ResolvedModelBinding } from "./runtime/types";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
 const TOKEN_PREVIEW_TAIL_CHARS = 240;
@@ -134,18 +133,11 @@ export async function runAgentTurn(
   }
 
   const providerName = resolved.config.provider;
-  const providerSupportsSystemField =
-    providerName === "anthropic" ||
-    providerName === "openai" ||
-    providerName === "groq" ||
-    providerName === "fireworks" ||
-    providerName === "together" ||
-    providerName === "xai" ||
-    providerName === "perplexity" ||
-    providerName === "deepseek" ||
-    providerName === "ollama" ||
-    providerName === "localai" ||
-    providerName === "opencode_zen";
+  if (!resolved.apiKey) {
+    throw new Error(
+      `LLM credential for provider ${providerName} has no decrypted API key.`,
+    );
+  }
 
   let tracePublisher: AgentTracePublisher | null = null;
   const shouldTrace = streamEnabled && Boolean(input.runId);
@@ -165,60 +157,52 @@ export async function runAgentTurn(
     });
   }
 
+  // Unified trace callback — persists envelopes when tracing is on and
+  // always feeds assistant deltas into the presence preview when streaming
+  // is enabled. The runtime backends emit the same canonical event shapes
+  // as the legacy provider stream did.
   const handleTraceEvent = (event: AgentTraceEvent): void => {
-    if (!tracePublisher) return;
-    void (async () => {
-      const envelope = await tracePublisher!.publish(event);
-      await persistAgentTraceEvent(input.pool, envelope);
-    })();
-
-    if (
-      streamEnabled &&
-      event.type === "assistant.delta"
-    ) {
+    if (tracePublisher) {
+      void (async () => {
+        const envelope = await tracePublisher!.publish(event);
+        await persistAgentTraceEvent(input.pool, envelope);
+      })();
+    }
+    if (streamEnabled && event.type === "assistant.delta") {
       lastPreview = event.accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
       schedulePreviewPublish(input.runId);
     }
   };
 
-  const nativeStream =
-    providerSupportsNativeAgentStream(providerName) || tools.length === 0;
-
-  const provider = getProvider({
-    provider: resolved.config.provider,
+  const binding: ResolvedModelBinding = {
+    provider: providerName,
     model,
     apiKey: resolved.apiKey,
-    requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
-    tools: tools.length > 0 ? tools : undefined,
-    systemPrompt: providerSupportsSystemField ? systemPrompt : undefined,
-    cacheSystemPrompt: providerName === "anthropic",
-    onTrace: shouldTrace && nativeStream ? handleTraceEvent : undefined,
-    onText:
-      streamEnabled && !shouldTrace
-        ? (_delta, accumulated) => {
-            lastPreview = accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
-            schedulePreviewPublish(input.runId);
-          }
-        : undefined,
-  });
+  };
+  const backend = pickBackend(providerName);
 
-  const promptForProvider = providerSupportsSystemField
-    ? input.userPrompt
-    : `${systemPrompt}\n\n---\n\nUSER:\n${input.userPrompt}`;
-
-  let response: LLMResponse;
+  let response: { text: string; usage: NonNullable<LLMResponse["usage"]> };
   try {
-    response = await provider(promptForProvider);
-
-    if (shouldTrace && tracePublisher && !nativeStream) {
-      emitTrace(handleTraceEvent, {
-        type: "assistant.delta",
-        delta: response.text,
-        accumulated: response.text,
-      });
-      const usage = response.usage ?? { promptTokens: 0, completionTokens: 0 };
-      await tracePublisher.publish({ type: "turn.completed", text: response.text, usage });
-    }
+    const runResult = await backend.run(
+      {
+        pool: input.pool,
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        agentId: input.agentId,
+        runId: input.runId,
+        agentName: input.agentName,
+        agentRoleKey: input.agentRoleKey,
+        systemPrompt,
+        userPrompt: input.userPrompt,
+        tier: input.tier ?? "standard",
+        tools,
+        maxToolIterations: undefined,
+        requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+        onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
+      },
+      binding,
+    );
+    response = { text: runResult.text, usage: runResult.usage };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (tracePublisher) {
@@ -234,8 +218,8 @@ export async function runAgentTurn(
 
   return {
     text: response.text,
-    usage: response.usage ?? { promptTokens: 0, completionTokens: 0 },
-    provider: resolved.config.provider,
+    usage: response.usage,
+    provider: providerName,
     model,
     turnId: shouldTrace ? turnId : undefined,
   };

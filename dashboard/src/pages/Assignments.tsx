@@ -116,6 +116,7 @@ export default function Assignments() {
 
   return (
     <div className="af2-v2">
+      <div className="af2-page">
       <div className="page-head">
         <div className="page-head-left">
           <h1 className="h1">Assignments</h1>
@@ -124,9 +125,6 @@ export default function Assignments() {
           </div>
         </div>
         <div className="page-head-right">
-          <button type="button" className="btn">
-            Filters
-          </button>
           <button
             type="button"
             className="btn primary"
@@ -189,6 +187,7 @@ export default function Assignments() {
           }}
         />
       ) : null}
+      </div>
     </div>
   );
 }

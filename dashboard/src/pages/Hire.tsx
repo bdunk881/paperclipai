@@ -359,15 +359,12 @@ export default function Hire() {
 
   return (
     <div className="af2-v2">
-      <div style={{ maxWidth: 920 }}>
+      <div className="af2-page">
         <div className="page-head">
           <div className="page-head-left">
-            <div className="eyebrow">Workforce</div>
             <h1 className="h1">Hire</h1>
             <div className="meta">
-              Describe a mission · we&rsquo;ll draft a hiring plan · extends PR{" "}
-              <a href="https://github.com/bdunk881/paperclipai/pull/984">#984</a>{" "}
-              context pills
+              Describe a mission · we&rsquo;ll draft a hiring plan
             </div>
           </div>
         </div>
@@ -451,9 +448,7 @@ export default function Hire() {
             />
           </label>
 
-          <div style={sectionLabelStyle}>
-            Canonical context pills (from PR #984)
-          </div>
+          <div style={sectionLabelStyle}>Context for the team</div>
           <div
             style={{
               display: "flex",
@@ -520,8 +515,7 @@ export default function Hire() {
           </div>
 
           <div style={sectionLabelStyle}>
-            Custom pills · teach the LLM anything else (lands in{" "}
-            <code>missions.metadata.customContext</code>)
+            Add anything else the team should know
           </div>
           <div
             style={{

@@ -23,7 +23,9 @@ import {
 import { Link } from "react-router-dom";
 import {
   createTemplate,
+  deleteTemplate,
   getConnectorHealth,
+  importTemplate,
   listRuns,
   listTemplates,
   type TemplateSummary,
@@ -71,13 +73,21 @@ type MineRow = TemplateSummary & {
 };
 
 function buildMineRows(templates: TemplateSummary[]): MineRow[] {
-  return templates.map((tpl) => ({
-    ...tpl,
-    owner: "",
-    schedule: "",
-    status: "live",
-    lastRunAt: null,
-  }));
+  // Mine only shows user-owned routines. Built-in library templates are
+  // surfaced under the Library tab.
+  return templates
+    .filter((tpl) => !tpl.seeded)
+    .map((tpl) => ({
+      ...tpl,
+      owner: "",
+      schedule: "",
+      status: "live",
+      lastRunAt: null,
+    }));
+}
+
+function libraryTemplates(templates: TemplateSummary[]): TemplateSummary[] {
+  return templates.filter((tpl) => tpl.seeded);
 }
 
 // Workspace-scoped local ordering for the Mine tab. There's no
@@ -172,6 +182,70 @@ export default function Routines({
   const [expandedLibraryId, setExpandedLibraryId] = useState<string | null>(null);
   const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthByKey>({});
   const [forking, setForking] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function handleDelete(template: TemplateSummary) {
+    if (
+      !window.confirm(
+        `Delete routine "${template.name}"? This can't be undone.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(template.id);
+    try {
+      const token = await getAccessToken();
+      await deleteTemplate(template.id, token ?? undefined);
+      setTemplates((current) => current.filter((t) => t.id !== template.id));
+      if (expandedRowId === template.id) setExpandedRowId(null);
+    } catch (delError) {
+      setError(
+        delError instanceof Error ? delError.message : "Failed to delete routine",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  function handleImportClick() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setImporting(true);
+      try {
+        const text = await file.text();
+        const bundle = JSON.parse(text);
+        const token = await getAccessToken();
+        const result = await importTemplate(bundle, token ?? undefined);
+        setTemplates((current) => [
+          {
+            id: result.template.id,
+            name: result.template.name,
+            description: result.template.description ?? "",
+            category: result.template.category,
+            version: result.template.version,
+            stepCount: result.template.steps?.length ?? 0,
+            configFieldCount: result.template.configFields?.length ?? 0,
+          },
+          ...current,
+        ]);
+        setActiveTab("mine");
+      } catch (importError) {
+        setError(
+          importError instanceof Error
+            ? importError.message
+            : "Failed to import routine",
+        );
+      } finally {
+        setImporting(false);
+      }
+    };
+    input.click();
+  }
 
   useEffect(() => {
     if (initialTemplates) return;
@@ -236,6 +310,7 @@ export default function Routines({
     () => applyOrder(buildMineRows(templates), routineOrder),
     [templates, routineOrder],
   );
+  const libraryRows = useMemo(() => libraryTemplates(templates), [templates]);
   const expandedRow = useMemo(
     () => mineRows.find((r) => r.id === expandedRowId) ?? null,
     [mineRows, expandedRowId],
@@ -344,8 +419,14 @@ export default function Routines({
           </div>
         </div>
         <div className="page-head-right af2-page-actions">
-          <button type="button" className="btn">
-            Import
+          <button
+            type="button"
+            className="btn"
+            onClick={handleImportClick}
+            disabled={importing}
+            title="Import a routine from a JSON bundle"
+          >
+            {importing ? "Importing…" : "Import"}
           </button>
           <Link
             to="/builder"
@@ -375,7 +456,7 @@ export default function Routines({
           className={`tab af2-tab${activeTab === "library" ? " active" : ""}`}
           onClick={() => setActiveTab("library")}
         >
-          Library ({templates.length})
+          Library ({libraryRows.length})
         </button>
       </div>
 
@@ -411,6 +492,8 @@ export default function Routines({
                     setDragId(null);
                     setDragOverId(null);
                   }}
+                  onDelete={() => void handleDelete(row)}
+                  deleting={deletingId === row.id}
                 />
               );
             })}
@@ -421,7 +504,7 @@ export default function Routines({
       {/* Library panel */}
       <div className="panel" hidden={activeTab !== "library"}>
         <LibraryGrid
-          templates={templates}
+          templates={libraryRows}
           expandedId={expandedLibraryId}
           onToggleExpand={(id) =>
             setExpandedLibraryId((current) => (current === id ? null : id))
@@ -471,6 +554,8 @@ function RoutineRowWithDrawer({
   onDragEnd,
   onDragEnter,
   onDrop,
+  onDelete,
+  deleting,
 }: {
   row: MineRow;
   expanded: boolean;
@@ -484,6 +569,8 @@ function RoutineRowWithDrawer({
   onDragEnd: () => void;
   onDragEnter: () => void;
   onDrop: (sourceId: string) => void;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   const rowGrid = "26px 1fr 110px 100px 130px 190px";
   const isDraft = row.status === "draft";
@@ -571,7 +658,14 @@ function RoutineRowWithDrawer({
       </div>
       <div className={`row-drawer${expanded ? " open" : ""}`}>
         {expanded && expandedRow ? (
-          <DrawerBody row={expandedRow} runs={runs} runsLoading={runsLoading} onClose={onToggle} />
+          <DrawerBody
+            row={expandedRow}
+            runs={runs}
+            runsLoading={runsLoading}
+            onClose={onToggle}
+            onDelete={onDelete}
+            deleting={deleting}
+          />
         ) : null}
       </div>
     </>
@@ -583,11 +677,15 @@ function DrawerBody({
   runs,
   runsLoading,
   onClose,
+  onDelete,
+  deleting,
 }: {
   row: MineRow;
   runs: WorkflowRun[];
   runsLoading: boolean;
   onClose: () => void;
+  onDelete: () => void;
+  deleting: boolean;
 }) {
   return (
     <>
@@ -655,9 +753,6 @@ function DrawerBody({
           </div>
         ))
       )}
-      <div style={{ marginTop: 10, fontSize: 12, color: "var(--af2-ink-3)" }}>
-        Recent edits — edit history not yet surfaced.
-      </div>
       <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
         <Link
           to={buildStudioRoute(row.id)}
@@ -672,27 +767,21 @@ function DrawerBody({
         <button type="button" className="btn">
           {row.status === "draft" ? "Enable" : "Disable"}
         </button>
-        <button type="button" className="btn danger">
-          Delete
+        <button
+          type="button"
+          className="btn"
+          style={{ color: "var(--af2-clay)" }}
+          disabled={deleting}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        >
+          {deleting ? "Deleting…" : "Delete"}
         </button>
       </div>
-      <div className="pro-only pro-block">
-        <div className="label">Pro · Step debugger</div>
-        <p style={{ fontSize: 12 }}>Pause mid-run, inspect step IO, mutate, resume.</p>
-        <pre>
-          step 2/5: hubspot.search(filter=stale_5d) → 8 results{"\n"}
-          step 3/5: filter → 6 quality leads{"\n"}
-          step 4/5: gmail.draft(template=follow_up_v2) ← paused for inspection
-        </pre>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" className="btn sm">
-            Resume
-          </button>
-          <button type="button" className="btn sm">
-            Mutate input
-          </button>
-        </div>
-      </div>
+      {/* Pro step debugger removed — re-add when wired to a real
+          in-flight run interceptor instead of hardcoded sample IO. */}
     </>
   );
 }

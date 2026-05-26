@@ -23,6 +23,11 @@
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
 import { previewToolOutput } from "../../engine/agentTrace/redact";
 import type { AgentTool } from "../../engine/llmProviders/types";
+import {
+  appendSkillsToPrompt,
+  resolveSkills,
+  type LoadedSkill,
+} from "../../skills/skillsLoader";
 import type {
   AgentBackend,
   AgentRunInput,
@@ -53,13 +58,23 @@ export class OpenAIAgentsBackend implements AgentBackend {
         buildSdkTool(sdk, t, input.onTrace),
       );
 
+      // Skills are vendor-agnostic — we fold the same SKILL.md bodies
+      // into the parent system prompt and into every handoff agent's
+      // instructions, so a skill behaves identically on OpenAI as it
+      // does on Claude / Gemini / Mistral / Bedrock / Vertex.
+      const loadedSkills = resolveSkills(input.skills ?? []);
+      const systemWithSkills = appendSkillsToPrompt(
+        input.systemPrompt,
+        loadedSkills,
+      );
+
       const handoffAgents = (input.subagents ?? []).map((sub) =>
-        buildHandoffAgent(sdk, sub, binding.model),
+        buildHandoffAgent(sdk, sub, binding.model, loadedSkills),
       );
 
       const agent = new sdk.Agent({
         name: input.agentName,
-        instructions: input.systemPrompt,
+        instructions: systemWithSkills,
         model: binding.model,
         tools: sdkTools,
         handoffs: handoffAgents,
@@ -158,10 +173,12 @@ function buildHandoffAgent(
   sdk: typeof import("@openai/agents"),
   sub: SubagentRef,
   parentModel: string,
+  parentSkills: LoadedSkill[],
 ) {
+  const base = `You are ${sub.name}, a ${sub.roleKey}. ${sub.description}\n\nCarry out the task delegated to you and return a concise summary.`;
   return new sdk.Agent({
     name: sub.name,
-    instructions: `You are ${sub.name}, a ${sub.roleKey}. ${sub.description}\n\nCarry out the task delegated to you and return a concise summary.`,
+    instructions: appendSkillsToPrompt(base, parentSkills),
     model: parentModel,
   });
 }

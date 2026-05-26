@@ -37,7 +37,10 @@ import {
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
 import { pickBackend } from "./runtime/runAgent";
-import type { ResolvedModelBinding } from "./runtime/types";
+import { loadAgentMcpServers } from "./runtime/mcpClient";
+import { createBudgetHook } from "./runtime/budgetHook";
+import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
+import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
 const TOKEN_PREVIEW_TAIL_CHARS = 240;
@@ -77,6 +80,38 @@ export interface RunAgentTurnInput {
    */
   sourceRoutineId?: string | null;
   sourceTicketId?: string | null;
+  /**
+   * Permission mode for the run. "plan" maps to the Claude SDK's plan
+   * mode (or a synthesized plan in the fallback backend); useful for
+   * agents that should pause for human review before executing tools.
+   * Defaults to "auto".
+   */
+  permissionMode?: AgentPermissionMode;
+  /**
+   * Skill keys this run should load. Falls back to the agent record's
+   * stored `skills[]` when omitted. Pass an empty array to opt out.
+   */
+  skills?: string[];
+  /**
+   * When true (default), enforce the agent's monthly budget cap via the
+   * pre-tool-use hook. Set false to bypass — e.g. for one-shot internal
+   * runs like the hiring-plan generator that don't bill against an
+   * agent.
+   */
+  enforceBudget?: boolean;
+  /**
+   * Depth in the `delegate_to_subagent` call chain. 0 (or undefined)
+   * means "top-level run." Each recursive runAgentTurn call from the
+   * delegate tool increments this. The delegate tool refuses at the
+   * cap (MAX_DELEGATION_DEPTH = 3).
+   */
+  delegationDepth?: number;
+  /**
+   * The set of agent IDs already on the current delegation call stack.
+   * The delegate tool refuses to call any agent already in this set,
+   * which prevents A→B→A loops.
+   */
+  delegationLineage?: ReadonlySet<string>;
 }
 
 export interface RunAgentTurnResult {
@@ -113,6 +148,22 @@ export async function runAgentTurn(
       }),
     );
   }
+  // Org-chart delegation: when this agent has direct reports, give it
+  // a `delegate_to_subagent` tool. The factory returns null for
+  // non-managers, so we add an undefined-skipping push.
+  const delegateTool = await createDelegateToSubagentTool({
+    pool: input.pool,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    parentAgentId: input.agentId,
+    depth: input.delegationDepth ?? 0,
+    lineage: input.delegationLineage,
+    sourceRoutineId: input.sourceRoutineId ?? null,
+    sourceTicketId: input.sourceTicketId ?? null,
+    tier: input.tier,
+    permissionMode: input.permissionMode,
+  });
+  if (delegateTool) candidateTools.push(delegateTool);
   if (input.extraTools) candidateTools.push(...input.extraTools);
 
   const permissions = await loadAgentIntegrationPermissions({
@@ -191,6 +242,28 @@ export async function runAgentTurn(
   };
   const backend = pickBackend(providerName);
 
+  // Resolve skills, MCP servers, and the budget-enforcement hook before
+  // we call into the backend. Skills come from explicit input override or
+  // the agent row's stored list; MCP from the user's mcp_servers; the
+  // budget hook is opt-out (enforceBudget defaults to true).
+  const agentSkillsRow = await input.pool
+    .query<{ skills: string[] | null }>(
+      `SELECT skills FROM agents WHERE id = $1::uuid AND workspace_id = $2::uuid LIMIT 1`,
+      [input.agentId, input.workspaceId],
+    )
+    .catch(() => ({ rows: [] as Array<{ skills: string[] | null }> }));
+  const resolvedSkills =
+    input.skills ?? agentSkillsRow.rows[0]?.skills ?? [];
+  const mcpServers = await loadAgentMcpServers({ userId: input.userId });
+  const hooks =
+    input.enforceBudget === false
+      ? undefined
+      : createBudgetHook({
+          pool: input.pool,
+          workspaceId: input.workspaceId,
+          agentId: input.agentId,
+        });
+
   let response: { text: string; usage: NonNullable<LLMResponse["usage"]> };
   try {
     const runResult = await backend.run(
@@ -209,6 +282,10 @@ export async function runAgentTurn(
         maxToolIterations: undefined,
         requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
         onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
+        skills: resolvedSkills,
+        mcpServers,
+        permissionMode: input.permissionMode,
+        hooks,
       },
       binding,
     );

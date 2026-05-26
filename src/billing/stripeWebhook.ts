@@ -402,19 +402,12 @@ async function handleCreditPackCheckout(
     return;
   }
 
-  const claimed = await claimSessionForGrant({
-    sessionId: session.id,
-    workspaceId,
-    packId,
-    creditsGranted: pack.creditsGranted,
-    amountUsdCents: pack.priceUsdCents,
-    grantedVia: "webhook",
-  });
-  if (!claimed) {
-    console.log(`[stripe/webhook] credit pack ${packId} already granted via confirm endpoint for session ${session.id}`);
-    return;
-  }
-
+  // CODEX P1 FIX: grant FIRST, claim AFTER (was inverted — if grant
+  // failed after a successful claim, every retry short-circuited on
+  // `!claimed` and the customer stayed paid-but-uncredited). grantCredits
+  // is idempotent on its own ledger key (credit_purchase__{session_id}),
+  // so re-running for the same session is a safe no-op; the claim row
+  // afterward is pure observability.
   const result = await grantCredits({
     workspaceId,
     credits: pack.creditsGranted,
@@ -430,8 +423,32 @@ async function handleCreditPackCheckout(
         : session.payment_intent?.id,
     },
   });
+
+  const claimed = await claimSessionForGrant({
+    sessionId: session.id,
+    workspaceId,
+    packId,
+    creditsGranted: pack.creditsGranted,
+    amountUsdCents: pack.priceUsdCents,
+    grantedVia: "webhook",
+  }).catch((err) => {
+    console.warn(
+      `[stripe/webhook] claim insert failed for credit pack session ${session.id}: ${
+        err instanceof Error ? err.message : String(err)
+      } — grant already succeeded`,
+    );
+    return false;
+  });
+
+  if (!claimed && result.reason === "duplicate") {
+    console.log(
+      `[stripe/webhook] credit pack ${packId} already granted via confirm endpoint for session ${session.id}`,
+    );
+    return;
+  }
+
   console.log(
-    `[stripe/webhook] credit pack ${packId} granted ${pack.creditsGranted} credits to workspace ${workspaceId} (session ${session.id}, balance_after=${result.balanceAfter})`,
+    `[stripe/webhook] credit pack ${packId} granted ${pack.creditsGranted} credits to workspace ${workspaceId} (session ${session.id}, balance_after=${result.balanceAfter}, claim_recorded=${claimed})`,
   );
 }
 

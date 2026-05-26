@@ -92,6 +92,26 @@ export default function Hire() {
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Phase 2b Phase 1: client-side progress signal during plan generation.
+  // The backend's /api/missions/:id/generate-plan is a sync POST that can
+  // take up to 90s on a power-tier LLM. Without feedback the user sees a
+  // spinning button and assumes the app froze. We tick a counter every
+  // 250ms while submitState === "generating" and surface reassurance
+  // messages at 15s / 30s / 60s thresholds so it's obvious something's
+  // still happening. Phase 2 (separate PR) switches the route to SSE so
+  // we can show actual token streaming.
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
+  const [generationElapsedMs, setGenerationElapsedMs] = useState(0);
+  useEffect(() => {
+    if (generationStartedAt === null) {
+      setGenerationElapsedMs(0);
+      return;
+    }
+    const tick = () => setGenerationElapsedMs(Date.now() - generationStartedAt);
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [generationStartedAt]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -295,11 +315,13 @@ export default function Hire() {
       setMissions((current) => [created, ...current]);
 
       if (generateAfter) {
+        setGenerationStartedAt(Date.now());
         try {
           const plan = await generateHiringPlan(created.id, token, {
             llmConfigId: selectedLlmConfigId ?? undefined,
           });
           setSubmitState("idle");
+          setGenerationStartedAt(null);
           navigate(`/hire/plan/${created.id}/${plan.hiringPlanId}`);
           return;
         } catch (planErr) {
@@ -308,6 +330,8 @@ export default function Hire() {
             `Mission saved as a draft, but plan generation failed: ${planMsg}. You can retry from past missions below.`,
           );
           toast.error(`Plan generation failed for ${created.statement.slice(0, 60)}…`);
+        } finally {
+          setGenerationStartedAt(null);
         }
       } else {
         toast.success("Mission saved as a draft.");
@@ -571,10 +595,69 @@ export default function Hire() {
               }
             >
               {submitState === "generating"
-                ? "Generating…"
+                ? `Generating… ${Math.floor(generationElapsedMs / 1000)}s`
                 : "Draft hiring plan →"}
             </button>
           </div>
+
+          {submitState === "generating" ? (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "var(--af2-paper-2)",
+                border: "1px solid var(--af2-line)",
+                borderRadius: 6,
+                fontSize: 12,
+                color: "var(--af2-ink-2)",
+                lineHeight: 1.5,
+              }}
+              role="status"
+              aria-live="polite"
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "var(--af2-clay)",
+                    animation: "af2-pulse 1.2s ease-in-out infinite",
+                  }}
+                />
+                <b>
+                  Drafting your hiring plan ·{" "}
+                  {Math.floor(generationElapsedMs / 1000)}s elapsed
+                </b>
+              </div>
+              <div style={{ marginTop: 6, color: "var(--af2-ink-3)" }}>
+                {generationElapsedMs < 15_000 ? (
+                  <>
+                    The LLM is reading your mission and drafting the org chart.
+                    Most plans return in 10–30s.
+                  </>
+                ) : generationElapsedMs < 30_000 ? (
+                  <>
+                    Still working — power-tier reasoning models can take
+                    20–60s for missions with rich context.
+                  </>
+                ) : generationElapsedMs < 60_000 ? (
+                  <>
+                    Taking a little longer than usual. The request will time
+                    out at 90s if the model doesn't respond by then.
+                  </>
+                ) : (
+                  <>
+                    Almost at the 90s cutoff. If this times out, your
+                    mission is saved as a draft and you can retry from the
+                    list below.
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
 
           <div className="pro-only pro-block">
             <div className="label">Pro · Live prompt preview</div>

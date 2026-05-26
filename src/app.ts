@@ -138,6 +138,7 @@ import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
+import { createSkillsRoutes } from "./skills/skillsRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
@@ -945,6 +946,9 @@ app.use(
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
 app.use("/api/episodes", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), episodeRoutes);
+// HEL-219: skills picker (loaded skills) + admin triage of the
+// scanner's manifest. Read-only for v1.
+app.use("/api/skills", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), createSkillsRoutes());
 // HEL-93: AutoFlow staff admin — curated global knowledge tier. No workspace
 // scope (cross-workspace by design); requireStaff gates access via the
 // AUTOFLOW_STAFF_USER_IDS env-var allowlist.

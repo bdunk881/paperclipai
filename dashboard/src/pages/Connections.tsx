@@ -2027,7 +2027,7 @@ export default function Connections() {
 
   return (
     <div className="af2-v2" data-pro={isPro ? "on" : "off"}>
-      <section className="hub" data-hub="connections">
+      <section className="hub af2-page" data-hub="connections">
         <div className="page-head">
           <div className="page-head-left">
             <h1 className="h1">Connections</h1>

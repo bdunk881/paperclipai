@@ -41,6 +41,7 @@ import { randomUUID } from "node:crypto";
 import { runAgentTurn, type AgentRunTier, type RunAgentTurnResult } from "./runAgentTurn";
 import { ticketStore } from "../tickets/ticketStore";
 import { publishWorkspaceStreamEvent } from "../engine/agentTrace/streamPublisher";
+import { filePlanApprovalRequest } from "./runtime/planApprovalBridge";
 
 export interface ExecuteAgentPromptInput {
   pool: Pool;
@@ -621,6 +622,58 @@ export async function executeAgentPrompt(
       model: turnResult.model,
       needsHumanInput: false,
       cancelled: true,
+    };
+  }
+
+  // 3a. Plan-mode pause: the agent produced a plan instead of executing
+  // tools. File an approval row so a human can review + sign off via
+  // the existing /api/approvals/:id/decide surface. The
+  // planApprovalResumeCoordinator sweep will re-run the agent in auto
+  // mode once the row flips to "approved".
+  if (input.permissionMode === "plan") {
+    const { approvalId } = await filePlanApprovalRequest({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      agentId: input.agentId,
+      agentName: agent.name,
+      runId,
+      originalPrompt: input.prompt,
+      planText: turnResult.text,
+    });
+    await finalizeRunRow({
+      pool: input.pool,
+      runId,
+      status: "escalated",
+      output: {
+        text: turnResult.text,
+        provider: turnResult.provider,
+        model: turnResult.model,
+        usage: turnResult.usage,
+        approvalId,
+        permissionMode: "plan",
+      },
+    });
+    void publishWorkspaceStreamEvent(input.workspaceId, {
+      kind: "run.lifecycle",
+      phase: "completed",
+      runId,
+      agentId: input.agentId,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: sourceTicketId ?? null,
+      triggerKind: input.triggerKind,
+      actionSummary: "Plan awaiting approval",
+      needsHumanInput: true,
+      provider: turnResult.provider,
+      model: turnResult.model,
+      usage: turnResult.usage,
+    });
+    return {
+      runId,
+      result: turnResult.text,
+      usage: turnResult.usage,
+      provider: turnResult.provider,
+      model: turnResult.model,
+      needsHumanInput: true,
     };
   }
 

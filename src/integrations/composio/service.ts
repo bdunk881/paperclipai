@@ -59,14 +59,17 @@ export class ComposioConnectorService {
     const credential = await composioCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
+      // Mirrors the other connector services (slack/linear/etc): "disabled"
+      // means "user hasn't connected yet", distinct from "auth_failed" which
+      // means a previously-good credential has been rejected. The dashboard
+      // renders these differently — "Connect" vs "Reconnect".
       return {
-        status: "down",
+        status: "disabled",
         checkedAt,
         details: {
           auth: false,
           apiReachable: false,
           rateLimited: false,
-          errorType: "auth",
           message: "No Composio credential is connected",
         },
       };

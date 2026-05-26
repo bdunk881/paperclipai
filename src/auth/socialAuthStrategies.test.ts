@@ -1,3 +1,8 @@
+// CI hardening: cold-loading src/app.ts via require + jest.resetModules can
+// take 1-3s; the 5s default tips over on slow CI runners as more routes get
+// added. 20s gives headroom without hiding real hangs.
+jest.setTimeout(20000);
+
 const originalEnv = process.env;
 
 describe("social auth callback URL normalization", () => {

@@ -1,5 +1,10 @@
 import type { AuthenticatedRequest } from "./authMiddleware";
 
+// CI hardening: cold-loading src/app.ts via require + jest.resetModules can
+// take 1-3s; the 5s default tips over on slow CI runners as more routes get
+// added. 20s gives headroom without hiding real hangs.
+jest.setTimeout(20000);
+
 function createResponse() {
   const json = jest.fn();
   const status = jest.fn().mockReturnValue({ json });

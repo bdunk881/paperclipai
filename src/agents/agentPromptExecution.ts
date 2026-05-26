@@ -39,6 +39,7 @@ import type { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 
 import { runAgentTurn, type AgentRunTier, type RunAgentTurnResult } from "./runAgentTurn";
+import { ticketStore } from "../tickets/ticketStore";
 
 export interface ExecuteAgentPromptInput {
   pool: Pool;
@@ -410,6 +411,21 @@ export async function executeAgentPrompt(
   }
   const agent = agentResult.rows[0]!;
 
+  // Auto-create an Assignment ticket when the agent is invoked ad-hoc
+  // and the caller didn't link an existing ticket. Every agent run leaves
+  // a paper trail in the timeline — this closes the gap for manual runs
+  // that previously had no ticket to attach `structured_update`s to.
+  let sourceTicketId = input.sourceTicketId;
+  if (!sourceTicketId && input.triggerKind === "manual") {
+    sourceTicketId = await autoCreateAssignmentTicket({
+      workspaceId: input.workspaceId,
+      userId: input.userId,
+      agentId: input.agentId,
+      agentName: agent.name,
+      prompt: input.prompt,
+    });
+  }
+
   const systemPrompt = buildSystemPrompt({
     agentName: agent.name,
     agentRoleKey: agent.role_key,
@@ -430,7 +446,7 @@ export async function executeAgentPrompt(
     userId: input.userId,
     agentId: input.agentId,
     prompt: input.prompt,
-    sourceTicketId: input.sourceTicketId,
+    sourceTicketId,
     sourceRoutineId: input.sourceRoutineId,
   });
 
@@ -481,10 +497,10 @@ export async function executeAgentPrompt(
       output: { error: message },
       error: message.slice(0, 1000),
     });
-    if (input.sourceTicketId) {
+    if (sourceTicketId) {
       await appendStructuredUpdate({
         pool: input.pool,
-        ticketId: input.sourceTicketId,
+        ticketId: sourceTicketId,
         agentId: input.agentId,
         workspaceId: input.workspaceId,
         actionSummary: `Agent failed: ${message.slice(0, 120)}`,
@@ -548,11 +564,12 @@ export async function executeAgentPrompt(
     },
   });
 
-  // 5. Document on ticket (if assignment-triggered).
-  if (input.sourceTicketId) {
+  // 5. Document on ticket — always set when assignment-triggered, and
+  // always set for manual triggers because we auto-create one above.
+  if (sourceTicketId) {
     await appendStructuredUpdate({
       pool: input.pool,
-      ticketId: input.sourceTicketId,
+      ticketId: sourceTicketId,
       agentId: input.agentId,
       workspaceId: input.workspaceId,
       actionSummary: parsed.actionSummary,
@@ -573,7 +590,7 @@ export async function executeAgentPrompt(
     agentId: input.agentId,
     runId,
     actionSummary: parsed.actionSummary,
-    sourceTicketId: input.sourceTicketId,
+    sourceTicketId,
     sourceRoutineId: input.sourceRoutineId,
     triggerKind: input.triggerKind,
   });
@@ -593,4 +610,45 @@ export async function executeAgentPrompt(
     model: turnResult.model,
     needsHumanInput: parsed.needsHumanInput,
   };
+}
+
+/**
+ * Open an Assignment ticket for an ad-hoc agent run. Mirrors what a user
+ * would do by hand: pick a short title from the prompt, paste the full
+ * prompt as the description, assign the agent as the primary, and put
+ * "user clicked Run Agent" in the kickoff comment via the structured
+ * "Ticket created." update that `ticketStore.create` writes for us.
+ *
+ * Best-effort: if creation fails (Postgres unavailable in dev / in-memory
+ * fallback path returning a transient error), we log and proceed without
+ * a ticket. The run still completes and writes to `runs`/`activity_events`,
+ * so the run is not lost — only the assignment timeline is.
+ */
+async function autoCreateAssignmentTicket(input: {
+  workspaceId: string;
+  userId: string;
+  agentId: string;
+  agentName: string;
+  prompt: string;
+}): Promise<string | undefined> {
+  const title = input.prompt.trim().slice(0, 80) || `Ad-hoc task for ${input.agentName}`;
+  try {
+    const aggregate = await ticketStore.create({
+      workspaceId: input.workspaceId,
+      title,
+      description: input.prompt,
+      creatorId: input.userId,
+      priority: "medium",
+      assignees: [
+        { type: "agent", id: input.agentId, role: "primary" },
+      ],
+      context: { workspaceId: input.workspaceId, userId: input.userId },
+    });
+    return aggregate.ticket.id;
+  } catch (err) {
+    console.warn(
+      `[agentPromptExecution] auto-create assignment ticket failed: ${(err as Error).message}`,
+    );
+    return undefined;
+  }
 }

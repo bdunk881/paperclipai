@@ -14,6 +14,16 @@
  * mutate in-place so QA can exercise the slider UI.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { useExperienceMode } from "../context/ExperienceModeContext";
 import {
   createLLMConfig,
@@ -684,17 +694,185 @@ interface TierRoutingCardProps {
   configs: LLMConfig[];
 }
 
+// dnd-kit ids encode the binding/slot identity so onDragEnd can reconstruct it
+// without holding extra state. Slots are keyed by UI tier; chips by
+// provider:model.
+type ChipDragData = { kind: "chip"; binding: TierBinding };
+type SlotDropData = { kind: "slot"; tier: ModelEntry["tier"] };
+
+function chipDragId(b: TierBinding) {
+  return `chip:${b.provider}:${b.model}`;
+}
+function slotDropId(tier: ModelEntry["tier"]) {
+  return `slot:${tier}`;
+}
+
+interface TierSlotButtonProps {
+  slot: TierSlotState;
+  selectedChip: TierBinding | null;
+  busy: boolean;
+  onSlotClick: (uiTier: ModelEntry["tier"]) => void;
+  clearSlot: (uiTier: ModelEntry["tier"]) => void;
+}
+
+function TierSlotButton({
+  slot,
+  selectedChip,
+  busy,
+  onSlotClick,
+  clearSlot,
+}: TierSlotButtonProps) {
+  const dropData: SlotDropData = { kind: "slot", tier: slot.tier };
+  const { setNodeRef, isOver } = useDroppable({
+    id: slotDropId(slot.tier),
+    data: dropData,
+  });
+  const meta = slot.binding
+    ? findModelMeta(slot.binding.provider, slot.binding.model)
+    : null;
+  const isAssignTarget = selectedChip !== null;
+  const highlight = isAssignTarget || isOver;
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={() => onSlotClick(slot.tier)}
+      disabled={busy}
+      aria-label={`${slot.tier} tier — drop a model here or tap to assign the selected model`}
+      style={{
+        background: isOver
+          ? "var(--af2-clay-soft)"
+          : highlight
+            ? "var(--af2-clay-soft)"
+            : "var(--af2-paper-2)",
+        border: `1px ${highlight ? "dashed" : "solid"} ${
+          highlight ? "var(--af2-clay)" : "var(--af2-line)"
+        }`,
+        borderRadius: 6,
+        padding: "10px 12px",
+        cursor: isAssignTarget ? "pointer" : "default",
+        minHeight: 70,
+        textAlign: "left",
+        font: "inherit",
+        color: "inherit",
+        width: "100%",
+        transform: isOver ? "scale(1.01)" : undefined,
+        transition: "transform 80ms ease, background 80ms ease",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 6,
+        }}
+      >
+        <span className={`pill ${TIER_PILL_TONE[slot.tier]}`}>{slot.tier}</span>
+        {!slot.manual && slot.binding ? (
+          <span className="pill" style={{ fontSize: 10 }}>
+            auto
+          </span>
+        ) : null}
+        {slot.manual ? (
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ marginLeft: "auto", padding: "1px 6px" }}
+            onClick={(e) => {
+              e.stopPropagation();
+              clearSlot(slot.tier);
+            }}
+            title="Reset this slot to auto-routing"
+            disabled={busy}
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+      {slot.binding && meta ? (
+        <>
+          <div style={{ fontWeight: 500, fontSize: 13 }}>{meta.modelName}</div>
+          <div className="int-desc">via {meta.providerCategory}</div>
+        </>
+      ) : (
+        <div className="int-desc" style={{ fontStyle: "italic" }}>
+          {isAssignTarget
+            ? "Drop here, or tap to assign"
+            : "No model assigned — drag or tap one below"}
+        </div>
+      )}
+    </button>
+  );
+}
+
+interface CatalogChipProps {
+  binding: TierBinding;
+  tier: ModelEntry["tier"];
+  label: string;
+  desc: string;
+  isSelected: boolean;
+  busy: boolean;
+  onChipClick: (b: TierBinding) => void;
+}
+
+function CatalogChip({
+  binding,
+  tier,
+  label,
+  desc,
+  isSelected,
+  busy,
+  onChipClick,
+}: CatalogChipProps) {
+  const dragData: ChipDragData = { kind: "chip", binding };
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: chipDragId(binding), data: dragData });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={() => onChipClick(binding)}
+      disabled={busy}
+      className={`pill ${TIER_PILL_TONE[tier]}`}
+      style={{
+        cursor: isDragging ? "grabbing" : "grab",
+        border: isSelected ? "1px solid var(--af2-clay)" : undefined,
+        boxShadow: isSelected ? "0 0 0 2px var(--af2-clay-soft)" : undefined,
+        opacity: isDragging ? 0.5 : 1,
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
+        touchAction: "none",
+        zIndex: isDragging ? 50 : undefined,
+        position: isDragging ? "relative" : undefined,
+      }}
+      title={`${desc} — drag onto a tier slot or tap to select.`}
+      {...listeners}
+      {...attributes}
+    >
+      {label}
+    </button>
+  );
+}
+
 function TierRoutingCard({ configs }: TierRoutingCardProps) {
   const { getAccessToken } = useAuth();
   const [serverMatrix, setServerMatrix] = useState<TierMatrix>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedChip, setSelectedChip] = useState<TierBinding | null>(null);
-  // HTML5 native drag-and-drop was the original interaction but doesn't fire
-  // touch events on iPad/iPhone, so the card was effectively unusable on
-  // tablets. The click-to-assign path (tap a chip, then tap a slot) is the
-  // primary interaction now and works on every input modality. Native DnD
-  // attributes have been removed accordingly.
+  // Two-modality interaction:
+  //   1. Click/tap a chip, then click/tap a slot — the touch + keyboard
+  //      baseline. Works on iPad/iPhone where HTML5 DnD has no touch events.
+  //   2. Drag a chip onto a slot — desktop pointer affordance via
+  //      `@dnd-kit/core`. Pointer activation is gated by a 5px distance
+  //      threshold so a plain click still falls through to #1.
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
 
   // Load saved matrix once configs are available.
   useEffect(() => {
@@ -800,12 +978,23 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
     }
   }
 
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const dragData = active.data.current as ChipDragData | undefined;
+    const dropData = over.data.current as SlotDropData | undefined;
+    if (dragData?.kind !== "chip" || dropData?.kind !== "slot") return;
+    void assign(dropData.tier, dragData.binding);
+  }
+
   return (
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
     <div className="card" style={{ marginBottom: 18 }}>
       <h3>Tier routing</h3>
       <p className="desc" style={{ marginBottom: 12 }}>
-        Tap a model from the catalog below to select it, then tap a tier slot
-        to assign. Each tier holds one model. Slots showing
+        Drag a model from the catalog onto a tier slot — or tap a model and
+        then tap a slot if you're on touch. Each tier holds one model. Slots
+        showing
         <span className="pill" style={{ marginLeft: 4, marginRight: 4 }}>
           auto
         </span>
@@ -828,84 +1017,16 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
           gap: 12,
         }}
       >
-        {slots.map((slot) => {
-          const meta = slot.binding
-            ? findModelMeta(slot.binding.provider, slot.binding.model)
-            : null;
-          const isAssignTarget = selectedChip !== null;
-          return (
-            <button
-              key={slot.tier}
-              type="button"
-              onClick={() => onSlotClick(slot.tier)}
-              disabled={busy || !selectedChip}
-              aria-label={`Assign selected model to ${slot.tier} tier`}
-              style={{
-                background: isAssignTarget
-                  ? "var(--af2-clay-soft)"
-                  : "var(--af2-paper-2)",
-                border: `1px ${isAssignTarget ? "dashed" : "solid"} ${
-                  isAssignTarget ? "var(--af2-clay)" : "var(--af2-line)"
-                }`,
-                borderRadius: 6,
-                padding: "10px 12px",
-                cursor: isAssignTarget ? "pointer" : "default",
-                minHeight: 70,
-                textAlign: "left",
-                font: "inherit",
-                color: "inherit",
-                width: "100%",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 6,
-                }}
-              >
-                <span className={`pill ${TIER_PILL_TONE[slot.tier]}`}>
-                  {slot.tier}
-                </span>
-                {!slot.manual && slot.binding ? (
-                  <span className="pill" style={{ fontSize: 10 }}>
-                    auto
-                  </span>
-                ) : null}
-                {slot.manual ? (
-                  <button
-                    type="button"
-                    className="btn ghost sm"
-                    style={{ marginLeft: "auto", padding: "1px 6px" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void clearSlot(slot.tier);
-                    }}
-                    title="Reset this slot to auto-routing"
-                    disabled={busy}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-              {slot.binding && meta ? (
-                <>
-                  <div style={{ fontWeight: 500, fontSize: 13 }}>
-                    {meta.modelName}
-                  </div>
-                  <div className="int-desc">via {meta.providerCategory}</div>
-                </>
-              ) : (
-                <div className="int-desc" style={{ fontStyle: "italic" }}>
-                  {isAssignTarget
-                    ? "Tap to assign the selected model here"
-                    : "No model assigned — tap a model below first"}
-                </div>
-              )}
-            </button>
-          );
-        })}
+        {slots.map((slot) => (
+          <TierSlotButton
+            key={slot.tier}
+            slot={slot}
+            selectedChip={selectedChip}
+            busy={busy}
+            onSlotClick={onSlotClick}
+            clearSlot={(t) => void clearSlot(t)}
+          />
+        ))}
       </div>
 
       {connectedChips.length > 0 ? (
@@ -940,27 +1061,17 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
                     provider: entry.provider,
                     model: m.id,
                   };
-                  const isSelected = isChipSelected(binding);
                   return (
-                    <button
+                    <CatalogChip
                       key={m.id}
-                      type="button"
-                      onClick={() => onChipClick(binding)}
-                      disabled={busy}
-                      className={`pill ${TIER_PILL_TONE[m.tier]}`}
-                      style={{
-                        cursor: "pointer",
-                        border: isSelected
-                          ? "1px solid var(--af2-clay)"
-                          : undefined,
-                        boxShadow: isSelected
-                          ? "0 0 0 2px var(--af2-clay-soft)"
-                          : undefined,
-                      }}
-                      title={`${m.desc} — tap to select, then tap a tier slot above to assign.`}
-                    >
-                      {m.name}
-                    </button>
+                      binding={binding}
+                      tier={m.tier}
+                      label={m.name}
+                      desc={m.desc}
+                      isSelected={isChipSelected(binding)}
+                      busy={busy}
+                      onChipClick={onChipClick}
+                    />
                   );
                 })}
               </div>
@@ -1002,6 +1113,7 @@ function TierRoutingCard({ configs }: TierRoutingCardProps) {
         ) : null}
       </div>
     </div>
+    </DndContext>
   );
 }
 

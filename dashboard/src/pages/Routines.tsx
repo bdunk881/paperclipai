@@ -30,6 +30,12 @@ import {
   listTemplates,
   type TemplateSummary,
 } from "../api/client";
+import {
+  deletePromptRoutine,
+  listPromptRoutines,
+  updatePromptRoutine,
+  type PromptRoutine,
+} from "../api/promptRoutinesApi";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -65,25 +71,82 @@ function buildStudioRoute(templateId: string): string {
   return `/builder/${templateId}`;
 }
 
-type MineRow = TemplateSummary & {
-  owner: string;
-  schedule: string;
-  status: "live" | "draft";
-  lastRunAt: string | null;
-};
+type MineRow =
+  | (TemplateSummary & {
+      kind: "template";
+      owner: string;
+      schedule: string;
+      status: "live" | "draft";
+      lastRunAt: string | null;
+    })
+  | {
+      kind: "prompt";
+      id: string;
+      name: string;
+      description: string;
+      category: string;
+      version: string;
+      stepCount: number;
+      configFieldCount: number;
+      seeded?: false;
+      owner: string;
+      schedule: string;
+      status: "live" | "draft";
+      lastRunAt: string | null;
+      promptRoutine: PromptRoutine;
+    };
 
-function buildMineRows(templates: TemplateSummary[]): MineRow[] {
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+function summarizePromptSchedule(routine: PromptRoutine): string {
+  const days = routine.daysOfWeek
+    .slice()
+    .sort((a, b) => a - b)
+    .map((d) => DAY_SHORT[d] ?? `?${d}`)
+    .join(" ");
+  const hhmm = routine.timeOfDay.slice(0, 5);
+  return `${days} at ${hhmm} ${routine.timezone}`;
+}
+
+function buildMineRows(
+  templates: TemplateSummary[],
+  promptRoutines: PromptRoutine[],
+): MineRow[] {
   // Mine only shows user-owned routines. Built-in library templates are
-  // surfaced under the Library tab.
-  return templates
+  // surfaced under the Library tab. Prompt routines (scheduled prompts)
+  // render alongside Studio templates with a "prompt" badge.
+  const templateRows: MineRow[] = templates
     .filter((tpl) => !tpl.seeded)
     .map((tpl) => ({
       ...tpl,
+      kind: "template" as const,
       owner: "",
       schedule: "",
-      status: "live",
+      status: "live" as const,
       lastRunAt: null,
     }));
+
+  const promptRows: MineRow[] = promptRoutines.map((routine) => ({
+    kind: "prompt" as const,
+    id: routine.id,
+    name: routine.name,
+    description: routine.prompt,
+    category: "prompt",
+    version: "1.0.0",
+    stepCount: 0,
+    configFieldCount: 0,
+    owner: "",
+    schedule: summarizePromptSchedule(routine),
+    status: routine.status === "paused" ? "draft" : "live",
+    lastRunAt: routine.lastFiredAt,
+    promptRoutine: routine,
+  }));
+
+  // Newest first across the mixed list. Prompt routines surface their
+  // createdAt via the embedded PromptRoutine; templates don't have a
+  // sortable createdAt on TemplateSummary, so we keep their original
+  // order and slot prompt rows in front when newer.
+  return [...promptRows, ...templateRows];
 }
 
 function libraryTemplates(templates: TemplateSummary[]): TemplateSummary[] {
@@ -169,6 +232,7 @@ export default function Routines({
   const [templates, setTemplates] = useState<TemplateSummary[]>(
     () => initialTemplates ?? [],
   );
+  const [promptRoutines, setPromptRoutines] = useState<PromptRoutine[]>([]);
   const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("mine");
@@ -205,6 +269,44 @@ export default function Routines({
       );
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleDeletePromptRoutine(routine: PromptRoutine) {
+    if (
+      !window.confirm(
+        `Delete prompt routine "${routine.name}"? This stops the schedule and removes the row.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(routine.id);
+    try {
+      const token = await getAccessToken();
+      await deletePromptRoutine(routine.id, token ?? undefined);
+      setPromptRoutines((current) => current.filter((r) => r.id !== routine.id));
+      if (expandedRowId === routine.id) setExpandedRowId(null);
+    } catch (delError) {
+      setError(
+        delError instanceof Error ? delError.message : "Failed to delete prompt routine",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleTogglePromptRoutineStatus(routine: PromptRoutine) {
+    const next = routine.status === "active" ? "paused" : "active";
+    try {
+      const token = await getAccessToken();
+      const updated = await updatePromptRoutine(routine.id, { status: next }, token ?? undefined);
+      setPromptRoutines((current) =>
+        current.map((r) => (r.id === routine.id ? updated : r)),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to update prompt routine",
+      );
     }
   }
 
@@ -254,8 +356,17 @@ export default function Routines({
       setLoading(true);
       setError(null);
       try {
-        const next = await listTemplates();
-        if (!cancelled) setTemplates(next);
+        const token = (await getAccessToken()) ?? undefined;
+        const [nextTemplates, nextRoutines] = await Promise.all([
+          listTemplates(),
+          // Prompt routines are optional — a 401/404 on a stale dev backend
+          // shouldn't block the templates list.
+          listPromptRoutines(token).catch(() => [] as PromptRoutine[]),
+        ]);
+        if (!cancelled) {
+          setTemplates(nextTemplates);
+          setPromptRoutines(nextRoutines);
+        }
       } catch (loadError) {
         if (!cancelled) {
           setError(
@@ -269,7 +380,7 @@ export default function Routines({
     return () => {
       cancelled = true;
     };
-  }, [initialTemplates]);
+  }, [initialTemplates, getAccessToken]);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,8 +418,8 @@ export default function Routines({
   }, [activeWorkspaceId]);
 
   const mineRows = useMemo(
-    () => applyOrder(buildMineRows(templates), routineOrder),
-    [templates, routineOrder],
+    () => applyOrder(buildMineRows(templates, promptRoutines), routineOrder),
+    [templates, promptRoutines, routineOrder],
   );
   const libraryRows = useMemo(() => libraryTemplates(templates), [templates]);
   const expandedRow = useMemo(
@@ -339,6 +450,11 @@ export default function Routines({
     }
     setExpandedRowId(row.id);
     setDrawerRuns([]);
+    // Prompt routines aren't backed by workflow runs; skip the fetch.
+    if (row.kind === "prompt") {
+      setDrawerLoading(false);
+      return;
+    }
     setDrawerLoading(true);
     try {
       const token = await getAccessToken();
@@ -485,8 +601,19 @@ export default function Routines({
                     setDragId(null);
                     setDragOverId(null);
                   }}
-                  onDelete={() => void handleDelete(row)}
+                  onDelete={() => {
+                    if (row.kind === "prompt") {
+                      void handleDeletePromptRoutine(row.promptRoutine);
+                    } else {
+                      void handleDelete(row);
+                    }
+                  }}
                   deleting={deletingId === row.id}
+                  onTogglePromptStatus={
+                    row.kind === "prompt"
+                      ? () => void handleTogglePromptRoutineStatus(row.promptRoutine)
+                      : undefined
+                  }
                 />
               );
             })}
@@ -549,6 +676,7 @@ function RoutineRowWithDrawer({
   onDrop,
   onDelete,
   deleting,
+  onTogglePromptStatus,
 }: {
   row: MineRow;
   expanded: boolean;
@@ -564,9 +692,11 @@ function RoutineRowWithDrawer({
   onDrop: (sourceId: string) => void;
   onDelete: () => void;
   deleting: boolean;
+  onTogglePromptStatus?: () => void;
 }) {
   const rowGrid = "26px 1fr 110px 100px 130px 190px";
   const isDraft = row.status === "draft";
+  const isPrompt = row.kind === "prompt";
 
   return (
     <>
@@ -621,14 +751,22 @@ function RoutineRowWithDrawer({
           ⋮⋮
         </div>
         <div>
-          <b>{row.name}</b>
-          {row.schedule ? (
-            <>
-              <br />
-              <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
-                {row.schedule}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <b>{row.name}</b>
+            {isPrompt ? (
+              <span
+                className="pill"
+                style={{ fontSize: 10, padding: "1px 6px" }}
+                title="Prompt routine — fires on schedule, creates an assignment"
+              >
+                prompt
               </span>
-            </>
+            ) : null}
+          </div>
+          {row.schedule ? (
+            <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>
+              {row.schedule}
+            </span>
           ) : null}
         </div>
         <div>{row.owner || "—"}</div>
@@ -637,16 +775,28 @@ function RoutineRowWithDrawer({
         </div>
         <div className="id">{formatRelative(row.lastRunAt)}</div>
         <div className="actions" onClick={(e) => e.stopPropagation()}>
-          <button type="button" className="btn sm">
-            {isDraft ? "Enable" : "Disable"}
-          </button>
-          <Link
-            to={buildStudioRoute(row.id)}
-            className="btn primary sm"
-            style={{ textDecoration: "none" }}
-          >
-            Launch in Studio ▸
-          </Link>
+          {isPrompt && onTogglePromptStatus ? (
+            <button type="button" className="btn sm" onClick={onTogglePromptStatus}>
+              {isDraft ? "Resume" : "Pause"}
+            </button>
+          ) : (
+            <button type="button" className="btn sm">
+              {isDraft ? "Enable" : "Disable"}
+            </button>
+          )}
+          {isPrompt ? (
+            <span style={{ fontSize: 11, color: "var(--af2-ink-3)", padding: "0 4px" }}>
+              scheduled
+            </span>
+          ) : (
+            <Link
+              to={buildStudioRoute(row.id)}
+              className="btn primary sm"
+              style={{ textDecoration: "none" }}
+            >
+              Launch in Studio ▸
+            </Link>
+          )}
         </div>
       </div>
       <div className={`row-drawer${expanded ? " open" : ""}`}>
@@ -680,12 +830,13 @@ function DrawerBody({
   onDelete: () => void;
   deleting: boolean;
 }) {
+  const isPrompt = row.kind === "prompt";
   return (
     <>
       <div className="row-drawer-head">
         <div>
           <div className="eyebrow" style={{ marginBottom: 4 }}>
-            Routine · {row.status}
+            {isPrompt ? `Prompt routine · ${row.status}` : `Routine · ${row.status}`}
           </div>
           <h3>{row.name}</h3>
         </div>
@@ -700,66 +851,122 @@ function DrawerBody({
           Collapse ↑
         </button>
       </div>
-      <p className="desc" style={{ color: "var(--af2-ink-3)", fontSize: 13 }}>
-        {row.description ||
-          "Polls source every interval, processes results, and dispatches follow-up actions."}
-      </p>
-      <div style={{ marginTop: 10 }}>
-        <b>Last 5 runs</b>
-      </div>
-      {runsLoading ? (
-        <div className="feed-item">
-          <div className="feed-time">…</div>
-          <div className="feed-msg">Loading runs…</div>
-        </div>
-      ) : runs.length === 0 ? (
-        <div className="feed-item">
-          <div className="feed-time">—</div>
-          <div className="feed-msg">No runs recorded yet.</div>
-        </div>
-      ) : (
-        runs.map((run) => (
-          <div className="feed-item" key={run.id}>
-            <div className="feed-time">
-              {run.startedAt
-                ? new Date(run.startedAt).toLocaleTimeString(undefined, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    second: "2-digit",
-                    hour12: false,
-                  })
-                : "—"}
+
+      {isPrompt && row.kind === "prompt" ? (
+        <>
+          <div style={{ marginTop: 6 }}>
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--af2-ink-3)",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                marginBottom: 4,
+              }}
+            >
+              Prompt
             </div>
-            <div className="feed-msg">
-              <span
-                className={`pill ${
-                  run.status === "completed"
-                    ? "sage"
-                    : run.status === "failed"
-                      ? "clay"
-                      : "mustard"
-                } dot`}
-              >
-                {run.status}
-              </span>
+            <div
+              style={{
+                fontSize: 13,
+                lineHeight: 1.5,
+                background: "var(--af2-paper-2)",
+                border: "1px solid var(--af2-line)",
+                borderRadius: 6,
+                padding: "10px 12px",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {row.promptRoutine.prompt}
             </div>
           </div>
-        ))
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              gap: 18,
+              fontSize: 12,
+              color: "var(--af2-ink-3)",
+            }}
+          >
+            <div>
+              <b style={{ color: "var(--af2-ink-2)" }}>Schedule:</b> {row.schedule}
+            </div>
+            <div>
+              <b style={{ color: "var(--af2-ink-2)" }}>Last fired:</b>{" "}
+              {formatRelative(row.lastRunAt)}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="desc" style={{ color: "var(--af2-ink-3)", fontSize: 13 }}>
+            {row.description ||
+              "Polls source every interval, processes results, and dispatches follow-up actions."}
+          </p>
+          <div style={{ marginTop: 10 }}>
+            <b>Last 5 runs</b>
+          </div>
+          {runsLoading ? (
+            <div className="feed-item">
+              <div className="feed-time">…</div>
+              <div className="feed-msg">Loading runs…</div>
+            </div>
+          ) : runs.length === 0 ? (
+            <div className="feed-item">
+              <div className="feed-time">—</div>
+              <div className="feed-msg">No runs recorded yet.</div>
+            </div>
+          ) : (
+            runs.map((run) => (
+              <div className="feed-item" key={run.id}>
+                <div className="feed-time">
+                  {run.startedAt
+                    ? new Date(run.startedAt).toLocaleTimeString(undefined, {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false,
+                      })
+                    : "—"}
+                </div>
+                <div className="feed-msg">
+                  <span
+                    className={`pill ${
+                      run.status === "completed"
+                        ? "sage"
+                        : run.status === "failed"
+                          ? "clay"
+                          : "mustard"
+                    } dot`}
+                  >
+                    {run.status}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </>
       )}
+
       <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-        <Link
-          to={buildStudioRoute(row.id)}
-          className="btn primary"
-          style={{ textDecoration: "none" }}
-        >
-          Launch in Studio ▸
-        </Link>
-        <button type="button" className="btn">
-          Duplicate
-        </button>
-        <button type="button" className="btn">
-          {row.status === "draft" ? "Enable" : "Disable"}
-        </button>
+        {!isPrompt ? (
+          <>
+            <Link
+              to={buildStudioRoute(row.id)}
+              className="btn primary"
+              style={{ textDecoration: "none" }}
+            >
+              Launch in Studio ▸
+            </Link>
+            <button type="button" className="btn">
+              Duplicate
+            </button>
+            <button type="button" className="btn">
+              {row.status === "draft" ? "Enable" : "Disable"}
+            </button>
+          </>
+        ) : null}
         <button
           type="button"
           className="btn"
@@ -773,8 +980,6 @@ function DrawerBody({
           {deleting ? "Deleting…" : "Delete"}
         </button>
       </div>
-      {/* Pro step debugger removed — re-add when wired to a real
-          in-flight run interceptor instead of hardcoded sample IO. */}
     </>
   );
 }

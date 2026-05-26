@@ -69,6 +69,13 @@ export interface ExecuteAgentPromptInput {
   }>;
   /** Trigger kind for observability + persistence. */
   triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
+  /**
+   * Permission mode forwarded to the runtime. "plan" makes the agent
+   * produce a plan and stop — the caller (typically a route handler with
+   * approval wiring) is expected to file an approval ticket and re-run
+   * with "auto" after a human signs off.
+   */
+  permissionMode?: "auto" | "plan" | "review";
 }
 
 export interface ExecuteAgentPromptResult {
@@ -534,6 +541,7 @@ export async function executeAgentPrompt(
       streamTrace: true,
       sourceRoutineId: input.sourceRoutineId ?? null,
       sourceTicketId: sourceTicketId ?? null,
+      permissionMode: input.permissionMode,
     });
   } catch (err) {
     const message = (err as Error).message;

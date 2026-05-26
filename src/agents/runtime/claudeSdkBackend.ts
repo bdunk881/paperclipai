@@ -27,8 +27,12 @@ import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
 import { previewToolOutput } from "../../engine/agentTrace/redact";
 import { jsonSchemaToZodShape } from "./jsonSchemaToZod";
+import { resolveSkills, type LoadedSkill } from "../../skills/skillsLoader";
 import type {
   AgentBackend,
+  AgentHooks,
+  AgentMcpServer,
+  AgentPermissionMode,
   AgentRunInput,
   AgentRunResult,
   ResolvedModelBinding,
@@ -49,42 +53,12 @@ export class ClaudeSdkBackend implements AgentBackend {
     const toolsByName = new Map(tools.map((t) => [t.name, t]));
 
     const mcpToolDefs = tools.map((t) =>
-      sdk.tool(t.name, t.description, jsonSchemaToZodShape(t.inputSchema), async (args) => {
-        const handler = toolsByName.get(t.name);
-        if (!handler) {
-          return {
-            content: [{ type: "text", text: `Tool "${t.name}" is not registered.` }],
-            isError: true,
-          };
-        }
-        try {
-          const result = await handler.handler(args as Record<string, unknown>);
-          if (input.onTrace) {
-            emitTrace(input.onTrace, {
-              type: "tool_result",
-              callId: t.name,
-              name: t.name,
-              outputPreview: previewToolOutput(result),
-            });
-          }
-          const text = typeof result === "string" ? result : JSON.stringify(result);
-          return { content: [{ type: "text", text }] };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          if (input.onTrace) {
-            emitTrace(input.onTrace, {
-              type: "tool_call.failed",
-              callId: t.name,
-              name: t.name,
-              error: message,
-            });
-          }
-          return {
-            content: [{ type: "text", text: `Tool "${t.name}" failed: ${message}` }],
-            isError: true,
-          };
-        }
-      }),
+      sdk.tool(
+        t.name,
+        t.description,
+        jsonSchemaToZodShape(t.inputSchema),
+        async (args) => invokeToolWithHooks(t.name, args, toolsByName, input),
+      ),
     );
 
     const sdkServer = sdk.createSdkMcpServer({
@@ -93,23 +67,31 @@ export class ClaudeSdkBackend implements AgentBackend {
       tools: mcpToolDefs,
     });
 
-    const agents = buildSubagentDefs(input);
+    const loadedSkills = resolveSkills(input.skills ?? []);
+    const agents = buildSubagentDefs(input, loadedSkills);
 
     if (input.onTrace) {
       emitTrace(input.onTrace, { type: "turn.started", at: new Date().toISOString() });
     }
 
+    const mcpServers: Record<string, unknown> = { autoflow: sdkServer };
+    for (const server of input.mcpServers ?? []) {
+      mcpServers[server.name] = buildExternalMcpServerConfig(server);
+    }
+
+    const permissionMode = mapPermissionMode(input.permissionMode);
+
     const query = sdk.query({
       prompt: input.userPrompt,
       options: {
         model: binding.model,
-        systemPrompt: input.systemPrompt,
+        systemPrompt: composeSystemPromptWithSkills(input.systemPrompt, loadedSkills),
         maxTurns: input.maxToolIterations ?? DEFAULT_MAX_TURNS,
         tools: [],
-        mcpServers: { autoflow: sdkServer },
+        mcpServers,
         agents,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
+        permissionMode,
+        allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
         persistSession: false,
         env: { ...process.env, ANTHROPIC_API_KEY: binding.apiKey },
       },
@@ -185,18 +167,156 @@ export class ClaudeSdkBackend implements AgentBackend {
  * Convert our SubagentRef[] into the SDK's `agents` map. The SDK invokes
  * a subagent when the parent model emits an Agent tool call with the
  * matching name — this is what makes org-chart delegation native.
+ *
+ * When the parent agent has skills attached, subagents inherit them so a
+ * manager's "sales-rep" skill flows down to its delegated lead-qualifier.
  */
-function buildSubagentDefs(input: AgentRunInput): Record<string, ClaudeAgentDef> | undefined {
+function buildSubagentDefs(
+  input: AgentRunInput,
+  parentSkills: LoadedSkill[],
+): Record<string, ClaudeAgentDef> | undefined {
   if (!input.subagents || input.subagents.length === 0) return undefined;
+  const skillKeys = parentSkills.map((s) => s.key);
   const out: Record<string, ClaudeAgentDef> = {};
   for (const sub of input.subagents) {
     out[sub.name] = {
       description: sub.description,
       prompt: `You are ${sub.name}, a ${sub.roleKey}. Carry out the task delegated to you and return a concise summary.`,
       tools: [],
+      ...(skillKeys.length > 0 ? { skills: skillKeys } : {}),
     };
   }
   return out;
+}
+
+/**
+ * Splice each loaded skill's body into the system prompt as a SKILLS
+ * section. When the SDK adds first-class skills support via the `skills:`
+ * option this becomes redundant — for now this guarantees the skill
+ * content reaches the model regardless of SDK version.
+ */
+function composeSystemPromptWithSkills(base: string, skills: LoadedSkill[]): string {
+  if (skills.length === 0) return base;
+  const sections = skills.map((s) => `### ${s.name}\n${s.description}\n\n${s.body}`).join("\n\n---\n\n");
+  return `${base}\n\n# AVAILABLE SKILLS\n\n${sections}`;
+}
+
+/** Map our AgentPermissionMode → the SDK's permissionMode value. */
+function mapPermissionMode(mode: AgentPermissionMode | undefined): string {
+  switch (mode) {
+    case "plan":
+      return "plan";
+    case "review":
+      return "default";
+    case "auto":
+    case undefined:
+    default:
+      return "bypassPermissions";
+  }
+}
+
+/** Translate our AgentMcpServer into the SDK's HTTP MCP server config. */
+function buildExternalMcpServerConfig(server: AgentMcpServer): Record<string, unknown> {
+  const config: Record<string, unknown> = {
+    type: "http",
+    url: server.url,
+  };
+  if (server.authorization) {
+    config.headers = { Authorization: server.authorization };
+  }
+  return config;
+}
+
+/**
+ * Tool wrapper that runs the pre/post-tool hooks. PreToolUse can veto
+ * the call (returning `{ continue: false }` makes us surface a clean
+ * error to the model instead of executing the handler). PostToolUse is
+ * fire-and-forget for accounting / audit logging.
+ */
+async function invokeToolWithHooks(
+  toolName: string,
+  args: unknown,
+  toolsByName: Map<string, AgentTool>,
+  input: AgentRunInput,
+): Promise<ClaudeToolResult> {
+  const handler = toolsByName.get(toolName);
+  if (!handler) {
+    return {
+      content: [{ type: "text", text: `Tool "${toolName}" is not registered.` }],
+      isError: true,
+    };
+  }
+
+  const toolInput = (args ?? {}) as Record<string, unknown>;
+
+  if (input.hooks?.preToolUse) {
+    try {
+      const decision = await input.hooks.preToolUse({ toolName, toolInput });
+      if (decision && decision.continue === false) {
+        const reason = decision.reason ?? "Pre-tool-use hook blocked this call.";
+        if (input.onTrace) {
+          emitTrace(input.onTrace, {
+            type: "tool_call.failed",
+            callId: toolName,
+            name: toolName,
+            error: reason,
+          });
+        }
+        return { content: [{ type: "text", text: reason }], isError: true };
+      }
+    } catch (err) {
+      // Hook errors must not break the tool path; treat as approve + log.
+      console.warn(
+        `[claudeSdkBackend] preToolUse hook threw on ${toolName}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  try {
+    const result = await handler.handler(toolInput);
+    if (input.onTrace) {
+      emitTrace(input.onTrace, {
+        type: "tool_result",
+        callId: toolName,
+        name: toolName,
+        outputPreview: previewToolOutput(result),
+      });
+    }
+    if (input.hooks?.postToolUse) {
+      try {
+        await input.hooks.postToolUse({ toolName, toolInput, result });
+      } catch (err) {
+        console.warn(
+          `[claudeSdkBackend] postToolUse hook threw on ${toolName}: ${(err as Error).message}`,
+        );
+      }
+    }
+    const text = typeof result === "string" ? result : JSON.stringify(result);
+    return { content: [{ type: "text", text }] };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (input.onTrace) {
+      emitTrace(input.onTrace, {
+        type: "tool_call.failed",
+        callId: toolName,
+        name: toolName,
+        error: message,
+      });
+    }
+    if (input.hooks?.postToolUse) {
+      try {
+        await input.hooks.postToolUse({ toolName, toolInput, result: null, error: message });
+      } catch (hookErr) {
+        console.warn(
+          `[claudeSdkBackend] postToolUse hook threw on error path: ${(hookErr as Error).message}`,
+        );
+      }
+    }
+    return {
+      content: [{ type: "text", text: `Tool "${toolName}" failed: ${message}` }],
+      isError: true,
+    };
+  }
 }
 
 /**

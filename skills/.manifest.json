@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-05-26T18:40:17.221Z",
+  "entries": {
+    "pdf": {
+      "ref": "anthropics/skills@pdf",
+      "skillKey": "pdf",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T18:40:16.294Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "ed PDFs ```python # Requires: pip install pytesseract pdf2image import"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "docx": {
+      "ref": "anthropics/skills@docx",
+      "skillKey": "docx",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T18:40:16.760Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "ipt, then validate. Install: `npm install -g docx` ### Setup ```javascrip"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "Text extraction - **docx**: `npm install -g docx` (new documents) - **Lib"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "skill-creator": {
+      "ref": "anthropics/skills@skill-creator",
+      "skillKey": "skill-creator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-26T18:40:17.208Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/improve_description.py",
+          "excerpt": "Claude Code auth, no separate ANTHROPIC_API_KEY needed). \"\"\" import argparse"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    }
+  }
+}

@@ -91,7 +91,7 @@ const updateTicketSchema = z
 const createUpdateSchema = z.object({
   type: ticketUpdateTypeSchema.default("comment"),
   content: z.string().trim().min(1).max(10000),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   actorType: actorTypeSchema.optional(),
 });
 
@@ -106,7 +106,7 @@ const transitionSchema = z.object({
     keyLearnings: z.string().trim().min(1).max(5000),
     artifactRefs: z.array(z.string().trim().min(1).max(512)).max(25).optional(),
     tags: z.array(z.string().trim().min(1).max(64)).max(25).optional(),
-    extensionMetadata: z.record(z.unknown()).optional(),
+    extensionMetadata: z.record(z.string(), z.unknown()).optional(),
   })).optional(),
 });
 

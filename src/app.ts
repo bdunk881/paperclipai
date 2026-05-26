@@ -1923,8 +1923,16 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
     const path = issue?.path?.[0];
+    // zod v4 reports missing fields as `invalid_type` with code, not
+    // a literal "Required" message. Re-shape into a path-aware string
+    // for the API consumer.
+    const isMissing =
+      issue?.code === "invalid_type" &&
+      typeof issue.message === "string" &&
+      (/expected\s+\S+,\s+received\s+undefined/i.test(issue.message) ||
+        issue.message === "Required");
     const message =
-      issue?.message === "Required" && typeof path === "string"
+      isMissing && typeof path === "string"
         ? `${path} is required`
         : (issue?.message ?? "Invalid request body");
     res.status(400).json({ error: message });

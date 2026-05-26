@@ -8,7 +8,7 @@ const goalSourceDocumentSchema = z.object({
 
 export const goalIntakeRequestSchema = z.object({
   goal: z.string().trim().min(1),
-  answers: z.record(z.string().trim().min(1)).optional().default({}),
+  answers: z.record(z.string(), z.string().trim().min(1)).optional().default({}),
   sourceDocument: goalSourceDocumentSchema.optional(),
   readinessThreshold: z.number().min(0).max(1).optional().default(0.75),
 });

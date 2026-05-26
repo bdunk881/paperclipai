@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-26T18:40:17.221Z",
+  "generatedAt": "2026-05-26T21:30:00.000Z",
   "entries": {
     "pdf": {
       "ref": "anthropics/skills@pdf",
@@ -65,6 +65,123 @@
           "severity": "info",
           "code": "trusted_origin",
           "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "native-auth-ciam": {
+      "ref": "local/autoflow@native-auth-ciam",
+      "skillKey": "native-auth-ciam",
+      "verdict": "approved",
+      "scannedAt": "2026-05-22T19:08:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — not pulled via import-skills.ts. Maintained directly in skills/native-auth-ciam/."
+        }
+      ]
+    },
+    "autoflow-backend": {
+      "ref": "local/autoflow@autoflow-backend",
+      "skillKey": "autoflow-backend",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — TS Express + RLS workspace context + middleware order + repository pattern. Maintained directly in skills/autoflow-backend/."
+        }
+      ]
+    },
+    "autoflow-frontend": {
+      "ref": "local/autoflow@autoflow-frontend",
+      "skillKey": "autoflow-frontend",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — React + Vite + Cloudflare Pages dashboard + landing, af2 design tokens, Supabase auth wiring. Maintained directly in skills/autoflow-frontend/."
+        }
+      ]
+    },
+    "autoflow-llm-stack": {
+      "ref": "local/autoflow@autoflow-llm-stack",
+      "skillKey": "autoflow-llm-stack",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — tier routing, provider adapters, three agent backends, three-layer memory, org-chart retrieval ranker, wake-event triage. Maintained directly in skills/autoflow-llm-stack/."
+        }
+      ]
+    },
+    "autoflow-supabase-rls": {
+      "ref": "local/autoflow@autoflow-supabase-rls",
+      "skillKey": "autoflow-supabase-rls",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — Supabase + Postgres RLS, workspace_id flow, withWorkspaceContext, migration template. Maintained directly in skills/autoflow-supabase-rls/."
+        }
+      ]
+    },
+    "autoflow-billing": {
+      "ref": "local/autoflow@autoflow-billing",
+      "skillKey": "autoflow-billing",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — Stripe subscriptions, plan tiers, requireEntitlement, 402 deny payload, webhook idempotency. Maintained directly in skills/autoflow-billing/."
+        }
+      ]
+    },
+    "autoflow-queue-workers": {
+      "ref": "local/autoflow@autoflow-queue-workers",
+      "skillKey": "autoflow-queue-workers",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — BullMQ + Upstash Redis, worker process, runs + agent-prompt queues, repeatable cron, idempotency keys. Maintained directly in skills/autoflow-queue-workers/."
+        }
+      ]
+    },
+    "autoflow-testing": {
+      "ref": "local/autoflow@autoflow-testing",
+      "skillKey": "autoflow-testing",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — Jest + ts-jest backend, vitest + Playwright dashboard, in-memory fallback, supertest patterns, coverage gate. Maintained directly in skills/autoflow-testing/."
+        }
+      ]
+    },
+    "autoflow-product-model": {
+      "ref": "local/autoflow@autoflow-product-model",
+      "skillKey": "autoflow-product-model",
+      "verdict": "approved",
+      "scannedAt": "2026-05-26T21:30:00.000Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "hand_authored",
+          "message": "Hand-authored AutoFlow skill — canonical product vocabulary, customer-facing nouns, internal-only terms, forbidden words, v1 MVP loop. Maintained directly in skills/autoflow-product-model/."
         }
       ]
     }

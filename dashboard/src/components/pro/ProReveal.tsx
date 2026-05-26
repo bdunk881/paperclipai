@@ -7,8 +7,8 @@
  * surface uses so the diff at each call-site stays tiny.
  *
  * Usage:
- *   <ProReveal label="Rule debugger">
- *     <RuleDebugger />
+ *   <ProReveal label="Step debugger">
+ *     <StepDebugger />
  *   </ProReveal>
  *
  * The wrapper consults `useExperienceMode()` and short-circuits to `null`

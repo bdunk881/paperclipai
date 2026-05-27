@@ -70,13 +70,18 @@ jobs:
           echo "Image size: ${size_mb} MB"
           echo "image_size_mb=${size_mb}" >> "$GITHUB_OUTPUT"
 
-          # Soft cap — warn at 600 MB, fail at 800 MB. Target per docker/api/README is < 500 MB.
-          if [ "$size_mb" -gt 800 ]; then
-            echo "::error::Image size ${size_mb} MB exceeds the 800 MB hard cap. Check for dev deps slipping into the runtime stage."
+          # Soft cap — warn at 1000 MB, fail at 1100 MB. Bumped from 600/800 in
+          # late May 2026 once @anthropic-ai/claude-agent-sdk started shipping a
+          # ~225 MB Linux native binary per platform variant (linux-x64 +
+          # linux-x64-musl both land on a glibc runtime because the libc
+          # constraint isn't recorded in lockfile entries). Trimming the SDK
+          # binaries upstream is fragile, so we accept the larger floor here.
+          if [ "$size_mb" -gt 1100 ]; then
+            echo "::error::Image size ${size_mb} MB exceeds the 1100 MB hard cap. Check for dev deps slipping into the runtime stage."
             exit 1
           fi
-          if [ "$size_mb" -gt 600 ]; then
-            echo "::warning::Image size ${size_mb} MB is above the 600 MB soft target. Aim for under 500 MB."
+          if [ "$size_mb" -gt 1000 ]; then
+            echo "::warning::Image size ${size_mb} MB is above the 1000 MB soft target."
           fi
 
       - name: Verify entrypoint + node binary

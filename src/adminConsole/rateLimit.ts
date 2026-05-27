@@ -47,6 +47,7 @@ interface Entry {
   resetAt: number;
 }
 
+// allowlist: process-local admin-console rate-limit counters (per machine; resets on restart by design)
 const store = new Map<string, Entry>();
 
 function key(adminUserId: string, bucket: string): string {

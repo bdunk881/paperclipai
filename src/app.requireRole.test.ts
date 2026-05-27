@@ -34,6 +34,12 @@ const ALLOWLIST = new Set<string>([
   // workspace role. These routes span all workspaces so no workspace context
   // applies.
   "/api/admin/curated-knowledge",
+  // Platform-admin console: gated by requirePlatformAdmin (checks the
+  // user_profiles.is_platform_admin flag and the AUTOFLOW_STAFF_USER_IDS
+  // env-var bootstrap allowlist) which is strictly more restrictive than any
+  // workspace role. The routes are cross-tenant by design — no workspace
+  // context applies, so requireRole has no role to gate.
+  "/api/admin-console",
   // Read-only workspace-scoped surfaces. Any authenticated workspace member
   // may read them; RLS enforces workspace isolation. No mutation paths exist
   // on these routers, so role-level gating would only add friction without

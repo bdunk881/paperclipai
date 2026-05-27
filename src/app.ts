@@ -123,6 +123,7 @@ import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
+import { createAdminConsoleRoutes, createImpersonationVerifyRoute } from "./adminConsole";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
   createPortableWorkflowBundle,
@@ -823,6 +824,20 @@ const curatedKnowledgeRoutes = isPostgresPersistenceEnabled()
       res.status(501).json({ error: "Curated knowledge requires PostgreSQL persistence." }),
     );
 app.use("/api/admin/curated-knowledge", requireAuth, curatedKnowledgeRoutes);
+
+// Cross-tenant platform-admin console (admin.helloautoflow.com). Gated by
+// requirePlatformAdmin (checks user_profiles.is_platform_admin or the
+// AUTOFLOW_STAFF_USER_IDS allowlist) and routed under /api/admin-console/*.
+const adminConsoleRoutes = isPostgresPersistenceEnabled()
+  ? createAdminConsoleRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Admin console requires PostgreSQL persistence." }),
+    );
+app.use("/api/admin-console", requireAuth, adminConsoleRoutes);
+
+// Public impersonation verify — called by the customer dashboard with the
+// token from ?impersonate=<jwt>. Intentionally OUTSIDE the admin gate.
+app.use("/api/impersonation", createImpersonationVerifyRoute());
 // HEL-91: manual reflection — clusters unreflected episodes and graduates
 // durable patterns to Layer-2 synthesized knowledge_items.
 const reflectionRoutes = isPostgresPersistenceEnabled()

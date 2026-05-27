@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, MessageSquareWarning, Send, ShieldAlert } from "lucide-react";
+import { Bell, Loader2, MessageSquareWarning, MonitorSmartphone, Send, ShieldAlert } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import {
+  useNotifications,
+  type NotificationGroup,
+} from "../hooks/useNotifications";
+import { PaidFeatureGate } from "../components/PaidFeatureGate";
 import {
   ConnectionOption,
   fetchNotificationConnectionOptions,
@@ -276,6 +281,8 @@ export default function NotificationsSettings() {
         </div>
       ) : null}
 
+      <InAppNotificationSettings />
+
       {loading ? (
         <div className="flex items-center gap-3 rounded-xl border border-af2-line bg-af2-card px-5 py-6 text-sm text-af2-ink-3">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -496,5 +503,129 @@ export default function NotificationsSettings() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// In-app + native desktop notification settings (client-only state — uses
+// the same hook that drives the top-right NotificationCenter).
+// ---------------------------------------------------------------------------
+
+const INBOX_GROUP_META: Array<{
+  group: NotificationGroup;
+  label: string;
+  helper: string;
+}> = [
+  { group: "approvals", label: "Approvals", helper: "Approval requests pending your stamp." },
+  { group: "assignments", label: "Assignments", helper: "Tickets assigned to you in the open/in-progress queue." },
+  { group: "connections", label: "Connections", helper: "Integration auth failures and provider errors." },
+  { group: "budgets", label: "Budgets", helper: "Spend threshold breaches across the workspace." },
+  { group: "system", label: "System", helper: "Run failures, kill switch trips, and other system events." },
+];
+
+function InAppNotificationSettings() {
+  const { mutedGroups, setGroupMuted } = useNotifications();
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(
+    () => {
+      if (typeof window === "undefined" || !("Notification" in window)) {
+        return "unsupported";
+      }
+      return Notification.permission;
+    },
+  );
+
+  async function handleEnablePush() {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      setPermission("granted");
+      return;
+    }
+    const next = await Notification.requestPermission();
+    setPermission(next);
+  }
+
+  return (
+    <section className="mb-6 rounded-xl border border-af2-line bg-af2-card px-5 py-5">
+      <header className="mb-3 flex items-center gap-2">
+        <Bell className="h-4 w-4 text-af2-ink-3" />
+        <div>
+          <h2 className="text-sm font-semibold text-af2-ink">In-app inbox</h2>
+          <p className="text-xs text-af2-ink-3">
+            The top-right bell aggregates approvals, assignments, connector
+            failures, and budget alerts. Mute any category here to hide it
+            from the inbox.
+          </p>
+        </div>
+      </header>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {INBOX_GROUP_META.map(({ group, label, helper }) => {
+          const muted = mutedGroups.has(group);
+          return (
+            <label
+              key={group}
+              className="flex items-start gap-3 rounded-lg border border-af2-line bg-af2-paper-2 px-3 py-2.5 text-sm"
+            >
+              <input
+                type="checkbox"
+                checked={!muted}
+                onChange={(e) => setGroupMuted(group, !e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-af2-clay"
+              />
+              <div className="flex-1">
+                <div className="font-medium text-af2-ink">{label}</div>
+                <div className="text-xs text-af2-ink-3">{helper}</div>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+
+      <header className="mb-3 mt-6 flex items-center gap-2">
+        <MonitorSmartphone className="h-4 w-4 text-af2-ink-3" />
+        <div>
+          <h2 className="text-sm font-semibold text-af2-ink">
+            Desktop notifications
+          </h2>
+          <p className="text-xs text-af2-ink-3">
+            Native popups on Windows, macOS, and iOS while this tab is open.
+            Cross-device push (after you close the tab) is on the roadmap.
+          </p>
+        </div>
+      </header>
+      <PaidFeatureGate
+        label="Desktop notifications"
+        description="Get a native popup for urgent approvals, run failures, and budget breaches — even when AutoFlow isn't the active tab."
+      >
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-af2-line bg-af2-paper-2 px-3 py-2.5 text-sm">
+          {permission === "unsupported" ? (
+            <span className="text-af2-ink-3">
+              This browser doesn't support desktop notifications.
+            </span>
+          ) : permission === "granted" ? (
+            <span className="text-af2-sage">
+              ✓ Desktop notifications are enabled.
+            </span>
+          ) : permission === "denied" ? (
+            <span className="text-af2-clay">
+              Notifications were denied. Change it in your browser settings to
+              re-enable.
+            </span>
+          ) : (
+            <>
+              <span className="text-af2-ink-2">
+                Browser permission required.
+              </span>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={() => void handleEnablePush()}
+              >
+                Enable desktop notifications
+              </button>
+            </>
+          )}
+        </div>
+      </PaidFeatureGate>
+    </section>
   );
 }

@@ -6,6 +6,7 @@ import {
   getWalletBalance,
   type WalletBalance,
 } from "../../api/creditsApi";
+import { AutoTopupCard } from "./AutoTopupCard";
 import { BuyCreditPackModal } from "./BuyCreditPackModal";
 
 /**
@@ -94,6 +95,7 @@ export function CreditsPanel() {
           Buy a credit pack
         </button>
       </div>
+      <AutoTopupCard wallet={wallet} onSaved={() => void load()} />
       <BuyCreditPackModal
         open={buyOpen}
         onClose={() => {

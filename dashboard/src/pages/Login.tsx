@@ -12,6 +12,9 @@ import {
   signUpWithSupabasePassword,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
+import { useAuthCooldown } from "../auth/useAuthCooldown";
+
+const MAGIC_LINK_COOLDOWN_KEY = "autoflow.auth.magicLinkCooldown";
 import { CompanyLogo } from "@autoflow/logo-dev";
 
 type AuthMode = "signin" | "signup" | "magic-link";
@@ -88,6 +91,8 @@ export default function Login() {
           : ""
   );
   const [notice, setNotice] = useState("");
+
+  const magicLinkCooldown = useAuthCooldown(MAGIC_LINK_COOLDOWN_KEY);
 
   const configured = isSupabaseAuthConfigured();
   const isAnyBusy = busy || activeProvider !== null;
@@ -208,6 +213,7 @@ export default function Login() {
       triggerError("Supabase auth is not configured for this dashboard environment.");
       return;
     }
+    if (magicLinkCooldown.active) return;
 
     setBusy(true);
     setError("");
@@ -217,9 +223,14 @@ export default function Login() {
       await sendSupabaseMagicLink(magicLinkEmail.trim());
       setNotice("Magic link sent. Open the email on this device to complete sign-in.");
       setBusy(false);
+      magicLinkCooldown.start();
     } catch (authError) {
       setBusy(false);
       triggerError(mapSupabaseAuthError(authError));
+      // Apply the cooldown even on error — a rate-limited send burns the
+      // Supabase project quota the same as a successful one, so the user
+      // shouldn't be able to retry instantly.
+      magicLinkCooldown.start();
     }
   }
 
@@ -395,14 +406,22 @@ export default function Login() {
                     autoComplete="email"
                     value={magicLinkEmail}
                     onChange={(event) => setMagicLinkEmail(event.target.value)}
-                    disabled={isAnyBusy || !configured}
+                    disabled={isAnyBusy || !configured || magicLinkCooldown.active}
                     className="auth-input"
                     placeholder="operator@company.com"
                   />
                 </Field>
-                <button type="submit" disabled={isAnyBusy || !configured} className="auth-primary-button mt-2">
+                <button
+                  type="submit"
+                  disabled={isAnyBusy || !configured || magicLinkCooldown.active}
+                  className="auth-primary-button mt-2"
+                >
                   {busy ? <Loader2 size={18} className="animate-spin" /> : <Link2 size={18} />}
-                  {busy ? "Sending link..." : "Send magic link"}
+                  {busy
+                    ? "Sending link..."
+                    : magicLinkCooldown.active
+                      ? `Send magic link · ${magicLinkCooldown.remainingSeconds}s`
+                      : "Send magic link"}
                 </button>
               </form>
             ) : null}

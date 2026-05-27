@@ -98,21 +98,20 @@ describe("credit wallet RPCs — Postgres integration", () => {
   });
 
   async function grant(credits: number, key: string): Promise<void> {
+    // grant_credits(workspace_id, credits, grant_type, idempotency_key,
+    //               related_kind, related_id, metadata) — 7 params.
     await pg.queryPostgres(
-      `SELECT * FROM grant_credits(
-         $1::uuid, $2::bigint, 'purchase'::text, $3::text,
-         NULL, NULL, NULL, NULL
-       )`,
+      `SELECT * FROM grant_credits($1::uuid, $2::bigint, 'purchase'::text, $3::text, NULL, NULL, NULL)`,
       [workspaceId, credits.toString(), key],
     );
   }
 
   async function reserve(credits: number, key: string): Promise<void> {
+    // reserve_credits(workspace_id, credits, idempotency_key,
+    //                 provider, model, metadata) — 6 params. No userId arg.
     await pg.queryPostgres(
-      `SELECT * FROM reserve_credits(
-         $1::uuid, $2::text, $3::bigint, $4::text, $5::text, NULL, NULL
-       )`,
-      [workspaceId, userId, credits.toString(), key, "anthropic"],
+      `SELECT * FROM reserve_credits($1::uuid, $2::bigint, $3::text, $4::text, $5::text, NULL)`,
+      [workspaceId, credits.toString(), key, "anthropic", "claude-sonnet-4-6"],
     );
   }
 

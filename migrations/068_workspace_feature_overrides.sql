@@ -18,9 +18,16 @@ CREATE TABLE IF NOT EXISTS workspace_feature_overrides (
   PRIMARY KEY (workspace_id, flag)
 );
 
+-- HEL-277: Partial index narrowed to never-expiring overrides (the common
+-- case). The original predicate `WHERE expires_at IS NULL OR expires_at > now()`
+-- fails Postgres's IMMUTABLE-function requirement for index predicates because
+-- `now()` is STABLE, not IMMUTABLE — that crashed every autoflow-api-dev boot
+-- after v148. Queries filtering by the full active condition still benefit
+-- from this index for the no-expiry case; rows with a future `expires_at`
+-- fall back to the PK `(workspace_id, flag)`. Do NOT add `now()` back here.
 CREATE INDEX IF NOT EXISTS idx_workspace_feature_overrides_active
   ON workspace_feature_overrides (workspace_id, flag)
-  WHERE expires_at IS NULL OR expires_at > now();
+  WHERE expires_at IS NULL;
 
 ALTER TABLE workspace_feature_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_feature_overrides FORCE ROW LEVEL SECURITY;

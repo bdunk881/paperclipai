@@ -58,6 +58,7 @@ export type CreditsCallError =
   | { kind: "no_key_source"; provider: string }
   | { kind: "no_pricing"; provider: string; model: string }
   | { kind: "insufficient_credits"; balanceAfter: bigint | null }
+  | { kind: "daily_cap_reached"; balanceAfter: bigint | null }
   | { kind: "provider_429"; sourceId: string; retryAfterSeconds: number; message: string }
   | { kind: "provider_error"; message: string }
   | { kind: "wallet_error"; reason: string };
@@ -153,6 +154,12 @@ export async function callWithCredits(args: CreditsCallArgs): Promise<CreditsCal
     metadata: { call_key: callKey, source_id: source.id, source_kind: source.sourceKind },
   });
   if (!reserve.reserved) {
+    if (reserve.reason === "daily_cap_reached") {
+      return {
+        ok: false,
+        error: { kind: "daily_cap_reached", balanceAfter: reserve.balanceAfter },
+      };
+    }
     return {
       ok: false,
       error: { kind: "insufficient_credits", balanceAfter: reserve.balanceAfter },

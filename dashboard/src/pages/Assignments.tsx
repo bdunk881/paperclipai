@@ -32,6 +32,7 @@ import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 import { useObservabilityQuery } from "../hooks/queries/useObservabilityQuery";
 import { useTicketsQuery } from "../hooks/queries/useTicketsQuery";
+import { useEventStream } from "../hooks/useEventStream";
 import type { ObservabilityEvent } from "../api/observability";
 import { queryKeys } from "../lib/queryKeys";
 import { primaryAssignee } from "./tickets/ticketingUi.helpers";
@@ -100,6 +101,18 @@ export default function Assignments() {
     () => collectKnownActors(tickets, actorSeed),
     [actorSeed, tickets],
   );
+
+  // HEL-218: live ticket stream. The page already uses
+  // useTicketsQuery; SSE events invalidate its cache so the
+  // assignments list stays in sync without a 5s poll.
+  useEventStream("/api/tickets/stream", {
+    onMessage: () => {
+      if (!activeWorkspaceId) return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tickets(activeWorkspaceId),
+      });
+    },
+  });
 
   const refresh = useCallback(() => {
     if (!activeWorkspaceId) return;

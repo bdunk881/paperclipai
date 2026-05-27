@@ -141,7 +141,7 @@ jobs:
 
       - name: Upload Cloudflare DNS evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: cloudflare-api-ipv4-${{ github.run_id }}
           path: artifacts/cloudflare-api-ipv4/

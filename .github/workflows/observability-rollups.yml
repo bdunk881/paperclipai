@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload maintenance log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: observability-rollups-log
           path: observability-rollups.log

@@ -11,6 +11,7 @@ import { AutoTopupCard } from "./AutoTopupCard";
 import { BuyCreditPackModal } from "./BuyCreditPackModal";
 import { DailyCapCard } from "./DailyCapCard";
 import { SpendByRelatedCard } from "./SpendByRelatedCard";
+import { SpendByTierCard } from "./SpendByTierCard";
 
 /**
  * Billing-page credits card. Reads /api/credits/wallet/balance and shows
@@ -159,6 +160,7 @@ export function CreditsPanel() {
       <AutoTopupCard wallet={wallet} onSaved={() => void load()} />
       <DailyCapCard wallet={wallet} onSaved={() => void load()} />
       <SpendByRelatedCard />
+      <SpendByTierCard />
       <BuyCreditPackModal
         open={buyOpen}
         onClose={() => {

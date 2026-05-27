@@ -19,7 +19,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApprovalRequest } from "../api/client";
 import type { Mission } from "../api/missionsApi";
 import { ErrorState, SkeletonBlock } from "../components/UiStates";
@@ -27,6 +27,10 @@ import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { useHomeSnapshotQuery } from "../hooks/queries/useHomeSnapshotQuery";
 import { OnboardingBanner } from "../components/OnboardingBanner";
+import { UpgradeBanner } from "../components/UpgradeBanner";
+import { useIsPaidTier } from "../hooks/useIsPaidTier";
+import { usePricing } from "../hooks/usePricing";
+import { getWalletBalance } from "../api/creditsApi";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { Sparkline } from "../components/Sparkline";
 import { HomeFilterBar } from "../components/home/HomeFilterBar";
@@ -129,10 +133,25 @@ function approvalMissionId(
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, requireAccessToken } = useAuth();
   const { activeWorkspace, activeWorkspaceId } = useWorkspace();
   const queryClient = useQueryClient();
   const snapshotQuery = useHomeSnapshotQuery();
+
+  // HEL-270 — UpgradeBanner data. plan comes from the entitlements query
+  // (already prefetched by useWorkspaceBootstrap); wallet + pricing fetched
+  // here so the banner stays presentation-only.
+  const { plan } = useIsPaidTier();
+  const { tiers } = usePricing();
+  const walletQuery = useQuery({
+    queryKey: ["workspace", activeWorkspaceId ?? "none", "wallet-balance"] as const,
+    queryFn: async () => {
+      const token = await requireAccessToken();
+      return getWalletBalance(token);
+    },
+    enabled: Boolean(activeWorkspaceId),
+    staleTime: 60_000,
+  });
 
   const { filters, setMissionId, setRangePreset, setCustomRange } =
     useHomeFilters(activeWorkspaceId ?? null);
@@ -349,6 +368,12 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <UpgradeBanner
+        plan={plan}
+        wallet={walletQuery.data ?? null}
+        tiers={tiers}
+      />
 
       <OnboardingBanner
         show={agents.length === 0 && missions.length === 0}

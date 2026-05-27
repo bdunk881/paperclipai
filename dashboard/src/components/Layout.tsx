@@ -23,6 +23,8 @@ import { useAuth } from "../context/AuthContext";
 import { AppTopbar } from "./AppTopbar";
 import { OnboardingTour } from "./OnboardingTour";
 import { RunTray } from "./RunTray";
+import { CommandPalette } from "./CommandPalette";
+import { CommandPaletteProvider } from "../context/CommandPaletteContext";
 
 // v2 consolidation IA (3 pillars). Mirrors the final plan at
 // `docs/design/v2/preview/consolidation.html`:
@@ -196,6 +198,7 @@ export default function Layout() {
   );
 
   return (
+    <CommandPaletteProvider>
     <div className="flex h-screen flex-col bg-af2-paper text-af2-ink transition-colors duration-200">
       {isNavigating ? (
         <div
@@ -277,6 +280,11 @@ export default function Layout() {
           /api/runs/in-flight + the routines SSE stream; auto-hides when
           there's nothing to show. */}
       <RunTray />
+
+      {/* ⌘K command palette. Mount once per app shell; page components
+          register their own actions via useRegisterCommandActions(). */}
+      <CommandPalette />
     </div>
+    </CommandPaletteProvider>
   );
 }

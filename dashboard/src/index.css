@@ -561,6 +561,20 @@
       opacity: 1;
     }
   }
+
+  /* Backdrop for the cmdk command palette. cmdk renders the dialog
+     without a built-in overlay; we paint the page underneath with a
+     soft ink wash so the palette feels like a modal. */
+  [cmdk-dialog] {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  }
+  [cmdk-item][data-selected="true"] {
+    background: var(--af2-paper-2);
+  }
+  [cmdk-item][data-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 }
 
 @tailwind utilities;

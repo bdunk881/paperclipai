@@ -800,6 +800,7 @@ function QueueTab({
           { keys: "k / ↑", label: "Previous item" },
           { keys: "enter / o", label: "Expand focused item" },
           { keys: "esc", label: "Collapse" },
+          { keys: "⌘K / Ctrl+K", label: "Command palette" },
           { keys: "?", label: "Toggle this help" },
         ]}
       />

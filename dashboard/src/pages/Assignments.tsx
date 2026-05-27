@@ -39,6 +39,7 @@ import { NewAssignmentModal } from "../components/assignments/NewAssignmentModal
 import { useToast } from "../components/ToastProvider";
 import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
 import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
+import { useRegisterCommandActions } from "../context/CommandPaletteContext";
 import type { Mission } from "../api/missionsApi";
 
 type TabKey = "queue" | "board" | "by-mission" | "sla" | "activity" | "by-team";
@@ -113,6 +114,62 @@ export default function Assignments() {
     (t) => t.status === "open" || t.status === "in_progress",
   ).length;
   const awaiting = tickets.filter((t) => t.status === "open").length;
+
+  // Palette contributors for Assignments — jump between tabs without a
+  // mouse, and open the New Assignment modal.
+  const paletteActions = useMemo(
+    () => [
+      {
+        id: "assignments:tab-queue",
+        label: "View · Queue",
+        hint: "Assignments",
+        keywords: "list rows tickets",
+        group: "navigate" as const,
+        run: () => setTab("queue"),
+      },
+      {
+        id: "assignments:tab-board",
+        label: "View · Board",
+        hint: "Assignments",
+        keywords: "kanban columns drag",
+        group: "navigate" as const,
+        run: () => setTab("board"),
+      },
+      {
+        id: "assignments:tab-by-mission",
+        label: "View · By mission",
+        hint: "Assignments",
+        keywords: "group mission",
+        group: "navigate" as const,
+        run: () => setTab("by-mission"),
+      },
+      {
+        id: "assignments:tab-sla",
+        label: "View · SLA",
+        hint: "Assignments",
+        keywords: "service level breach",
+        group: "navigate" as const,
+        run: () => setTab("sla"),
+      },
+      {
+        id: "assignments:tab-activity",
+        label: "View · Activity",
+        hint: "Assignments",
+        keywords: "events feed live",
+        group: "navigate" as const,
+        run: () => setTab("activity"),
+      },
+      {
+        id: "assignments:new",
+        label: "New assignment",
+        hint: "Assignments",
+        keywords: "create ticket task",
+        run: () => setCreateOpen(true),
+      },
+    ],
+    [setTab],
+  );
+  useRegisterCommandActions("assignments", paletteActions);
 
   return (
     <div className="af2-v2">
@@ -534,6 +591,7 @@ function QueueTab({ tickets }: { tickets: TicketRecord[] }) {
           { keys: "k / ↑", label: "Previous assignment" },
           { keys: "enter / o", label: "Expand focused row" },
           { keys: "esc", label: "Collapse" },
+          { keys: "⌘K / Ctrl+K", label: "Command palette" },
           { keys: "?", label: "Toggle this help" },
         ]}
       />

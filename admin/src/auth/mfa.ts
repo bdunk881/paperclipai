@@ -11,8 +11,13 @@ export interface PasskeyRegistrationResult {
 }
 
 export async function registerPasskey(deviceName: string): Promise<PasskeyRegistrationResult> {
-  const options = (await beginWebauthnRegistration()) as Parameters<typeof startRegistration>[0];
-  const credential = await startRegistration(options);
+  // @simplewebauthn/browser v10+ wraps the options under `optionsJSON`. The
+  // backend still returns the bare PublicKeyCredentialCreationOptionsJSON,
+  // so we adapt at the call site rather than reshaping the API response.
+  const optionsJSON = (await beginWebauthnRegistration()) as Parameters<
+    typeof startRegistration
+  >[0]["optionsJSON"];
+  const credential = await startRegistration({ optionsJSON });
   return finishWebauthnRegistration(credential, deviceName);
 }
 
@@ -22,8 +27,10 @@ export interface PasskeyVerificationResult {
 }
 
 export async function verifyPasskey(): Promise<PasskeyVerificationResult> {
-  const options = (await beginWebauthnAuthentication()) as Parameters<typeof startAuthentication>[0];
-  const assertion = await startAuthentication(options);
+  const optionsJSON = (await beginWebauthnAuthentication()) as Parameters<
+    typeof startAuthentication
+  >[0]["optionsJSON"];
+  const assertion = await startAuthentication({ optionsJSON });
   return finishWebauthnAuthentication(assertion, assertion.id);
 }
 

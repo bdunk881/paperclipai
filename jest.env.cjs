@@ -17,3 +17,14 @@
 if (!process.env.AUTOFLOW_ALLOW_INMEMORY) {
   process.env.AUTOFLOW_ALLOW_INMEMORY = "true";
 }
+
+// HEL-mfa: pre-existing tests mock `requireAuth` but don't know about the
+// AAL2 step-up gate added on billing/llm-creds/admin routes. Default the
+// gate to "disabled" for tests so those suites keep working without each
+// having to stub `requireAAL2`. The MFA-specific tests
+// (src/middleware/requireAAL2.test.ts, src/security/mfaService.test.ts,
+// src/admin/staffAuth.test.ts) delete this env var in their beforeEach so
+// the real gate behavior is still verified end-to-end.
+if (!process.env.MFA_DISABLE_AAL2_ENFORCEMENT) {
+  process.env.MFA_DISABLE_AAL2_ENFORCEMENT = "true";
+}

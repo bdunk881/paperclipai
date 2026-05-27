@@ -14,6 +14,7 @@ import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
 import { ToastProvider } from "./components/ToastProvider";
 import { WorkspaceBootstrap } from "./components/WorkspaceBootstrap";
+import { MfaStepUpModal } from "./auth/MfaStepUpModal";
 import { ImpersonationBanner } from "./components/ImpersonationBanner";
 
 async function maybeActivateQaPreviewAccess(): Promise<void> {
@@ -82,6 +83,7 @@ export default function App() {
               <ToastProvider>
                 <ImpersonationBanner />
                 <AppRouter />
+                <MfaStepUpModal />
               </ToastProvider>
             </WorkspaceProvider>
           </ExperienceModeProvider>

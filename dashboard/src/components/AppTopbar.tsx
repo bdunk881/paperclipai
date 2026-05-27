@@ -8,7 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CircleHelp, Inbox, Plus, Search, X } from "lucide-react";
+import { CircleHelp, Plus, Search, X } from "lucide-react";
+import { NotificationCenter } from "./notifications/NotificationCenter";
 import * as Sentry from "@sentry/react";
 import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
@@ -233,15 +234,8 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         <span className="hidden sm:inline">New mission</span>
       </Link>
 
-      <button
-        type="button"
-        onClick={() => navigate("/approvals")}
-        title="Inbox - Approvals"
-        aria-label="Inbox - Approvals"
-        className="flex h-10 w-10 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
-      >
-        <Inbox size={16} />
-      </button>
+      <NotificationCenter />
+
 
       <button
         type="button"

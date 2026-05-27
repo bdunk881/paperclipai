@@ -42,6 +42,7 @@ import { SpendChart } from "../components/charts/SpendChart";
 import { AgentActivityChart } from "../components/charts/AgentActivityChart";
 import { IdleAgentsCallout } from "../components/home/IdleAgentsCallout";
 import { queryKeys } from "../lib/queryKeys";
+import { useRegisterCommandActions } from "../context/CommandPaletteContext";
 
 function formatTodayChrome(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -255,6 +256,48 @@ export default function Dashboard() {
   const [recentlyWoken, setRecentlyWoken] = useState<
     Array<{ agentId: string | null; agentName: string; startedAt: number }>
   >([]);
+
+  // Contribute palette actions for the home page. Pure setter calls;
+  // re-registers when the filter setters change identity (every render
+  // is fine since registerActions is idempotent within a scope).
+  const homeCommandActions = useMemo(
+    () => [
+      {
+        id: "home:range-today",
+        label: "Range · Today",
+        hint: "Home",
+        keywords: "filter date today now",
+        group: "filter" as const,
+        run: () => setRangePreset("today"),
+      },
+      {
+        id: "home:range-7d",
+        label: "Range · Last 7 days",
+        hint: "Home",
+        keywords: "filter date week 7",
+        group: "filter" as const,
+        run: () => setRangePreset("7d"),
+      },
+      {
+        id: "home:range-30d",
+        label: "Range · Last 30 days",
+        hint: "Home",
+        keywords: "filter date month 30",
+        group: "filter" as const,
+        run: () => setRangePreset("30d"),
+      },
+      {
+        id: "home:mission-all",
+        label: "Mission · All missions",
+        hint: "Home",
+        keywords: "filter mission scope clear",
+        group: "filter" as const,
+        run: () => setMissionId(null),
+      },
+    ],
+    [setRangePreset, setMissionId],
+  );
+  useRegisterCommandActions("home", homeCommandActions);
 
   const handleApprovalResolved = useCallback(
     (approval: ApprovalRequest, decision: "approved" | "rejected") => {

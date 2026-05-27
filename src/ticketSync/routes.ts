@@ -52,9 +52,9 @@ const createConnectionSchema = z.object({
     webhookSecret: z.string().trim().optional(),
   }).default({}),
   fieldMapping: z.object({
-    priority: z.record(z.string()).optional(),
-    status: z.record(z.string()).optional(),
-    assignee: z.record(z.string()).optional(),
+    priority: z.record(z.string(), z.string()).optional(),
+    status: z.record(z.string(), z.string()).optional(),
+    assignee: z.record(z.string(), z.string()).optional(),
   }).optional(),
   defaultAssignee: assigneeSchema.optional(),
   secrets: z.object({
@@ -81,9 +81,9 @@ const bootstrapConnectionSchema = z.object({
     webhookSecret: z.string().trim().optional(),
   }).default({}),
   fieldMapping: z.object({
-    priority: z.record(z.string()).optional(),
-    status: z.record(z.string()).optional(),
-    assignee: z.record(z.string()).optional(),
+    priority: z.record(z.string(), z.string()).optional(),
+    status: z.record(z.string(), z.string()).optional(),
+    assignee: z.record(z.string(), z.string()).optional(),
   }).optional(),
   defaultAssignee: assigneeSchema.optional(),
   source: z.object({
@@ -107,9 +107,9 @@ const updateConnectionSchema = z.object({
     webhookSecret: z.string().trim().optional(),
   }).optional(),
   fieldMapping: z.object({
-    priority: z.record(z.string()).optional(),
-    status: z.record(z.string()).optional(),
-    assignee: z.record(z.string()).optional(),
+    priority: z.record(z.string(), z.string()).optional(),
+    status: z.record(z.string(), z.string()).optional(),
+    assignee: z.record(z.string(), z.string()).optional(),
   }).optional(),
   defaultAssignee: assigneeSchema.nullish(),
   secrets: z.object({

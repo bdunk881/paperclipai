@@ -98,7 +98,10 @@ describe("user profile routes", () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/at least 1 character|required/i);
+    // zod v3 said "must contain at least 1 character"; v4 says
+    // "Too small: expected string to have >=1 characters". Match
+    // either + a generic "required" fallback.
+    expect(res.body.error).toMatch(/at least 1 character|required|too small|>=1/i);
     expect(mockedUpsertUserProfile).not.toHaveBeenCalled();
   });
 });

@@ -20,11 +20,7 @@ FROM node:${NODE_VERSION}-slim AS deps
 
 WORKDIR /app
 
-# .npmrc carries legacy-peer-deps=true so npm ci accepts the
-# @anthropic-ai/claude-agent-sdk + @openai/agents peer-dep tree (both
-# declare zod ^4 while the project ships zod ^3 with the zod/v4 compat
-# namespace).
-COPY package.json package-lock.json* .npmrc ./
+COPY package.json package-lock.json* ./
 
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund
@@ -73,7 +69,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Production deps only (drops jest, ts-node, @types/*, etc.)
-COPY package.json package-lock.json* .npmrc ./
+COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --no-audit --no-fund \
     && npm cache clean --force

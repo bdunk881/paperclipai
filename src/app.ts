@@ -696,6 +696,23 @@ app.use("/api/agents/runs", (req, _res, next) => {
   }
   next();
 });
+
+// HEL-218: same access_token → Authorization shim for the three new SSE
+// surfaces (routine + ticket + activity streams). EventSource has no
+// header API, so the dashboard passes its bearer via ?access_token=…
+// and we promote it before the standard auth chain runs.
+function promoteSseAccessToken(req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction): void {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+}
+app.use("/api/routines", promoteSseAccessToken);
+app.use("/api/tickets", promoteSseAccessToken);
+app.use("/api/activity-events", promoteSseAccessToken);
 app.use(
   "/api/agents/runs",
   requireAuth,
@@ -1940,8 +1957,16 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
     const path = issue?.path?.[0];
+    // zod v4 reports missing fields as `invalid_type` with code, not
+    // a literal "Required" message. Re-shape into a path-aware string
+    // for the API consumer.
+    const isMissing =
+      issue?.code === "invalid_type" &&
+      typeof issue.message === "string" &&
+      (/expected\s+\S+,\s+received\s+undefined/i.test(issue.message) ||
+        issue.message === "Required");
     const message =
-      issue?.message === "Required" && typeof path === "string"
+      isMissing && typeof path === "string"
         ? `${path} is required`
         : (issue?.message ?? "Invalid request body");
     res.status(400).json({ error: message });

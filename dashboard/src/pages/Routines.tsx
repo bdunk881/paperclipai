@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useEventStream } from "../hooks/useEventStream";
 import {
   createTemplate,
   deleteTemplate,
@@ -39,7 +40,6 @@ import {
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
-import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
 import {
   AgentToolChips,
   type ConnectorHealthByKey,
@@ -237,20 +237,6 @@ export default function Routines({
   const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("mine");
-  // Bumped by SSE events to trigger a re-fetch without manual polling.
-  const [reloadTick, setReloadTick] = useState(0);
-
-  // Live SSE — any routine lifecycle event (run started/completed,
-  // routine created/edited) bumps reloadTick which the fetch effect
-  // depends on.
-  useWorkspaceLiveStream({
-    path: "routines/stream",
-    enabled: Boolean(activeWorkspaceId),
-    onEvent: (evt) => {
-      if (evt.name === "heartbeat") return;
-      setReloadTick((n) => n + 1);
-    },
-  });
 
   // Inline drawer state (Mine tab).
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -364,13 +350,25 @@ export default function Routines({
     input.click();
   }
 
+  // HEL-218: SSE refresh counter. The workspace-wide routine stream
+  // bumps this on every run.lifecycle event, which makes the load
+  // effect below re-fetch templates + prompt routines so list-view
+  // status badges stay live.
+  const [sseRefreshKey, setSseRefreshKey] = useState(0);
+  useEventStream("/api/routines/stream", {
+    onMessage: () => setSseRefreshKey((n) => n + 1),
+  });
+
   useEffect(() => {
-    if (initialTemplates) return;
+    // Skip the initial fetch only on the very first render when a
+    // loader already supplied templates. After that, sseRefreshKey
+    // changes drive re-fetches normally.
+    if (initialTemplates && sseRefreshKey === 0) return;
     let cancelled = false;
     void (async () => {
       // Only show the big spinner on first paint; SSE-triggered reloads
       // should refresh in the background without flashing the empty state.
-      const isFirstPaint = reloadTick === 0;
+      const isFirstPaint = sseRefreshKey === 0;
       if (isFirstPaint) setLoading(true);
       setError(null);
       try {
@@ -398,7 +396,7 @@ export default function Routines({
     return () => {
       cancelled = true;
     };
-  }, [initialTemplates, getAccessToken, reloadTick]);
+  }, [initialTemplates, getAccessToken, sseRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;

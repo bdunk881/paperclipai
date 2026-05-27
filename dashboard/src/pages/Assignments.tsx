@@ -32,6 +32,7 @@ import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 import { useObservabilityQuery } from "../hooks/queries/useObservabilityQuery";
 import { useTicketsQuery } from "../hooks/queries/useTicketsQuery";
+import { useEventStream } from "../hooks/useEventStream";
 import type { ObservabilityEvent } from "../api/observability";
 import { queryKeys } from "../lib/queryKeys";
 import { primaryAssignee } from "./tickets/ticketingUi.helpers";
@@ -40,7 +41,6 @@ import { useToast } from "../components/ToastProvider";
 import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
 import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
 import { useRegisterCommandActions } from "../context/CommandPaletteContext";
-import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
 import type { Mission } from "../api/missionsApi";
 
 type TabKey = "queue" | "board" | "by-mission" | "sla" | "activity" | "by-team";
@@ -103,23 +103,24 @@ export default function Assignments() {
     [actorSeed, tickets],
   );
 
+  // HEL-218: live ticket stream. The page already uses
+  // useTicketsQuery; SSE events invalidate its cache so the
+  // assignments list stays in sync without a 5s poll.
+  useEventStream("/api/tickets/stream", {
+    onMessage: () => {
+      if (!activeWorkspaceId) return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.tickets(activeWorkspaceId),
+      });
+    },
+  });
+
   const refresh = useCallback(() => {
     if (!activeWorkspaceId) return;
     void queryClient.invalidateQueries({
       queryKey: queryKeys.tickets(activeWorkspaceId),
     });
   }, [activeWorkspaceId, queryClient]);
-
-  // Live SSE — any ticket event invalidates the tickets query so the
-  // Queue / Board / Activity tabs all refresh without manual polling.
-  useWorkspaceLiveStream({
-    path: "tickets/stream",
-    enabled: Boolean(activeWorkspaceId),
-    onEvent: (evt) => {
-      if (evt.name === "heartbeat") return;
-      refresh();
-    },
-  });
 
   const queueCount = tickets.length;
   const openCount = tickets.filter(

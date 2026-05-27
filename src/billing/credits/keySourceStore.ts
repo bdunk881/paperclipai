@@ -121,9 +121,24 @@ function rowToShape(row: {
  */
 export async function pickKeySource(provider: string): Promise<SelectedKeySource | null> {
   if (!persistenceAvailable()) {
+    const now = new Date();
     const candidates = [...inMemoryKeySources.values()]
-      .filter((r) => r.status === "active")
-      .filter((r) => r.throttledUntil == null || new Date(r.throttledUntil) <= new Date())
+      .filter((r) => {
+        // A row is eligible when it's `active` OR its `throttled` cooldown
+        // has expired. Mirrors the SQL WHERE in the Postgres branch — and
+        // is the fix for the Codex P1: previously a 429 flipped status to
+        // 'throttled' and the row was never picked again, even after
+        // throttled_until passed.
+        if (r.status === "active") return true;
+        if (
+          r.status === "throttled"
+          && r.throttledUntil != null
+          && new Date(r.throttledUntil) <= now
+        ) {
+          return true;
+        }
+        return false;
+      })
       .filter((r) => r.sourceKind === "openrouter" || r.provider === provider)
       .sort((a, b) => a.priority - b.priority);
     const chosen = candidates[0];
@@ -158,8 +173,15 @@ export async function pickKeySource(provider: string): Promise<SelectedKeySource
             daily_spend_cap_usd, current_day_spend_usd, current_day_key,
             last_429_at, consecutive_429_count, priority
        FROM platform_provider_keys
-      WHERE status = 'active'
-        AND (throttled_until IS NULL OR throttled_until <= now())
+      -- Eligible = currently active OR previously throttled but the
+      -- cooldown has now passed. Codex P1: the original "status = active"
+      -- filter meant a single 429 flipped status to throttled and the
+      -- row never auto-recovered. recordSuccess (below) flips the row
+      -- back to active when the next call succeeds.
+      WHERE (
+              status = 'active'
+              OR (status = 'throttled' AND throttled_until IS NOT NULL AND throttled_until <= now())
+            )
         AND (source_kind = 'openrouter' OR provider = $1)
         AND (daily_spend_cap_usd IS NULL OR current_day_spend_usd < daily_spend_cap_usd)
       ORDER BY priority ASC, (
@@ -220,6 +242,15 @@ export async function recordSuccess(
       }
       row.currentDaySpendUsd += wholesaleCostUsd;
       row.consecutive429Count = 0;
+      // Codex P1: a successful call against a previously throttled row
+      // means the provider is happy with us again. Flip status back so
+      // observability + future pickKeySource WHERE clauses are accurate.
+      // Only touches 'throttled' — leaves 'low_balance' / 'disabled' /
+      // 'retired' alone (those are gated by other signals).
+      if (row.status === "throttled") {
+        row.status = "active";
+        row.throttledUntil = null;
+      }
     }
     return;
   }
@@ -231,6 +262,10 @@ export async function recordSuccess(
             END,
             current_day_key = $2,
             consecutive_429_count = 0,
+            -- Codex P1: promote throttled → active on success. Leaves
+            -- low_balance / disabled / retired intact.
+            status = CASE WHEN status = 'throttled' THEN 'active' ELSE status END,
+            throttled_until = CASE WHEN status = 'throttled' THEN NULL ELSE throttled_until END,
             updated_at = now()
       WHERE id = $1`,
     [keySourceId, todayKey, wholesaleCostUsd],

@@ -185,22 +185,20 @@ router.post(
         return;
       }
 
-      const claimed = await claimSessionForGrant({
-        sessionId: session.id,
-        workspaceId,
-        packId: pack.id,
-        creditsGranted: pack.creditsGranted,
-        amountUsdCents: pack.priceUsdCents,
-        grantedVia: "confirm_endpoint",
-      });
-
-      if (!claimed) {
-        // Webhook beat us. The grant has already happened; surface a 200
-        // with the existing balance so the dashboard can refresh.
-        res.json({ alreadyGranted: true });
-        return;
-      }
-
+      // CODEX P1 FIX: grant FIRST, claim AFTER (was inverted).
+      //
+      // The original flow claimed the session before granting, so if
+      // grantCredits failed transiently (DB blip, network), the claim
+      // row stayed in place and every retry — confirm and webhook
+      // alike — saw `!claimed` and short-circuited, leaving the
+      // customer paid-but-uncredited forever.
+      //
+      // grantCredits is already idempotent on its own ledger key
+      // (`credit_purchase__{session.id}` UNIQUE on
+      // workspace_credit_ledger.idempotency_key). Calling it twice for
+      // the same session returns `reason='duplicate'` without
+      // double-granting. So we can safely grant first; the claim row
+      // afterward is pure observability (which path delivered).
       const result = await grantCredits({
         workspaceId,
         userId,
@@ -217,6 +215,36 @@ router.post(
             : session.payment_intent?.id,
         },
       });
+
+      // Best-effort claim row for observability — failure here doesn't
+      // affect the customer's wallet, the grant already happened above.
+      const claimed = await claimSessionForGrant({
+        sessionId: session.id,
+        workspaceId,
+        packId: pack.id,
+        creditsGranted: pack.creditsGranted,
+        amountUsdCents: pack.priceUsdCents,
+        grantedVia: "confirm_endpoint",
+      }).catch((err) => {
+        console.warn(
+          `[credits/checkout/confirm] claim insert failed for session ${session.id}: ${
+            err instanceof Error ? err.message : String(err)
+          } — grant already succeeded, returning success`,
+        );
+        return false;
+      });
+
+      if (!claimed && result.reason === "duplicate") {
+        // The grant was a no-op duplicate AND the claim row was already
+        // present — webhook beat us. Surface the same shape we did
+        // historically so the dashboard "already granted" branch keeps
+        // working.
+        res.json({
+          alreadyGranted: true,
+          balanceAfter: result.balanceAfter?.toString() ?? null,
+        });
+        return;
+      }
 
       res.json({
         granted: result.granted,

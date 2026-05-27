@@ -25,6 +25,10 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   user_deletion: { limit: 2, window: "day" },
   mfa_resets: { limit: 10, window: "day" },
   password_resets: { limit: 50, window: "day" },
+  // HEL-250: rotation is the high-impact path (every rotation forces a fresh
+  // balance recompute and momentarily affects the customer credits path).
+  // Create/disable have their own audit trail but no hard daily cap.
+  provider_key_rotations: { limit: 10, window: "day" },
 };
 
 function envOverride(name: string): number | undefined {

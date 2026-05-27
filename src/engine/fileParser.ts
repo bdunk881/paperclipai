@@ -113,8 +113,12 @@ async function parseAudio(
   const client = new OpenAI({ apiKey: openaiApiKey });
 
   // Whisper requires a File-like object. In Node 18+ we can use the File constructor.
+  // Wrap `buffer` in a plain Uint8Array to normalize the ArrayBufferLike →
+  // ArrayBuffer type boundary that the strict BlobPart definition in current
+  // @types/node + lib.dom.d.ts demands (Buffer<ArrayBufferLike> would otherwise
+  // include SharedArrayBuffer in its union and fail the check).
   const ext = filename.split(".").pop() ?? "mp3";
-  const file = new File([buffer], filename, { type: mimeType || `audio/${ext}` });
+  const file = new File([new Uint8Array(buffer)], filename, { type: mimeType || `audio/${ext}` });
 
   const transcription = await client.audio.transcriptions.create({
     file,

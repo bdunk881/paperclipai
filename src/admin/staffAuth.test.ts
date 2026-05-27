@@ -35,6 +35,7 @@ describe("staffAuth", () => {
     staff: process.env.AUTOFLOW_STAFF_USER_IDS,
     secret: process.env.APP_JWT_SECRET,
     enforcement: process.env.MFA_STAFF_ENFORCEMENT,
+    bypass: process.env.MFA_DISABLE_AAL2_ENFORCEMENT,
   };
 
   beforeEach(() => {
@@ -42,6 +43,10 @@ describe("staffAuth", () => {
     process.env.AUTOFLOW_STAFF_USER_IDS = "staff-1,staff-2";
     process.env.APP_JWT_SECRET = APP_JWT_SECRET;
     delete process.env.MFA_STAFF_ENFORCEMENT;
+    // jest.env.cjs defaults this to "true" for unrelated suites; delete
+    // so the real staff gate (which uses verifyAal2AttestationCookie) is
+    // verified end-to-end.
+    delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
   });
 
   afterAll(() => {
@@ -50,6 +55,8 @@ describe("staffAuth", () => {
     else process.env.APP_JWT_SECRET = original.secret;
     if (original.enforcement === undefined) delete process.env.MFA_STAFF_ENFORCEMENT;
     else process.env.MFA_STAFF_ENFORCEMENT = original.enforcement;
+    if (original.bypass === undefined) delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
+    else process.env.MFA_DISABLE_AAL2_ENFORCEMENT = original.bypass;
     __resetStaffIdsCacheForTests();
   });
 

@@ -121,6 +121,22 @@ function checkSupabaseAal2(req: AuthenticatedRequest, ttlSeconds: number): Verif
   return { valid: true };
 }
 
+/**
+ * Test-mode bypass via `MFA_DISABLE_AAL2_ENFORCEMENT=true`. Set in
+ * `jest.env.cjs` so the dozens of pre-existing tests that mock
+ * `requireAuth` and don't know about AAL2 keep working without each having
+ * to stub `requireAAL2` separately. The MFA-specific tests in
+ * `src/middleware/requireAAL2.test.ts`, `src/security/mfaService.test.ts`,
+ * and `src/admin/staffAuth.test.ts` explicitly delete this env var in
+ * their beforeEach so the real gate behavior is still verified.
+ *
+ * Production cannot trip this: the env var isn't set in any Infisical env,
+ * and even if it were, app boot doesn't run with NODE_ENV=test.
+ */
+function isAal2EnforcementDisabled(): boolean {
+  return process.env.MFA_DISABLE_AAL2_ENFORCEMENT === "true";
+}
+
 export function requireAAL2(
   req: AuthenticatedRequest,
   res: Response,
@@ -128,6 +144,10 @@ export function requireAAL2(
 ): void {
   if (!req.auth?.sub) {
     res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  if (isAal2EnforcementDisabled()) {
+    next();
     return;
   }
   const ttl = getStepUpTtlSeconds();

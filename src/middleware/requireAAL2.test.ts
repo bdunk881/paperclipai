@@ -44,9 +44,15 @@ describe("requireAAL2", () => {
   const originalSecret = process.env.APP_JWT_SECRET;
   const originalTtl = process.env.MFA_STEP_UP_TTL_SECONDS;
 
+  const originalBypass = process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
+
   beforeEach(() => {
     process.env.APP_JWT_SECRET = APP_JWT_SECRET_FOR_TESTS;
     delete process.env.MFA_STEP_UP_TTL_SECONDS;
+    // jest.env.cjs sets MFA_DISABLE_AAL2_ENFORCEMENT="true" so unrelated
+    // tests don't have to stub this middleware. Delete it here so the
+    // real gate behavior is verified by these tests.
+    delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
   });
 
   afterAll(() => {
@@ -54,6 +60,8 @@ describe("requireAAL2", () => {
     else process.env.APP_JWT_SECRET = originalSecret;
     if (originalTtl === undefined) delete process.env.MFA_STEP_UP_TTL_SECONDS;
     else process.env.MFA_STEP_UP_TTL_SECONDS = originalTtl;
+    if (originalBypass === undefined) delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
+    else process.env.MFA_DISABLE_AAL2_ENFORCEMENT = originalBypass;
   });
 
   it("rejects unauthenticated requests with 401", () => {

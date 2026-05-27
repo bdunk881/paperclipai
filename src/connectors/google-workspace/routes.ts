@@ -1,13 +1,13 @@
-import { Request, Response, Router } from "express";
+import { Response, Router } from "express";
+import { AuthenticatedRequest } from "../../auth/authMiddleware";
 import { googleWorkspaceCredentialsStore } from "./credentialsStore";
 import { GoogleWorkspaceClient, GoogleWorkspaceConnectorError } from "./googleWorkspaceClient";
 import { logGoogleWorkspaceEvent } from "./logging";
 import { asyncHandler } from "../../middleware/asyncHandler";
 
-function getUserId(req: Request): string | null {
-  const userId = req.headers["x-user-id"];
-  if (typeof userId !== "string" || !userId.trim()) return null;
-  return userId.trim();
+function getUserId(req: AuthenticatedRequest): string | null {
+  const userId = req.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
 }
 
 function isValidUrl(url: string): boolean {
@@ -45,7 +45,7 @@ const DEFAULT_SCOPES = [
 const client = new GoogleWorkspaceClient();
 const router = Router();
 
-router.post("/credentials", (req: Request, res: Response) => {
+router.post("/credentials", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -141,7 +141,7 @@ router.post("/credentials", (req: Request, res: Response) => {
   res.status(201).json(created);
 });
 
-router.post("/credentials/:id/oauth/tokens", (req: Request, res: Response) => {
+router.post("/credentials/:id/oauth/tokens", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -186,7 +186,7 @@ router.post("/credentials/:id/oauth/tokens", (req: Request, res: Response) => {
   res.json(updated);
 });
 
-router.get("/credentials", (req: Request, res: Response) => {
+router.get("/credentials", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -197,7 +197,7 @@ router.get("/credentials", (req: Request, res: Response) => {
   res.json({ credentials, total: credentials.length });
 });
 
-router.post("/credentials/:id/test-connection", asyncHandler<Request>(async (req, res: Response) => {
+router.post("/credentials/:id/test-connection", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -248,7 +248,7 @@ router.post("/credentials/:id/test-connection", asyncHandler<Request>(async (req
   }
 }));
 
-router.get("/drive/files", asyncHandler<Request>(async (req, res: Response) => {
+router.get("/drive/files", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -294,7 +294,7 @@ router.get("/drive/files", asyncHandler<Request>(async (req, res: Response) => {
   }
 }));
 
-router.get("/calendar/events", asyncHandler<Request>(async (req, res: Response) => {
+router.get("/calendar/events", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -344,7 +344,7 @@ router.get("/calendar/events", asyncHandler<Request>(async (req, res: Response) 
   }
 }));
 
-router.get("/gmail/messages", asyncHandler<Request>(async (req, res: Response) => {
+router.get("/gmail/messages", asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -394,7 +394,7 @@ router.get("/gmail/messages", asyncHandler<Request>(async (req, res: Response) =
   }
 }));
 
-router.delete("/credentials/:id", (req: Request, res: Response) => {
+router.delete("/credentials/:id", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });
@@ -416,7 +416,7 @@ router.delete("/credentials/:id", (req: Request, res: Response) => {
   res.json(revoked);
 });
 
-router.get("/health", (req: Request, res: Response) => {
+router.get("/health", (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "X-User-Id header is required" });

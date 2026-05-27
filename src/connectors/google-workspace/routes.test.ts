@@ -9,13 +9,20 @@ const USER_A = "user-alice";
 const USER_B = "user-bob";
 
 function asUser(userId: string) {
-  return { "x-user-id": userId };
+  return { "authorization": "Bearer test-token", "x-user-id": userId };
 }
 
 function createTestApp() {
   const app = express();
   app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
   app.use(express.json());
+  // Simulate requireAuth: read x-user-id and populate req.auth.sub so the
+  // router can derive userId without needing a real JWT in unit tests.
+  app.use((req: express.Request & { auth?: { sub: string } }, _res: express.Response, next: express.NextFunction) => {
+    const h = req.headers["x-user-id"];
+    if (typeof h === "string" && h.trim()) req.auth = { sub: h.trim() };
+    next();
+  });
   app.use("/api/connectors/google-workspace", googleWorkspaceRoutes);
   return app;
 }

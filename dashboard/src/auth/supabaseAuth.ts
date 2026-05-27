@@ -173,6 +173,15 @@ export function isPasswordRecoveryFlow(): boolean {
   return false;
 }
 
+export function isAuthRateLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+  // Supabase returns both human-readable ("email rate limit exceeded") and
+  // snake_case ("over_email_send_rate_limit") forms depending on path. Match
+  // either.
+  return normalized.includes("rate limit") || normalized.includes("rate_limit");
+}
+
 export function mapSupabaseAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : "Authentication failed. Try again.";
   const normalized = message.toLowerCase();
@@ -184,7 +193,10 @@ export function mapSupabaseAuthError(error: unknown): string {
     return "Check your inbox and confirm your email before signing in.";
   }
   if (normalized.includes("rate limit")) {
-    return "Too many attempts. Wait a moment before trying again.";
+    // HEL-284: Supabase's built-in SMTP caps emails at 2/hour project-wide
+    // and doesn't return Retry-After. Point users at alternatives instead
+    // of leaving them stuck waiting.
+    return "Too many sign-in emails sent in the last hour. Try signing in with your password or Google/GitHub, or wait a minute and try again.";
   }
   if (normalized.includes("pkce") && normalized.includes("code verifier")) {
     return "This sign-in link must be opened in the same browser where you started it. Request a new link, or sign in with email and password.";

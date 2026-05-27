@@ -25,6 +25,7 @@ vi.mock("../auth/supabaseAuth", () => ({
   sendSupabaseMagicLink: sendSupabaseMagicLinkMock,
   signInWithSupabaseOAuth: signInWithSupabaseOAuthMock,
   isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
+  mapSupabaseAuthError: (err: unknown) => (err instanceof Error ? err.message : "Error"),
 }));
 
 vi.mock("../auth/authStorage", () => ({
@@ -36,6 +37,9 @@ describe("Login", () => {
     vi.clearAllMocks();
     isSupabaseAuthConfiguredMock.mockReturnValue(true);
     window.history.replaceState({}, "", "/login");
+    // HEL-284: cooldown is sessionStorage-backed, so reset between tests
+    // or one test's cooldown leaks into the next.
+    window.sessionStorage.removeItem("autoflow.auth.magicLinkCooldown");
   });
 
   it("renders the Supabase sign-in surface by default", () => {
@@ -184,6 +188,49 @@ describe("Login", () => {
     await waitFor(() => {
       expect(sendSupabaseMagicLinkMock).toHaveBeenCalledWith("user@example.com");
       expect(screen.getByText(/magic link sent/i)).toBeInTheDocument();
+    });
+  });
+
+  it("starts a cooldown on the magic-link button after a successful send (HEL-284)", async () => {
+    sendSupabaseMagicLinkMock.mockResolvedValueOnce(undefined);
+    render(
+      <MemoryRouter initialEntries={["/login?mode=magic-link"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Work email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
+
+    await waitFor(() => {
+      // Button label now carries the countdown suffix and is disabled.
+      const button = screen.getByRole("button", { name: /send magic link · \d+s/i });
+      expect(button).toBeDisabled();
+    });
+  });
+
+  it("starts a cooldown even when the send fails with a rate-limit error (HEL-284)", async () => {
+    sendSupabaseMagicLinkMock.mockRejectedValueOnce(new Error("email rate limit exceeded"));
+    render(
+      <MemoryRouter initialEntries={["/login?mode=magic-link"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Work email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }));
+
+    await waitFor(() => {
+      const button = screen.getByRole("button", { name: /send magic link · \d+s/i });
+      expect(button).toBeDisabled();
     });
   });
 });

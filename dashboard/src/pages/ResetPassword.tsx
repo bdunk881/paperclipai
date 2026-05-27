@@ -12,6 +12,9 @@ import {
   sessionFromSupabaseSession,
   updateSupabasePassword,
 } from "../auth/supabaseAuth";
+import { useAuthCooldown } from "../auth/useAuthCooldown";
+
+const PASSWORD_RESET_COOLDOWN_KEY = "autoflow.auth.passwordResetCooldown";
 
 type ResetPhase = "loading" | "request" | "complete";
 
@@ -29,6 +32,8 @@ export default function ResetPassword() {
     authError ? decodeURIComponent(authError.replace(/\+/g, " ")) : "",
   );
   const [notice, setNotice] = useState("");
+
+  const resetCooldown = useAuthCooldown(PASSWORD_RESET_COOLDOWN_KEY);
 
   const configured = isSupabaseAuthConfigured();
 
@@ -95,6 +100,7 @@ export default function ResetPassword() {
       setError("Supabase auth is not configured for this dashboard environment.");
       return;
     }
+    if (resetCooldown.active) return;
 
     setBusy(true);
     setError("");
@@ -104,9 +110,13 @@ export default function ResetPassword() {
       await sendSupabasePasswordReset(requestEmail.trim());
       setNotice("Recovery email sent. Open the link in this browser to choose a new password.");
       setBusy(false);
+      resetCooldown.start();
     } catch (requestError) {
       setBusy(false);
       setError(mapSupabaseAuthError(requestError));
+      // Same rationale as Login: a rate-limited send still consumes the
+      // Supabase project quota, so block instant retry.
+      resetCooldown.start();
     }
   }
 
@@ -204,14 +214,22 @@ export default function ResetPassword() {
                   autoComplete="email"
                   value={requestEmail}
                   onChange={(event) => setRequestEmail(event.target.value)}
-                  disabled={busy || !configured}
+                  disabled={busy || !configured || resetCooldown.active}
                   className="auth-input"
                   placeholder="operator@company.com"
                 />
               </label>
-              <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
+              <button
+                type="submit"
+                disabled={busy || !configured || resetCooldown.active}
+                className="auth-primary-button mt-2"
+              >
                 {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
-                {busy ? "Sending…" : "Send recovery email"}
+                {busy
+                  ? "Sending…"
+                  : resetCooldown.active
+                    ? `Send recovery email · ${resetCooldown.remainingSeconds}s`
+                    : "Send recovery email"}
               </button>
             </form>
           ) : null}

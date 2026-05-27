@@ -413,6 +413,22 @@ describe("password recovery helpers", () => {
     ).toMatch(/same browser/i);
   });
 
+  it("maps Supabase rate-limit errors to copy that points at alternatives", async () => {
+    const { mapSupabaseAuthError } = await import("./supabaseAuth");
+    const message = mapSupabaseAuthError(new Error("email rate limit exceeded"));
+    expect(message).toMatch(/too many/i);
+    expect(message).toMatch(/password|google|github/i);
+  });
+
+  it("isAuthRateLimitError detects rate-limit error strings", async () => {
+    const { isAuthRateLimitError } = await import("./supabaseAuth");
+    expect(isAuthRateLimitError(new Error("over_email_send_rate_limit"))).toBe(true);
+    expect(isAuthRateLimitError(new Error("Rate Limit reached"))).toBe(true);
+    expect(isAuthRateLimitError(new Error("invalid login credentials"))).toBe(false);
+    expect(isAuthRateLimitError(null)).toBe(false);
+    expect(isAuthRateLimitError(undefined)).toBe(false);
+  });
+
   it("sends resetPasswordForEmail with a reset-password redirect", async () => {
     vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
     vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");

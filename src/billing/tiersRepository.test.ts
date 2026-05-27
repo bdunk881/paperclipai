@@ -48,4 +48,13 @@ describe("tiersRepository (in-memory fallback)", () => {
       }
     }
   });
+
+  it("carries price_unit so the landing can render /mo vs /seat/mo", async () => {
+    const tiers = await listEnabledTiers();
+    const byId = Object.fromEntries(tiers.map((t) => [t.id, t.priceUnit]));
+    expect(byId.explore).toBe("/mo");
+    expect(byId.flow).toBe("/mo");
+    expect(byId.automate).toBe("/seat/mo");
+    expect(byId.scale).toBe("/seat/mo");
+  });
 });

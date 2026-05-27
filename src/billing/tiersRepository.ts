@@ -20,6 +20,7 @@ export interface SubscriptionTier {
   isPopular: boolean;
   features: string[];
   ctaLabel: string;
+  priceUnit: string;
   enabled: boolean;
 }
 
@@ -35,6 +36,7 @@ export const DEFAULT_TIERS: readonly SubscriptionTier[] = [
     isPopular: false,
     features: ["3 workspaces", "Daily Sonnet credit cap", "Community support"],
     ctaLabel: "Get started",
+    priceUnit: "/mo",
     enabled: true,
   },
   {
@@ -53,6 +55,7 @@ export const DEFAULT_TIERS: readonly SubscriptionTier[] = [
       "Priority email support",
     ],
     ctaLabel: "Start 14-day trial",
+    priceUnit: "/mo",
     enabled: true,
   },
   {
@@ -72,6 +75,7 @@ export const DEFAULT_TIERS: readonly SubscriptionTier[] = [
       "Custom approval policies",
     ],
     ctaLabel: "Start 14-day trial",
+    priceUnit: "/seat/mo",
     enabled: true,
   },
   {
@@ -90,7 +94,8 @@ export const DEFAULT_TIERS: readonly SubscriptionTier[] = [
       "Dedicated success manager",
       "Custom SLAs",
     ],
-    ctaLabel: "Talk to sales",
+    ctaLabel: "Choose Scale",
+    priceUnit: "/seat/mo",
     enabled: true,
   },
 ];
@@ -106,6 +111,7 @@ interface TierRow {
   is_popular: boolean;
   features: unknown;
   cta_label: string;
+  price_unit: string;
   enabled: boolean;
 }
 
@@ -124,13 +130,14 @@ function rowToTier(row: TierRow): SubscriptionTier {
     isPopular: row.is_popular,
     features,
     ctaLabel: row.cta_label,
+    priceUnit: row.price_unit,
     enabled: row.enabled,
   };
 }
 
 const SELECT_COLUMNS = `id, display_name, price_usd_cents, currency,
                         stripe_price_env, trial_days, sort_order,
-                        is_popular, features, cta_label, enabled`;
+                        is_popular, features, cta_label, price_unit, enabled`;
 
 export async function listEnabledTiers(): Promise<SubscriptionTier[]> {
   if (isPostgresConfigured()) {

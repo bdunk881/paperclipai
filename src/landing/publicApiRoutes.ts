@@ -129,6 +129,7 @@ router.get("/pricing", asyncHandler<Request>(async (_req, res: Response) => {
         isPopular: tier.isPopular,
         features: tier.features,
         ctaLabel: tier.ctaLabel,
+        priceUnit: tier.priceUnit,
       })),
       packs: packs.map((pack) => ({
         id: pack.id,

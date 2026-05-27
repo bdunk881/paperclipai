@@ -105,20 +105,21 @@ jobs:
           echo "Manifest entries: $BEFORE → $AFTER (+$NEW_ENTRIES)"
           echo "Installed skill dirs: $DIRS_BEFORE → $DIRS_AFTER (+$NEW_DIRS)"
 
-      - name: Exit when batch produces no new entries
+      - name: Log when batch produces no new entries
         if: steps.diff.outputs.new_entries == '0' && steps.diff.outputs.new_dirs == '0'
         run: |
           echo "Batch produced 0 new manifest entries and 0 new skill dirs — saturated."
-          echo "Stopping the auto-batch loop. Run with workflow_dispatch and a higher batch_size to probe further down the install-ranked list."
-          exit 0
+          echo "Skipping branch+PR creation. Run with workflow_dispatch and a higher batch_size to probe further down the install-ranked list."
 
       - name: Configure git
+        if: steps.diff.outputs.new_entries != '0' || steps.diff.outputs.new_dirs != '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Create branch, commit, push
         id: push
+        if: steps.diff.outputs.new_entries != '0' || steps.diff.outputs.new_dirs != '0'
         run: |
           STAMP=$(date -u +%Y%m%d-%H%M%S)
           BRANCH="auto/hel-225-skills-batch-$STAMP"
@@ -129,6 +130,7 @@ jobs:
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Open follow-up PR
+        if: steps.diff.outputs.new_entries != '0' || steps.diff.outputs.new_dirs != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

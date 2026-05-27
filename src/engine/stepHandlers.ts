@@ -19,6 +19,7 @@ import {
   assertWithinHostedFreeCap,
   recordHostedFreeTokens,
 } from "../hostedFreeModels/usageStore";
+import { callWithBYOKFallback } from "../billing/credits/hybridCall";
 import { getProvider } from "./llmProviders";
 import { extractStructuredOutput } from "./structuredOutput";
 import { setAgentPresence } from "../agents/agentPresence";
@@ -254,14 +255,6 @@ export async function handleLlm(
     modelId: tieredModel,
   });
 
-  const provider = getProvider({
-    provider: resolved.config.provider,
-    model: tieredModel,
-    apiKey: resolved.apiKey,
-    credentials: resolved.credentials,
-    options: resolved.config.providerOptions,
-  });
-
   auditCrmApiCall({
     userId,
     runId,
@@ -274,7 +267,63 @@ export async function handleLlm(
     strippedCount,
   });
 
-  const response = await provider(renderedPrompt);
+  // PR D: hybrid funding. BYOK-only call sites fall back to hosted
+  // credits on classified failures (429 / 401 / 403 / 5xx / network).
+  // Skip the fallback for hosted-free routes — those keys are
+  // platform-shared, so a "BYOK failed" event there isn't a customer
+  // problem the credits wallet should pay for.
+  const llmWorkspaceId = readWorkspaceIdFromCtx(ctx);
+  const useCreditsFallback = !usedHostedFree && Boolean(llmWorkspaceId);
+
+  let response: Awaited<ReturnType<ReturnType<typeof getProvider>>>;
+  if (useCreditsFallback) {
+    const hybridResult = await callWithBYOKFallback({
+      byokConfig: {
+        provider: resolved.config.provider,
+        model: tieredModel,
+        apiKey: resolved.apiKey,
+        credentials: resolved.credentials,
+        options: resolved.config.providerOptions,
+      },
+      prompt: renderedPrompt,
+      creditsFallback: {
+        workspaceId: llmWorkspaceId!,
+        userId,
+        // Coarse char→tokens estimate (~4 chars/token). Padded floor
+        // of 500 covers small prompts; over-estimate gets refunded.
+        promptTokensEstimate: Math.max(500, Math.ceil(renderedPrompt.length / 4)),
+        // Workflow steps default to 4096-token outputs in most provider
+        // adapters; the actual ceiling is enforced by the model rate.
+        maxOutputTokens: 4096,
+        callKey: `step__${runId}__${step.id}`,
+        relatedKind: "workflow_step",
+        relatedId: step.id,
+      },
+    });
+    if (!hybridResult.ok) {
+      const msg = (() => {
+        switch (hybridResult.error.kind) {
+          case "byok_error_no_fallback":
+            return hybridResult.error.message;
+          case "byok_error_fallback_failed":
+            return `${hybridResult.error.byokMessage} — credits fallback also failed: ${hybridResult.error.fallbackError}`;
+          case "credits_only":
+            return hybridResult.error.reason;
+        }
+      })();
+      throw new Error(msg);
+    }
+    response = hybridResult.response;
+  } else {
+    const provider = getProvider({
+      provider: resolved.config.provider,
+      model: tieredModel,
+      apiKey: resolved.apiKey,
+      credentials: resolved.credentials,
+      options: resolved.config.providerOptions,
+    });
+    response = await provider(renderedPrompt);
+  }
 
   // PR B.2: record token usage so the next call can re-evaluate the cap.
   // HEL-145 iter 2 contract: promptTokens IS the total input (uncached +

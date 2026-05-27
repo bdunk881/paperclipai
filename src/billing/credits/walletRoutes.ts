@@ -633,4 +633,83 @@ router.get(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Spend-by-tier breakdown (PR D — Phase 3 analytics, follow-up)
+// ---------------------------------------------------------------------------
+
+interface SpendByTierRow {
+  provider: string;
+  model: string;
+  credits_consumed: string;
+  wholesale_usd: string;
+  retail_usd: string;
+  call_count: number;
+  total_prompt_tokens: string;
+  total_completion_tokens: string;
+}
+
+/**
+ * Spend breakdown grouped by (provider, model) over the trailing N
+ * days. Complements /spend-by-related by answering "which model tier
+ * is burning the most credits?" — useful for tuning tier routing.
+ */
+router.get(
+  "/spend-by-tier",
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const workspaceId = req.auth?.workspaceId;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+
+    const rawWindow = req.query.windowDays;
+    let windowDays = 30;
+    if (typeof rawWindow === "string") {
+      const parsed = Number.parseInt(rawWindow, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        windowDays = Math.min(parsed, 90);
+      }
+    }
+
+    if (!isPostgresPersistenceEnabled()) {
+      res.json({ windowDays, rows: [] });
+      return;
+    }
+
+    const result = await queryPostgres<SpendByTierRow>(
+      `SELECT
+         COALESCE(provider, 'unknown') AS provider,
+         COALESCE(model, 'unknown')    AS model,
+         COALESCE(SUM(-credits_delta), 0)::text       AS credits_consumed,
+         COALESCE(SUM(wholesale_cost_usd), 0)::text   AS wholesale_usd,
+         COALESCE(SUM(retail_cost_usd), 0)::text      AS retail_usd,
+         COUNT(*)::int                                AS call_count,
+         COALESCE(SUM(prompt_tokens), 0)::text        AS total_prompt_tokens,
+         COALESCE(SUM(completion_tokens), 0)::text    AS total_completion_tokens
+         FROM workspace_credit_ledger
+        WHERE workspace_id = $1
+          AND type = 'consumption'
+          AND created_at > now() - ($2::text || ' days')::interval
+        GROUP BY 1, 2
+        ORDER BY credits_consumed::bigint DESC
+        LIMIT 50`,
+      [workspaceId, String(windowDays)],
+    );
+
+    res.json({
+      windowDays,
+      rows: result.rows.map((row) => ({
+        provider: row.provider,
+        model: row.model,
+        creditsConsumed: row.credits_consumed,
+        wholesaleUsd: Number(row.wholesale_usd),
+        retailUsd: Number(row.retail_usd),
+        callCount: row.call_count,
+        totalPromptTokens: row.total_prompt_tokens,
+        totalCompletionTokens: row.total_completion_tokens,
+      })),
+    });
+  }),
+);
+
 export default router;

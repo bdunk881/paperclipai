@@ -241,3 +241,36 @@ export async function getSpendByRelated(
   );
   return jsonOrThrow<SpendByRelatedResponse>(res, "Load spend-by-related");
 }
+
+export interface SpendByTierRow {
+  provider: string;
+  model: string;
+  /** bigint-as-string */
+  creditsConsumed: string;
+  wholesaleUsd: number;
+  retailUsd: number;
+  callCount: number;
+  totalPromptTokens: string;
+  totalCompletionTokens: string;
+}
+
+export interface SpendByTierResponse {
+  windowDays: number;
+  rows: SpendByTierRow[];
+}
+
+/**
+ * GET /api/credits/wallet/spend-by-tier — credits-mode spend grouped
+ * by (provider, model). Complements /spend-by-related for tier-routing
+ * tuning.
+ */
+export async function getSpendByTier(
+  accessToken: string,
+  windowDays: number = 30,
+): Promise<SpendByTierResponse> {
+  const res = await fetch(
+    `${BASE}/credits/wallet/spend-by-tier?windowDays=${encodeURIComponent(String(windowDays))}`,
+    { headers: authHeaders(accessToken) },
+  );
+  return jsonOrThrow<SpendByTierResponse>(res, "Load spend-by-tier");
+}

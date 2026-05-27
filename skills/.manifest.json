@@ -1978,15 +1978,85 @@
       ]
     },
     "turborepo": {
-      "ref": "mindrally/skills@turborepo",
+      "ref": "antfu/skills@turborepo",
       "skillKey": "turborepo",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T23:11:08.678Z",
+      "scannedAt": "2026-05-27T00:59:07.428Z",
       "findings": [
         {
           "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "```json // If CI scripts need GITHUB_TOKEN but it's not in env: { \"glo"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"CI\"], \"tasks\": { ... } }"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/configuration/global-options.md",
+          "excerpt": "oughEnv\": [\"AWS_SECRET_KEY\", \"GITHUB_TOKEN\"] } ``` Use for credentials"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/configuration/tasks.md",
+          "excerpt": "oughEnv\": [\"AWS_SECRET_KEY\", \"GITHUB_TOKEN\"] } } } ``` **Warning*"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": "hEnv\": [\"AWS_ACCESS_KEY_ID\", \"AWS_SECRET_ACCESS_KEY\"] } } } ``` ### `globa"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\"] } ``` ## Wildcards and Neg"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": ", \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"NPM_TOKEN\"], \"tasks\": {"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": "mode, CI provider variables (GITHUB_TOKEN, GITLAB_CI, etc.) are filtere"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"GITLAB_CI\", \"CI\"] } ``` #"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": ", \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"VERCEL_URL\"], \"tasks\": {"
+        },
+        {
+          "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/mindrally/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -3029,15 +3099,36 @@
       ]
     },
     "prompt-engineer": {
-      "ref": "rmyndharis/antigravity-skills@prompt-engineer",
+      "ref": "jeffallan/claude-skills@prompt-engineer",
       "skillKey": "prompt-engineer",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T23:11:02.746Z",
+      "scannedAt": "2026-05-27T14:12:27.032Z",
       "findings": [
         {
           "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/evaluation-frameworks.md",
+          "excerpt": "uation env: ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KE"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/evaluation-frameworks.md",
+          "excerpt": "NTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} run: | p"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/evaluation-frameworks.md",
+          "excerpt": "all dependencies run: pip install -r requirements-eval.txt"
+        },
+        {
+          "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/rmyndharis/antigravity-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -10551,15 +10642,22 @@
       ]
     },
     "legacy-modernizer": {
-      "ref": "sickn33/antigravity-awesome-skills@legacy-modernizer",
+      "ref": "jeffallan/claude-skills@legacy-modernizer",
       "skillKey": "legacy-modernizer",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T23:11:40.977Z",
+      "scannedAt": "2026-05-27T14:12:27.042Z",
       "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/legacy-testing.md",
+          "excerpt": "cy Code ```python # Install: pip install mutmut # Legacy function we"
+        },
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/jeffallan/claude-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -12312,15 +12410,22 @@
       ]
     },
     "code-review": {
-      "ref": "getsentry/skills@code-review",
+      "ref": "shareai-lab/learn-claude-code@code-review",
       "skillKey": "code-review",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T23:11:13.691Z",
+      "scannedAt": "2026-05-27T18:23:10.335Z",
       "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "# Check complexity (Python) pip install radon && radon cc . -a # Che"
+        },
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/getsentry/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/shareai-lab/learn-claude-code is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -13139,15 +13244,22 @@
       ]
     },
     "internationalization-i18n": {
-      "ref": "mindrally/skills@internationalization-i18n",
+      "ref": "aj-geddes/useful-ai-prompts@internationalization-i18n",
       "skillKey": "internationalization-i18n",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T23:11:08.663Z",
+      "scannedAt": "2026-05-27T14:13:15.304Z",
       "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "references/python-i18n-gettext.md",
+          "excerpt": "es for translation # Install: pip install Babel # babel.cfg [python: *"
+        },
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/mindrally/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/aj-geddes/useful-ai-prompts is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },

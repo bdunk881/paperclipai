@@ -145,6 +145,37 @@ function isTrustRegression(
   return prevTrusted && candidateUntrusted;
 }
 
+// Count actionable (non-info) findings — what the triage UI surfaces as risk.
+function countRiskFindings(findings: ScanFinding[]): { critical: number; warning: number } {
+  let critical = 0;
+  let warning = 0;
+  for (const f of findings) {
+    if (f.severity === "critical") critical += 1;
+    else if (f.severity === "warning") warning += 1;
+  }
+  return { critical, warning };
+}
+
+// When two catalog refs collide on the same skillKey, prefer the scan
+// that carries more risk information. Without this guard, a later scan
+// of e.g. `mindrally/skills@turborepo` (only an untrusted_origin
+// warning) overwrites the previous `antfu/skills@turborepo` entry
+// (which also surfaced multiple env_credentials warnings) and the
+// triage UI loses sight of the credential-related findings.
+function isRiskRegression(
+  previous: ManifestEntry | undefined,
+  candidateFindings: ScanFinding[],
+): boolean {
+  if (!previous) return false;
+  const prev = countRiskFindings(previous.findings);
+  const next = countRiskFindings(candidateFindings);
+  // Treat critical findings as strictly more important than warnings;
+  // fall back to warning count for the tiebreaker.
+  if (next.critical < prev.critical) return true;
+  if (next.critical > prev.critical) return false;
+  return next.warning < prev.warning;
+}
+
 // Strict allowlists for ref components. GitHub permits alphanumerics + `_`,
 // `-`, and `.` in usernames + repo names — match that and bound length so
 // the value going into `git clone https://github.com/<owner>/<repo>.git`
@@ -397,6 +428,11 @@ async function processRepoBatch(
           continue;
         }
 
+        if (isRiskRegression(previous, allFindings)) {
+          console.log(`      → kept previous entry (${previous!.ref} carries more risk findings than ${ref})`);
+          continue;
+        }
+
         options.manifest.entries[skillKey] = {
           ref,
           skillKey,
@@ -505,6 +541,11 @@ async function processRef(
 
       if (isTrustRegression(previous, allFindings)) {
         console.log(`      → kept previous entry (trusted source ${previous!.ref} preferred over ${ref})`);
+        continue;
+      }
+
+      if (isRiskRegression(previous, allFindings)) {
+        console.log(`      → kept previous entry (${previous!.ref} carries more risk findings than ${ref})`);
         continue;
       }
 

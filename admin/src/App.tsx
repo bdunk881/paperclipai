@@ -8,6 +8,9 @@ import { AuditLogPage } from "./pages/AuditLogPage";
 import { PendingActionsPage } from "./pages/PendingActionsPage";
 import { CreditsPoolPage } from "./pages/CreditsPoolPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AgentWebhooksPage } from "./pages/settings/AgentWebhooksPage";
+import { InfraOverviewPage } from "./pages/InfraOverview";
+import { InfraComputePage } from "./pages/InfraCompute";
 import MfaEnrollmentWizard from "./pages/MfaEnrollmentWizard";
 import { getSupabaseClient } from "./lib/supabase";
 
@@ -25,6 +28,7 @@ function Shell() {
           <Link to="/pending-actions">Pending</Link>
           <Link to="/credits-pool">Credits pool</Link>
           <Link to="/audit">Audit</Link>
+          <Link to="/infra/overview">Infra</Link>
           <Link to="/settings">Settings</Link>
           <button
             onClick={() => getSupabaseClient().auth.signOut()}
@@ -42,6 +46,10 @@ function Shell() {
           <Route path="/credits-pool" element={<CreditsPoolPage />} />
           <Route path="/audit" element={<AuditLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/agent-webhooks" element={<AgentWebhooksPage />} />
+          <Route path="/infra" element={<Navigate to="/infra/overview" replace />} />
+          <Route path="/infra/overview" element={<InfraOverviewPage />} />
+          <Route path="/infra/compute" element={<InfraComputePage />} />
           <Route path="/onboarding/mfa" element={<MfaEnrollmentWizard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

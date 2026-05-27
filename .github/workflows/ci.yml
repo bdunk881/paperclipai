@@ -483,6 +483,9 @@ jobs:
           file: docker/${{ matrix.service }}/Dockerfile
           push: false
           # HEL-234: rev cache scope to invalidate the corrupted layer that
-          # was failing every src/**-touching PR in 8-15s.
-          cache-from: type=gha,scope=${{ matrix.service }}-v2
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v2
+          # was failing every src/**-touching PR in 8-15s. Bumped to v3 on
+          # PR #1098 when the `api` matrix entry failed in 44s with the
+          # same signature (standalone docker-api-build-check.yml workflow
+          # at scope autoflow-api-v2 succeeded simultaneously).
+          cache-from: type=gha,scope=${{ matrix.service }}-v3
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v3

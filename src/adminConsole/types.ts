@@ -73,6 +73,18 @@ export const ADMIN_ACTIONS = [
   "update_provider_key",
   "rotate_provider_key",
   "disable_provider_key",
+
+  // infra dashboard reads (HEL infra PR #2)
+  "view_infra_overview",
+  "view_infra_compute",
+
+  // agent webhooks (HEL infra PR #2)
+  "create_agent_webhook",
+  "update_agent_webhook",
+  "disable_agent_webhook",
+  "delete_agent_webhook",
+  "test_agent_webhook",
+  "ask_agent",
 ] as const;
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];

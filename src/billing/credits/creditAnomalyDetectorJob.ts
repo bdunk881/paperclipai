@@ -62,8 +62,9 @@ interface AnomalySummary {
   dailyPlatformSpendUsd: number;
 }
 
-// allowlist: dedupe map for alert suppression — process-local by design.
+// Dedupe map for alert suppression — process-local by design.
 // Re-arms on restart (acceptable for v1 anomaly detection).
+// allowlist: process-local alert dedupe; restarts re-arm intentionally.
 const recentAlerts = new Map<string, number>();
 
 function persistenceAvailable(): boolean {

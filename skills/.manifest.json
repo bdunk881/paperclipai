@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-27T01:01:35.906Z",
+  "generatedAt": "2026-05-27T02:04:50.402Z",
   "entries": {
     "pdf": {
       "ref": "anthropics/skills@pdf",
@@ -49,15 +49,22 @@
       ]
     },
     "skill-creator": {
-      "ref": "sickn33/antigravity-awesome-skills@skill-creator",
+      "ref": "anthropics/skills@skill-creator",
       "skillKey": "skill-creator",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.112Z",
+      "scannedAt": "2026-05-27T02:04:19.600Z",
       "findings": [
         {
           "severity": "warning",
-          "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/improve_description.py",
+          "excerpt": "Claude Code auth, no separate ANTHROPIC_API_KEY needed). \"\"\" import argparse"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
         }
       ]
     },
@@ -298,10 +305,10 @@
       ]
     },
     "mcp-builder": {
-      "ref": "sickn33/antigravity-awesome-skills@mcp-builder",
+      "ref": "anthropics/skills@mcp-builder",
       "skillKey": "mcp-builder",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.134Z",
+      "scannedAt": "2026-05-27T02:04:19.595Z",
       "findings": [
         {
           "severity": "warning",
@@ -346,9 +353,9 @@
           "excerpt": "tall dependencies**: ```bash pip install -r scripts/requirements.txt e"
         },
         {
-          "severity": "warning",
-          "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
         }
       ]
     },
@@ -484,80 +491,80 @@
       ]
     },
     "seo-audit": {
-      "ref": "sickn33/antigravity-awesome-skills@seo-audit",
+      "ref": "coreyhaines31/marketingskills@seo-audit",
       "skillKey": "seo-audit",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.128Z",
+      "scannedAt": "2026-05-27T02:04:25.161Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "copywriting": {
-      "ref": "sickn33/antigravity-awesome-skills@copywriting",
+      "ref": "coreyhaines31/marketingskills@copywriting",
       "skillKey": "copywriting",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.113Z",
+      "scannedAt": "2026-05-27T02:04:25.157Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "marketing-psychology": {
-      "ref": "sickn33/antigravity-awesome-skills@marketing-psychology",
+      "ref": "coreyhaines31/marketingskills@marketing-psychology",
       "skillKey": "marketing-psychology",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.129Z",
+      "scannedAt": "2026-05-27T02:04:25.159Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "programmatic-seo": {
-      "ref": "sickn33/antigravity-awesome-skills@programmatic-seo",
+      "ref": "coreyhaines31/marketingskills@programmatic-seo",
       "skillKey": "programmatic-seo",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.141Z",
+      "scannedAt": "2026-05-27T02:04:25.160Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "marketing-ideas": {
-      "ref": "sickn33/antigravity-awesome-skills@marketing-ideas",
+      "ref": "coreyhaines31/marketingskills@marketing-ideas",
       "skillKey": "marketing-ideas",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.129Z",
+      "scannedAt": "2026-05-27T02:04:25.158Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
     "copy-editing": {
-      "ref": "sickn33/antigravity-awesome-skills@copy-editing",
+      "ref": "coreyhaines31/marketingskills@copy-editing",
       "skillKey": "copy-editing",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:35.286Z",
+      "scannedAt": "2026-05-27T02:04:25.156Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/sickn33/antigravity-awesome-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -817,15 +824,15 @@
       ]
     },
     "vue-best-practices": {
-      "ref": "vuejs-ai/skills@vue-best-practices",
+      "ref": "hyf0/vue-skills@vue-best-practices",
       "skillKey": "vue-best-practices",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:58.861Z",
+      "scannedAt": "2026-05-27T02:04:48.219Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vuejs-ai/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/hyf0/vue-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -2093,15 +2100,15 @@
       ]
     },
     "vue": {
-      "ref": "onmax/nuxt-skills@vue",
+      "ref": "antfu/skills@vue",
       "skillKey": "vue",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:22.943Z",
+      "scannedAt": "2026-05-27T02:04:17.638Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -2119,15 +2126,15 @@
       ]
     },
     "vueuse-functions": {
-      "ref": "vueuse/skills@vueuse-functions",
+      "ref": "antfu/skills@vueuse-functions",
       "skillKey": "vueuse-functions",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T01:00:00.803Z",
+      "scannedAt": "2026-05-27T02:04:17.660Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/vueuse/skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -2184,15 +2191,15 @@
       ]
     },
     "nuxt": {
-      "ref": "onmax/nuxt-skills@nuxt",
+      "ref": "antfu/skills@nuxt",
       "skillKey": "nuxt",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T00:59:22.941Z",
+      "scannedAt": "2026-05-27T02:04:17.635Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },
@@ -2223,15 +2230,15 @@
       ]
     },
     "slidev": {
-      "ref": "slidevjs/slidev@slidev",
+      "ref": "antfu/skills@slidev",
       "skillKey": "slidev",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-27T01:00:49.543Z",
+      "scannedAt": "2026-05-27T02:04:17.638Z",
       "findings": [
         {
           "severity": "warning",
           "code": "untrusted_origin",
-          "message": "Origin github.com/slidevjs/slidev is not on the trusted-org allowlist; review the maintainer."
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     },

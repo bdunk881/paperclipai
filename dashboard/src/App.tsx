@@ -14,6 +14,7 @@ import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
 import { ToastProvider } from "./components/ToastProvider";
 import { WorkspaceBootstrap } from "./components/WorkspaceBootstrap";
+import { ImpersonationBanner } from "./components/ImpersonationBanner";
 
 async function maybeActivateQaPreviewAccess(): Promise<void> {
   const token = readQaPreviewToken(window.location.search);
@@ -79,6 +80,7 @@ export default function App() {
                   bottom-right without each page wiring its own inline
                   fade-out state. */}
               <ToastProvider>
+                <ImpersonationBanner />
                 <AppRouter />
               </ToastProvider>
             </WorkspaceProvider>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "../../context/AuthContext";
 import {
+  downloadLedgerCsv,
   formatCredits,
   getWalletBalance,
   type WalletBalance,
@@ -21,6 +22,19 @@ export function CreditsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [buyOpen, setBuyOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const token = await requireAccessToken();
+      await downloadLedgerCsv(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not export ledger");
+    } finally {
+      setExporting(false);
+    }
+  }, [requireAccessToken]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,15 +98,25 @@ export function CreditsPanel() {
             </div>
           </>
         )}
-        <button
-          type="button"
-          className="btn primary"
-          style={{ marginTop: 12 }}
-          onClick={() => setBuyOpen(true)}
-          disabled={loading}
-        >
-          Buy a credit pack
-        </button>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setBuyOpen(true)}
+            disabled={loading}
+          >
+            Buy a credit pack
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void handleExport()}
+            disabled={loading || exporting}
+            title="Download the full ledger as CSV for accounting / reconciliation"
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        </div>
       </div>
       <BuyCreditPackModal
         open={buyOpen}

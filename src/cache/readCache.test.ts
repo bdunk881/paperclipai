@@ -19,4 +19,18 @@ describe("readCache", () => {
   it("invalidateWorkspaceCache is a no-op when Redis is disabled", async () => {
     await expect(invalidateWorkspaceCache("ws-1", ["home"])).resolves.toBeUndefined();
   });
+
+  it("falls through to loader when Redis is configured but unreachable", async () => {
+    process.env.REDIS_URL = "redis://127.0.0.1:6399";
+    resetRedisClientForTests();
+
+    const loader = jest.fn(async () => ({ ok: true }));
+    const started = Date.now();
+    const result = await cachedWorkspaceRead("ws-1", "home", 30, loader);
+    const elapsed = Date.now() - started;
+
+    expect(result).toEqual({ ok: true });
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(elapsed).toBeLessThan(5_000);
+  }, 10_000);
 });

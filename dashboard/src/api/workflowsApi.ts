@@ -169,11 +169,18 @@ export async function getCanonicalWorkflowVersion(
 // HEL-241C — Presence (collaborative awareness)
 // ---------------------------------------------------------------------------
 
+export interface WorkflowPresenceCursor {
+  x: number;
+  y: number;
+}
+
 export interface WorkflowPresencePeer {
   userId: string;
   name: string;
   color: string;
   selectedStepId?: string | null;
+  /** Live cursor in canvas coordinates. Null when off-canvas. */
+  cursor?: WorkflowPresenceCursor | null;
   lastSeen: number;
 }
 
@@ -190,7 +197,11 @@ export interface WorkflowPresenceResponse {
  */
 export async function heartbeatWorkflowPresence(
   workflowId: string,
-  input: { selectedStepId?: string | null; name?: string },
+  input: {
+    selectedStepId?: string | null;
+    name?: string;
+    cursor?: WorkflowPresenceCursor | null;
+  },
   accessToken: string,
 ): Promise<WorkflowPresenceResponse> {
   const response = await trackedFetch(
@@ -205,4 +216,22 @@ export async function heartbeatWorkflowPresence(
     response,
     `Failed to heartbeat presence: ${response.status}`,
   );
+}
+
+/**
+ * Build the SSE URL for the live presence stream (HEL-241C v2).
+ * EventSource can't set headers, so the access token rides on the
+ * query string — the server promotes it into the Authorization header
+ * via the promoteSseAccessToken shim in app.ts.
+ */
+export function workflowPresenceStreamUrl(
+  workflowId: string,
+  accessToken: string,
+): string {
+  const url = new URL(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/presence/stream`,
+    typeof window === "undefined" ? "http://localhost" : window.location.origin,
+  );
+  url.searchParams.set("access_token", accessToken);
+  return url.toString();
 }

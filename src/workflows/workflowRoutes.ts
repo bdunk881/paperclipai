@@ -38,6 +38,8 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import {
   createPresenceStore,
   colorForUser,
+  type PresenceCursor,
+  type PresenceState,
   type PresenceStore,
 } from "./presenceStore";
 
@@ -614,6 +616,7 @@ export function createWorkflowRoutes(
       const body = (req.body ?? {}) as {
         selectedStepId?: string | null;
         name?: string;
+        cursor?: { x?: unknown; y?: unknown } | null;
       };
       const trimmedName =
         typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
@@ -623,11 +626,89 @@ export function createWorkflowRoutes(
         color: colorForUser(userId),
         selectedStepId:
           typeof body.selectedStepId === "string" ? body.selectedStepId : null,
+        cursor: parseCursor(body.cursor),
         lastSeen: Date.now(),
       });
       res.json({ peers: presenceStore.peers(workflowId, userId) });
     }),
   );
 
+  // ---------------------------------------------------------------------
+  // HEL-241C v2 — GET /api/workflows/:workflowId/presence/stream
+  //
+  // SSE channel for live presence (cursors + selection). Sends an
+  // initial snapshot, then a fresh peer list on every upsert/remove.
+  // Falls back to polling on the client when SSE is unavailable
+  // (corporate proxies, browsers that throttle background EventSource
+  // connections, etc.) — see useWorkflowPresence in the dashboard.
+  //
+  // Auth: EventSource can't set headers, so the client passes the
+  // bearer token via ?access_token=… (same shim used by every other
+  // SSE endpoint — see app.ts SSE-token middleware).
+  // ---------------------------------------------------------------------
+  router.get(
+    "/:workflowId/presence/stream",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+      const { workflowId } = req.params;
+      if (!UUID_RE.test(workflowId)) {
+        res.status(400).json({ error: "workflowId must be a uuid" });
+        return;
+      }
+
+      res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        // Disable nginx response buffering — without this proxies hold
+        // SSE chunks until they accumulate ~4KB, which kills the live
+        // feel for low-rate channels like presence.
+        "X-Accel-Buffering": "no",
+      });
+      res.flushHeaders?.();
+
+      const send = (event: string, payload: unknown): void => {
+        res.write(`event: ${event}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      };
+
+      const broadcast = (peers: PresenceState[]): void => {
+        send("presence", {
+          peers: peers.filter((p) => p.userId !== userId),
+        });
+      };
+
+      // Initial snapshot — without it, a client that connects mid-session
+      // would see nothing until the next peer change.
+      broadcast(presenceStore.peers(workflowId));
+
+      const unsubscribe = presenceStore.subscribe(workflowId, broadcast);
+      const heartbeat = setInterval(() => {
+        // Comment lines keep idle connections alive through proxies that
+        // close after ~30s of silence. Comments are valid SSE and the
+        // EventSource client ignores them.
+        res.write(`: keep-alive ${Date.now()}\n\n`);
+      }, 15_000);
+
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+    }),
+  );
+
   return router;
+}
+
+function parseCursor(raw: unknown): PresenceCursor | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { x, y } = raw as { x?: unknown; y?: unknown };
+  if (typeof x !== "number" || typeof y !== "number") return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
 }

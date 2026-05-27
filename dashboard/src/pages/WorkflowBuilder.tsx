@@ -113,6 +113,7 @@ import {
 import { StudioAssistantPanel } from "../components/workflow/StudioAssistantPanel";
 import { NodeConfigForm } from "../components/workflow/NodeConfigForm";
 import { PresenceStack } from "../components/workflow/PresenceStack";
+import { WorkflowCursors } from "../components/workflow/WorkflowCursors";
 import { useWorkflowPresence } from "../hooks/useWorkflowPresence";
 import { LaunchTeamModal } from "../components/workflow/LaunchTeamModal";
 import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
@@ -637,12 +638,13 @@ export default function WorkflowBuilder() {
     };
   }, [getAccessToken]);
 
-  const { peers: presencePeers } = useWorkflowPresence({
-    workflowId: canonicalWorkflowId,
-    accessToken: presenceAccessToken,
-    name: user?.name || user?.email || "Teammate",
-    selectedStepId: selectedStepId,
-  });
+  const { peers: presencePeers, reportCursor: reportPresenceCursor } =
+    useWorkflowPresence({
+      workflowId: canonicalWorkflowId,
+      accessToken: presenceAccessToken,
+      name: user?.name || user?.email || "Teammate",
+      selectedStepId: selectedStepId,
+    });
 
   const stepNamesById = useMemo(() => {
     const out: Record<string, string> = {};
@@ -1844,6 +1846,20 @@ export default function WorkflowBuilder() {
                 onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
                   updateStepPosition(node.id, node.position);
                 }}
+                // HEL-241C v2 — broadcast our cursor in canvas coords so
+                // peers see it on their overlay. screenToFlowPosition
+                // handles pan + zoom, so peer cursors stay glued to the
+                // same DAG node even if the local user has zoomed in.
+                onMouseMove={(ev: React.MouseEvent<HTMLDivElement>) => {
+                  const instance = reactFlowInstanceRef.current;
+                  if (!instance) return;
+                  const flow = instance.screenToFlowPosition({
+                    x: ev.clientX,
+                    y: ev.clientY,
+                  });
+                  reportPresenceCursor({ x: flow.x, y: flow.y });
+                }}
+                onMouseLeave={() => reportPresenceCursor(null)}
               >
                 <Background
                   variant={BackgroundVariant.Dots}
@@ -1874,6 +1890,10 @@ export default function WorkflowBuilder() {
                   nodeBorderRadius={4}
                   maskColor="color-mix(in srgb, var(--af2-paper) 70%, transparent)"
                 />
+                {/* HEL-241C v2: live peer cursors. Inside ReactFlow so
+                    the ViewportPortal renders them in flow space,
+                    pan + zoom for free. */}
+                <WorkflowCursors peers={presencePeers} />
               </ReactFlow>
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
                 <div className="pointer-events-auto rounded-full border border-af2-line bg-af2-card/95 px-2 py-1.5 shadow-af2 backdrop-blur">

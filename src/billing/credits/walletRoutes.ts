@@ -544,4 +544,93 @@ router.patch(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Spend-by-related breakdown (PR C — Phase 3 analytics)
+// ---------------------------------------------------------------------------
+
+interface SpendByRelatedRow {
+  related_kind: string;
+  related_id: string;
+  credits_consumed: string;
+  wholesale_usd: string;
+  retail_usd: string;
+  call_count: number;
+  latest_call_at: string | null;
+}
+
+/**
+ * Spend breakdown grouped by (related_kind, related_id) over the
+ * trailing N days (default 30). Lets the customer see which agent /
+ * mission / workflow is burning the most credits — critical for both
+ * cost attribution and for pricing their own outputs.
+ *
+ * Query params:
+ *   - `windowDays` — integer 1..90, defaults to 30
+ *
+ * Rows with NULL related_kind / related_id (calls fired without
+ * attribution metadata) are grouped under a synthetic "unattributed" /
+ * "" bucket so they're not silently dropped from totals.
+ *
+ * Capped at 200 rows (sorted by credits_consumed DESC). Realistic
+ * workspaces have <50 distinct (kind, id) pairs in 30d; the cap
+ * exists to keep the response sane for pathological cases.
+ */
+router.get(
+  "/spend-by-related",
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const workspaceId = req.auth?.workspaceId;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+
+    const rawWindow = req.query.windowDays;
+    let windowDays = 30;
+    if (typeof rawWindow === "string") {
+      const parsed = Number.parseInt(rawWindow, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        windowDays = Math.min(parsed, 90);
+      }
+    }
+
+    if (!isPostgresPersistenceEnabled()) {
+      // In-memory mode: nothing to aggregate. Surface an empty result.
+      res.json({ windowDays, rows: [] });
+      return;
+    }
+
+    const result = await queryPostgres<SpendByRelatedRow>(
+      `SELECT
+         COALESCE(related_kind, 'unattributed') AS related_kind,
+         COALESCE(related_id, '')               AS related_id,
+         COALESCE(SUM(-credits_delta), 0)::text AS credits_consumed,
+         COALESCE(SUM(wholesale_cost_usd), 0)::text AS wholesale_usd,
+         COALESCE(SUM(retail_cost_usd), 0)::text    AS retail_usd,
+         COUNT(*)::int                          AS call_count,
+         MAX(created_at)::text                  AS latest_call_at
+         FROM workspace_credit_ledger
+        WHERE workspace_id = $1
+          AND type = 'consumption'
+          AND created_at > now() - ($2::text || ' days')::interval
+        GROUP BY 1, 2
+        ORDER BY credits_consumed::bigint DESC
+        LIMIT 200`,
+      [workspaceId, String(windowDays)],
+    );
+
+    res.json({
+      windowDays,
+      rows: result.rows.map((row) => ({
+        relatedKind: row.related_kind,
+        relatedId: row.related_id,
+        creditsConsumed: row.credits_consumed,
+        wholesaleUsd: Number(row.wholesale_usd),
+        retailUsd: Number(row.retail_usd),
+        callCount: row.call_count,
+        latestCallAt: row.latest_call_at,
+      })),
+    });
+  }),
+);
+
 export default router;

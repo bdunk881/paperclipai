@@ -205,3 +205,39 @@ export async function patchAutoTopupConfig(
   });
   await jsonOrThrow(res, "Update auto-topup config");
 }
+
+// ---------------------------------------------------------------------------
+// Spend-by-related breakdown (PR C — Phase 3 analytics)
+// ---------------------------------------------------------------------------
+
+export interface SpendByRelatedRow {
+  relatedKind: string;
+  relatedId: string;
+  /** bigint-as-string */
+  creditsConsumed: string;
+  wholesaleUsd: number;
+  retailUsd: number;
+  callCount: number;
+  latestCallAt: string | null;
+}
+
+export interface SpendByRelatedResponse {
+  windowDays: number;
+  rows: SpendByRelatedRow[];
+}
+
+/**
+ * GET /api/credits/wallet/spend-by-related — aggregates credits-mode
+ * consumption grouped by (related_kind, related_id) over the trailing
+ * N days (default 30). Used by the dashboard "Spend by source" table.
+ */
+export async function getSpendByRelated(
+  accessToken: string,
+  windowDays: number = 30,
+): Promise<SpendByRelatedResponse> {
+  const res = await fetch(
+    `${BASE}/credits/wallet/spend-by-related?windowDays=${encodeURIComponent(String(windowDays))}`,
+    { headers: authHeaders(accessToken) },
+  );
+  return jsonOrThrow<SpendByRelatedResponse>(res, "Load spend-by-related");
+}

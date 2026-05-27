@@ -128,6 +128,13 @@ function logAppJwtVerificationFailure(
   });
 }
 
+export type AuthAssuranceLevel = "aal1" | "aal2";
+
+export interface AuthAmrEntry {
+  method: string;
+  timestamp: number;
+}
+
 export interface AuthenticatedRequest extends Request {
   auth?: {
     sub: string;
@@ -139,6 +146,8 @@ export interface AuthenticatedRequest extends Request {
     issuer?: string;
     workspaceId?: string;
     sessionId?: string;
+    aal?: AuthAssuranceLevel;
+    amr?: AuthAmrEntry[];
   };
 }
 
@@ -246,6 +255,25 @@ function queueQaBypassAudit(
   })();
 }
 
+function parseAalClaim(value: unknown): AuthAssuranceLevel | undefined {
+  if (value === "aal1" || value === "aal2") return value;
+  return undefined;
+}
+
+function parseAmrClaim(value: unknown): AuthAmrEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: AuthAmrEntry[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const obj = raw as Record<string, unknown>;
+    const method = typeof obj.method === "string" ? obj.method.trim() : "";
+    const timestamp = typeof obj.timestamp === "number" ? obj.timestamp : Number(obj.timestamp);
+    if (!method || !Number.isFinite(timestamp)) continue;
+    entries.push({ method, timestamp });
+  }
+  return entries.length > 0 ? entries : undefined;
+}
+
 function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void {
   const appMetadata = claims.app_metadata as Record<string, unknown> | undefined;
   const userMetadata = claims.user_metadata as Record<string, unknown> | undefined;
@@ -262,6 +290,8 @@ function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void
     issuer: firstString(claims.iss),
     workspaceId: resolveWorkspaceClaim(claims),
     sessionId: firstString(claims.session_id),
+    aal: parseAalClaim(claims["aal"]),
+    amr: parseAmrClaim(claims["amr"]),
   };
 }
 

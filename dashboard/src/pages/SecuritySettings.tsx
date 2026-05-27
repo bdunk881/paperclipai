@@ -9,6 +9,7 @@ import {
   type SecuritySessionCapabilities,
 } from "../api/securityApi";
 import { useAuth } from "../context/AuthContext";
+import { MfaSettingsCard } from "./security/MfaSettingsCard";
 
 function DeviceIcon({ type }: { type: SecuritySession["deviceType"] }) {
   if (type === "mobile") return <Smartphone size={16} className="text-af2-ink-4" />;
@@ -157,7 +158,9 @@ export default function SecuritySettings() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <MfaSettingsCard />
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] mt-6">
         <section className="rounded-xl border border-af2-line bg-af2-card p-6">
           <div className="mb-5 flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-lg border border-af2-line bg-af2-paper">

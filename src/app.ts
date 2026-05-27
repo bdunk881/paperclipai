@@ -38,6 +38,7 @@ import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
 import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
 import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
+import mfaRoutes from "./security/mfaRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -939,6 +940,11 @@ app.use(
   requireRole(...ALL_MEMBER_ROLES),
   securityRoutes,
 );
+// HEL-mfa: MFA enrollment + step-up. User-scoped (no workspace requirement)
+// because a brand-new user must be able to enroll a passkey before they've
+// joined or created a workspace. Audit log writes resolve a workspace from
+// the optional `x-workspace-id` header when one is available.
+app.use("/api/mfa", requireAuth, mfaRoutes);
 // HEL-27 canonical workflows router is mounted further below, AFTER the
 // pre-existing /api/workflows/schema + /api/workflows/generate specific
 // handlers, so those don't get intercepted by the :workflowId param.

@@ -14,6 +14,7 @@ import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
 import { ToastProvider } from "./components/ToastProvider";
 import { WorkspaceBootstrap } from "./components/WorkspaceBootstrap";
+import { MfaStepUpModal } from "./auth/MfaStepUpModal";
 
 async function maybeActivateQaPreviewAccess(): Promise<void> {
   const token = readQaPreviewToken(window.location.search);
@@ -80,6 +81,7 @@ export default function App() {
                   fade-out state. */}
               <ToastProvider>
                 <AppRouter />
+                <MfaStepUpModal />
               </ToastProvider>
             </WorkspaceProvider>
           </ExperienceModeProvider>

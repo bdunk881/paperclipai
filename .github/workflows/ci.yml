@@ -269,6 +269,14 @@ jobs:
           path: jest-output.log
           if-no-files-found: ignore
           retention-days: 7
+      - name: Upload npm debug logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-debug-logs
+          path: ~/.npm/_logs/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload API coverage to Codecov
         continue-on-error: true
         uses: codecov/codecov-action@v5

@@ -7,6 +7,7 @@
 import {
   __resetInMemoryStateForTests,
   commitCredits,
+  getDailySpendCapStatus,
   getWalletBalance,
   grantCredits,
   releaseCredits,
@@ -169,5 +170,18 @@ describe("credits wallet store (in-memory mode)", () => {
     });
     expect(commit.committed).toBe(false);
     expect(commit.reason).toBe("no_reservation");
+  });
+
+  // PR B — daily-cap behavior. In in-memory mode getDailySpendCapStatus
+  // always returns cap=null, so cap enforcement is a no-op locally; the
+  // SQL path (exercised in walletStore.integration.test.ts) is the
+  // actual enforcement site. This test locks in the in-memory contract.
+  it("returns cap=null in-memory mode (cap is a Postgres-side guardrail)", async () => {
+    const status = await getDailySpendCapStatus(workspaceId);
+    expect(status).toEqual({
+      cap: null,
+      consumedToday: 0n,
+      capReached: false,
+    });
   });
 });

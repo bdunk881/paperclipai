@@ -189,6 +189,8 @@ function describeCreditsError(error: CreditsCallError): string {
       return `no pricing on file for ${error.provider}/${error.model}`;
     case "insufficient_credits":
       return `wallet is empty (balance: ${error.balanceAfter ?? "unknown"})`;
+    case "daily_cap_reached":
+      return `workspace daily credit cap reached`;
     case "provider_429":
       return `platform key also rate-limited (retry after ${error.retryAfterSeconds}s)`;
     case "provider_error":

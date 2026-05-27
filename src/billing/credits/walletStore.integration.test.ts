@@ -270,4 +270,61 @@ describe("credit wallet RPCs — Postgres integration", () => {
     expect(result.committed).toBe(false);
     expect(result.reason).toBe("no_reservation");
   });
+
+  // PR B — daily spend cap (migration 077).
+  it("refuses reservations that would exceed the daily spend cap", async () => {
+    if (!canRunIntegration) return;
+
+    // Use the public API to set the cap so we also exercise that path.
+    const { setDailySpendCap, reserveCredits } = await import("./walletStore");
+
+    await grant(5000, "grant-cap-1");
+    await setDailySpendCap(workspaceId, 1000n);
+
+    // First small reservation fits under the cap → succeeds.
+    const first = await reserveCredits({
+      workspaceId,
+      userId,
+      credits: 500n,
+      reservationKey: "cap-test-1",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    expect(first.reserved).toBe(true);
+
+    // Commit the first reservation so it shows up as 'consumption' in
+    // the ledger. The cap counts consumption, not reservations.
+    await commit({
+      reservationKey: "cap-test-1",
+      commitKey: "cap-test-commit-1",
+      actualCredits: 500,
+    });
+
+    // Now a 600-credit reservation would push trailing-24h to 1100 > cap=1000.
+    // Refused with daily_cap_reached.
+    const second = await reserveCredits({
+      workspaceId,
+      userId,
+      credits: 600n,
+      reservationKey: "cap-test-2",
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+    });
+    expect(second.reserved).toBe(false);
+    expect(second.reason).toBe("daily_cap_reached");
+  });
+
+  it("clears the cap when null is supplied", async () => {
+    if (!canRunIntegration) return;
+    const { setDailySpendCap, getDailySpendCapStatus } = await import("./walletStore");
+
+    await setDailySpendCap(workspaceId, 50000n);
+    let status = await getDailySpendCapStatus(workspaceId);
+    expect(status.cap).toBe(50000n);
+
+    await setDailySpendCap(workspaceId, null);
+    status = await getDailySpendCapStatus(workspaceId);
+    expect(status.cap).toBeNull();
+    expect(status.capReached).toBe(false);
+  });
 });

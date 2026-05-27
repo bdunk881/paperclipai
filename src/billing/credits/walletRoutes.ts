@@ -9,6 +9,10 @@
  *   - POST /setup-checkout/confirm — synchronous handoff after Stripe
  *     redirect (the setup_intent.succeeded webhook is the durable path)
  *   - PATCH /auto-topup — update threshold + amount + enabled
+ *   - PATCH /daily-cap (PR B) — set/clear per-workspace daily spend cap
+ *
+ * The balance endpoint also surfaces (PR B) `lowBalance` + `dailyCapStatus`
+ * signals so the dashboard can render warning banners.
  */
 import { Router, Response } from "express";
 import type Stripe from "stripe";
@@ -22,8 +26,10 @@ import {
 import { asyncHandler } from "../../middleware/asyncHandler";
 import { getStripe } from "../stripeClient";
 import {
+  getDailySpendCapStatus,
   getWalletBalance,
   getWalletStripeIds,
+  setDailySpendCap,
   setWalletStripeCustomerId,
   updateAutoTopupConfig,
 } from "./walletStore";
@@ -35,6 +41,14 @@ function resolveAppBaseUrl(req: AuthenticatedRequest): string {
   const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
   return host ? `${proto}://${host}` : "http://localhost:5173";
 }
+
+/**
+ * Threshold for "low balance" signal in the dashboard banner. The
+ * dashboard renders a warning when the wallet has less than this
+ * fraction of the trailing-7d consumption left. 0.30 = "less than ~2
+ * days of normal usage."
+ */
+const LOW_BALANCE_FRACTION = 0.30;
 
 const router = Router();
 
@@ -49,6 +63,8 @@ router.get(
     }
 
     const wallet = await getWalletBalance(workspaceId, userId);
+    const capStatus = await getDailySpendCapStatus(workspaceId);
+    const trailing7dConsumed = await getTrailing7dConsumption(workspaceId);
     if (!wallet) {
       // Lazy: a wallet doesn't exist until the first grant. Surface zero.
       res.json({
@@ -56,19 +72,94 @@ router.get(
         lifetimePurchasedCredits: "0",
         lifetimeConsumedCredits: "0",
         autoTopupEnabled: false,
+        lowBalance: false,
+        dailyCapStatus: {
+          cap: capStatus.cap?.toString() ?? null,
+          consumedToday: capStatus.consumedToday.toString(),
+          capReached: capStatus.capReached,
+        },
       });
       return;
     }
 
+    // PR B: lowBalance flag. Triggers when balance < 30% of trailing-7d
+    // consumption. New workspaces (0 consumption) don't trigger because
+    // 30% of 0 is 0 — the check is "balance >= 0" which always passes.
+    const balance = wallet.balanceCredits;
+    const threshold = (trailing7dConsumed * BigInt(Math.round(LOW_BALANCE_FRACTION * 100))) / 100n;
+    const lowBalance = trailing7dConsumed > 0n && balance < threshold;
+
     res.json({
-      balanceCredits: wallet.balanceCredits.toString(),
+      balanceCredits: balance.toString(),
       lifetimePurchasedCredits: wallet.lifetimePurchasedCredits.toString(),
       lifetimeConsumedCredits: wallet.lifetimeConsumedCredits.toString(),
       autoTopupEnabled: wallet.autoTopupEnabled,
       autoTopupTriggerCredits: wallet.autoTopupTriggerCredits?.toString() ?? null,
       autoTopupAmountCredits: wallet.autoTopupAmountCredits?.toString() ?? null,
       updatedAt: wallet.updatedAt,
+      lowBalance,
+      dailyCapStatus: {
+        cap: capStatus.cap?.toString() ?? null,
+        consumedToday: capStatus.consumedToday.toString(),
+        capReached: capStatus.capReached,
+      },
     });
+  }),
+);
+
+/**
+ * Sum the consumption credits over the trailing 7 days for the
+ * lowBalance threshold calculation. Returns 0n in in-memory mode or
+ * when no consumption has happened yet.
+ */
+async function getTrailing7dConsumption(workspaceId: string): Promise<bigint> {
+  if (!isPostgresPersistenceEnabled()) return 0n;
+  const result = await queryPostgres<{ consumed: string }>(
+    `SELECT COALESCE(SUM(-credits_delta), 0)::text AS consumed
+       FROM workspace_credit_ledger
+      WHERE workspace_id = $1
+        AND type = 'consumption'
+        AND created_at > now() - interval '7 days'`,
+    [workspaceId],
+  );
+  return BigInt(result.rows[0]?.consumed ?? "0");
+}
+
+/**
+ * Update the workspace's daily credits spend cap. Customer-facing
+ * safety guardrail — when set, reserveCredits refuses to reserve once
+ * the trailing-24h consumption reaches this cap.
+ *
+ * Accepts `{ cap: bigint-as-string | null }`. Null clears the cap.
+ */
+router.patch(
+  "/daily-cap",
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const workspaceId = req.auth?.workspaceId;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+
+    const body = req.body as { cap?: unknown };
+    let cap: bigint | null;
+    if (body.cap == null) {
+      cap = null;
+    } else {
+      try {
+        cap = BigInt(String(body.cap));
+      } catch {
+        res.status(400).json({ error: "cap must be an integer or null" });
+        return;
+      }
+      if (cap < 0n) {
+        res.status(400).json({ error: "cap must be >= 0" });
+        return;
+      }
+    }
+
+    await setDailySpendCap(workspaceId, cap);
+    res.json({ ok: true, cap: cap?.toString() ?? null });
   }),
 );
 

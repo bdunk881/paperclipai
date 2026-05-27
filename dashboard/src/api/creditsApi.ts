@@ -2,6 +2,13 @@ import { getApiBasePath } from "./baseUrl";
 
 const BASE = getApiBasePath();
 
+export interface DailyCapStatusDTO {
+  /** bigint-as-string; null = no cap configured. */
+  cap: string | null;
+  consumedToday: string;
+  capReached: boolean;
+}
+
 export interface WalletBalance {
   balanceCredits: string;
   lifetimePurchasedCredits: string;
@@ -10,6 +17,23 @@ export interface WalletBalance {
   autoTopupTriggerCredits?: string | null;
   autoTopupAmountCredits?: string | null;
   updatedAt?: string;
+  /** PR B — true when balance drops below 30% of trailing-7d consumption. */
+  lowBalance?: boolean;
+  /** PR B — per-workspace daily spend cap status. */
+  dailyCapStatus?: DailyCapStatusDTO;
+}
+
+/** PATCH /api/credits/wallet/daily-cap — set/clear the workspace's daily cap. */
+export async function patchDailySpendCap(
+  accessToken: string,
+  cap: string | null,
+): Promise<void> {
+  const res = await fetch(`${BASE}/credits/wallet/daily-cap`, {
+    method: "PATCH",
+    headers: { ...authHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ cap }),
+  });
+  await jsonOrThrow(res, "Update daily spend cap");
 }
 
 export interface CreditPack {

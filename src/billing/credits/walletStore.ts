@@ -38,8 +38,17 @@ export interface WalletBalance {
 export interface ReserveResult {
   reserved: boolean;
   balanceAfter: bigint | null;
-  reason: "reserved" | "duplicate" | "insufficient_credits" | "error";
+  reason: "reserved" | "duplicate" | "insufficient_credits" | "daily_cap_reached" | "error";
   reservationKey: string;
+}
+
+export interface DailySpendCapStatus {
+  /** Customer-configured daily cap; null = no cap. */
+  cap: bigint | null;
+  /** Total credits consumed in the trailing 24h window. */
+  consumedToday: bigint;
+  /** True when consumedToday >= cap. Always false when cap is null. */
+  capReached: boolean;
 }
 
 export interface CommitResult {
@@ -171,6 +180,68 @@ export async function getWalletBalance(
   });
 }
 
+/**
+ * Compute the workspace's daily-spend-cap status (per migration 077).
+ *
+ * Returns the configured cap (null = no cap) and the trailing-24h
+ * consumption. Used by reserveCredits to refuse new reservations when
+ * the cap is reached, and by the wallet/balance endpoint so the
+ * dashboard can show a "daily cap reached" banner.
+ *
+ * In-memory mode returns `{ cap: null, consumedToday: 0n }` — the cap
+ * is a customer-set safety feature and doesn't apply in dev/test where
+ * there's no real ledger.
+ */
+export async function getDailySpendCapStatus(workspaceId: string): Promise<DailySpendCapStatus> {
+  if (!persistenceAvailable()) {
+    return { cap: null, consumedToday: 0n, capReached: false };
+  }
+  // Single round-trip: pull the cap from workspaces + sum consumption
+  // from the ledger in one query.
+  const result = await queryPostgres<{
+    cap: string | null;
+    consumed: string;
+  }>(
+    `SELECT
+       (SELECT credits_daily_spend_cap_credits::text
+          FROM workspaces
+         WHERE id = $1) AS cap,
+       COALESCE(SUM(-credits_delta), 0)::text AS consumed
+       FROM workspace_credit_ledger
+      WHERE workspace_id = $1
+        AND type = 'consumption'
+        AND created_at > now() - interval '24 hours'`,
+    [workspaceId],
+  );
+  const row = result.rows[0];
+  const cap = row?.cap != null ? BigInt(row.cap) : null;
+  const consumed = BigInt(row?.consumed ?? "0");
+  return {
+    cap,
+    consumedToday: consumed,
+    capReached: cap != null && consumed >= cap,
+  };
+}
+
+/**
+ * Update the workspace's daily spend cap. Null clears the cap entirely.
+ * Caller must enforce its own auth (this is invoked from a route
+ * gated by requireRole).
+ */
+export async function setDailySpendCap(
+  workspaceId: string,
+  cap: bigint | null,
+): Promise<void> {
+  if (!persistenceAvailable()) return;
+  await queryPostgres(
+    `UPDATE workspaces
+        SET credits_daily_spend_cap_credits = $2::bigint,
+            updated_at = now()
+      WHERE id = $1`,
+    [workspaceId, cap?.toString() ?? null],
+  );
+}
+
 export interface ReserveArgs {
   workspaceId: string;
   userId: string;
@@ -227,6 +298,23 @@ export async function reserveCredits(args: ReserveArgs): Promise<ReserveResult> 
       reserved: true,
       balanceAfter: wallet.balanceCredits,
       reason: "reserved",
+      reservationKey,
+    };
+  }
+
+  // PR B: per-workspace daily spend cap. Pre-flight check before the
+  // SQL reserve so we never write a reservation that would breach the
+  // cap. Costs one extra query per credits-mode call but cap-enforcement
+  // is more important than that latency.
+  const capStatus = await getDailySpendCapStatus(args.workspaceId);
+  if (
+    capStatus.cap != null
+    && capStatus.consumedToday + args.credits > capStatus.cap
+  ) {
+    return {
+      reserved: false,
+      balanceAfter: null,
+      reason: "daily_cap_reached",
       reservationKey,
     };
   }

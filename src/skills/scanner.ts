@@ -251,7 +251,19 @@ function makeExcerpt(content: string, match: RegExpExecArray): string {
   const start = Math.max(0, match.index - 30);
   const end = Math.min(content.length, match.index + match[0].length + 30);
   const slice = content.slice(start, end).replace(/\s+/g, " ").trim();
-  return slice.length > 140 ? `${slice.slice(0, 140)}…` : slice;
+  // JS `slice` cuts by UTF-16 code unit; trim off any lone surrogate left at
+  // the end so JSON.stringify can't emit an orphan `\ud83d` that breaks
+  // strict JSON parsers reading the manifest.
+  const safe = trimLoneSurrogate(slice);
+  return safe.length > 140 ? `${trimLoneSurrogate(safe.slice(0, 140))}…` : safe;
+}
+
+function trimLoneSurrogate(s: string): string {
+  if (s.length === 0) return s;
+  const last = s.charCodeAt(s.length - 1);
+  // High surrogate without a paired low surrogate after it.
+  if (last >= 0xd800 && last <= 0xdbff) return s.slice(0, -1);
+  return s;
 }
 
 function staticScanContent(filename: string, content: string): ScanFinding[] {

@@ -32,6 +32,7 @@ import {
   inMemoryAllowed,
   isPostgresPersistenceEnabled,
 } from "../../db/postgres";
+import { safeLogJobRun } from "../../adminConsole/infra/jobHistoryStore";
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const DEDUPE_COOLDOWN_MS = 60 * 60 * 1000;
@@ -333,6 +334,7 @@ export function startCreditAnomalyDetector(opts?: {
   }
 
   const tick = (): void => {
+    const startedAt = new Date();
     runCreditAnomalyDetection()
       .then((result) => {
         if (result.alertsFired > 0) {
@@ -343,6 +345,19 @@ export function startCreditAnomalyDetector(opts?: {
               `dailyPlatformSpend=$${result.dailyPlatformSpendUsd.toFixed(2)}`,
           );
         }
+        void safeLogJobRun({
+          jobName: "credit_anomaly_detector",
+          startedAt,
+          endedAt: new Date(),
+          outcome: result.alertsFired > 0 ? "partial" : "success",
+          payload: {
+            alerts_fired: result.alertsFired,
+            alerts_suppressed: result.alertsSuppressed,
+            spikes: result.spikes,
+            stuck_workspaces: result.stuckWorkspaces,
+            daily_platform_spend_usd: result.dailyPlatformSpendUsd,
+          },
+        });
       })
       .catch((err) => {
         logger.error(
@@ -350,6 +365,13 @@ export function startCreditAnomalyDetector(opts?: {
             err instanceof Error ? err.message : String(err)
           }`,
         );
+        void safeLogJobRun({
+          jobName: "credit_anomaly_detector",
+          startedAt,
+          endedAt: new Date(),
+          outcome: "failure",
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
   };
 

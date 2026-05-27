@@ -29,6 +29,7 @@ import {
   queryPostgres,
 } from "../../db/postgres";
 import { setStatus, updatePrepaidBalance } from "./keySourceStore";
+import { safeLogJobRun } from "../../adminConsole/infra/jobHistoryStore";
 
 const OPENROUTER_BALANCE_URL = "https://openrouter.ai/api/v1/credits";
 
@@ -254,6 +255,7 @@ export function startOpenrouterHealthJob(opts?: {
   }
 
   const tick = (): void => {
+    const startedAt = new Date();
     runOpenrouterHealthCheck()
       .then((result) => {
         if (result.sourcesChecked === 0) return;
@@ -265,6 +267,19 @@ export function startOpenrouterHealthJob(opts?: {
               `→low_balance=${result.flippedToLowBalance}, →active=${result.flippedToActive}`,
           );
         }
+        void safeLogJobRun({
+          jobName: "openrouter_health",
+          startedAt,
+          endedAt: new Date(),
+          outcome: result.sourcesChecked === 0 ? "skipped" : "success",
+          payload: {
+            sources_checked: result.sourcesChecked,
+            balance_usd: result.balanceUsd,
+            trailing_24h_usd: result.trailing24hUsd,
+            flipped_to_low_balance: result.flippedToLowBalance,
+            flipped_to_active: result.flippedToActive,
+          },
+        });
       })
       .catch((err) => {
         logger.error(
@@ -272,6 +287,13 @@ export function startOpenrouterHealthJob(opts?: {
             err instanceof Error ? err.message : String(err)
           }`,
         );
+        void safeLogJobRun({
+          jobName: "openrouter_health",
+          startedAt,
+          endedAt: new Date(),
+          outcome: "failure",
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
   };
 

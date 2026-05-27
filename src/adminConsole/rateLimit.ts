@@ -29,6 +29,14 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   // balance recompute and momentarily affects the customer credits path).
   // Create/disable have their own audit trail but no hard daily cap.
   provider_key_rotations: { limit: 10, window: "day" },
+
+  // HEL infra dashboard PR #2: Ask-an-Agent send rate. Per-admin; protects
+  // misconfigured webhooks from spamming receivers and gives accidental
+  // double-click protection.
+  ask_agent: { limit: 30, window: "hour" },
+  // Test-fire from the Settings page; lower than ask_agent so a careless
+  // admin can't loop on it.
+  test_agent_webhook: { limit: 10, window: "hour" },
 };
 
 function envOverride(name: string): number | undefined {

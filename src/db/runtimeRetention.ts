@@ -1,4 +1,5 @@
 import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "./postgres";
+import { safeLogJobRun } from "../adminConsole/infra/jobHistoryStore";
 
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -25,24 +26,43 @@ export async function cleanupRuntimePersistenceHistory(now = new Date()): Promis
     return;
   }
   if (isPostgresConfigured()) {
+    const startedAt = new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
 
-    await queryPostgres(
-      `DELETE FROM approval_requests
-       WHERE COALESCE(resolved_at, requested_at) < $1::timestamptz`,
-      [cutoff]
-    );
-    await queryPostgres(
-      `DELETE FROM runs
-       WHERE COALESCE(ended_at, started_at) < $1::timestamptz`,
-      [cutoff]
-    );
-    await queryPostgres(
-      `DELETE FROM memory_entries
-       WHERE (expires_at IS NOT NULL AND expires_at < NOW())
-          OR updated_at < $1::timestamptz`,
-      [cutoff]
-    );
+    try {
+      await queryPostgres(
+        `DELETE FROM approval_requests
+         WHERE COALESCE(resolved_at, requested_at) < $1::timestamptz`,
+        [cutoff]
+      );
+      await queryPostgres(
+        `DELETE FROM runs
+         WHERE COALESCE(ended_at, started_at) < $1::timestamptz`,
+        [cutoff]
+      );
+      await queryPostgres(
+        `DELETE FROM memory_entries
+         WHERE (expires_at IS NOT NULL AND expires_at < NOW())
+            OR updated_at < $1::timestamptz`,
+        [cutoff]
+      );
+      void safeLogJobRun({
+        jobName: "runtime_retention",
+        startedAt,
+        endedAt: new Date(),
+        outcome: "success",
+        payload: { retention_days: retentionDays, cutoff },
+      });
+    } catch (err) {
+      void safeLogJobRun({
+        jobName: "runtime_retention",
+        startedAt,
+        endedAt: new Date(),
+        outcome: "failure",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
     return;
   }
 

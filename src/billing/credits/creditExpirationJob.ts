@@ -30,6 +30,7 @@ import {
   queryPostgres,
 } from "../../db/postgres";
 import { grantCredits } from "./walletStore";
+import { safeLogJobRun } from "../../adminConsole/infra/jobHistoryStore";
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const EXPIRATION_THRESHOLD_MONTHS = 12;
@@ -182,6 +183,7 @@ export function startCreditExpirationJob(opts?: {
   }
 
   const tick = (): void => {
+    const startedAt = new Date();
     runCreditExpirationCycle()
       .then((result) => {
         if (result.walletsExpired > 0) {
@@ -191,6 +193,17 @@ export function startCreditExpirationJob(opts?: {
               `(scanned ${result.walletsScanned} wallets with positive balance)`,
           );
         }
+        void safeLogJobRun({
+          jobName: "credit_expiration",
+          startedAt,
+          endedAt: new Date(),
+          outcome: "success",
+          payload: {
+            wallets_scanned: result.walletsScanned,
+            wallets_expired: result.walletsExpired,
+            credits_expired: result.creditsExpired.toString(),
+          },
+        });
       })
       .catch((err) => {
         logger.error(
@@ -198,6 +211,13 @@ export function startCreditExpirationJob(opts?: {
             err instanceof Error ? err.message : String(err)
           }`,
         );
+        void safeLogJobRun({
+          jobName: "credit_expiration",
+          startedAt,
+          endedAt: new Date(),
+          outcome: "failure",
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
   };
 

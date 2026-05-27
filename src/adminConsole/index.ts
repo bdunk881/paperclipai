@@ -28,6 +28,8 @@ import { createNotesRoutes } from "./notesRoutes";
 import { createDataHygieneRoutes } from "./dataHygieneRoutes";
 import { createAbuseSignalsRoutes } from "./abuseSignalsRoutes";
 import { createCreditsPoolRoutes } from "./creditsPoolRoutes";
+import { createInfraRoutes } from "./infra";
+import { createAgentWebhookRoutes } from "./agentWebhooks/routes";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
 
@@ -47,6 +49,8 @@ export function createAdminConsoleRoutes(pool: Pool): Router {
   router.use("/data-hygiene", createDataHygieneRoutes(pool));
   router.use("/abuse", createAbuseSignalsRoutes(pool));
   router.use("/credits/key-sources", createCreditsPoolRoutes(pool));
+  router.use("/infra", createInfraRoutes(pool));
+  router.use("/agent-webhooks", createAgentWebhookRoutes(pool));
 
   return router;
 }

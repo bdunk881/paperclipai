@@ -2019,6 +2019,7 @@ export default function WorkflowBuilder() {
                       step={selectedStep}
                       onChange={(patch) => updateStep(selectedStep.id, patch)}
                       disabled={isReadonlyBuilder}
+                      allSteps={template.steps}
                     />
                   )}
 

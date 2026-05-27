@@ -66,7 +66,7 @@ const workflowStepSchema = z
     knowledgeMinScore: z.number().min(0).max(1).optional(),
     condition: z.string().optional(),
     action: z.string().optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     mcpServerUrl: z.string().optional(),
     mcpTool: z.string().optional(),
     agentModel: z.string().optional(),
@@ -112,8 +112,8 @@ const workflowTemplateSchema = z.object({
   retry: retryPolicySchema.optional(),
   errors: z.array(workflowStepSchema).optional(),
   _finally: z.array(workflowStepSchema).optional(),
-  sampleInput: z.record(z.unknown()),
-  expectedOutput: z.record(z.unknown()),
+  sampleInput: z.record(z.string(), z.unknown()),
+  expectedOutput: z.record(z.string(), z.unknown()),
 });
 
 export const portableWorkflowBundleSchema = z.object({

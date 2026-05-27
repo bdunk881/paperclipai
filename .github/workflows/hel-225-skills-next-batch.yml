@@ -1,0 +1,160 @@
+name: HEL-225 Skills — auto-fire next batch on merge
+
+# Fires the next ad-hoc batch of the skills.sh registry scan whenever a
+# HEL-225 PR merges into dev. Self-driving until the catalog is saturated,
+# at which point the run exits cleanly without opening a follow-up PR.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Number of catalog refs to attempt this run"
+        required: false
+        default: "750"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: hel-225-next-batch
+  cancel-in-progress: false
+
+jobs:
+  scan-next-batch:
+    name: Scan next batch of skills.sh registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Only run when a HEL-225 PR merged (or on manual dispatch). Skip the
+    # PRs this workflow itself opens to avoid an infinite ping-pong loop.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       contains(github.event.pull_request.title, 'HEL-225') &&
+       !contains(github.event.pull_request.title, '[auto-batch]'))
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Fetch skills.sh catalog
+        run: |
+          git clone --depth 1 https://github.com/mastra-ai/skills-api /tmp/skills-api
+          test -f /tmp/skills-api/src/registry/scraped-skills.json
+          jq '.totalSkills' /tmp/skills-api/src/registry/scraped-skills.json
+
+      - name: Compute next unscanned batch
+        id: batch
+        run: |
+          BATCH_SIZE=${{ github.event.inputs.batch_size || '750' }}
+          # Skip refs that are already in the manifest; pick the next slice
+          # of install-ranked entries the manifest doesn't yet cover. We
+          # walk the install-ranked list and keep refs whose ref string is
+          # not present in the manifest, up to BATCH_SIZE.
+          jq -r '.entries | to_entries[] | .value.ref' skills/.manifest.json | sort -u > /tmp/scanned-refs.txt
+          jq -r '.skills | sort_by(-.installs) | .[] | "\(.source)@\(.skillId)"' \
+            /tmp/skills-api/src/registry/scraped-skills.json > /tmp/all-refs-ranked.txt
+          grep -Fxv -f /tmp/scanned-refs.txt /tmp/all-refs-ranked.txt | head -n "$BATCH_SIZE" > /tmp/refs-next-batch.txt
+          REF_COUNT=$(wc -l < /tmp/refs-next-batch.txt | tr -d ' ')
+          REPO_COUNT=$(awk -F@ '{print $1}' /tmp/refs-next-batch.txt | sort -u | wc -l | tr -d ' ')
+          echo "ref_count=$REF_COUNT" >> "$GITHUB_OUTPUT"
+          echo "repo_count=$REPO_COUNT" >> "$GITHUB_OUTPUT"
+          echo "Computed batch: $REF_COUNT refs across $REPO_COUNT unique repos"
+
+      - name: Exit early if catalog is exhausted
+        if: steps.batch.outputs.ref_count == '0'
+        run: |
+          echo "No unscanned refs remaining — catalog saturated."
+          exit 0
+
+      - name: Snapshot manifest before scan
+        run: |
+          jq '.entries | length' skills/.manifest.json > /tmp/manifest-count-before.txt
+          ls -d skills/*/ 2>/dev/null | wc -l > /tmp/skill-dirs-before.txt
+
+      - name: Run skill import + scan
+        env:
+          IMPORT_SKILLS_FULL: "1"
+        run: npx ts-node scripts/import-skills.ts /tmp/refs-next-batch.txt
+
+      - name: Diff manifest
+        id: diff
+        run: |
+          BEFORE=$(cat /tmp/manifest-count-before.txt)
+          AFTER=$(jq '.entries | length' skills/.manifest.json)
+          DIRS_BEFORE=$(cat /tmp/skill-dirs-before.txt)
+          DIRS_AFTER=$(ls -d skills/*/ 2>/dev/null | wc -l)
+          NEW_ENTRIES=$((AFTER - BEFORE))
+          NEW_DIRS=$((DIRS_AFTER - DIRS_BEFORE))
+          echo "new_entries=$NEW_ENTRIES" >> "$GITHUB_OUTPUT"
+          echo "new_dirs=$NEW_DIRS" >> "$GITHUB_OUTPUT"
+          echo "entries_after=$AFTER" >> "$GITHUB_OUTPUT"
+          echo "dirs_after=$DIRS_AFTER" >> "$GITHUB_OUTPUT"
+          echo "Manifest entries: $BEFORE → $AFTER (+$NEW_ENTRIES)"
+          echo "Installed skill dirs: $DIRS_BEFORE → $DIRS_AFTER (+$NEW_DIRS)"
+
+      - name: Exit when batch produces no new entries
+        if: steps.diff.outputs.new_entries == '0' && steps.diff.outputs.new_dirs == '0'
+        run: |
+          echo "Batch produced 0 new manifest entries and 0 new skill dirs — saturated."
+          echo "Stopping the auto-batch loop. Run with workflow_dispatch and a higher batch_size to probe further down the install-ranked list."
+          exit 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create branch, commit, push
+        id: push
+        run: |
+          STAMP=$(date -u +%Y%m%d-%H%M%S)
+          BRANCH="auto/hel-225-skills-batch-$STAMP"
+          git checkout -b "$BRANCH"
+          git add skills/
+          git commit -m "HEL-225 [auto-batch]: scan ${{ steps.batch.outputs.ref_count }} catalog refs (+${{ steps.diff.outputs.new_entries }} manifest entries)"
+          git push -u origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open follow-up PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base dev \
+            --head "${{ steps.push.outputs.branch }}" \
+            --draft \
+            --title "HEL-225 [auto-batch]: skills.sh scan +${{ steps.diff.outputs.new_entries }} entries, +${{ steps.diff.outputs.new_dirs }} installs" \
+            --body "$(cat <<EOF
+          Auto-fired by \`.github/workflows/hel-225-skills-next-batch.yml\` after the previous HEL-225 PR merged.
+
+          ## Inputs
+          - Refs attempted: **${{ steps.batch.outputs.ref_count }}** across ${{ steps.batch.outputs.repo_count }} unique repos
+          - Source: next unscanned slice of \`mastra-ai/skills-api\` catalog ranked by install count
+
+          ## Result
+          - Manifest entries: **+${{ steps.diff.outputs.new_entries }}** (total ${{ steps.diff.outputs.entries_after }})
+          - New skill directories installed: **+${{ steps.diff.outputs.new_dirs }}** (total ${{ steps.diff.outputs.dirs_after }})
+
+          See the workflow run for the full per-skill log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ## Reviewer notes
+          - Inspect any \`rejected\` entries in \`skills/.manifest.json\` before merging.
+          - Approved entries are installed under \`skills/<skillKey>/\` with their SKILL.md preserved.
+          - The trust-regression guard from #1067 is active; trusted-origin entries are not overwritten by untrusted re-vendors.
+
+          Merging this triggers the next batch automatically. To stop the loop, change the PR title to remove "HEL-225" or close the PR without merging.
+          EOF
+          )"

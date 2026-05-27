@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useEventStream } from "../hooks/useEventStream";
 import {
   createTemplate,
   deleteTemplate,
@@ -349,11 +350,26 @@ export default function Routines({
     input.click();
   }
 
+  // HEL-218: SSE refresh counter. The workspace-wide routine stream
+  // bumps this on every run.lifecycle event, which makes the load
+  // effect below re-fetch templates + prompt routines so list-view
+  // status badges stay live.
+  const [sseRefreshKey, setSseRefreshKey] = useState(0);
+  useEventStream("/api/routines/stream", {
+    onMessage: () => setSseRefreshKey((n) => n + 1),
+  });
+
   useEffect(() => {
-    if (initialTemplates) return;
+    // Skip the initial fetch only on the very first render when a
+    // loader already supplied templates. After that, sseRefreshKey
+    // changes drive re-fetches normally.
+    if (initialTemplates && sseRefreshKey === 0) return;
     let cancelled = false;
     void (async () => {
-      setLoading(true);
+      // Only show the big spinner on first paint; SSE-triggered reloads
+      // should refresh in the background without flashing the empty state.
+      const isFirstPaint = sseRefreshKey === 0;
+      if (isFirstPaint) setLoading(true);
       setError(null);
       try {
         const token = (await getAccessToken()) ?? undefined;
@@ -374,13 +390,13 @@ export default function Routines({
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && isFirstPaint) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [initialTemplates, getAccessToken]);
+  }, [initialTemplates, getAccessToken, sseRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;

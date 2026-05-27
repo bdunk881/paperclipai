@@ -32,6 +32,7 @@ import {
   type TicketStatus,
 } from "../api/tickets";
 import { useAuth } from "../context/AuthContext";
+import { useEventStream } from "../hooks/useEventStream";
 import type { TicketDetailRouteData } from "../routes/ticketRouteData";
 import {
   TicketActorChip,
@@ -205,13 +206,15 @@ export default function TicketDetail({
     })();
   }, [getAccessToken, initialData, loadTicket, user]);
 
-  useEffect(() => {
-    if (!ticketId) return undefined;
-    const interval = window.setInterval(() => {
-      void loadTicket({ silent: true });
-    }, 30000);
-    return () => window.clearInterval(interval);
-  }, [loadTicket, ticketId]);
+  // HEL-218: live per-ticket stream. Subscribes to PR #1025's
+  // /api/tickets/:id/stream and silently re-fetches the ticket
+  // aggregate on every envelope (ticket.update.appended,
+  // run.lifecycle, trace.forward). Replaces the 30s polling
+  // interval that lived here before.
+  useEventStream(
+    ticketId ? `/api/tickets/${encodeURIComponent(ticketId)}/stream` : null,
+    { onMessage: () => void loadTicket({ silent: true }) },
+  );
 
   useEffect(
     () => () => {

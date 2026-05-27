@@ -39,6 +39,7 @@ import { useWorkspace } from "../context/useWorkspace";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 import { useTicketsQuery } from "../hooks/queries/useTicketsQuery";
+import { useEventStream } from "../hooks/useEventStream";
 import { queryKeys } from "../lib/queryKeys";
 import {
   buildCreateTicketPayload,
@@ -157,6 +158,12 @@ export default function Tickets({ routeAction }: TicketsProps = {}) {
       queryKey: queryKeys.tickets(activeWorkspaceId),
     });
   }, [activeWorkspaceId, queryClient]);
+
+  // HEL-218: live ticket list. PR #1025's workspace ticket stream
+  // covers ticket.created, ticket.update.appended, and the run
+  // lifecycle / forwarded trace events. Refreshing the cached
+  // tickets query on each envelope keeps the list view in sync.
+  useEventStream("/api/tickets/stream", { onMessage: refreshTickets });
 
   useEffect(() => {
     const actionData = routeAction?.data;

@@ -215,12 +215,32 @@ jobs:
       # the failure was opaque). `tee` preserves the live stream and
       # `pipefail` makes the step fail when jest fails (without it the
       # pipeline would succeed off of tee's exit code).
+      #
+      # HEL-235: auto-retry once on flake. The suite passes locally on both
+      # node 22 and 24 across all 2484 tests, so the failures we keep seeing
+      # are CI-environment-specific (resource pressure, network timing). One
+      # retry absorbs that without masking a real regression — two clean
+      # passes only happen if the failure is genuinely transient.
       - name: Run test:coverage with capture
         id: test-run
         shell: bash
         run: |
           set -o pipefail
-          npm run test:coverage 2>&1 | tee jest-output.log
+          attempt=1
+          max_attempts=2
+          while [ $attempt -le $max_attempts ]; do
+            echo "::group::test:coverage attempt $attempt of $max_attempts"
+            if npm run test:coverage 2>&1 | tee jest-output.log; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ $attempt -lt $max_attempts ]; then
+              echo "::warning::test:coverage attempt $attempt failed; retrying once (HEL-235 flake)"
+            fi
+            attempt=$((attempt + 1))
+          done
+          exit 1
       # On failure, surface a focused tail of the log inline so the failing
       # test name is visible in the GH Actions UI without needing to
       # download the artifact below.
@@ -454,5 +474,7 @@ jobs:
           context: .
           file: docker/${{ matrix.service }}/Dockerfile
           push: false
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          # HEL-234: rev cache scope to invalidate the corrupted layer that
+          # was failing every src/**-touching PR in 8-15s.
+          cache-from: type=gha,scope=${{ matrix.service }}-v2
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v2

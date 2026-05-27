@@ -67,7 +67,7 @@ const manualCheckpointSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   dueAt: z.string().datetime().optional(),
   artifactRefs: z.array(z.string().trim().min(1).max(512)).max(25).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   recipientType: recipientTypeSchema,
   recipientId: z.string().trim().min(1).max(200),
 });
@@ -76,7 +76,7 @@ const triggerEvaluationSchema = z.object({
   triggerType: z.enum(["end_of_week_review", "milestone_gate", "kpi_deviation"]),
   recipientType: recipientTypeSchema,
   recipientId: z.string().trim().min(1).max(200),
-  event: z.record(z.unknown()),
+  event: z.record(z.string(), z.unknown()),
 });
 
 const artifactCommentSchema = z.object({

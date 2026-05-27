@@ -93,4 +93,50 @@ describe("credits key source store (in-memory mode)", () => {
     const picked = await pickKeySource("anthropic");
     expect(picked?.currentDaySpendUsd).toBeCloseTo(0.579, 6);
   });
+
+  // Codex P1 — throttle recovery.
+  it("re-picks a throttled source once its cooldown has expired", async () => {
+    const id = await insertKeySource({
+      sourceKind: "openrouter",
+      provider: "openrouter",
+      label: "or-prod",
+      apiKey: "sk-or-test",
+    });
+    // Throttle for a tiny window so the cooldown elapses within the test.
+    await markThrottled(id, 0);
+    // Wait long enough that the throttled_until date is strictly in the past.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const picked = await pickKeySource("anthropic");
+    expect(picked).not.toBeNull();
+    expect(picked?.id).toBe(id);
+  });
+
+  it("still skips a throttled source whose cooldown has not elapsed", async () => {
+    const id = await insertKeySource({
+      sourceKind: "openrouter",
+      provider: "openrouter",
+      label: "or-prod",
+      apiKey: "sk-or-test",
+    });
+    await markThrottled(id, 3600); // 1 hour cooldown
+    const picked = await pickKeySource("anthropic");
+    expect(picked).toBeNull();
+  });
+
+  it("promotes a throttled source back to active on successful call", async () => {
+    const id = await insertKeySource({
+      sourceKind: "openrouter",
+      provider: "openrouter",
+      label: "or-prod",
+      apiKey: "sk-or-test",
+    });
+    await markThrottled(id, 0);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Pick it (allowed because cooldown elapsed), then record success.
+    const beforeRecover = await pickKeySource("anthropic");
+    expect(beforeRecover?.status).toBe("throttled");
+    await recordSuccess(id, 0.1);
+    const afterRecover = await pickKeySource("anthropic");
+    expect(afterRecover?.status).toBe("active");
+  });
 });

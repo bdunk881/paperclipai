@@ -143,6 +143,7 @@ import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
 import { createSkillsRoutes } from "./skills/skillsRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
+import { createAdminConsoleRoutes, createImpersonationVerifyRoute } from "./adminConsole";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
   createPortableWorkflowBundle,
@@ -699,6 +700,23 @@ app.use("/api/agents/runs", (req, _res, next) => {
   }
   next();
 });
+
+// HEL-218: same access_token → Authorization shim for the three new SSE
+// surfaces (routine + ticket + activity streams). EventSource has no
+// header API, so the dashboard passes its bearer via ?access_token=…
+// and we promote it before the standard auth chain runs.
+function promoteSseAccessToken(req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction): void {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+}
+app.use("/api/routines", promoteSseAccessToken);
+app.use("/api/tickets", promoteSseAccessToken);
+app.use("/api/activity-events", promoteSseAccessToken);
 app.use(
   "/api/agents/runs",
   requireAuth,
@@ -979,6 +997,26 @@ app.use(
   requireAAL2,
   curatedKnowledgeRoutes,
 );
+
+// Cross-tenant platform-admin console (admin.helloautoflow.com). Gated by
+// requirePlatformAdmin (checks user_profiles.is_platform_admin or the
+// AUTOFLOW_STAFF_USER_IDS allowlist) and routed under /api/admin-console/*.
+// HEL-mfa TODO: stack requireCfAccess + requireAAL2 here too once
+// requirePlatformAdmin's flow has been smoke-tested with the AAL2 cookie
+// in a staging soak. Platform-admin is higher-privilege than
+// curated-knowledge so the hardening is wanted; just deferring to a
+// follow-up that can verify the impersonation issue/verify flow still
+// works under step-up.
+const adminConsoleRoutes = isPostgresPersistenceEnabled()
+  ? createAdminConsoleRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Admin console requires PostgreSQL persistence." }),
+    );
+app.use("/api/admin-console", requireAuth, adminConsoleRoutes);
+
+// Public impersonation verify — called by the customer dashboard with the
+// token from ?impersonate=<jwt>. Intentionally OUTSIDE the admin gate.
+app.use("/api/impersonation", createImpersonationVerifyRoute());
 // HEL-91: manual reflection — clusters unreflected episodes and graduates
 // durable patterns to Layer-2 synthesized knowledge_items.
 const reflectionRoutes = isPostgresPersistenceEnabled()
@@ -1315,6 +1353,23 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<Work
   );
   res.json({ runs, total: runs.length });
 }));
+
+/**
+ * List the caller's in-flight runs across the active workspace.
+ *
+ * Drives the dashboard's bottom-right RunTray. "In flight" = any non-
+ * terminal status (queued / pending / running / awaiting_approval /
+ * cancelling). Capped to 50 rows so the tray never floods.
+ */
+app.get(
+  "/api/runs/in-flight",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const runs = await runStore.listInFlight(req.auth?.sub, req.workspace?.id);
+    res.json({ runs, total: runs.length });
+  }),
+);
 
 /** Get a single run by ID */
 app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
@@ -1944,8 +1999,16 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
     const path = issue?.path?.[0];
+    // zod v4 reports missing fields as `invalid_type` with code, not
+    // a literal "Required" message. Re-shape into a path-aware string
+    // for the API consumer.
+    const isMissing =
+      issue?.code === "invalid_type" &&
+      typeof issue.message === "string" &&
+      (/expected\s+\S+,\s+received\s+undefined/i.test(issue.message) ||
+        issue.message === "Required");
     const message =
-      issue?.message === "Required" && typeof path === "string"
+      isMissing && typeof path === "string"
         ? `${path} is required`
         : (issue?.message ?? "Invalid request body");
     res.status(400).json({ error: message });

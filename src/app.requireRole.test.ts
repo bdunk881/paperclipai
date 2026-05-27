@@ -64,6 +64,13 @@ const ALLOWLIST = new Set<string>([
   // wallet composes requireRole("billing"); the balance read is
   // analogous to /api/entitlements and is open to any member.
   "/api/credits/wallet",
+  // HEL-mfa: MFA enrollment + challenge endpoints are user-scoped,
+  // not workspace-scoped — a brand-new user must enroll a passkey
+  // before they've joined a workspace, and the AAL2 step-up cookie
+  // is account-level (good for every workspace the user belongs to).
+  // Audit logging resolves a workspace from the optional
+  // x-workspace-id header when one is available.
+  "/api/mfa",
 ]);
 
 interface AuthenticatedMount {

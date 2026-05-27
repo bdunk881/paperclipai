@@ -68,6 +68,8 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
+import { requireAAL2 } from "./middleware/requireAAL2";
+import { requireCfAccess } from "./admin/cfAccessAuth";
 import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
 import { asyncHandler } from "./middleware/asyncHandler";
@@ -592,11 +594,11 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // HEL-69: billing is workspace-scoped per the canonical role mapping (Stripe
 // customer ID lives on the workspace; see HEL-22 entitlements). requireRole
 // ensures only members with the billing role can manage subscriptions.
-app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
-app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
+app.use("/api/billing/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
+app.use("/api/billing/subscription", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
 // HEL-credits-mvp: hosted-credits pack purchases. Same role + rate-limit
 // gates as subscription checkout — billing role required.
-app.use("/api/credits/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);
+app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);
 // Wallet balance is readable by any authenticated workspace member —
 // it's analogous to the subscription tier read, not a billing action.
 app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
@@ -605,11 +607,11 @@ app.use("/api/public/landing", landingPublicApiRoutes);
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+app.use("/api/llm-configs", requireAuth, requireAAL2, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 // HEL-117: canonical noun alias (table is `llm_credentials` in migration 025).
 // Both paths resolve to the same router until the dashboard fully migrates;
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
-app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+app.use("/api/llm-credentials", requireAuth, requireAAL2, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // HEL-todo Phase-2a: tier routing matrix (workspaces.tier_routing JSONB,
 // migration 033). GET/PATCH the customer-visible Lite/Standard/Power
@@ -963,7 +965,20 @@ const curatedKnowledgeRoutes = isPostgresPersistenceEnabled()
   : express.Router().all("*", (_req, res) =>
       res.status(501).json({ error: "Curated knowledge requires PostgreSQL persistence." }),
     );
-app.use("/api/admin/curated-knowledge", requireAuth, curatedKnowledgeRoutes);
+// HEL-mfa: belt + suspenders for staff endpoints.
+//   1. requireCfAccess — Cloudflare Access JWT (FIDO2 key at the edge).
+//      No-op when CF_ACCESS_AUD_TAG/CF_ACCESS_TEAM_DOMAIN are unset, so
+//      local dev + in-memory tests still work. Production must set both.
+//   2. requireAuth — Supabase JWT for user identity.
+//   3. requireAAL2 — fresh second-factor verification.
+//   4. curatedKnowledgeRoutes self-applies requireStaff (passkey-only AAL2).
+app.use(
+  "/api/admin/curated-knowledge",
+  requireCfAccess,
+  requireAuth,
+  requireAAL2,
+  curatedKnowledgeRoutes,
+);
 // HEL-91: manual reflection — clusters unreflected episodes and graduates
 // durable patterns to Layer-2 synthesized knowledge_items.
 const reflectionRoutes = isPostgresPersistenceEnabled()

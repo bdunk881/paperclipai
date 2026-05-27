@@ -66,6 +66,13 @@ export const ADMIN_ACTIONS = [
   // abuse
   "view_failed_logins",
   "view_login_devices",
+
+  // HEL-250 credits pool (platform_provider_keys CRUD)
+  "list_provider_keys",
+  "create_provider_key",
+  "update_provider_key",
+  "rotate_provider_key",
+  "disable_provider_key",
 ] as const;
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];

@@ -5,6 +5,7 @@ import { SearchPage } from "./pages/SearchPage";
 import { Customer360 } from "./pages/Customer360";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { PendingActionsPage } from "./pages/PendingActionsPage";
+import { CreditsPoolPage } from "./pages/CreditsPoolPage";
 import { getSupabaseClient } from "./lib/supabase";
 
 const queryClient = new QueryClient({
@@ -19,6 +20,7 @@ function Shell() {
         <nav className="nav">
           <Link to="/">Search</Link>
           <Link to="/pending-actions">Pending</Link>
+          <Link to="/credits-pool">Credits pool</Link>
           <Link to="/audit">Audit</Link>
           <button
             onClick={() => getSupabaseClient().auth.signOut()}
@@ -33,6 +35,7 @@ function Shell() {
           <Route path="/" element={<SearchPage />} />
           <Route path="/customer/:userId" element={<Customer360 />} />
           <Route path="/pending-actions" element={<PendingActionsPage />} />
+          <Route path="/credits-pool" element={<CreditsPoolPage />} />
           <Route path="/audit" element={<AuditLogPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

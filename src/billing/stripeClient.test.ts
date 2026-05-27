@@ -1,46 +1,27 @@
 /**
  * Tests for stripeClient.ts.
  *
- * Goals:
- *  - Exercise the `firstNonEmpty` env-var fallback chain across all
- *    PRICING_TIERS entries (each branch of the helper) by reloading the
- *    module under controlled env values with `jest.isolateModules`.
- *  - Exercise the singleton + missing-key error branches of `getStripe`.
+ *  - Exercise the singleton + missing-key + fallback branches of `getStripe`.
+ *  - Exercise the env-var lookup branches of `resolveStripePriceId`.
  *  - Never make a real HTTP request — `stripe` is mocked.
  */
 
-// Tracks calls to the mocked Stripe constructor so the singleton behaviour
-// can be asserted.
 const stripeCtorCalls: string[] = [];
 
 jest.mock("stripe", () => {
-  // The real SDK exports a default class. Use a callable mock that doubles as
-  // a constructor so `new Stripe(key)` works.
   const ctor = jest.fn(function MockStripe(this: { apiKey: string }, apiKey: string) {
     stripeCtorCalls.push(apiKey);
     this.apiKey = apiKey;
   }) as unknown as jest.Mock & { default: unknown };
-  // The real shape from `import Stripe from "stripe"` with esModuleInterop is
-  // a default export, but the SDK is also exported in CJS form. Returning the
-  // ctor directly works because esModuleInterop synthesises a default.
   return ctor;
 });
 
-// Env keys that this module consults — clear them between tests so leakage
-// from the ambient shell does not cause false branches to be taken.
 const ENV_KEYS = [
   "STRIPE_SECRET_KEY",
   "STRIPE_API_KEY",
   "STRIPE_FLOW_PRICE_ID",
-  "STRIPE_PRICE_FLOW",
-  "STRIPE_PRICE_STARTER",
   "STRIPE_AUTOMATE_PRICE_ID",
-  "STRIPE_PRICE_AUTOMATE",
-  "STRIPE_PRICE_PROFESSIONAL",
-  "STRIPE_PRICE_PRO",
   "STRIPE_SCALE_PRICE_ID",
-  "STRIPE_PRICE_SCALE",
-  "STRIPE_PRICE_ENTERPRISE",
 ] as const;
 
 const ORIGINAL_ENV: Record<string, string | undefined> = {};
@@ -52,8 +33,6 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  // Always start each test from a clean slate so reloaded modules see the
-  // env we set inside the test, not values from previous runs.
   for (const key of ENV_KEYS) {
     delete process.env[key];
   }
@@ -71,8 +50,8 @@ afterAll(() => {
 });
 
 /**
- * Reload stripeClient.ts inside an isolated module registry so module-level
- * `PRICING_TIERS` evaluation picks up the env we just set.
+ * Reload stripeClient.ts inside an isolated module registry so the singleton
+ * `getStripe` cache resets between tests.
  */
 function loadFresh(): typeof import("./stripeClient") {
   let mod!: typeof import("./stripeClient");
@@ -89,7 +68,7 @@ describe("getStripe", () => {
     expect(() => mod.getStripe()).toThrow(/Stripe secret key/);
   });
 
-  it("throws when keys are present but only whitespace (firstNonEmpty trim path)", () => {
+  it("throws when keys are present but only whitespace", () => {
     process.env.STRIPE_SECRET_KEY = "   ";
     process.env.STRIPE_API_KEY = "\t\n";
     const mod = loadFresh();
@@ -126,108 +105,44 @@ describe("getStripe", () => {
     const a = mod.getStripe();
     const b = mod.getStripe();
     expect(a).toBe(b);
-    // Constructor invoked exactly once despite two getStripe() calls.
     expect(stripeCtorCalls).toEqual(["sk_test_singleton"]);
-  });
-
-  it("ignores undefined env vars in the fallback chain (typeof guard)", () => {
-    // Neither STRIPE_SECRET_KEY nor STRIPE_API_KEY defined; explicitly assert
-    // the first defined fallback still wins when only STRIPE_API_KEY is set.
-    process.env.STRIPE_API_KEY = "sk_test_only_api";
-    const mod = loadFresh();
-    const client = mod.getStripe() as unknown as { apiKey: string };
-    expect(client.apiKey).toBe("sk_test_only_api");
   });
 });
 
-describe("PRICING_TIERS", () => {
-  it("uses defaults (null priceId for explore, empty string elsewhere) when no env vars are set", () => {
-    const { PRICING_TIERS } = loadFresh();
-
-    expect(PRICING_TIERS.explore).toEqual({
-      name: "Explore",
-      price: 0,
-      priceId: null,
-      trialDays: 0,
-    });
-
-    expect(PRICING_TIERS.flow.priceId).toBe("");
-    expect(PRICING_TIERS.automate.priceId).toBe("");
-    expect(PRICING_TIERS.scale.priceId).toBe("");
-
-    // Trial days/prices are static — assert a couple to lock in the literals.
-    expect(PRICING_TIERS.flow.price).toBe(19);
-    expect(PRICING_TIERS.flow.trialDays).toBe(14);
-    expect(PRICING_TIERS.automate.price).toBe(49);
-    expect(PRICING_TIERS.automate.trialDays).toBe(14);
-    expect(PRICING_TIERS.scale.price).toBe(99);
-    expect(PRICING_TIERS.scale.trialDays).toBe(0);
+describe("resolveStripePriceId", () => {
+  it("returns empty string when envName is null (free tier)", () => {
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId(null)).toBe("");
   });
 
-  it("picks the first non-empty Flow price env var (preferred name wins)", () => {
-    process.env.STRIPE_FLOW_PRICE_ID = "price_flow_new";
-    process.env.STRIPE_PRICE_FLOW = "price_flow_mid";
-    process.env.STRIPE_PRICE_STARTER = "price_flow_legacy";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.flow.priceId).toBe("price_flow_new");
+  it("returns empty string when the env var is unset", () => {
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId("STRIPE_FLOW_PRICE_ID")).toBe("");
   });
 
-  it("falls through to STRIPE_PRICE_FLOW when STRIPE_FLOW_PRICE_ID is empty", () => {
-    process.env.STRIPE_FLOW_PRICE_ID = "";
-    process.env.STRIPE_PRICE_FLOW = "price_flow_mid";
-    process.env.STRIPE_PRICE_STARTER = "price_flow_legacy";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.flow.priceId).toBe("price_flow_mid");
+  it("returns the env var value when set", () => {
+    process.env.STRIPE_FLOW_PRICE_ID = "price_flow_live";
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId("STRIPE_FLOW_PRICE_ID")).toBe("price_flow_live");
   });
 
-  it("falls through to STRIPE_PRICE_STARTER as the final Flow legacy fallback", () => {
-    process.env.STRIPE_PRICE_STARTER = "price_flow_legacy";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.flow.priceId).toBe("price_flow_legacy");
+  it("trims whitespace around the env var value", () => {
+    process.env.STRIPE_AUTOMATE_PRICE_ID = "  price_automate_padded  ";
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId("STRIPE_AUTOMATE_PRICE_ID")).toBe("price_automate_padded");
   });
 
-  it("picks the first non-empty Automate price env var across all four aliases", () => {
-    process.env.STRIPE_AUTOMATE_PRICE_ID = "price_automate_new";
-    process.env.STRIPE_PRICE_AUTOMATE = "price_automate_mid";
-    process.env.STRIPE_PRICE_PROFESSIONAL = "price_pro";
-    process.env.STRIPE_PRICE_PRO = "price_pro_short";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.automate.priceId).toBe("price_automate_new");
+  it("returns empty string when the env var is only whitespace", () => {
+    process.env.STRIPE_SCALE_PRICE_ID = "   ";
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId("STRIPE_SCALE_PRICE_ID")).toBe("");
   });
 
-  it("falls through Automate aliases when earlier ones are empty", () => {
-    process.env.STRIPE_AUTOMATE_PRICE_ID = "";
-    process.env.STRIPE_PRICE_AUTOMATE = "";
-    process.env.STRIPE_PRICE_PROFESSIONAL = "";
-    process.env.STRIPE_PRICE_PRO = "price_pro_short";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.automate.priceId).toBe("price_pro_short");
-  });
-
-  it("picks Automate from STRIPE_PRICE_PROFESSIONAL alias", () => {
-    process.env.STRIPE_PRICE_PROFESSIONAL = "price_pro";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.automate.priceId).toBe("price_pro");
-  });
-
-  it("picks the first non-empty Scale price env var", () => {
-    process.env.STRIPE_SCALE_PRICE_ID = "price_scale_new";
-    process.env.STRIPE_PRICE_SCALE = "price_scale_mid";
-    process.env.STRIPE_PRICE_ENTERPRISE = "price_enterprise_legacy";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.scale.priceId).toBe("price_scale_new");
-  });
-
-  it("falls through Scale aliases to STRIPE_PRICE_ENTERPRISE", () => {
-    process.env.STRIPE_PRICE_ENTERPRISE = "price_enterprise_legacy";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.scale.priceId).toBe("price_enterprise_legacy");
-  });
-
-  it("treats whitespace-only env vars as empty in fallback chains", () => {
-    process.env.STRIPE_FLOW_PRICE_ID = "   ";
-    process.env.STRIPE_PRICE_FLOW = "price_flow_real";
-    const { PRICING_TIERS } = loadFresh();
-    expect(PRICING_TIERS.flow.priceId).toBe("price_flow_real");
+  it("does NOT fall back through legacy aliases — only the canonical name is honored", () => {
+    // Sanity check that the legacy alias contract was deliberately dropped:
+    // setting only an old alias should yield "" for the canonical lookup.
+    process.env.STRIPE_PRICE_FLOW = "price_legacy_alias_should_be_ignored";
+    const { resolveStripePriceId } = loadFresh();
+    expect(resolveStripePriceId("STRIPE_FLOW_PRICE_ID")).toBe("");
   });
 });

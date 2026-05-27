@@ -17,15 +17,47 @@ jest.mock("../middleware/workspaceResolver", () => ({
   }),
 }));
 
+const PRICE_ID_BY_ENV: Record<string, string> = {
+  STRIPE_FLOW_PRICE_ID: "price_flow_test",
+  STRIPE_AUTOMATE_PRICE_ID: "price_automate_test",
+  STRIPE_SCALE_PRICE_ID: "price_scale_test",
+};
+
 jest.mock("./stripeClient", () => ({
   getStripe: jest.fn(),
-  PRICING_TIERS: {
-    explore: { name: "Explore", price: 0, priceId: null, trialDays: 0 },
-    flow: { name: "Flow", price: 19, priceId: "price_flow_test", trialDays: 14 },
-    automate: { name: "Automate", price: 49, priceId: "price_automate_test", trialDays: 14 },
-    scale: { name: "Scale", price: 99, priceId: "price_scale_test", trialDays: 0 },
-  },
+  resolveStripePriceId: jest.fn((envName: string | null) =>
+    envName ? (PRICE_ID_BY_ENV[envName] ?? "") : ""
+  ),
 }));
+
+jest.mock("./tiersRepository", () => {
+  const tiers: Record<string, unknown> = {
+    explore: {
+      id: "explore", displayName: "Explore", priceUsdCents: 0, currency: "usd",
+      stripePriceEnv: null, trialDays: 0, sortOrder: 10, isPopular: false,
+      features: [], ctaLabel: "Get started", enabled: true,
+    },
+    flow: {
+      id: "flow", displayName: "Flow", priceUsdCents: 1900, currency: "usd",
+      stripePriceEnv: "STRIPE_FLOW_PRICE_ID", trialDays: 14, sortOrder: 20,
+      isPopular: false, features: [], ctaLabel: "Start trial", enabled: true,
+    },
+    automate: {
+      id: "automate", displayName: "Automate", priceUsdCents: 4900, currency: "usd",
+      stripePriceEnv: "STRIPE_AUTOMATE_PRICE_ID", trialDays: 14, sortOrder: 30,
+      isPopular: true, features: [], ctaLabel: "Start trial", enabled: true,
+    },
+    scale: {
+      id: "scale", displayName: "Scale", priceUsdCents: 9900, currency: "usd",
+      stripePriceEnv: "STRIPE_SCALE_PRICE_ID", trialDays: 0, sortOrder: 40,
+      isPopular: false, features: [], ctaLabel: "Talk to sales", enabled: true,
+    },
+  };
+  return {
+    getTierById: jest.fn(async (id: string) => tiers[id] ?? null),
+    listEnabledTiers: jest.fn(async () => Object.values(tiers)),
+  };
+});
 jest.mock("../auth/authMiddleware", () => ({
   requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
     const auth = req.headers.authorization;

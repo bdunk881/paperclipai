@@ -2,14 +2,50 @@ jest.mock("../engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+const PRICE_ID_BY_ENV: Record<string, string> = {
+  STRIPE_FLOW_PRICE_ID: "price_flow_test",
+  STRIPE_AUTOMATE_PRICE_ID: "price_automate_test",
+  STRIPE_SCALE_PRICE_ID: "price_scale_test",
+};
+
 jest.mock("../billing/stripeClient", () => ({
   getStripe: jest.fn(),
-  PRICING_TIERS: {
-    explore: { name: "Explore", price: 0, priceId: null, trialDays: 0 },
-    flow: { name: "Flow", price: 19, priceId: "price_flow_test", trialDays: 14 },
-    automate: { name: "Automate", price: 49, priceId: "price_automate_test", trialDays: 14 },
-    scale: { name: "Scale", price: 99, priceId: "price_scale_test", trialDays: 0 },
-  },
+  resolveStripePriceId: jest.fn((envName: string | null) =>
+    envName ? (PRICE_ID_BY_ENV[envName] ?? "") : ""
+  ),
+}));
+
+jest.mock("../billing/tiersRepository", () => {
+  const tiers: Record<string, unknown> = {
+    explore: {
+      id: "explore", displayName: "Explore", priceUsdCents: 0, currency: "usd",
+      stripePriceEnv: null, trialDays: 0, sortOrder: 10, isPopular: false,
+      features: [], ctaLabel: "Get started", enabled: true,
+    },
+    flow: {
+      id: "flow", displayName: "Flow", priceUsdCents: 1900, currency: "usd",
+      stripePriceEnv: "STRIPE_FLOW_PRICE_ID", trialDays: 14, sortOrder: 20,
+      isPopular: false, features: [], ctaLabel: "Start trial", enabled: true,
+    },
+    automate: {
+      id: "automate", displayName: "Automate", priceUsdCents: 4900, currency: "usd",
+      stripePriceEnv: "STRIPE_AUTOMATE_PRICE_ID", trialDays: 14, sortOrder: 30,
+      isPopular: true, features: [], ctaLabel: "Start trial", enabled: true,
+    },
+    scale: {
+      id: "scale", displayName: "Scale", priceUsdCents: 9900, currency: "usd",
+      stripePriceEnv: "STRIPE_SCALE_PRICE_ID", trialDays: 0, sortOrder: 40,
+      isPopular: false, features: [], ctaLabel: "Talk to sales", enabled: true,
+    },
+  };
+  return {
+    getTierById: jest.fn(async (id: string) => tiers[id] ?? null),
+    listEnabledTiers: jest.fn(async () => Object.values(tiers)),
+  };
+});
+
+jest.mock("../billing/credits/packCatalog", () => ({
+  listEnabledPacks: jest.fn(),
 }));
 
 jest.mock("../auth/authMiddleware", () => ({
@@ -36,6 +72,8 @@ jest.mock("../auth/authMiddleware", () => ({
 import request from "supertest";
 import app from "../app";
 import { getStripe } from "../billing/stripeClient";
+import { listEnabledTiers } from "../billing/tiersRepository";
+import { listEnabledPacks } from "../billing/credits/packCatalog";
 import { subscriptionStore } from "../billing/subscriptionStore";
 
 function makeStripeMock() {
@@ -76,6 +114,132 @@ beforeEach(() => {
 
 afterAll(() => {
   global.fetch = originalFetch;
+});
+
+describe("GET /api/public/landing/pricing", () => {
+  const sampleTiers = [
+    {
+      id: "explore",
+      displayName: "Explore",
+      priceUsdCents: 0,
+      currency: "usd",
+      stripePriceEnv: null,
+      trialDays: 0,
+      sortOrder: 10,
+      isPopular: false,
+      features: ["3 workspaces", "Daily Sonnet credit cap"],
+      ctaLabel: "Get started",
+      priceUnit: "/mo",
+      enabled: true,
+    },
+    {
+      id: "flow",
+      displayName: "Flow",
+      priceUsdCents: 1900,
+      currency: "usd",
+      stripePriceEnv: "STRIPE_FLOW_PRICE_ID",
+      trialDays: 14,
+      sortOrder: 20,
+      isPopular: false,
+      features: ["Everything in Explore", "5,000 daily credits"],
+      ctaLabel: "Start 14-day trial",
+      priceUnit: "/mo",
+      enabled: true,
+    },
+  ];
+
+  const samplePacks = [
+    {
+      id: "pack_25",
+      displayName: "Starter Pack",
+      stripePriceId: "price_test_pack_25",
+      priceUsdCents: 2500,
+      creditsGranted: 250000n,
+      bonusPercent: 0,
+      enabled: true,
+      sortOrder: 10,
+    },
+    {
+      id: "pack_50",
+      displayName: "Plus Pack",
+      stripePriceId: "price_test_pack_50",
+      priceUsdCents: 5000,
+      creditsGranted: 525000n,
+      bonusPercent: 5,
+      enabled: true,
+      sortOrder: 20,
+    },
+  ];
+
+  beforeEach(() => {
+    (listEnabledTiers as jest.Mock).mockResolvedValue(sampleTiers);
+    (listEnabledPacks as jest.Mock).mockResolvedValue(samplePacks);
+  });
+
+  it("returns tiers and packs together", async () => {
+    const response = await request(app).get("/api/public/landing/pricing");
+
+    expect(response.status).toBe(200);
+    expect(response.body.tiers).toHaveLength(2);
+    expect(response.body.packs).toHaveLength(2);
+    expect(response.body.tiers[0]).toEqual({
+      id: "explore",
+      displayName: "Explore",
+      priceUsdCents: 0,
+      currency: "usd",
+      trialDays: 0,
+      sortOrder: 10,
+      isPopular: false,
+      features: ["3 workspaces", "Daily Sonnet credit cap"],
+      ctaLabel: "Get started",
+      priceUnit: "/mo",
+    });
+    expect(response.body.packs[0]).toEqual({
+      id: "pack_25",
+      displayName: "Starter Pack",
+      priceUsdCents: 2500,
+      creditsGranted: 250000,
+      bonusPercent: 0,
+      sortOrder: 10,
+    });
+  });
+
+  it("does not expose stripe_price_env or stripe_price_id to public clients", async () => {
+    const response = await request(app).get("/api/public/landing/pricing");
+
+    const serialized = JSON.stringify(response.body);
+    expect(serialized).not.toContain("stripePriceEnv");
+    expect(serialized).not.toContain("STRIPE_FLOW_PRICE_ID");
+    expect(serialized).not.toContain("stripePriceId");
+    expect(serialized).not.toContain("price_test_pack_25");
+  });
+
+  it("sets a public 5-minute cache header", async () => {
+    const response = await request(app).get("/api/public/landing/pricing");
+
+    expect(response.headers["cache-control"]).toBe(
+      "public, max-age=300, s-maxage=300",
+    );
+  });
+
+  it("handles empty packs gracefully (no subscription packs configured yet)", async () => {
+    (listEnabledPacks as jest.Mock).mockResolvedValue([]);
+
+    const response = await request(app).get("/api/public/landing/pricing");
+
+    expect(response.status).toBe(200);
+    expect(response.body.tiers).toHaveLength(2);
+    expect(response.body.packs).toEqual([]);
+  });
+
+  it("returns 500 if the tier catalog is unavailable", async () => {
+    (listEnabledTiers as jest.Mock).mockRejectedValue(new Error("db down"));
+
+    const response = await request(app).get("/api/public/landing/pricing");
+
+    expect(response.status).toBe(500);
+    expect(response.body.error).toMatch(/failed to load pricing/i);
+  });
 });
 
 describe("POST /api/public/landing/checkout", () => {

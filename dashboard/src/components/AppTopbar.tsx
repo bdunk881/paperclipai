@@ -15,6 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { Af2UserMenu } from "./Af2UserMenu";
+import { CreditsTopbarWidget } from "./billing/CreditsTopbarWidget";
 import { searchEntities, type GlobalSearchResult } from "../api/searchApi";
 
 // AppTopbar - v2 chrome strap that sits across the top of the authenticated
@@ -265,6 +266,12 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
       >
         Pro
       </button>
+
+      {/* Credits topbar widget — always-visible balance reminder for
+          credits-funded workspaces. Hidden entirely when balance is 0
+          (free trial used up) so we don't push the message at workspaces
+          that aren't on credits. */}
+      <CreditsTopbarWidget />
 
       {/* HEL-213 PR I: avatar opens the Af2UserMenu dropdown (Account /
           Members / Billing / Sign out). The previous /settings/profile

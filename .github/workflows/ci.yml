@@ -263,7 +263,7 @@ jobs:
       # show the full context.
       - name: Upload jest output artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: api-test-output
           path: jest-output.log
@@ -271,7 +271,7 @@ jobs:
           retention-days: 7
       - name: Upload npm debug logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: npm-debug-logs
           path: ~/.npm/_logs/
@@ -408,7 +408,7 @@ jobs:
         run: npm run e2e:auth-regression
         env:
           CI: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-auth-regression-report
@@ -453,7 +453,7 @@ jobs:
         run: npm run e2e
         env:
           CI: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report
@@ -483,6 +483,9 @@ jobs:
           file: docker/${{ matrix.service }}/Dockerfile
           push: false
           # HEL-234: rev cache scope to invalidate the corrupted layer that
-          # was failing every src/**-touching PR in 8-15s.
-          cache-from: type=gha,scope=${{ matrix.service }}-v2
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v2
+          # was failing every src/**-touching PR in 8-15s. Bumped to v3 on
+          # PR #1098 when the `api` matrix entry failed in 44s with the
+          # same signature (standalone docker-api-build-check.yml workflow
+          # at scope autoflow-api-v2 succeeded simultaneously).
+          cache-from: type=gha,scope=${{ matrix.service }}-v3
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v3

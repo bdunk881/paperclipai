@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 import { createHmac, timingSafeEqual } from "crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 
 // ---------------------------------------------------------------------------
 // Webhook signature verification
@@ -271,37 +272,39 @@ function mapEventRow(row: EventRow): RelayedEvent {
 
 async function persistSubscription(sub: WebhookSubscription): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(
-    `INSERT INTO webhook_subscriptions (
-       id, user_id, integration_slug, trigger_id, event_types, workflow_template_id,
-       label, active, signature_scheme, signing_secret, signature_header_key,
-       last_fired_at, created_at
-     ) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)
-     ON CONFLICT (id) DO UPDATE SET
-       event_types = EXCLUDED.event_types,
-       workflow_template_id = EXCLUDED.workflow_template_id,
-       label = EXCLUDED.label,
-       active = EXCLUDED.active,
-       signature_scheme = EXCLUDED.signature_scheme,
-       signing_secret = EXCLUDED.signing_secret,
-       signature_header_key = EXCLUDED.signature_header_key,
-       last_fired_at = EXCLUDED.last_fired_at`,
-    [
-      sub.id,
-      sub.userId,
-      sub.integrationSlug,
-      sub.triggerId,
-      JSON.stringify(sub.eventTypes),
-      sub.workflowId ?? null,
-      sub.label,
-      sub.active,
-      sub.signatureScheme,
-      sub.signingSecret ?? null,
-      sub.signatureHeaderKey ?? null,
-      sub.lastFiredAt ?? null,
-      sub.createdAt,
-    ],
-  );
+  await withUserContext(getPostgresPool(), sub.userId, async (client) => {
+    await client.query(
+      `INSERT INTO webhook_subscriptions (
+         id, user_id, integration_slug, trigger_id, event_types, workflow_template_id,
+         label, active, signature_scheme, signing_secret, signature_header_key,
+         last_fired_at, created_at
+       ) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (id) DO UPDATE SET
+         event_types = EXCLUDED.event_types,
+         workflow_template_id = EXCLUDED.workflow_template_id,
+         label = EXCLUDED.label,
+         active = EXCLUDED.active,
+         signature_scheme = EXCLUDED.signature_scheme,
+         signing_secret = EXCLUDED.signing_secret,
+         signature_header_key = EXCLUDED.signature_header_key,
+         last_fired_at = EXCLUDED.last_fired_at`,
+      [
+        sub.id,
+        sub.userId,
+        sub.integrationSlug,
+        sub.triggerId,
+        JSON.stringify(sub.eventTypes),
+        sub.workflowId ?? null,
+        sub.label,
+        sub.active,
+        sub.signatureScheme,
+        sub.signingSecret ?? null,
+        sub.signatureHeaderKey ?? null,
+        sub.lastFiredAt ?? null,
+        sub.createdAt,
+      ],
+    );
+  });
 }
 
 async function loadSubscriptionById(id: string): Promise<WebhookSubscription | undefined> {
@@ -315,37 +318,43 @@ async function loadSubscriptionById(id: string): Promise<WebhookSubscription | u
 
 async function loadSubscriptionsByUser(userId: string): Promise<WebhookSubscription[]> {
   if (!postgresAvailable()) return [];
-  const result = await getPostgresPool().query<SubscriptionRow>(
-    `SELECT * FROM webhook_subscriptions WHERE user_id = $1 ORDER BY created_at ASC`,
-    [userId],
-  );
-  return result.rows.map(mapSubscriptionRow);
+  return withUserContext(getPostgresPool(), userId, async (client) => {
+    const result = await client.query<SubscriptionRow>(
+      `SELECT * FROM webhook_subscriptions WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    );
+    return result.rows.map(mapSubscriptionRow);
+  });
 }
 
-async function deleteSubscriptionRow(id: string): Promise<void> {
+async function deleteSubscriptionRow(userId: string, id: string): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(`DELETE FROM webhook_subscriptions WHERE id = $1`, [id]);
+  await withUserContext(getPostgresPool(), userId, async (client) => {
+    await client.query(`DELETE FROM webhook_subscriptions WHERE id = $1`, [id]);
+  });
 }
 
 async function persistEvent(event: RelayedEvent): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(
-    `INSERT INTO webhook_relayed_events (
-       id, subscription_id, user_id, integration_slug, trigger_id,
-       payload, headers, consumed, received_at
-     ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9)`,
-    [
-      event.id,
-      event.subscriptionId,
-      event.userId,
-      event.integrationSlug,
-      event.triggerId,
-      JSON.stringify(event.payload),
-      JSON.stringify(event.headers),
-      event.consumed,
-      event.receivedAt,
-    ],
-  );
+  await withUserContext(getPostgresPool(), event.userId, async (client) => {
+    await client.query(
+      `INSERT INTO webhook_relayed_events (
+         id, subscription_id, user_id, integration_slug, trigger_id,
+         payload, headers, consumed, received_at
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9)`,
+      [
+        event.id,
+        event.subscriptionId,
+        event.userId,
+        event.integrationSlug,
+        event.triggerId,
+        JSON.stringify(event.payload),
+        JSON.stringify(event.headers),
+        event.consumed,
+        event.receivedAt,
+      ],
+    );
+  });
 }
 
 async function pruneSubscriptionEvents(subscriptionId: string): Promise<void> {
@@ -458,7 +467,7 @@ export const webhookRelay = {
     if (!sub || sub.userId !== userId) return false;
     subscriptions.delete(id);
     events.delete(id);
-    await deleteSubscriptionRow(id);
+    await deleteSubscriptionRow(userId, id);
     return true;
   },
 

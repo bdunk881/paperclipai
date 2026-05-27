@@ -45,7 +45,24 @@ jest.mock("bullmq", () => {
       return undefined;
     }
   }
-  return { Worker: FakeWorker, Queue: FakeQueue, Job: class {} };
+  return {
+    Worker: FakeWorker,
+    Queue: FakeQueue,
+    Job: class {},
+    // HEL infra dashboard PR #3: src/worker.ts now passes
+    // `metrics: { maxDataPoints: MetricsTime.ONE_HOUR * 24 }` to Worker.
+    // Mirror the enum's actual values so the multiplication doesn't NaN.
+    MetricsTime: {
+      ONE_MINUTE: 1,
+      FIVE_MINUTES: 5,
+      FIFTEEN_MINUTES: 15,
+      THIRTY_MINUTES: 30,
+      ONE_HOUR: 60,
+      ONE_WEEK: 10080,
+      TWO_WEEKS: 20160,
+      ONE_MONTH: 80640,
+    },
+  };
 });
 
 jest.mock("./queue/scheduler", () => ({

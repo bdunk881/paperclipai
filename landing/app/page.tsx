@@ -7,10 +7,11 @@
  * (see `landing/lib/publicApi.ts`).
  */
 
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
+import { getPricingOverlays, type PricingTierOverlay } from "@/lib/sanity";
 
 export function meta() {
   return [
@@ -102,85 +103,191 @@ const INTEGRATIONS: Array<{ name: string; cat: string }> = [
   { name: "Bedrock", cat: "Models" },
 ];
 
-// 4-tier pricing ladder matches `src/billing/stripeClient.ts` exactly:
-//   explore $0 → flow $19 → automate $49 → scale $99
-// The $19 Flow tier exists specifically to lower the barrier between the
-// free Explore tier and the team-priced Automate tier; surfacing it in the
-// landing is intentional.
-const PRICING_TIERS: Array<{
-  eyebrow: string;
-  name: string;
-  price: string;
-  unit: string;
-  bullets: string[];
-  cta: string;
-  ctaHref?: string;
-  // Maps to backend `PRICING_TIERS` keys; explore is free → /signup, the
-  // other three hit POST /api/public/landing/checkout.
-  ctaPriceTier?: "flow" | "automate" | "scale";
-  featured?: boolean;
-}> = [
-  {
-    eyebrow: "Solo",
-    name: "Explore",
-    price: "$0",
-    unit: "/mo",
-    bullets: [
-      "1 workspace, 3 agents",
-      "500 runs / mo",
-      "Community integrations",
-      "Bring your own keys",
-    ],
-    cta: "Start free",
-    ctaHref: "/signup",
-  },
-  {
-    eyebrow: "Indie operators",
-    name: "Flow",
-    price: "$19",
-    unit: "/mo",
-    bullets: [
-      "1 workspace, 8 agents",
-      "2.5k runs / mo",
-      "All integrations",
-      "Bring your own keys",
-      "14-day free trial",
-    ],
-    cta: "Try Flow",
-    ctaPriceTier: "flow",
-  },
-  {
-    eyebrow: "Most teams",
-    name: "Automate",
-    price: "$49",
-    unit: "/seat/mo",
-    bullets: [
-      "3 workspaces, 25 agents",
-      "10k runs / mo",
-      "Custom MCP + approvals",
-      "Audit log, SSO",
-      "Per-agent budgets",
-    ],
-    cta: "Try Automate",
-    ctaPriceTier: "automate",
-    featured: true,
-  },
-  {
-    eyebrow: "SMB & Enterprise",
-    name: "Scale",
-    price: "$99",
-    unit: "/seat/mo",
-    bullets: [
-      "Unlimited workspaces & agents",
-      "SSO/SAML, SCIM, RBAC",
-      "Self-hosted runners",
-      "Custom MCP servers",
-      "Dedicated solutions engineer",
-    ],
-    cta: "Talk to us",
-    ctaHref: "mailto:hello@helloautoflow.com?subject=AutoFlow Scale demo",
-  },
-];
+// Pricing + credit packs come from GET /api/public/landing/pricing, which
+// joins subscription_tiers + credit_packs (migrations 079 + 071). Source-of-
+// truth lives in the DB so marketing / Brad / Stripe can edit without a deploy.
+//
+// Fields that aren't yet on the schema (eyebrow tagline, marketing bullets vs
+// data bullets) are layered on top here for PR3. HEL-278 moves them to a Sanity
+// overlay so marketing can edit copy without a code change.
+
+interface Tier {
+  id: string;
+  displayName: string;
+  priceUsdCents: number;
+  currency: string;
+  trialDays: number;
+  sortOrder: number;
+  isPopular: boolean;
+  features: string[];
+  ctaLabel: string;
+  priceUnit: string;
+  /**
+   * Editorial eyebrow (HEL-278). When present, sourced from a Sanity
+   * `pricingTierOverlay` document; falls through to the inline
+   * `EYEBROW_BY_ID` map when omitted.
+   */
+  eyebrow?: string;
+}
+
+interface Pack {
+  id: string;
+  displayName: string;
+  priceUsdCents: number;
+  creditsGranted: number;
+  bonusPercent: number;
+  sortOrder: number;
+}
+
+interface PricingLoaderData {
+  tiers: Tier[];
+  packs: Pack[];
+}
+
+// Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
+// Map by tier id; falls back to empty if a new tier ships before this map gets
+// updated.
+const EYEBROW_BY_ID: Record<string, string> = {
+  explore: "Solo",
+  flow: "Indie operators",
+  automate: "Most teams",
+  scale: "SMB & Enterprise",
+};
+
+// Build-time prerender of `/` (see landing/react-router.config.ts) runs this
+// loader. If the API is unreachable during `react-router build` (e.g. CI
+// without backend), fall back to this snapshot so the build doesn't fail —
+// keeps the landing recoverable but visibly stale via the console warning.
+const FALLBACK_PRICING: PricingLoaderData = {
+  tiers: [
+    {
+      id: "explore",
+      displayName: "Explore",
+      priceUsdCents: 0,
+      currency: "usd",
+      trialDays: 0,
+      sortOrder: 10,
+      isPopular: false,
+      features: ["3 workspaces", "Daily Sonnet credit cap", "Community support"],
+      ctaLabel: "Get started",
+      priceUnit: "/mo",
+    },
+    {
+      id: "flow",
+      displayName: "Flow",
+      priceUsdCents: 1900,
+      currency: "usd",
+      trialDays: 14,
+      sortOrder: 20,
+      isPopular: false,
+      features: [
+        "Everything in Explore",
+        "Unlimited workspaces",
+        "5,000 daily Sonnet credits",
+        "Priority email support",
+      ],
+      ctaLabel: "Start 14-day trial",
+      priceUnit: "/mo",
+    },
+    {
+      id: "automate",
+      displayName: "Automate",
+      priceUsdCents: 4900,
+      currency: "usd",
+      trialDays: 14,
+      sortOrder: 30,
+      isPopular: true,
+      features: [
+        "Everything in Flow",
+        "20,000 daily credits",
+        "Opus model access",
+        "Slack support",
+        "Custom approval policies",
+      ],
+      ctaLabel: "Start 14-day trial",
+      priceUnit: "/seat/mo",
+    },
+    {
+      id: "scale",
+      displayName: "Scale",
+      priceUsdCents: 9900,
+      currency: "usd",
+      trialDays: 0,
+      sortOrder: 40,
+      isPopular: false,
+      features: [
+        "Everything in Automate",
+        "Unlimited daily credits",
+        "SSO + audit logs",
+        "Dedicated success manager",
+        "Custom SLAs",
+      ],
+      ctaLabel: "Choose Scale",
+      priceUnit: "/seat/mo",
+    },
+  ],
+  packs: [
+    { id: "pack_25",  displayName: "Starter Pack", priceUsdCents: 2500,  creditsGranted: 250000,  bonusPercent: 0,  sortOrder: 10 },
+    { id: "pack_50",  displayName: "Plus Pack",    priceUsdCents: 5000,  creditsGranted: 525000,  bonusPercent: 5,  sortOrder: 20 },
+    { id: "pack_100", displayName: "Pro Pack",     priceUsdCents: 10000, creditsGranted: 1100000, bonusPercent: 10, sortOrder: 30 },
+    { id: "pack_250", displayName: "Scale Pack",   priceUsdCents: 25000, creditsGranted: 2875000, bonusPercent: 15, sortOrder: 40 },
+    { id: "pack_500", displayName: "Power Pack",   priceUsdCents: 50000, creditsGranted: 6000000, bonusPercent: 20, sortOrder: 50 },
+  ],
+};
+
+/**
+ * Apply Sanity overlays to API tiers. Precedence: Sanity > API. The third
+ * tier (the inline EYEBROW_BY_ID fallback below) only kicks in at render
+ * time for `eyebrow` and is handled in the JSX, not here.
+ */
+function mergeOverlays(
+  tiers: Tier[],
+  overlays: PricingTierOverlay[] | null,
+): Tier[] {
+  if (!overlays || overlays.length === 0) return tiers;
+  const byId = new Map(overlays.map((o) => [o.tierId, o]));
+  return tiers.map((tier) => {
+    const overlay = byId.get(tier.id);
+    if (!overlay) return tier;
+    return {
+      ...tier,
+      eyebrow: overlay.eyebrow ?? tier.eyebrow,
+      features: overlay.bullets ?? tier.features,
+      ctaLabel: overlay.ctaLabel ?? tier.ctaLabel,
+      priceUnit: overlay.priceUnit ?? tier.priceUnit,
+    };
+  });
+}
+
+export async function loader(): Promise<PricingLoaderData> {
+  // Pricing API + Sanity overlays in parallel. Sanity overlay failures
+  // (missing creds, GROQ errors) return null inside sanityFetch — they
+  // never block the prerender; the loader just falls through to the
+  // API/fallback values.
+  const apiPromise = (async () => {
+    try {
+      const res = await fetch(buildLandingApiUrl("/api/public/landing/pricing"));
+      if (!res.ok) {
+        throw new Error(`pricing endpoint returned ${res.status}`);
+      }
+      return (await res.json()) as PricingLoaderData;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[landing/loader/pricing] using fallback snapshot: ${message}`);
+      return FALLBACK_PRICING;
+    }
+  })();
+
+  const [apiData, overlays] = await Promise.all([
+    apiPromise,
+    getPricingOverlays(),
+  ]);
+
+  return {
+    tiers: mergeOverlays(apiData.tiers, overlays),
+    packs: apiData.packs,
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Small visual primitives
@@ -233,39 +340,34 @@ function HireAgentCta() {
   );
 }
 
-// Pricing CTA → Stripe Checkout (production-wired) or a /signup fallback for
-// Tinker tier. The checkout endpoint lives in the Express backend.
-function PricingCta({
-  tier,
-}: {
-  tier: (typeof PRICING_TIERS)[number];
-}) {
+// Pricing CTA → Stripe Checkout for paid tiers; /signup for the free tier.
+// Checkout endpoint lives in the Express backend.
+function PricingCta({ tier }: { tier: Tier }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const baseClass = tier.featured
-    ? "af2-btn af2-btn-clay"
-    : "af2-btn";
+  const baseClass = tier.isPopular ? "af2-btn af2-btn-clay" : "af2-btn";
   const baseStyle: React.CSSProperties = { width: "100%", textAlign: "center" };
 
-  // Static link tiers
-  if (tier.ctaHref) {
+  // Free tier — route to signup. The signup page redirects already-authed
+  // users so we don't need a logged-in-detection shortcut on this static
+  // page (see HEL-269 plan comment).
+  if (tier.priceUsdCents === 0) {
     return (
-      <Link to={tier.ctaHref} className={baseClass} style={baseStyle}>
-        {tier.cta}
+      <Link to="/signup?next=/" className={baseClass} style={baseStyle}>
+        {tier.ctaLabel}
       </Link>
     );
   }
 
   async function handleCheckout() {
-    if (!tier.ctaPriceTier) return;
     setPending(true);
     setError(null);
     try {
       const res = await fetch(buildLandingApiUrl("/api/public/landing/checkout"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tier: tier.ctaPriceTier }),
+        body: JSON.stringify({ tier: tier.id }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -277,7 +379,7 @@ function PricingCta({
         return;
       }
       // Backend returned 200 but no URL — fall back to signup.
-      window.location.assign("/signup");
+      window.location.assign(`/signup?next=/billing&tier=${tier.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Checkout failed.");
       setPending(false);
@@ -287,7 +389,7 @@ function PricingCta({
   return (
     <>
       <button type="button" onClick={handleCheckout} disabled={pending} className={baseClass} style={baseStyle}>
-        {pending ? "Loading…" : tier.cta}
+        {pending ? "Loading…" : tier.ctaLabel}
       </button>
       {error ? (
         <p
@@ -309,6 +411,8 @@ function PricingCta({
 // Page
 
 export default function Home() {
+  const { tiers, packs } = useLoaderData() as PricingLoaderData;
+
   return (
     <>
       {/* NAV */}
@@ -891,21 +995,21 @@ export default function Home() {
         </p>
 
         <div className="lp-tiers">
-          {PRICING_TIERS.map((t) => (
-            <div key={t.name} className={`lp-tier${t.featured ? " featured" : ""}`}>
+          {tiers.map((t) => (
+            <div key={t.id} className={`lp-tier${t.isPopular ? " featured" : ""}`}>
               <span
                 className="af2-eyebrow"
-                style={{ color: t.featured ? "var(--af2-clay-2)" : undefined }}
+                style={{ color: t.isPopular ? "var(--af2-clay-2)" : undefined }}
               >
-                {t.eyebrow}
+                {t.eyebrow ?? EYEBROW_BY_ID[t.id] ?? ""}
               </span>
-              <h3>{t.name}</h3>
+              <h3>{t.displayName}</h3>
               <div className="lp-price">
-                {t.price}
-                <small>{t.unit}</small>
+                {t.priceUsdCents === 0 ? "$0" : `$${Math.round(t.priceUsdCents / 100)}`}
+                <small>{t.priceUnit}</small>
               </div>
               <ul>
-                {t.bullets.map((b) => (
+                {t.features.map((b) => (
                   <li key={b}>{b}</li>
                 ))}
               </ul>
@@ -913,6 +1017,71 @@ export default function Home() {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* PAY-AS-YOU-GO CREDIT PACKS */}
+      <section className="lp-credit-packs" id="credit-packs">
+        <span className="af2-eyebrow">Pay-as-you-go</span>
+        <h2
+          style={{
+            font: "400 44px/1.05 var(--af2-serif)",
+            letterSpacing: "-0.02em",
+            margin: "8px 0 0",
+            maxWidth: 820,
+          }}
+        >
+          Skip the vendor and api key setup. Buy credits and use our hosted models. Pay only when you run. Never expires.
+        </h2>
+        <p
+          style={{
+            fontSize: 15,
+            color: "var(--af2-ink-2)",
+            marginTop: 14,
+            maxWidth: 680,
+          }}
+        >
+          Top up with credit packs and route through any of our hosted models — Sonnet, Opus, Haiku — at the tier you choose. Credits never auto-renew, and you only ever pay for what you actually use. Bigger packs include bonus credits to stretch your budget further.
+        </p>
+
+        <div className="lp-packs">
+          {packs.map((p) => {
+            const featured = p.bonusPercent === Math.max(...packs.map((x) => x.bonusPercent), 0) && p.bonusPercent > 0;
+            return (
+              <div key={p.id} className={`lp-pack${featured ? " featured" : ""}`}>
+                {featured ? <span className="lp-pack-popular">Most popular</span> : null}
+                <h3>{p.displayName}</h3>
+                <div className="lp-price">
+                  ${Math.round(p.priceUsdCents / 100)}
+                  <small>one-time</small>
+                </div>
+                <div className="lp-pack-credits">
+                  {p.creditsGranted.toLocaleString("en-US")} credits
+                </div>
+                {p.bonusPercent > 0 ? (
+                  <span className="lp-pack-bonus">+{p.bonusPercent}% bonus</span>
+                ) : null}
+                <Link
+                  to={`/signup?next=/billing&pack=${p.id}`}
+                  className={featured ? "af2-btn af2-btn-clay" : "af2-btn"}
+                  style={{ width: "100%", textAlign: "center", marginTop: 20 }}
+                >
+                  Buy {p.displayName}
+                </Link>
+              </div>
+            );
+          })}
+        </div>
+
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "var(--af2-ink-3)",
+            marginTop: 28,
+            maxWidth: 680,
+          }}
+        >
+          Already on a subscription? Credit packs stack on top of your plan&apos;s included credits.
+        </p>
       </section>
 
       {/* CTA */}

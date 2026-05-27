@@ -2,16 +2,17 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../lib/supabase";
 import { LoginPage } from "../pages/LoginPage";
-import { MfaGate } from "./MfaGate";
+import { MfaEnforcementGate } from "./MfaEnforcementGate";
 
 interface Props {
   children: ReactNode;
 }
 
 /**
- * Resolves the staff session, ensures the JWT has `aal2` (MFA), and only
- * then renders the rest of the app. Staff who lack MFA see only the
- * MfaGate enrollment page.
+ * Resolves the staff session and hands control to MfaEnforcementGate, which
+ * redirects to the wizard at /onboarding/mfa when the user has no factor
+ * and otherwise lets the request through. AAL2 step-up for individual
+ * destructive actions is handled by MfaStepUpModal mounted at the shell.
  */
 export function AuthGate({ children }: Props) {
   const [session, setSession] = useState<Session | null>(null);
@@ -30,5 +31,5 @@ export function AuthGate({ children }: Props) {
   if (loading) return <div className="muted">Checking session…</div>;
   if (!session) return <LoginPage />;
 
-  return <MfaGate>{children}</MfaGate>;
+  return <MfaEnforcementGate>{children}</MfaEnforcementGate>;
 }

@@ -7,7 +7,8 @@ import { Router, Request, Response } from "express";
 import Stripe from "stripe";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
+import { getStripe, resolveStripePriceId } from "./stripeClient";
+import { getTierById } from "./tiersRepository";
 
 const router = Router();
 
@@ -44,19 +45,24 @@ router.post(
     const resolvedUserId = req.auth?.sub;
     const resolvedWorkspaceId = req.auth?.workspaceId;
 
-    if (!tier || !(tier in PRICING_TIERS)) {
-      res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
+    if (!tier) {
+      res.status(400).json({ error: "Invalid tier" });
       return;
     }
 
-    const tierConfig = PRICING_TIERS[tier as TierKey];
-
-    if (tier === "explore") {
-      res.status(400).json({ error: "Explore is a free tier — no checkout required" });
+    const tierRow = await getTierById(tier);
+    if (!tierRow || !tierRow.enabled) {
+      res.status(400).json({ error: "Invalid tier" });
       return;
     }
 
-    if (!tierConfig.priceId) {
+    if (tierRow.priceUsdCents === 0) {
+      res.status(400).json({ error: `${tierRow.displayName} is a free tier — no checkout required` });
+      return;
+    }
+
+    const priceId = resolveStripePriceId(tierRow.stripePriceEnv);
+    if (!priceId) {
       res.status(503).json({ error: "Stripe pricing not configured for this tier" });
       return;
     }
@@ -77,17 +83,16 @@ router.post(
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
         mode: "subscription",
         payment_method_types: ["card"],
-        line_items: [{ price: tierConfig.priceId, quantity: 1 }],
+        line_items: [{ price: priceId, quantity: 1 }],
         success_url: `${appBaseUrl}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${appBaseUrl}/pricing`,
         allow_promotion_codes: true,
         metadata,
       };
 
-      // Add trial period for eligible tiers
-      if (tierConfig.trialDays > 0) {
+      if (tierRow.trialDays > 0) {
         sessionParams.subscription_data = {
-          trial_period_days: tierConfig.trialDays,
+          trial_period_days: tierRow.trialDays,
           metadata,
         };
       } else {

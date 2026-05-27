@@ -221,3 +221,82 @@ th {
   background: #d4edda;
   color: #1e4620;
 }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 18, 32, 0.55);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+}
+
+.modal-dialog {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  max-width: 460px;
+  width: calc(100% - 2rem);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.modal-dialog h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #1f57d3;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+  background: #f4f5f7;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+}
+
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.factor-card {
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #c8ccd1;
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+}
+
+.factor-card:hover:not(:disabled) {
+  border-color: #1f57d3;
+}
+
+.factor-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.factor-card h3 {
+  margin: 0 0 0.4rem 0;
+  font-size: 1rem;
+}

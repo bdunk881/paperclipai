@@ -1,4 +1,5 @@
 import { getAccessToken } from "./supabase";
+import { emitStepUpRequired } from "../auth/stepUpEvents";
 
 function resolveBaseUrl(): string {
   const explicit = String(import.meta.env.VITE_API_BASE_URL ?? "").trim();
@@ -43,7 +44,7 @@ export async function apiRequest<T = unknown>(
     method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    credentials: "omit",
+    credentials: "include",
   });
   let body: unknown = null;
   const text = await res.text();
@@ -54,6 +55,17 @@ export async function apiRequest<T = unknown>(
       body = text;
     }
   }
-  if (!res.ok) throw new ApiError(res.status, body);
+  if (!res.ok) {
+    if (
+      res.status === 401 &&
+      body &&
+      typeof body === "object" &&
+      (body as { error?: unknown }).error === "mfa_step_up_required"
+    ) {
+      const reason = (body as { reason?: unknown }).reason;
+      emitStepUpRequired({ reason: typeof reason === "string" ? reason : undefined });
+    }
+    throw new ApiError(res.status, body);
+  }
   return body as T;
 }

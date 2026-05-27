@@ -6,8 +6,9 @@
 import { Router, Request, Response } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { recordControlPlaneAudit } from "../auditing/controlPlaneAudit";
-import { getStripe, PRICING_TIERS, TierKey } from "./stripeClient";
-import { subscriptionStore, resolveTier } from "./subscriptionStore";
+import { getStripe, resolveStripePriceId } from "./stripeClient";
+import { getTierById } from "./tiersRepository";
+import { subscriptionStore, resolveTier, SubscriptionTier } from "./subscriptionStore";
 import { billingRepository, effectiveEntitlementPlan } from "./billingRepository";
 import { entitlementStore } from "./entitlements";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -105,8 +106,14 @@ router.post("/change-tier", asyncHandler<AuthenticatedRequest>(async (req, res: 
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
-  if (!newTier || !(newTier in PRICING_TIERS)) {
-    res.status(400).json({ error: `Invalid tier. Must be one of: ${Object.keys(PRICING_TIERS).join(", ")}` });
+  if (!newTier) {
+    res.status(400).json({ error: "Invalid tier" });
+    return;
+  }
+
+  const newTierRow = await getTierById(newTier);
+  if (!newTierRow || !newTierRow.enabled) {
+    res.status(400).json({ error: "Invalid tier" });
     return;
   }
 
@@ -121,12 +128,12 @@ router.post("/change-tier", asyncHandler<AuthenticatedRequest>(async (req, res: 
     return;
   }
 
-  if (newTier === "explore") {
-    res.status(400).json({ error: "Cannot change to the free Explore tier — cancel instead" });
+  if (newTierRow.priceUsdCents === 0) {
+    res.status(400).json({ error: `Cannot change to the free ${newTierRow.displayName} tier — cancel instead` });
     return;
   }
 
-  const newPriceId = PRICING_TIERS[newTier as TierKey].priceId;
+  const newPriceId = resolveStripePriceId(newTierRow.stripePriceEnv);
   if (!newPriceId) {
     res.status(503).json({ error: "Stripe pricing not configured for this tier" });
     return;
@@ -143,8 +150,9 @@ router.post("/change-tier", asyncHandler<AuthenticatedRequest>(async (req, res: 
     }
 
     // Determine proration behavior: upgrade prorates immediately, downgrade at period end
-    const currentPrice = PRICING_TIERS[sub.tier]?.price ?? 0;
-    const newPrice = PRICING_TIERS[newTier as TierKey].price;
+    const currentTierRow = await getTierById(sub.tier);
+    const currentPrice = currentTierRow?.priceUsdCents ?? 0;
+    const newPrice = newTierRow.priceUsdCents;
     const isUpgrade = newPrice > currentPrice;
 
     const updated = await stripe.subscriptions.update(sub.stripeSubscriptionId, {
@@ -156,7 +164,7 @@ router.post("/change-tier", asyncHandler<AuthenticatedRequest>(async (req, res: 
     const workspaceId = sub.workspaceId ?? getWorkspaceId(req);
     const stored = await subscriptionStore.update(sub.id, {
       workspaceId,
-      tier: newTier as TierKey,
+      tier: newTier as SubscriptionTier,
       status: updated.status,
     });
     if (stored) {

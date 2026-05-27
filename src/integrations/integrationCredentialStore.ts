@@ -26,6 +26,7 @@ import {
 } from "crypto";
 import { randomUUID } from "node:crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 import {
   IntegrationConnection,
   IntegrationConnectionPublic,
@@ -122,42 +123,50 @@ function fromRow(row: { id: string; record_data: unknown }): IntegrationConnecti
 
 async function persistConnection(conn: IntegrationConnection): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(
-    `INSERT INTO connector_credentials (service, id, user_id, created_at, record_data)
-     VALUES ($1, $2, $3, $4, $5::jsonb)
-     ON CONFLICT (service, id) DO UPDATE
-       SET user_id = EXCLUDED.user_id,
-           record_data = EXCLUDED.record_data`,
-    [SERVICE_KEY, conn.id, conn.userId, conn.createdAt, JSON.stringify(toRecord(conn))],
-  );
+  await withUserContext(getPostgresPool(), conn.userId, async (client) => {
+    await client.query(
+      `INSERT INTO connector_credentials (service, id, user_id, created_at, record_data)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (service, id) DO UPDATE
+         SET user_id = EXCLUDED.user_id,
+             record_data = EXCLUDED.record_data`,
+      [SERVICE_KEY, conn.id, conn.userId, conn.createdAt, JSON.stringify(toRecord(conn))],
+    );
+  });
 }
 
-async function loadById(id: string): Promise<IntegrationConnection | undefined> {
+async function loadById(userId: string, id: string): Promise<IntegrationConnection | undefined> {
   if (!postgresAvailable()) return undefined;
-  const result = await getPostgresPool().query<{ id: string; record_data: unknown }>(
-    `SELECT id, record_data FROM connector_credentials WHERE service = $1 AND id = $2`,
-    [SERVICE_KEY, id],
-  );
-  return result.rows[0] ? fromRow(result.rows[0]) : undefined;
+  return withUserContext(getPostgresPool(), userId, async (client) => {
+    const result = await client.query<{ id: string; record_data: unknown }>(
+      `SELECT id, record_data FROM connector_credentials WHERE service = $1 AND id = $2`,
+      [SERVICE_KEY, id],
+    );
+    return result.rows[0] ? fromRow(result.rows[0]) : undefined;
+  });
 }
 
 async function loadByUser(userId: string): Promise<IntegrationConnection[]> {
   if (!postgresAvailable()) return [];
-  const result = await getPostgresPool().query<{ id: string; record_data: unknown }>(
-    `SELECT id, record_data FROM connector_credentials
-      WHERE service = $1 AND user_id = $2 AND revoked_at IS NULL
-      ORDER BY created_at DESC`,
-    [SERVICE_KEY, userId],
-  );
-  return result.rows.map(fromRow);
+  return withUserContext(getPostgresPool(), userId, async (client) => {
+    const result = await client.query<{ id: string; record_data: unknown }>(
+      `SELECT id, record_data FROM connector_credentials
+        WHERE service = $1 AND user_id = $2 AND revoked_at IS NULL
+        ORDER BY created_at DESC`,
+      [SERVICE_KEY, userId],
+    );
+    return result.rows.map(fromRow);
+  });
 }
 
-async function deletePersisted(id: string): Promise<void> {
+async function deletePersisted(userId: string, id: string): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(
-    `DELETE FROM connector_credentials WHERE service = $1 AND id = $2`,
-    [SERVICE_KEY, id],
-  );
+  await withUserContext(getPostgresPool(), userId, async (client) => {
+    await client.query(
+      `DELETE FROM connector_credentials WHERE service = $1 AND id = $2`,
+      [SERVICE_KEY, id],
+    );
+  });
 }
 
 function toPublic(conn: IntegrationConnection): IntegrationConnectionPublic {
@@ -219,7 +228,7 @@ export const integrationCredentialStore = {
   async get(id: string, userId: string): Promise<IntegrationConnectionPublic | undefined> {
     const cached = cache.get(id);
     if (cached && cached.userId === userId) return toPublic(cached);
-    const persisted = await loadById(id);
+    const persisted = await loadById(userId, id);
     if (!persisted || persisted.userId !== userId) return undefined;
     cache.set(persisted.id, persisted);
     return toPublic(persisted);
@@ -230,7 +239,7 @@ export const integrationCredentialStore = {
     userId: string,
     patch: { label?: string },
   ): Promise<IntegrationConnectionPublic | undefined> {
-    const existing = cache.get(id) ?? (await loadById(id));
+    const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return undefined;
     const updated: IntegrationConnection = {
       ...existing,
@@ -247,7 +256,7 @@ export const integrationCredentialStore = {
     userId: string,
     credentials: Partial<IntegrationCredentials>,
   ): Promise<boolean> {
-    const existing = cache.get(id) ?? (await loadById(id));
+    const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return false;
     const current = decryptCredentials(existing.credentialsEncrypted);
     const merged: IntegrationCredentials = { ...current, ...credentials };
@@ -262,10 +271,10 @@ export const integrationCredentialStore = {
   },
 
   async delete(id: string, userId: string): Promise<boolean> {
-    const existing = cache.get(id) ?? (await loadById(id));
+    const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return false;
     cache.delete(id);
-    await deletePersisted(id);
+    await deletePersisted(userId, id);
     return true;
   },
 
@@ -273,7 +282,7 @@ export const integrationCredentialStore = {
     id: string,
     userId: string,
   ): Promise<IntegrationConnectionPublic | undefined> {
-    const target = cache.get(id) ?? (await loadById(id));
+    const target = cache.get(id) ?? (await loadById(userId, id));
     if (!target || target.userId !== userId) return undefined;
 
     // Clear existing defaults for the same integration before flipping
@@ -311,7 +320,7 @@ export const integrationCredentialStore = {
     | { connection: IntegrationConnectionPublic; credentials: IntegrationCredentials }
     | undefined
   > {
-    const conn = cache.get(id) ?? (await loadById(id));
+    const conn = cache.get(id) ?? (await loadById(userId, id));
     if (!conn || conn.userId !== userId) return undefined;
     cache.set(conn.id, conn);
     return {

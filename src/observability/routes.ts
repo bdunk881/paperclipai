@@ -27,7 +27,7 @@ function parseCategories(raw: unknown): ObservabilityEventCategory[] | undefined
 
   const parsed = values
     .map((value) => categorySchema.safeParse(value))
-    .filter((result): result is z.ZodSafeParseSuccess<ObservabilityEventCategory> => result.success)
+    .filter((result): result is z.SafeParseSuccess<ObservabilityEventCategory> => result.success)
     .map((result) => result.data);
 
   return parsed.length > 0 ? parsed : undefined;

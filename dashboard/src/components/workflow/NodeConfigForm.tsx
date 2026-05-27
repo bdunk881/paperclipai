@@ -22,7 +22,10 @@
  * `config` reads) — see workflowStepSetup.ts manifests for the
  * canonical examples.
  */
+import { useRef } from "react";
 import type { WorkflowStep } from "../../types/workflow";
+import { VariablePicker } from "./VariablePicker";
+import { insertAtCaret } from "./insertAtCaret";
 
 /**
  * Info callout — not actually a field, just inline help text the
@@ -119,11 +122,19 @@ export function NodeConfigForm({
   step,
   onChange,
   disabled,
+  allSteps,
 }: {
   fields: FieldDef[];
   step: WorkflowStep;
   onChange: (patch: Partial<WorkflowStep>) => void;
   disabled?: boolean;
+  /**
+   * HEL-241B — full workflow step list, so text + longtext fields
+   * can offer a "+ Variable" picker that surfaces upstream
+   * `outputKeys`. Optional so callers that don't need the picker
+   * (or aren't in a workflow context) can omit it.
+   */
+  allSteps?: WorkflowStep[];
 }) {
   return (
     <>
@@ -133,7 +144,13 @@ export function NodeConfigForm({
         }
         return (
           <Field key={field.key} label={field.label} help={field.help}>
-            <FieldInput field={field} step={step} onChange={onChange} disabled={disabled} />
+            <FieldInput
+              field={field}
+              step={step}
+              onChange={onChange}
+              disabled={disabled}
+              allSteps={allSteps}
+            />
           </Field>
         );
       })}
@@ -146,38 +163,33 @@ function FieldInput({
   step,
   onChange,
   disabled,
+  allSteps,
 }: {
   field: TextFieldDef | LongTextFieldDef | NumberFieldDef | StringArrayFieldDef;
   step: WorkflowStep;
   onChange: (patch: Partial<WorkflowStep>) => void;
   disabled?: boolean;
+  allSteps?: WorkflowStep[];
 }) {
   if (field.widget === "text") {
-    const value = (step[field.key] as string | undefined) ?? "";
     return (
-      <input
-        className={field.mono ? INPUT_MONO_CLS : INPUT_CLS}
-        placeholder={field.placeholder}
-        value={value}
+      <TextFieldInput
+        field={field}
+        step={step}
+        onChange={onChange}
         disabled={disabled}
-        onChange={(e) =>
-          onChange({ [field.key]: e.target.value } as Partial<WorkflowStep>)
-        }
+        allSteps={allSteps}
       />
     );
   }
   if (field.widget === "longtext") {
-    const value = (step[field.key] as string | undefined) ?? "";
     return (
-      <textarea
-        className={`${INPUT_CLS} resize-none`}
-        placeholder={field.placeholder}
-        rows={field.rows ?? 3}
-        value={value}
+      <LongTextFieldInput
+        field={field}
+        step={step}
+        onChange={onChange}
         disabled={disabled}
-        onChange={(e) =>
-          onChange({ [field.key]: e.target.value } as Partial<WorkflowStep>)
-        }
+        allSteps={allSteps}
       />
     );
   }
@@ -218,5 +230,113 @@ function FieldInput({
         } as Partial<WorkflowStep>)
       }
     />
+  );
+}
+
+/**
+ * Text + longtext widgets get the sidecar VariablePicker. Extracted
+ * into their own sub-components so we can keep an input ref for
+ * caret-aware insertion without affecting the other widget kinds.
+ */
+function TextFieldInput({
+  field,
+  step,
+  onChange,
+  disabled,
+  allSteps,
+}: {
+  field: TextFieldDef;
+  step: WorkflowStep;
+  onChange: (patch: Partial<WorkflowStep>) => void;
+  disabled?: boolean;
+  allSteps?: WorkflowStep[];
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const value = (step[field.key] as string | undefined) ?? "";
+  const handleInsert = (literal: string) => {
+    const { next, nextCaret } = insertAtCaret(ref, value, literal);
+    onChange({ [field.key]: next } as Partial<WorkflowStep>);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        ref.current.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  };
+  return (
+    <div className="relative">
+      <input
+        ref={ref}
+        className={`${field.mono ? INPUT_MONO_CLS : INPUT_CLS} ${allSteps ? "pr-20" : ""}`}
+        placeholder={field.placeholder}
+        value={value}
+        disabled={disabled}
+        onChange={(e) =>
+          onChange({ [field.key]: e.target.value } as Partial<WorkflowStep>)
+        }
+      />
+      {allSteps && (
+        <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
+          <VariablePicker
+            allSteps={allSteps}
+            currentStepId={step.id}
+            onInsert={handleInsert}
+            disabled={disabled}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LongTextFieldInput({
+  field,
+  step,
+  onChange,
+  disabled,
+  allSteps,
+}: {
+  field: LongTextFieldDef;
+  step: WorkflowStep;
+  onChange: (patch: Partial<WorkflowStep>) => void;
+  disabled?: boolean;
+  allSteps?: WorkflowStep[];
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const value = (step[field.key] as string | undefined) ?? "";
+  const handleInsert = (literal: string) => {
+    const { next, nextCaret } = insertAtCaret(ref, value, literal);
+    onChange({ [field.key]: next } as Partial<WorkflowStep>);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        ref.current.setSelectionRange(nextCaret, nextCaret);
+      }
+    });
+  };
+  return (
+    <div className="relative">
+      <textarea
+        ref={ref}
+        className={`${INPUT_CLS} resize-none`}
+        placeholder={field.placeholder}
+        rows={field.rows ?? 3}
+        value={value}
+        disabled={disabled}
+        onChange={(e) =>
+          onChange({ [field.key]: e.target.value } as Partial<WorkflowStep>)
+        }
+      />
+      {allSteps && (
+        <div className="absolute right-1.5 top-1.5">
+          <VariablePicker
+            allSteps={allSteps}
+            currentStepId={step.id}
+            onInsert={handleInsert}
+            disabled={disabled}
+          />
+        </div>
+      )}
+    </div>
   );
 }

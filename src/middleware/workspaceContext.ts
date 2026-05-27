@@ -100,3 +100,33 @@ export async function withWorkspaceContext<T>(
     throw err;
   }
 }
+
+/**
+ * Executes a callback within a user-scoped transaction.
+ * Sets `app.current_user_id` as a PostgreSQL session variable using SET LOCAL
+ * so the value is scoped to the transaction and cannot leak via connection
+ * pool reuse. Use this for tables protected by user-isolation RLS policies.
+ */
+export async function withUserContext<T>(
+  pool: Pool,
+  userId: string,
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Swallow rollback error; original error is more important
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}

@@ -1,4 +1,5 @@
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 
 export type UserProfile = {
   userId: string;
@@ -33,14 +34,15 @@ export async function getUserPreferences(userId: string): Promise<UserPreference
   if (!isPostgresConfigured()) {
     return {};
   }
-  const result = await queryPostgres<{ preferences: UserPreferences | null }>(
-    `SELECT preferences
-       FROM user_profiles
-      WHERE user_id = $1`,
-    [normalizedUserId],
-  );
-  const row = result.rows[0];
-  return row?.preferences ?? {};
+  return withUserContext(getPostgresPool(), normalizedUserId, async (client) => {
+    const result = await client.query<{ preferences: UserPreferences | null }>(
+      `SELECT preferences
+         FROM user_profiles
+        WHERE user_id = $1`,
+      [normalizedUserId],
+    );
+    return result.rows[0]?.preferences ?? {};
+  });
 }
 
 /**
@@ -60,16 +62,18 @@ export async function mergeUserPreferences(
   if (!isPostgresConfigured()) {
     throw new Error("User preferences persistence requires PostgreSQL");
   }
-  const result = await queryPostgres<{ preferences: UserPreferences }>(
-    `INSERT INTO user_profiles (user_id, preferences)
-       VALUES ($1, $2::jsonb)
-       ON CONFLICT (user_id) DO UPDATE SET
-         preferences = user_profiles.preferences || EXCLUDED.preferences,
-         updated_at = now()
-     RETURNING preferences`,
-    [normalizedUserId, JSON.stringify(patch)],
-  );
-  return result.rows[0]?.preferences ?? {};
+  return withUserContext(getPostgresPool(), normalizedUserId, async (client) => {
+    const result = await client.query<{ preferences: UserPreferences }>(
+      `INSERT INTO user_profiles (user_id, preferences)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (user_id) DO UPDATE SET
+           preferences = user_profiles.preferences || EXCLUDED.preferences,
+           updated_at = now()
+       RETURNING preferences`,
+      [normalizedUserId, JSON.stringify(patch)],
+    );
+    return result.rows[0]?.preferences ?? {};
+  });
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -79,14 +83,15 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   }
 
   if (isPostgresConfigured()) {
-    const result = await queryPostgres<UserProfileRow>(
-      `SELECT user_id, display_name, timezone
-         FROM user_profiles
-        WHERE user_id = $1`,
-      [normalizedUserId]
-    );
-
-    return result.rows[0] ? mapRow(result.rows[0]) : null;
+    return withUserContext(getPostgresPool(), normalizedUserId, async (client) => {
+      const result = await client.query<UserProfileRow>(
+        `SELECT user_id, display_name, timezone
+           FROM user_profiles
+          WHERE user_id = $1`,
+        [normalizedUserId],
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : null;
+    });
   }
 
   return null;
@@ -103,9 +108,8 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
  * on the Hire page. Call this before any insert that targets the FK.
  *
  * Defaults: display_name NULL, timezone 'UTC' (overridable later via the
- * Profile Settings PATCH/PUT). user_profiles has no RLS, so this is safe
- * to call from a plain pool client; passing one in lets callers share a
- * transaction or workspace-scoped session when convenient.
+ * Profile Settings PATCH/PUT). When a caller is already in a workspace-scoped
+ * transaction, pass the existing client so the insert shares that transaction.
  */
 export async function ensureUserProfileExists(
   userId: string,
@@ -125,7 +129,9 @@ export async function ensureUserProfileExists(
     await client.query(sql, [normalizedUserId]);
     return;
   }
-  await queryPostgres(sql, [normalizedUserId]);
+  await withUserContext(getPostgresPool(), normalizedUserId, async (c) => {
+    await c.query(sql, [normalizedUserId]);
+  });
 }
 
 export async function upsertUserProfile(input: {
@@ -146,18 +152,19 @@ export async function upsertUserProfile(input: {
 
   if (isPostgresConfigured()) {
     const displayName = input.displayName?.trim() ? input.displayName.trim() : null;
-    const result = await queryPostgres<UserProfileRow>(
-      `INSERT INTO user_profiles (user_id, display_name, timezone)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_id) DO UPDATE SET
-         display_name = EXCLUDED.display_name,
-         timezone = EXCLUDED.timezone,
-         updated_at = now()
-       RETURNING user_id, display_name, timezone`,
-      [userId, displayName, timezone]
-    );
-
-    return mapRow(result.rows[0]);
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<UserProfileRow>(
+        `INSERT INTO user_profiles (user_id, display_name, timezone)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           timezone = EXCLUDED.timezone,
+           updated_at = now()
+         RETURNING user_id, display_name, timezone`,
+        [userId, displayName, timezone],
+      );
+      return mapRow(result.rows[0]);
+    });
   }
 
   throw new Error("User profile persistence requires PostgreSQL");

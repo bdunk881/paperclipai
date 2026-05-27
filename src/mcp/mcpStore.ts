@@ -10,6 +10,7 @@
 
 import { randomUUID } from "node:crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 
 export interface McpServer {
   id: string;
@@ -68,49 +69,57 @@ function toPublic(s: McpServer): McpServerPublic {
 
 async function persistServer(server: McpServer): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(
-    `INSERT INTO mcp_servers (id, user_id, name, url, auth_header_key, auth_header_value, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (id) DO UPDATE
-       SET name = EXCLUDED.name,
-           url = EXCLUDED.url,
-           auth_header_key = EXCLUDED.auth_header_key,
-           auth_header_value = EXCLUDED.auth_header_value`,
-    [
-      server.id,
-      server.userId,
-      server.name,
-      server.url,
-      server.authHeaderKey ?? null,
-      server.authHeaderValue ?? null,
-      server.createdAt,
-    ],
-  );
+  await withUserContext(getPostgresPool(), server.userId, async (client) => {
+    await client.query(
+      `INSERT INTO mcp_servers (id, user_id, name, url, auth_header_key, auth_header_value, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (id) DO UPDATE
+         SET name = EXCLUDED.name,
+             url = EXCLUDED.url,
+             auth_header_key = EXCLUDED.auth_header_key,
+             auth_header_value = EXCLUDED.auth_header_value`,
+      [
+        server.id,
+        server.userId,
+        server.name,
+        server.url,
+        server.authHeaderKey ?? null,
+        server.authHeaderValue ?? null,
+        server.createdAt,
+      ],
+    );
+  });
 }
 
 async function loadByUser(userId: string): Promise<McpServer[]> {
   if (!postgresAvailable()) return [];
-  const result = await getPostgresPool().query<McpServerRow>(
-    `SELECT id, user_id, name, url, auth_header_key, auth_header_value, created_at
-       FROM mcp_servers WHERE user_id = $1 ORDER BY created_at ASC`,
-    [userId],
-  );
-  return result.rows.map(mapRow);
+  return withUserContext(getPostgresPool(), userId, async (client) => {
+    const result = await client.query<McpServerRow>(
+      `SELECT id, user_id, name, url, auth_header_key, auth_header_value, created_at
+         FROM mcp_servers WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    );
+    return result.rows.map(mapRow);
+  });
 }
 
-async function loadById(id: string): Promise<McpServer | undefined> {
+async function loadById(userId: string, id: string): Promise<McpServer | undefined> {
   if (!postgresAvailable()) return undefined;
-  const result = await getPostgresPool().query<McpServerRow>(
-    `SELECT id, user_id, name, url, auth_header_key, auth_header_value, created_at
-       FROM mcp_servers WHERE id = $1`,
-    [id],
-  );
-  return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+  return withUserContext(getPostgresPool(), userId, async (client) => {
+    const result = await client.query<McpServerRow>(
+      `SELECT id, user_id, name, url, auth_header_key, auth_header_value, created_at
+         FROM mcp_servers WHERE id = $1`,
+      [id],
+    );
+    return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+  });
 }
 
-async function deletePersisted(id: string): Promise<void> {
+async function deletePersisted(userId: string, id: string): Promise<void> {
   if (!postgresAvailable()) return;
-  await getPostgresPool().query(`DELETE FROM mcp_servers WHERE id = $1`, [id]);
+  await withUserContext(getPostgresPool(), userId, async (client) => {
+    await client.query(`DELETE FROM mcp_servers WHERE id = $1`, [id]);
+  });
 }
 
 export const mcpStore = {
@@ -128,10 +137,10 @@ export const mcpStore = {
       .map(toPublic);
   },
 
-  async get(id: string): Promise<McpServer | undefined> {
+  async get(id: string, userId: string): Promise<McpServer | undefined> {
     const cached = cache.get(id);
     if (cached) return cached;
-    const persisted = await loadById(id);
+    const persisted = await loadById(userId, id);
     if (persisted) cache.set(persisted.id, persisted);
     return persisted;
   },
@@ -155,10 +164,10 @@ export const mcpStore = {
   },
 
   async remove(id: string, userId: string): Promise<boolean> {
-    const existing = cache.get(id) ?? (await loadById(id));
+    const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return false;
     cache.delete(id);
-    await deletePersisted(id);
+    await deletePersisted(userId, id);
     return true;
   },
 

@@ -164,7 +164,7 @@ router.get("/:id/tools", asyncHandler<AuthenticatedRequest>(async (req, res) => 
     return;
   }
 
-  const server = await mcpStore.get(req.params.id);
+  const server = await mcpStore.get(req.params.id, userId);
   if (!server || server.userId !== userId) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;
@@ -196,7 +196,7 @@ router.post("/:id/test", asyncHandler<AuthenticatedRequest>(async (req, res) => 
     return;
   }
 
-  const server = await mcpStore.get(req.params.id);
+  const server = await mcpStore.get(req.params.id, userId);
   if (!server || server.userId !== userId) {
     res.status(404).json({ error: "Server not found or not owned by you" });
     return;

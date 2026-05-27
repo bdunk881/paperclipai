@@ -39,6 +39,7 @@ import {
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
+import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
 import {
   AgentToolChips,
   type ConnectorHealthByKey,
@@ -236,6 +237,20 @@ export default function Routines({
   const [loading, setLoading] = useState(() => initialTemplates == null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabKey>("mine");
+  // Bumped by SSE events to trigger a re-fetch without manual polling.
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // Live SSE — any routine lifecycle event (run started/completed,
+  // routine created/edited) bumps reloadTick which the fetch effect
+  // depends on.
+  useWorkspaceLiveStream({
+    path: "routines/stream",
+    enabled: Boolean(activeWorkspaceId),
+    onEvent: (evt) => {
+      if (evt.name === "heartbeat") return;
+      setReloadTick((n) => n + 1);
+    },
+  });
 
   // Inline drawer state (Mine tab).
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -353,7 +368,10 @@ export default function Routines({
     if (initialTemplates) return;
     let cancelled = false;
     void (async () => {
-      setLoading(true);
+      // Only show the big spinner on first paint; SSE-triggered reloads
+      // should refresh in the background without flashing the empty state.
+      const isFirstPaint = reloadTick === 0;
+      if (isFirstPaint) setLoading(true);
       setError(null);
       try {
         const token = (await getAccessToken()) ?? undefined;
@@ -374,13 +392,13 @@ export default function Routines({
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && isFirstPaint) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [initialTemplates, getAccessToken]);
+  }, [initialTemplates, getAccessToken, reloadTick]);
 
   useEffect(() => {
     let cancelled = false;

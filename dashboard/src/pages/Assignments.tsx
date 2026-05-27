@@ -40,6 +40,7 @@ import { useToast } from "../components/ToastProvider";
 import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
 import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
 import { useRegisterCommandActions } from "../context/CommandPaletteContext";
+import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
 import type { Mission } from "../api/missionsApi";
 
 type TabKey = "queue" | "board" | "by-mission" | "sla" | "activity" | "by-team";
@@ -108,6 +109,17 @@ export default function Assignments() {
       queryKey: queryKeys.tickets(activeWorkspaceId),
     });
   }, [activeWorkspaceId, queryClient]);
+
+  // Live SSE — any ticket event invalidates the tickets query so the
+  // Queue / Board / Activity tabs all refresh without manual polling.
+  useWorkspaceLiveStream({
+    path: "tickets/stream",
+    enabled: Boolean(activeWorkspaceId),
+    onEvent: (evt) => {
+      if (evt.name === "heartbeat") return;
+      refresh();
+    },
+  });
 
   const queueCount = tickets.length;
   const openCount = tickets.filter(

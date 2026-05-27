@@ -38,6 +38,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { useApprovalsQuery } from "../hooks/queries/useApprovalsQuery";
 import { useAgentsQuery } from "../hooks/queries/useAgentsQuery";
 import { useListKeyboardNav } from "../hooks/useListKeyboardNav";
+import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
 import { KeyboardShortcutsOverlay } from "../components/KeyboardShortcutsOverlay";
 import { trackedFetch } from "../api/trackedFetch";
 import { getApiBasePath } from "../api/baseUrl";
@@ -191,6 +192,21 @@ export default function Approvals() {
   const [error, setError] = useState<string | null>(
     approvalsQuery.error instanceof Error ? approvalsQuery.error.message : null,
   );
+
+  // Live SSE — invalidate the approvals query whenever the workspace
+  // emits an activity event. The approvals snapshot picks up the new
+  // pending/resolved state on the next fetch without polling.
+  useWorkspaceLiveStream({
+    path: "activity-events/stream",
+    enabled: Boolean(activeWorkspaceId),
+    onEvent: (evt) => {
+      if (evt.name === "heartbeat") return;
+      if (!activeWorkspaceId) return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.approvals(activeWorkspaceId),
+      });
+    },
+  });
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();

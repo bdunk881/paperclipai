@@ -39,14 +39,20 @@ async function startServer() {
   });
 
   // HEL-credits-mvp: start the credits-mode background jobs after the
-  // server is accepting traffic. Both no-op gracefully when Postgres
-  // isn't configured (in-memory dev / test).
-  const [{ startOpenrouterHealthJob }, { startCreditExpirationJob }] = await Promise.all([
+  // server is accepting traffic. All three no-op gracefully when
+  // Postgres isn't configured (in-memory dev / test).
+  const [
+    { startOpenrouterHealthJob },
+    { startCreditExpirationJob },
+    { startCreditAnomalyDetector },
+  ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
+    import("./billing/credits/creditAnomalyDetectorJob"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
+  startCreditAnomalyDetector();
 }
 
 void startServer();

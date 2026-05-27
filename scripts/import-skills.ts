@@ -271,6 +271,144 @@ function summarize(report: ScanReport): string {
 // Per-ref processing
 // ---------------------------------------------------------------------------
 
+/**
+ * Clone a repo once and scan every requested skill in it. Used by the
+ * top-level loop after refs are grouped by `owner/repo` so a 750-ref
+ * scan with 108 unique repos clones 108 times instead of 750.
+ */
+async function processRepoBatch(
+  repoKey: string,
+  refs: string[],
+  options: {
+    grader?: ReturnType<typeof createAnthropicLlmGrader>;
+    force: boolean;
+    manifest: Manifest;
+  },
+): Promise<void> {
+  const [owner, repo] = repoKey.split("/") as [string, string];
+  // Pre-check: if every ref in this batch is already-approved + force is
+  // off, skip the clone entirely.
+  const wantedSkills = new Set(
+    refs
+      .map((ref) => {
+        try {
+          return parseRef(ref).skill;
+        } catch {
+          return undefined;
+        }
+      })
+      .filter((s): s is string => Boolean(s)),
+  );
+  if (!options.force && wantedSkills.size > 0) {
+    const allApproved = [...wantedSkills].every(
+      (key) => options.manifest.entries[key]?.verdict === "approved",
+    );
+    if (allApproved) {
+      console.log(
+        `▶ ${repoKey} (${refs.length} ref(s)) — all already approved, skipping clone`,
+      );
+      return;
+    }
+  }
+
+  const tempBase = fs.mkdtempSync(path.join(os.tmpdir(), "autoflow-skills-"));
+  const repoDir = path.join(tempBase, "repo");
+
+  try {
+    console.log(`▶ ${repoKey} (${refs.length} ref(s)) — cloning…`);
+    cloneTo(repoDir, owner, repo);
+
+    const discovered = discoverSkills(repoDir);
+    const provenance = await fetchRepoProvenance(owner, repo);
+    if (provenance.fetchError) {
+      console.log(`    (github-api fetch failed: ${provenance.fetchError})`);
+    } else {
+      const fields = [
+        typeof provenance.stars === "number" ? `${provenance.stars}★` : null,
+        provenance.lastCommitAt ? `last-commit ${provenance.lastCommitAt.slice(0, 10)}` : null,
+        provenance.license ? `license ${provenance.license}` : null,
+        provenance.archived ? "archived" : null,
+      ].filter(Boolean);
+      if (fields.length > 0) console.log(`    (github: ${fields.join(", ")})`);
+    }
+
+    for (const ref of refs) {
+      const { skill: skillFilter } = parseRef(ref);
+      const targets = skillFilter
+        ? discovered.filter((d) => d.name === skillFilter)
+        : discovered;
+
+      if (targets.length === 0) {
+        console.log(`  • ${ref} — no match in repo (had ${discovered.length})`);
+        continue;
+      }
+
+      for (const { name: skillName, dir: srcDir } of targets) {
+        const skillKey = skillName;
+        if (!SAFE_SKILL_KEY.test(skillKey)) {
+          console.log(`  • ${skillKey} — rejected (unsafe skill key)`);
+          continue;
+        }
+        const destDir = path.join(SKILLS_DIR, skillKey);
+
+        const previous = options.manifest.entries[skillKey];
+        if (previous && previous.verdict === "approved" && !options.force) {
+          console.log(`  • ${skillKey} — already approved (skip)`);
+          continue;
+        }
+
+        const skillBody = readSkillBody(srcDir);
+        const report = await scanSkill(skillKey, srcDir, skillBody, {
+          provenance: {
+            sourceRepo: provenance.sourceRepo,
+            trustedOrigin: provenance.trustedOrigin,
+            stars: provenance.stars,
+            lastCommitAt: provenance.lastCommitAt,
+          },
+          gradeWithLlm: Boolean(options.grader),
+          llmGrader: options.grader,
+        });
+
+        console.log(`  • ${skillKey} — ${summarize(report)}`);
+        for (const f of [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings]) {
+          if (f.severity === "info") continue;
+          console.log(`      [${f.severity}] ${f.code}: ${f.message}${f.file ? ` (${f.file})` : ""}`);
+        }
+
+        options.manifest.entries[skillKey] = {
+          ref,
+          skillKey,
+          verdict: report.verdict,
+          scannedAt: report.scannedAt,
+          findings: [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings],
+        };
+
+        if (report.verdict === "approved") {
+          copySkill(srcDir, destDir);
+          console.log(`      → installed to skills/${skillKey}`);
+        } else {
+          console.log(`      → not installed (${report.verdict})`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`✖ ${repoKey} — ${(err as Error).message}`);
+    for (const ref of refs) {
+      options.manifest.entries[ref] = {
+        ref,
+        skillKey: ref,
+        verdict: "needs_review",
+        scannedAt: new Date().toISOString(),
+        findings: [
+          { severity: "info", code: "import_error", message: (err as Error).message },
+        ],
+      };
+    }
+  } finally {
+    fs.rmSync(tempBase, { recursive: true, force: true });
+  }
+}
+
 async function processRef(
   ref: string,
   options: {
@@ -409,11 +547,40 @@ async function main(): Promise<void> {
   const grader = useLlm ? createAnthropicLlmGrader() : undefined;
   const manifest = readManifest();
 
-  console.log(`Importing ${refs.length} ref(s); llm=${useLlm} force=${force}`);
+  // Dedupe by source repo. The full-registry scan typically points many
+  // refs at the same repo (e.g. 193 refs across `sickn33/antigravity-
+  // awesome-skills`); cloning once per ref instead of once per repo
+  // wastes ~80% of wall clock on git fetches. Group by `owner/repo`,
+  // clone once, then process every requested skill from that clone.
+  const byRepo = new Map<string, string[]>();
+  for (const ref of refs) {
+    try {
+      const { owner, repo } = parseRef(ref);
+      const key = `${owner}/${repo}`;
+      const list = byRepo.get(key) ?? [];
+      list.push(ref);
+      byRepo.set(key, list);
+    } catch (err) {
+      console.error(`✖ ${ref} — ${(err as Error).message}`);
+      manifest.entries[ref] = {
+        ref,
+        skillKey: ref,
+        verdict: "needs_review",
+        scannedAt: new Date().toISOString(),
+        findings: [
+          { severity: "info", code: "import_error", message: (err as Error).message },
+        ],
+      };
+    }
+  }
+
+  console.log(
+    `Importing ${refs.length} ref(s) across ${byRepo.size} unique repo(s); llm=${useLlm} force=${force}`,
+  );
   console.log("");
 
-  for (const ref of refs) {
-    await processRef(ref, { grader, force, manifest });
+  for (const [repoKey, repoRefs] of byRepo) {
+    await processRepoBatch(repoKey, repoRefs, { grader, force, manifest });
     writeManifest(manifest);
   }
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-26T21:30:00.000Z",
+  "generatedAt": "2026-05-27T00:59:29.028Z",
   "entries": {
     "pdf": {
       "ref": "anthropics/skills@pdf",
@@ -52,7 +52,7 @@
       "ref": "anthropics/skills@skill-creator",
       "skillKey": "skill-creator",
       "verdict": "needs_review",
-      "scannedAt": "2026-05-26T18:40:17.208Z",
+      "scannedAt": "2026-05-27T00:58:20.076Z",
       "findings": [
         {
           "severity": "warning",
@@ -182,6 +182,2491 @@
           "severity": "info",
           "code": "hand_authored",
           "message": "Hand-authored AutoFlow skill — canonical product vocabulary, customer-facing nouns, internal-only terms, forbidden words, v1 MVP loop. Maintained directly in skills/autoflow-product-model/."
+        }
+      ]
+    },
+    "google-labs-code/stitch-skills@react:components": {
+      "ref": "google-labs-code/stitch-skills@react:components",
+      "skillKey": "google-labs-code/stitch-skills@react:components",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:14.448Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "import_error",
+          "message": "Invalid skill \"react:components\" — allowlisted to [A-Za-z0-9._-]."
+        }
+      ]
+    },
+    "web-design-guidelines": {
+      "ref": "vercel-labs/agent-skills@web-design-guidelines",
+      "skillKey": "web-design-guidelines",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:16.739Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "find-skills": {
+      "ref": "vercel-labs/skills@find-skills",
+      "skillKey": "find-skills",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:17.607Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "frontend-design": {
+      "ref": "anthropics/skills@frontend-design",
+      "skillKey": "frontend-design",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.070Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "pptx": {
+      "ref": "anthropics/skills@pptx",
+      "skillKey": "pptx",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.094Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "``` --- ## Dependencies - `pip install \"markitdown[pptx]\"` - text ex"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "[pptx]\"` - text extraction - `pip install Pillow` - thumbnail grids - `"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "Pillow` - thumbnail grids - `npm install -g pptxgenjs` - creating from sc"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "pptxgenjs.md",
+          "excerpt": "### Icon Libraries Install: `npm install -g react-icons react react-dom s"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "xlsx": {
+      "ref": "anthropics/skills@xlsx",
+      "skillKey": "xlsx",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.114Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "webapp-testing": {
+      "ref": "anthropics/skills@webapp-testing",
+      "skillKey": "webapp-testing",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.119Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "mcp-builder": {
+      "ref": "anthropics/skills@mcp-builder",
+      "skillKey": "mcp-builder",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:20.123Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/evaluation.md",
+          "excerpt": "I Key** ```bash export ANTHROPIC_API_KEY=your_api_key_here ``` ##"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/evaluation.md",
+          "excerpt": "ripts/requirements.txt export ANTHROPIC_API_KEY=your_api_key ``` 3. **Run ev"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "reference/evaluation.md",
+          "excerpt": "a github_mcp_server.py \\ -e GITHUB_TOKEN=ghp_xxx \\ -o github_eval_re"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "reference/evaluation.md",
+          "excerpt": "Dependencies** ```bash pip install -r scripts/requirements.txt"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "reference/evaluation.md",
+          "excerpt": "stall manually: ```bash pip install anthropic mcp ``` 2. **Se"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "reference/evaluation.md",
+          "excerpt": "tall dependencies**: ```bash pip install -r scripts/requirements.txt e"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "canvas-design": {
+      "ref": "anthropics/skills@canvas-design",
+      "skillKey": "canvas-design",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.189Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "doc-coauthoring": {
+      "ref": "anthropics/skills@doc-coauthoring",
+      "skillKey": "doc-coauthoring",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.199Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "theme-factory": {
+      "ref": "anthropics/skills@theme-factory",
+      "skillKey": "theme-factory",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.203Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "web-artifacts-builder": {
+      "ref": "anthropics/skills@web-artifacts-builder",
+      "skillKey": "web-artifacts-builder",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.206Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "scripts/init-artifact.sh",
+          "excerpt": "found. Installing pnpm...\" npm install -g pnpm fi # Check if project n"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "algorithmic-art": {
+      "ref": "anthropics/skills@algorithmic-art",
+      "skillKey": "algorithmic-art",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.208Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "brand-guidelines": {
+      "ref": "anthropics/skills@brand-guidelines",
+      "skillKey": "brand-guidelines",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.209Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "internal-comms": {
+      "ref": "anthropics/skills@internal-comms",
+      "skillKey": "internal-comms",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.210Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "slack-gif-creator": {
+      "ref": "anthropics/skills@slack-gif-creator",
+      "skillKey": "slack-gif-creator",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:20.212Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "es. ## Dependencies ```bash pip install pillow imageio numpy ```"
+        },
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "agent-browser": {
+      "ref": "vercel-labs/agent-browser@agent-browser",
+      "skillKey": "agent-browser",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:21.231Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "seo-audit": {
+      "ref": "coreyhaines31/marketingskills@seo-audit",
+      "skillKey": "seo-audit",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.736Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "copywriting": {
+      "ref": "coreyhaines31/marketingskills@copywriting",
+      "skillKey": "copywriting",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.736Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "marketing-psychology": {
+      "ref": "coreyhaines31/marketingskills@marketing-psychology",
+      "skillKey": "marketing-psychology",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.737Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "programmatic-seo": {
+      "ref": "coreyhaines31/marketingskills@programmatic-seo",
+      "skillKey": "programmatic-seo",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.738Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "marketing-ideas": {
+      "ref": "coreyhaines31/marketingskills@marketing-ideas",
+      "skillKey": "marketing-ideas",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.738Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "copy-editing": {
+      "ref": "coreyhaines31/marketingskills@copy-editing",
+      "skillKey": "copy-editing",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.739Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "content-strategy": {
+      "ref": "coreyhaines31/marketingskills@content-strategy",
+      "skillKey": "content-strategy",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:21.740Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/coreyhaines31/marketingskills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "audit-website": {
+      "ref": "squirrelscan/skills@audit-website",
+      "skillKey": "audit-website",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:22.010Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/squirrelscan/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "supabase-postgres-best-practices": {
+      "ref": "supabase/agent-skills@supabase-postgres-best-practices",
+      "skillKey": "supabase-postgres-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:22.372Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/supabase/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "browser-use": {
+      "ref": "browser-use/browser-use@browser-use",
+      "skillKey": "browser-use",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:25.626Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/browser-use/browser-use is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "brainstorming": {
+      "ref": "obra/superpowers@brainstorming",
+      "skillKey": "brainstorming",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.895Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "systematic-debugging": {
+      "ref": "obra/superpowers@systematic-debugging",
+      "skillKey": "systematic-debugging",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.896Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "test-driven-development": {
+      "ref": "obra/superpowers@test-driven-development",
+      "skillKey": "test-driven-development",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.897Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "writing-plans": {
+      "ref": "obra/superpowers@writing-plans",
+      "skillKey": "writing-plans",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.897Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "executing-plans": {
+      "ref": "obra/superpowers@executing-plans",
+      "skillKey": "executing-plans",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.897Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "subagent-driven-development": {
+      "ref": "obra/superpowers@subagent-driven-development",
+      "skillKey": "subagent-driven-development",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.897Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "requesting-code-review": {
+      "ref": "obra/superpowers@requesting-code-review",
+      "skillKey": "requesting-code-review",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.898Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "using-superpowers": {
+      "ref": "obra/superpowers@using-superpowers",
+      "skillKey": "using-superpowers",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.898Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "verification-before-completion": {
+      "ref": "obra/superpowers@verification-before-completion",
+      "skillKey": "verification-before-completion",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.898Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "writing-skills": {
+      "ref": "obra/superpowers@writing-skills",
+      "skillKey": "writing-skills",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.900Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "anthropic-best-practices.md",
+          "excerpt": ": \"Install required package: `pip install pypdf` Then use it: ```pytho"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "render-graphs.js",
+          "excerpt": "macOS'); console.error(' apt install graphviz # Linux'); p"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "dispatching-parallel-agents": {
+      "ref": "obra/superpowers@dispatching-parallel-agents",
+      "skillKey": "dispatching-parallel-agents",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.900Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "using-git-worktrees": {
+      "ref": "obra/superpowers@using-git-worktrees",
+      "skillKey": "using-git-worktrees",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.900Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "[ -f requirements.txt ]; then pip install -r requirements.txt; fi if ["
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "receiving-code-review": {
+      "ref": "obra/superpowers@receiving-code-review",
+      "skillKey": "receiving-code-review",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.900Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "finishing-a-development-branch": {
+      "ref": "obra/superpowers@finishing-a-development-branch",
+      "skillKey": "finishing-a-development-branch",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:26.901Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/obra/superpowers is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vue-best-practices": {
+      "ref": "antfu/skills@vue-best-practices",
+      "skillKey": "vue-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.401Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "react-native-best-practices": {
+      "ref": "callstackincubator/agent-skills@react-native-best-practices",
+      "skillKey": "react-native-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:46.019Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/callstackincubator/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "github": {
+      "ref": "callstackincubator/agent-skills@github",
+      "skillKey": "github",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:46.020Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/callstackincubator/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "next-best-practices": {
+      "ref": "vercel-labs/next-skills@next-best-practices",
+      "skillKey": "next-best-practices",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:46.357Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "next-cache-components": {
+      "ref": "vercel-labs/next-skills@next-cache-components",
+      "skillKey": "next-cache-components",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:46.358Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "next-upgrade": {
+      "ref": "vercel-labs/next-skills@next-upgrade",
+      "skillKey": "next-upgrade",
+      "verdict": "approved",
+      "scannedAt": "2026-05-27T00:58:46.358Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "trusted_origin",
+          "message": "Origin is on the trusted-org allowlist."
+        }
+      ]
+    },
+    "baoyu-slide-deck": {
+      "ref": "jimliu/baoyu-skills@baoyu-slide-deck",
+      "skillKey": "baoyu-slide-deck",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.748Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-article-illustrator": {
+      "ref": "jimliu/baoyu-skills@baoyu-article-illustrator",
+      "skillKey": "baoyu-article-illustrator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.752Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-cover-image": {
+      "ref": "jimliu/baoyu-skills@baoyu-cover-image",
+      "skillKey": "baoyu-cover-image",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.755Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-xhs-images": {
+      "ref": "jimliu/baoyu-skills@baoyu-xhs-images",
+      "skillKey": "baoyu-xhs-images",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.758Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-comic": {
+      "ref": "jimliu/baoyu-skills@baoyu-comic",
+      "skillKey": "baoyu-comic",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.761Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-post-to-wechat": {
+      "ref": "jimliu/baoyu-skills@baoyu-post-to-wechat",
+      "skillKey": "baoyu-post-to-wechat",
+      "verdict": "rejected",
+      "scannedAt": "2026-05-27T00:58:50.767Z",
+      "findings": [
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "SKILL.md",
+          "excerpt": "remote_publish_identity_file: ~/.ssh/id_ed25519 # remote_publish_known_hosts_"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "install oven-sh/bun/bun` or `npm install -g bun` | | Accessibility (macOS"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "references/multi-account.md",
+          "excerpt": "ublish_identity_file: /home/me/.ssh/id_ed25519 remote_publish_known_host"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "scripts/check-permissions.ts",
+          "excerpt": "ll oven-sh/bun/bun (macOS) or npm install -g bun'); } } async function"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "scripts/wechat-extend-config.test.ts",
+          "excerpt": "ublish_identity_file: /home/me/.ssh/id_ed25519\", \"remote_publish_known"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "scripts/wechat-extend-config.test.ts",
+          "excerpt": "blish_identity_file, \"/home/me/.ssh/id_ed25519\"); assert.equal(resolved.re"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "scripts/wechat-remote-publish.test.ts",
+          "excerpt": "2, identityFile: \"/home/me/.ssh/id_ed25519\", knownHostsFile: \"/home/"
+        },
+        {
+          "severity": "critical",
+          "code": "creds_ssh",
+          "message": "Reads SSH private keys or authorized_keys.",
+          "file": "scripts/wechat-remote-publish.test.ts",
+          "excerpt": "result.identityFile, \"/home/me/.ssh/id_ed25519\"); assert.equal(result.know"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-post-to-x": {
+      "ref": "jimliu/baoyu-skills@baoyu-post-to-x",
+      "skillKey": "baoyu-post-to-x",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.770Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "oven-sh/bun/bun` (macOS) or `npm install -g bun` | | Accessibility (macOS"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "scripts/check-paste-permissions.ts",
+          "excerpt": "ll oven-sh/bun/bun (macOS) or npm install -g bun'); } } async function"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-compress-image": {
+      "ref": "jimliu/baoyu-skills@baoyu-compress-image",
+      "skillKey": "baoyu-compress-image",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.771Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-danger-gemini-web": {
+      "ref": "jimliu/baoyu-skills@baoyu-danger-gemini-web",
+      "skillKey": "baoyu-danger-gemini-web",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.773Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-danger-x-to-markdown": {
+      "ref": "jimliu/baoyu-skills@baoyu-danger-x-to-markdown",
+      "skillKey": "baoyu-danger-x-to-markdown",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.776Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-infographic": {
+      "ref": "jimliu/baoyu-skills@baoyu-infographic",
+      "skillKey": "baoyu-infographic",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.778Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-imagegen.md",
+          "excerpt": "er's Codex subscription — no `OPENAI_API_KEY` is read or sent. ## Stdout"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-image-gen": {
+      "ref": "jimliu/baoyu-skills@baoyu-image-gen",
+      "skillKey": "baoyu-image-gen",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.785Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "ed-in Codex subscription — no OPENAI_API_KEY required; requires `codex` on"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "|----------|-------------| | `OPENAI_API_KEY` | OpenAI API key | | `AZURE_"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "/images/edits`) and requires `OPENAI_API_KEY`. A Codex or ChatGPT desktop"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "ot a drop-in replacement for `OPENAI_API_KEY`; do not paste a Codex OAuth"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "ste a Codex OAuth token into `OPENAI_API_KEY` or only set `OPENAI_BASE_URL"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-image2-fallback.md",
+          "excerpt": "e CLI can fail with: ```text OPENAI_API_KEY is required. Codex/ChatGPT de"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-image2-fallback.md",
+          "excerpt": "OpenAI Images API and needs `OPENAI_API_KEY`. Codex / ChatGPT image2 enti"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-image2-fallback.md",
+          "excerpt": "2. If it fails only because `OPENAI_API_KEY` is missing, do not leave the"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-image2-fallback.md",
+          "excerpt": "> The OpenAI API path needs `OPENAI_API_KEY`; Codex login is a separate i"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-oauth-vs-openai-api-key.md",
+          "excerpt": "enAI Images API and requires `OPENAI_API_KEY`. It calls OpenAI-compatible"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-oauth-vs-openai-api-key.md",
+          "excerpt": "ot a drop-in replacement for `OPENAI_API_KEY`, and setting `OPENAI_BASE_UR"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/codex-oauth-vs-openai-api-key.md",
+          "excerpt": "e Codex `image_gen` tool; no `OPENAI_API_KEY` is required. - If running in"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/providers/codex-cli.md",
+          "excerpt": "ChatGPT subscription** — no `OPENAI_API_KEY` is read or sent. ## Prerequ"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/providers/codex-cli.md",
+          "excerpt": "is not interchangeable with `OPENAI_API_KEY`. - `references/codex-image2-"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/providers/codex-cli.md",
+          "excerpt": "t. ## Prerequisites ```bash npm install -g @openai/codex codex login"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "references/providers/codex-cli.md",
+          "excerpt": "ot on `PATH` or unreadable | `npm install -g @openai/codex`, then `codex l"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/usage-examples.md",
+          "excerpt": "x / ChatGPT subscription — no OPENAI_API_KEY; requires `codex` on PATH and"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.test.ts",
+          "excerpt": "LE_API_KEY: \"google-key\", OPENAI_API_KEY: \"openai-key\", OPENROUTER"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.test.ts",
+          "excerpt": "GOOGLE_API_KEY: null, OPENAI_API_KEY: \"openai-key\", AZURE_OPEN"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.test.ts",
+          "excerpt": "GOOGLE_API_KEY: null, OPENAI_API_KEY: null, AZURE_OPENAI_API_K"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.test.ts",
+          "excerpt": "GOOGLE_API_KEY: null, OPENAI_API_KEY: null, AZURE_OPENAI_API_K"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.test.ts",
+          "excerpt": "GOOGLE_API_KEY: null, OPENAI_API_KEY: null, OPENROUTER_API_KEY"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.ts",
+          "excerpt": "t 1 Environment variables: OPENAI_API_KEY OpenAI API key O"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.ts",
+          "excerpt": "nst hasOpenai = !!process.env.OPENAI_API_KEY; const hasOpenrouter = !!pr"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.ts",
+          "excerpt": "OOGLE_API_KEY/GEMINI_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY+AZURE_O"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/main.ts",
+          "excerpt": "OGLE_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY+AZURE_O"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/providers/openai.ts",
+          "excerpt": "const apiKey = process.env.OPENAI_API_KEY; if (!apiKey) { throw"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "scripts/providers/openai.ts",
+          "excerpt": "{ throw new Error( \"OPENAI_API_KEY is required. Codex/ChatGPT de"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "baoyu-url-to-markdown": {
+      "ref": "jimliu/baoyu-skills@baoyu-url-to-markdown",
+      "skillKey": "baoyu-url-to-markdown",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:50.791Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/jimliu/baoyu-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "agent-md-refactor": {
+      "ref": "softaworks/agent-toolkit@agent-md-refactor",
+      "skillKey": "agent-md-refactor",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.321Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "commit-work": {
+      "ref": "softaworks/agent-toolkit@commit-work",
+      "skillKey": "commit-work",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.321Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "session-handoff": {
+      "ref": "softaworks/agent-toolkit@session-handoff",
+      "skillKey": "session-handoff",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.323Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "daily-meeting-update": {
+      "ref": "softaworks/agent-toolkit@daily-meeting-update",
+      "skillKey": "daily-meeting-update",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.324Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "mermaid-diagrams": {
+      "ref": "softaworks/agent-toolkit@mermaid-diagrams",
+      "skillKey": "mermaid-diagrams",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.325Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "README.md",
+          "excerpt": "eference - **Mermaid CLI** - `npm install -g @mermaid-js/mermaid-cli` for"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "G/SVG export - Mermaid CLI - `npm install -g @mermaid-js/mermaid-cli` then"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "qa-test-planner": {
+      "ref": "softaworks/agent-toolkit@qa-test-planner",
+      "skillKey": "qa-test-planner",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.326Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "gemini": {
+      "ref": "softaworks/agent-toolkit@gemini",
+      "skillKey": "gemini",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.327Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "codex": {
+      "ref": "softaworks/agent-toolkit@codex",
+      "skillKey": "codex",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.328Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "writing-clearly-and-concisely": {
+      "ref": "softaworks/agent-toolkit@writing-clearly-and-concisely",
+      "skillKey": "writing-clearly-and-concisely",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.331Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "meme-factory": {
+      "ref": "softaworks/agent-toolkit@meme-factory",
+      "skillKey": "meme-factory",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.332Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "dependency-updater": {
+      "ref": "softaworks/agent-toolkit@dependency-updater",
+      "skillKey": "dependency-updater",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.333Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "README.md",
+          "excerpt": "e` | | Python | pip-review | `pip install pip-review` | | Python | pip-"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "README.md",
+          "excerpt": "ew` | | Python | pip-audit | `pip install pip-audit` | | Go | govulnche"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "README.md",
+          "excerpt": "venv source venv/bin/activate pip install -r requirements.txt ``` ###"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "README.md",
+          "excerpt": "s scripts/check-tool.sh taze \"npm install -g taze\" # Run taze directly sc"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "README.md",
+          "excerpt": "--------| | Node.js | taze | `npm install -g taze` | | Python | pip-review"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "iew --auto # Update specific pip install --upgrade package-name # Sec"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "venv source venv/bin/activate pip install -r requirements.txt # Go - R"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "venv source venv/bin/activate pip install -r requirements.txt # Or use"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "nts.txt # Or use constraints pip install -c constraints.txt -r require"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "s scripts/check-tool.sh taze \"npm install -g taze\" # Scan for updates taz"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "SKILL.md",
+          "excerpt": "l taze globally (recommended) npm install -g taze # Or use npx npx taze `"
+        },
+        {
+          "severity": "info",
+          "code": "npm_install_global",
+          "message": "Installs Node packages globally.",
+          "file": "scripts/run-taze.sh",
+          "excerpt": "Install options:\" echo \" npm install -g taze # Global install (rec"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "domain-name-brainstormer": {
+      "ref": "softaworks/agent-toolkit@domain-name-brainstormer",
+      "skillKey": "domain-name-brainstormer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.333Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ship-learn-next": {
+      "ref": "softaworks/agent-toolkit@ship-learn-next",
+      "skillKey": "ship-learn-next",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.333Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "gepetto": {
+      "ref": "softaworks/agent-toolkit@gepetto",
+      "skillKey": "gepetto",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.334Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "crafting-effective-readmes": {
+      "ref": "softaworks/agent-toolkit@crafting-effective-readmes",
+      "skillKey": "crafting-effective-readmes",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.335Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "skill-judge": {
+      "ref": "softaworks/agent-toolkit@skill-judge",
+      "skillKey": "skill-judge",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.337Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "reducing-entropy": {
+      "ref": "softaworks/agent-toolkit@reducing-entropy",
+      "skillKey": "reducing-entropy",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.337Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "command-creator": {
+      "ref": "softaworks/agent-toolkit@command-creator",
+      "skillKey": "command-creator",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.338Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "professional-communication": {
+      "ref": "softaworks/agent-toolkit@professional-communication",
+      "skillKey": "professional-communication",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.339Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "difficult-workplace-conversations": {
+      "ref": "softaworks/agent-toolkit@difficult-workplace-conversations",
+      "skillKey": "difficult-workplace-conversations",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.340Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "marp-slide": {
+      "ref": "softaworks/agent-toolkit@marp-slide",
+      "skillKey": "marp-slide",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.342Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/advanced-features.md",
+          "excerpt": "github_token: ${{ secrets.GITHUB_TOKEN }} publish_dir: ./ ``` #"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "feedback-mastery": {
+      "ref": "softaworks/agent-toolkit@feedback-mastery",
+      "skillKey": "feedback-mastery",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.343Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "plugin-forge": {
+      "ref": "softaworks/agent-toolkit@plugin-forge",
+      "skillKey": "plugin-forge",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.344Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "humanizer": {
+      "ref": "softaworks/agent-toolkit@humanizer",
+      "skillKey": "humanizer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.344Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "c4-architecture": {
+      "ref": "softaworks/agent-toolkit@c4-architecture",
+      "skillKey": "c4-architecture",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.345Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "database-schema-designer": {
+      "ref": "softaworks/agent-toolkit@database-schema-designer",
+      "skillKey": "database-schema-designer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.346Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "react-dev": {
+      "ref": "softaworks/agent-toolkit@react-dev",
+      "skillKey": "react-dev",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.348Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "game-changing-features": {
+      "ref": "softaworks/agent-toolkit@game-changing-features",
+      "skillKey": "game-changing-features",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.348Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "naming-analyzer": {
+      "ref": "softaworks/agent-toolkit@naming-analyzer",
+      "skillKey": "naming-analyzer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.349Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "react-useeffect": {
+      "ref": "softaworks/agent-toolkit@react-useeffect",
+      "skillKey": "react-useeffect",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.349Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "openapi-to-typescript": {
+      "ref": "softaworks/agent-toolkit@openapi-to-typescript",
+      "skillKey": "openapi-to-typescript",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:51.349Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/softaworks/agent-toolkit is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "develop-ai-functions-example": {
+      "ref": "vercel/ai@develop-ai-functions-example",
+      "skillKey": "develop-ai-functions-example",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:54.040Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/vercel/ai is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "capture-api-response-test-fixture": {
+      "ref": "vercel/ai@capture-api-response-test-fixture",
+      "skillKey": "capture-api-response-test-fixture",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:54.040Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/vercel/ai is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "list-npm-package-content": {
+      "ref": "vercel/ai@list-npm-package-content",
+      "skillKey": "list-npm-package-content",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:54.040Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/vercel/ai is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "agentation": {
+      "ref": "benjitaylor/agentation@agentation",
+      "skillKey": "agentation",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:55.488Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/benjitaylor/agentation is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ralph-tui-prd": {
+      "ref": "subsy/ralph-tui@ralph-tui-prd",
+      "skillKey": "ralph-tui-prd",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:56.583Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/subsy/ralph-tui is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ralph-tui-create-json": {
+      "ref": "subsy/ralph-tui@ralph-tui-create-json",
+      "skillKey": "ralph-tui-create-json",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:56.584Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/subsy/ralph-tui is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ralph-tui-create-beads": {
+      "ref": "subsy/ralph-tui@ralph-tui-create-beads",
+      "skillKey": "ralph-tui-create-beads",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:56.584Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/subsy/ralph-tui is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ralph-tui-create-beads-rust": {
+      "ref": "subsy/ralph-tui@ralph-tui-create-beads-rust",
+      "skillKey": "ralph-tui-create-beads-rust",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:58:56.584Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/subsy/ralph-tui is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "turborepo": {
+      "ref": "antfu/skills@turborepo",
+      "skillKey": "turborepo",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.428Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "```json // If CI scripts need GITHUB_TOKEN but it's not in env: { \"glo"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "SKILL.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"CI\"], \"tasks\": { ... } }"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/configuration/global-options.md",
+          "excerpt": "oughEnv\": [\"AWS_SECRET_KEY\", \"GITHUB_TOKEN\"] } ``` Use for credentials"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/configuration/tasks.md",
+          "excerpt": "oughEnv\": [\"AWS_SECRET_KEY\", \"GITHUB_TOKEN\"] } } } ``` **Warning*"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": "hEnv\": [\"AWS_ACCESS_KEY_ID\", \"AWS_SECRET_ACCESS_KEY\"] } } } ``` ### `globa"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\"] } ``` ## Wildcards and Neg"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/RULE.md",
+          "excerpt": ", \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"NPM_TOKEN\"], \"tasks\": {"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": "mode, CI provider variables (GITHUB_TOKEN, GITLAB_CI, etc.) are filtere"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": "{ \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"GITLAB_CI\", \"CI\"] } ``` #"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/environment/gotchas.md",
+          "excerpt": ", \"globalPassThroughEnv\": [\"GITHUB_TOKEN\", \"VERCEL_URL\"], \"tasks\": {"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "atxp": {
+      "ref": "atxp-dev/cli@atxp",
+      "skillKey": "atxp",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:04.223Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/atxp-dev/cli is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vite": {
+      "ref": "antfu/skills@vite",
+      "skillKey": "vite",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.397Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vue": {
+      "ref": "onmax/nuxt-skills@vue",
+      "skillKey": "vue",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.943Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "pnpm": {
+      "ref": "antfu/skills@pnpm",
+      "skillKey": "pnpm",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.402Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vueuse-functions": {
+      "ref": "antfu/skills@vueuse-functions",
+      "skillKey": "vueuse-functions",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.416Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vitest": {
+      "ref": "antfu/skills@vitest",
+      "skillKey": "vitest",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.418Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "antfu": {
+      "ref": "antfu/skills@antfu",
+      "skillKey": "antfu",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.418Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "pinia": {
+      "ref": "antfu/skills@pinia",
+      "skillKey": "pinia",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.419Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "unocss": {
+      "ref": "antfu/skills@unocss",
+      "skillKey": "unocss",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.420Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt": {
+      "ref": "onmax/nuxt-skills@nuxt",
+      "skillKey": "nuxt",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.941Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "tsdown": {
+      "ref": "antfu/skills@tsdown",
+      "skillKey": "tsdown",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.426Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vitepress": {
+      "ref": "antfu/skills@vitepress",
+      "skillKey": "vitepress",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.429Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "slidev": {
+      "ref": "antfu/skills@slidev",
+      "skillKey": "slidev",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:07.431Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/antfu/skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "context7": {
+      "ref": "intellectronica/agent-skills@context7",
+      "skillKey": "context7",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:17.188Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/intellectronica/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "swiftui-expert-skill": {
+      "ref": "avdlee/swiftui-agent-skill@swiftui-expert-skill",
+      "skillKey": "swiftui-expert-skill",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.349Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/avdlee/swiftui-agent-skill is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt-ui": {
+      "ref": "onmax/nuxt-skills@nuxt-ui",
+      "skillKey": "nuxt-ui",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.948Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "vueuse": {
+      "ref": "onmax/nuxt-skills@vueuse",
+      "skillKey": "vueuse",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.956Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "ts-library": {
+      "ref": "onmax/nuxt-skills@ts-library",
+      "skillKey": "ts-library",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.958Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "repo-token: ${{ secrets.GITHUB_TOKEN }} wait-interval: 1"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "github env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} - run: pnpm publish"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "workflows/ci.md",
+          "excerpt": "repo-token: ${{ secrets.GITHUB_TOKEN }} wait-interval: 1"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "workflows/ci.md",
+          "excerpt": "github env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "workflows/ci.md",
+          "excerpt": "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} - run: pnpm publish"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "reka-ui": {
+      "ref": "onmax/nuxt-skills@reka-ui",
+      "skillKey": "reka-ui",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.960Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "motion": {
+      "ref": "onmax/nuxt-skills@motion",
+      "skillKey": "motion",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.961Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt-modules": {
+      "ref": "onmax/nuxt-skills@nuxt-modules",
+      "skillKey": "nuxt-modules",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.962Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "repo-token: ${{ secrets.GITHUB_TOKEN }} wait-interval: 1"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "github env: GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/ci-workflows.md",
+          "excerpt": "GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}} - name: Publish to n"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "document-writer": {
+      "ref": "onmax/nuxt-skills@document-writer",
+      "skillKey": "document-writer",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.962Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt-content": {
+      "ref": "onmax/nuxt-skills@nuxt-content",
+      "skillKey": "nuxt-content",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.963Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/collections.md",
+          "excerpt": "md', authToken: process.env.GITHUB_TOKEN, // GitHub PAT } ``` **Bitbu"
+        },
+        {
+          "severity": "warning",
+          "code": "env_credentials",
+          "message": "References a sensitive environment variable. Confirm it's only read in a legitimate context.",
+          "file": "references/config.md",
+          "excerpt": "# GitHub (for remote sources) GITHUB_TOKEN=ghp_xxxx ``` ## Content Hook"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxt-better-auth": {
+      "ref": "onmax/nuxt-skills@nuxt-better-auth",
+      "skillKey": "nuxt-better-auth",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.963Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "nuxthub": {
+      "ref": "onmax/nuxt-skills@nuxthub",
+      "skillKey": "nuxthub",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:22.964Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/onmax/nuxt-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "logging-best-practices": {
+      "ref": "boristane/agent-skills@logging-best-practices",
+      "skillKey": "logging-best-practices",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.464Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/boristane/agent-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-animation": {
+      "ref": "cloudai-x/threejs-skills@threejs-animation",
+      "skillKey": "threejs-animation",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.771Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-fundamentals": {
+      "ref": "cloudai-x/threejs-skills@threejs-fundamentals",
+      "skillKey": "threejs-fundamentals",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.772Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-shaders": {
+      "ref": "cloudai-x/threejs-skills@threejs-shaders",
+      "skillKey": "threejs-shaders",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.772Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-interaction": {
+      "ref": "cloudai-x/threejs-skills@threejs-interaction",
+      "skillKey": "threejs-interaction",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.772Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-materials": {
+      "ref": "cloudai-x/threejs-skills@threejs-materials",
+      "skillKey": "threejs-materials",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.773Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-geometry": {
+      "ref": "cloudai-x/threejs-skills@threejs-geometry",
+      "skillKey": "threejs-geometry",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.773Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-textures": {
+      "ref": "cloudai-x/threejs-skills@threejs-textures",
+      "skillKey": "threejs-textures",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.773Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-lighting": {
+      "ref": "cloudai-x/threejs-skills@threejs-lighting",
+      "skillKey": "threejs-lighting",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.773Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-loaders": {
+      "ref": "cloudai-x/threejs-skills@threejs-loaders",
+      "skillKey": "threejs-loaders",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.774Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "threejs-postprocessing": {
+      "ref": "cloudai-x/threejs-skills@threejs-postprocessing",
+      "skillKey": "threejs-postprocessing",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:27.774Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/cloudai-x/threejs-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "planning-with-files": {
+      "ref": "othmanadi/planning-with-files@planning-with-files",
+      "skillKey": "planning-with-files",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:28.725Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/othmanadi/planning-with-files is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "obsidian-markdown": {
+      "ref": "kepano/obsidian-skills@obsidian-markdown",
+      "skillKey": "obsidian-markdown",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:29.026Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/kepano/obsidian-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "obsidian-bases": {
+      "ref": "kepano/obsidian-skills@obsidian-bases",
+      "skillKey": "obsidian-bases",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:29.026Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/kepano/obsidian-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "json-canvas": {
+      "ref": "kepano/obsidian-skills@json-canvas",
+      "skillKey": "json-canvas",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-27T00:59:29.027Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/kepano/obsidian-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     }

@@ -5,6 +5,11 @@ import {
   SOCIAL_AUTH_NONCE_COOKIE_NAME,
 } from "./appAuthTokens";
 
+// CI hardening: this suite cold-loads src/app.ts via require + jest.resetModules.
+// That takes 1-3s; the 5s default tips over on slow CI runners as more routes
+// land. 20s gives headroom without hiding real hangs.
+jest.setTimeout(20000);
+
 const originalEnv = process.env;
 
 type PassportAuthenticate = (

@@ -34,3 +34,41 @@ export async function retryRun(accessToken: string, runId: string): Promise<Work
   }
   return res.json() as Promise<WorkflowRun>;
 }
+
+/**
+ * GET /api/runs/in-flight — the caller's non-terminal runs in the
+ * active workspace. Powers the bottom-right RunTray.
+ */
+export async function listInFlightRuns(
+  accessToken: string,
+): Promise<RunsListResponse> {
+  const res = await fetch(`${BASE}/runs/in-flight`, {
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch in-flight runs: ${res.status}`);
+  }
+  return res.json() as Promise<RunsListResponse>;
+}
+
+/**
+ * DELETE /api/runs/:id/cancel — request cancellation. Server flips
+ * status to `cancelling`; the worker converges to `canceled` on its
+ * next checkpoint.
+ */
+export async function cancelRun(
+  accessToken: string,
+  runId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${BASE}/runs/${encodeURIComponent(runId)}/cancel`,
+    {
+      method: "DELETE",
+      headers: buildAuthHeaders(accessToken),
+    },
+  );
+  if (!res.ok && res.status !== 204) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Cancel failed: ${res.status}`);
+  }
+}

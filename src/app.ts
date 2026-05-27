@@ -16,18 +16,27 @@ import {
   getTemplatesByCategory,
   listTemplates,
   TEMPLATE_MAP,
+  WORKFLOW_TEMPLATES,
 } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
 import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
+// HEL-214 / PR J: Pro Mode actionable reveal scaffolds.
+import approvalRuleDebugRoutes from "./approvals/ruleDebugRoutes";
+import missionAssignmentReplayRoutes from "./missions/missionAssignmentReplayRoutes";
+import hireTemplateRoutes from "./missions/hireTemplateRoutes";
 import llmConfigRoutes from "./llmConfig/llmConfigRoutes";
+import tierRoutingRoutes from "./llmConfig/tierRoutingRoutes";
 import apiKeyRoutes from "./apiKeys/apiKeyRoutes";
+import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes";
+import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
@@ -66,6 +75,8 @@ import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
+import creditsCheckoutRoutes from "./billing/credits/checkoutRoutes";
+import creditsWalletRoutes from "./billing/credits/walletRoutes";
 import {
   buildTeamAssemblyPrompt,
   parseTeamAssemblyResponse,
@@ -102,9 +113,11 @@ import {
   WorkspaceAwareRequest,
 } from "./middleware/workspaceResolver";
 import { createWorkspaceRoutes } from "./workspaces/workspaceRoutes";
+import { createMemberInviteRoutes } from "./workspaces/memberInviteRoutes";
 import profileRoutes from "./user/profileRoutes";
 import { createMissionRoutes } from "./missions/missionRoutes";
 import { createHiringPlanRoutes } from "./missions/hiringPlanRoutes";
+import { roleLibraryRoutes } from "./missions/roleLibraryRoutes";
 import { createActivityRoutes } from "./activity/activityRoutes";
 import {
   createBudgetsRoutes,
@@ -115,6 +128,9 @@ import {
   createWakeEventsRoutes,
 } from "./canonical/canonicalReadRoutes";
 import { createWorkspaceSnapshotRoutes } from "./canonical/workspaceSnapshotRoutes";
+import { createBudgetBreakdownRoute } from "./budget/budgetBreakdownRoute";
+import { createBudgetSetRoute } from "./budget/budgetSetRoute";
+import { createPromptRoutineRoutes } from "./promptRoutines/promptRoutineRoutes";
 import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
@@ -122,6 +138,7 @@ import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
+import { createSkillsRoutes } from "./skills/skillsRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
 import { createAdminConsoleRoutes, createImpersonationVerifyRoute } from "./adminConsole";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
@@ -136,7 +153,7 @@ import { randomUUID } from "crypto";
 import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
 import { getRunQueue } from "./queue/queues";
 
-import { getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
+import { deleteImportedTemplate, getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
 
 requirePersistence();
@@ -216,6 +233,34 @@ const budgetsRoutes = canonicalReadsArePostgres
   ? createBudgetsRoutes(getPostgresPool())
   : express.Router().get("/", (_req, res) =>
       res.json({ budgets: [], limit: 0, total: 0 }),
+    );
+
+// HEL-212 (PR H): Budget v2 dashboard endpoints — spend breakdown
+// (GET /api/budget/breakdown) and ceiling upsert (PUT /api/budget).
+// Read mount allows all workspace members; the write mount tightens
+// to admin/operator so a billing-only seat can't reshape spend caps.
+const budgetBreakdownRoute = canonicalReadsArePostgres
+  ? createBudgetBreakdownRoute(getPostgresPool())
+  : express.Router().get("/breakdown", (_req, res) =>
+      res.json({
+        scope: "workspace",
+        since: null,
+        until: null,
+        model: null,
+        rows: [],
+        series: [],
+        totals: { byModel: {}, all: 0, tokens: 0, cacheHitRate: null },
+      }),
+    );
+const budgetSetRoute = canonicalReadsArePostgres
+  ? createBudgetSetRoute(getPostgresPool())
+  : express.Router().put("/", (_req, res) =>
+      res.status(501).json({ error: "Budget ceilings require PostgreSQL persistence." }),
+    );
+const promptRoutineRoutes = canonicalReadsArePostgres
+  ? createPromptRoutineRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Prompt routines require PostgreSQL persistence." }),
     );
 const entitlementsRoutes = canonicalReadsArePostgres
   ? createEntitlementsRoutes(getPostgresPool())
@@ -549,6 +594,12 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ensures only members with the billing role can manage subscriptions.
 app.use("/api/billing/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
+// HEL-credits-mvp: hosted-credits pack purchases. Same role + rate-limit
+// gates as subscription checkout — billing role required.
+app.use("/api/credits/checkout", requireAuth, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);
+// Wallet balance is readable by any authenticated workspace member —
+// it's analogous to the subscription tier read, not a billing action.
+app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
 
 // ---------------------------------------------------------------------------
@@ -560,9 +611,37 @@ app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin",
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
 app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
+// HEL-todo Phase-2a: tier routing matrix (workspaces.tier_routing JSONB,
+// migration 033). GET/PATCH the customer-visible Lite/Standard/Power
+// bindings. Vision + embeddings derive from these on the consumer side.
+app.use("/api/tier-routing", requireAuth, workspaceResolver, requireRole("admin", "developer"), tierRoutingRoutes);
+
 // HEL-166: platform API keys for programmatic AutoFlow access. Keys are
 // workspace-scoped; owner/admin/developer may create, rotate, and revoke.
 app.use("/api/api-keys", requireAuth, workspaceResolver, requireRole("admin", "developer"), apiKeyRoutes);
+
+// HEL-205: per-scope connector grants (Connections hub Manage panel).
+// Backed by `connector_grants` (migration 060) — RLS-isolated per workspace.
+// In-memory mode returns 501 across the surface since persistence is required.
+const connectorGrantsRoutes = isPostgresPersistenceEnabled()
+  ? createConnectorGrantsRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) =>
+      res.status(501).json({ error: "Connector grants require PostgreSQL persistence." }),
+    );
+app.use(
+  "/api/connector-grants",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "developer"),
+  connectorGrantsRoutes,
+);
+
+// HEL-206: workspace-scoped encrypted environment variables (Pro surface).
+// High-trust: list paths never return plaintext; the only decrypt path is
+// the short-lived deref token issued by `/api/env-vars/:id/deref-token`.
+// Mirrors the api-keys role gate (admin/developer); follow-up may tighten
+// further (owner-only) once the surface is reviewed.
+app.use("/api/env-vars", requireAuth, workspaceResolver, requireRole("admin", "developer"), envVarRoutes);
 
 // ---------------------------------------------------------------------------
 // Hosted free model catalog (PR B.1) + per-workspace daily token usage
@@ -618,6 +697,23 @@ app.use("/api/agents/runs", (req, _res, next) => {
   }
   next();
 });
+
+// HEL-218: same access_token → Authorization shim for the three new SSE
+// surfaces (routine + ticket + activity streams). EventSource has no
+// header API, so the dashboard passes its bearer via ?access_token=…
+// and we promote it before the standard auth chain runs.
+function promoteSseAccessToken(req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction): void {
+  if (!req.headers.authorization) {
+    const queryToken = (req.query?.access_token as string | undefined) ?? "";
+    if (queryToken) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+  }
+  next();
+}
+app.use("/api/routines", promoteSseAccessToken);
+app.use("/api/tickets", promoteSseAccessToken);
+app.use("/api/activity-events", promoteSseAccessToken);
 app.use(
   "/api/agents/runs",
   requireAuth,
@@ -706,11 +802,20 @@ app.use("/api/workspaces", requireAuth, workspaceRoutes);
 // 404'd on every save and fell back to sessionStorage with a misleading
 // "backend endpoint pending" toast. Postgres-backed via profileStore.
 app.use("/api/user", requireAuth, profileRoutes);
+// HEL-203 PR 1: alias mount so the dashboard's v2 Pro/Simple toggle and
+// any future per-user UI preference can hit /api/user-profile/preferences
+// without an extra router. The handlers live in profileRoutes.ts; this
+// is purely a path alias.
+app.use("/api/user-profile", requireAuth, profileRoutes);
 // llmEndpointRateLimiter is now applied INSIDE missionRoutes on the
 // generate-plan POST only (see createMissionRoutes). Mounting it
 // here would re-block the cheap GET list endpoint that the dashboard
 // polls on Hire + MissionState page loads.
 app.use("/api/missions", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionRoutes);
+// Static role-library lookup consumed by LibraryRolePicker on Hire/Mission
+// surfaces. No workspace data — just the canonical DEFAULT_ROLE_LIBRARY —
+// but we still gate behind the same admin/developer role as missions.
+app.use("/api/role-library", requireAuth, workspaceResolver, requireRole("admin", "developer"), roleLibraryRoutes);
 // HEL-25: hiring-plan confirm uses the same auth + workspace + role gate.
 // requireRole gates this to admin/developer so a billing-only seat can't
 // provision agents that incur LLM cost.
@@ -770,6 +875,32 @@ app.use(
   requireRole(...ALL_MEMBER_ROLES),
   budgetsRoutes,
 );
+// HEL-212 (PR H): Budget v2 — breakdown read + ceiling write. Both
+// mount under /api/budget (singular) to avoid colliding with the
+// existing /api/budgets read-only list above. Read is open to every
+// workspace member; write tightens to admin/operator so non-billing
+// roles can't reshape spend caps.
+app.use(
+  "/api/budget",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  budgetBreakdownRoute,
+);
+app.use(
+  "/api/budget",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "operator"),
+  budgetSetRoute,
+);
+app.use(
+  "/api/prompt-routines",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  promptRoutineRoutes,
+);
 app.use(
   "/api/entitlements",
   requireAuth,
@@ -798,6 +929,24 @@ app.use(
   requireRole(...ALL_MEMBER_ROLES),
   createWorkspaceSnapshotRoutes(),
 );
+// HEL-213 PR I: workspace member invites (POST/DELETE invites; POST accept).
+// Mounted under /api/workspace/members so the dashboard's existing
+// `${API}/workspace/...` base path picks it up without extra config. The
+// owner/admin role check lives inside the router for write ops; the mount
+// requires the standard workspace-member role chain so any authenticated
+// workspace member can hit /accept on a token.
+const memberInviteRoutes = isPostgresPersistenceEnabled()
+  ? createMemberInviteRoutes(getPostgresPool())
+  : express.Router().all("*", (_req, res) => {
+      res.status(501).json({ error: "Member invites require PostgreSQL persistence." });
+    });
+app.use(
+  "/api/workspace/members",
+  requireAuth,
+  workspaceResolver,
+  requireRole(...ALL_MEMBER_ROLES),
+  memberInviteRoutes,
+);
 // HEL-167: user security settings. The actions are user-scoped, but they
 // write workspace audit events, so every authenticated workspace member gets
 // the same RLS-scoped workspace context as the read-only canonical surfaces.
@@ -815,6 +964,9 @@ app.use(
 app.use("/api/instructions", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), instructionRoutes);
 app.use("/api/knowledge-items", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), knowledgeItemRoutes);
 app.use("/api/episodes", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), episodeRoutes);
+// HEL-219: skills picker (loaded skills) + admin triage of the
+// scanner's manifest. Read-only for v1.
+app.use("/api/skills", requireAuth, workspaceResolver, requireRole("admin", "developer", "operator"), createSkillsRoutes());
 // HEL-93: AutoFlow staff admin — curated global knowledge tier. No workspace
 // scope (cross-workspace by design); requireStaff gates access via the
 // AUTOFLOW_STAFF_USER_IDS env-var allowlist.
@@ -852,9 +1004,26 @@ app.use("/api/hitl", requireAuth, workspaceResolver, requireRole("admin", "appro
 app.use("/api/observability", requireAuth, workspaceResolver, requireRole("admin", "operator"), observabilityRoutes);
 app.use("/api/reporting", requireAuth, workspaceResolver, requireRole("admin", "operator"), reportRoutes);
 app.use("/api/tickets", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketRoutes);
+// HEL-204 PR A: dashboard v2 renamed Tickets → Assignments. Mount the
+// same router under the new path so the Linear-feel New Assignment modal
+// can POST to /api/mission-assignments. Old /api/tickets stays alive for
+// existing integrations + the ticket-detail surfaces.
+app.use(
+  "/api/mission-assignments",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "operator"),
+  ticketRoutes,
+);
 app.use("/api/ticket-sync", requireAuth, workspaceResolver, requireRole("admin", "operator"), ticketSyncRoutes);
 app.use("/api/notifications", requireAuth, workspaceResolver, requireRole("admin", "operator"), notificationRoutes);
 app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalPolicyRoutes);
+// HEL-214 / PR J: Pro Mode actionable reveal scaffolds. Each route is a
+// placeholder shape (echoes / static results); the real implementations are
+// follow-ups so the dashboard UI can ship today.
+app.use("/api/approval-rules", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalRuleDebugRoutes);
+app.use("/api/mission-assignments", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionAssignmentReplayRoutes);
+app.use("/api/hire", requireAuth, workspaceResolver, requireRole("admin", "developer"), hireTemplateRoutes);
 
 // (HEL-118 canonical-reads mounts live in the earlier block alongside their
 // requireRole(...ALL_MEMBER_ROLES) gates; do not re-mount here.)
@@ -886,6 +1055,11 @@ app.get("/api/templates", (req, res) => {
     templates = listTemplates();
   }
 
+  // Distinguish seeded (built-in library) templates from user-imported/created
+  // ones. The dashboard puts seeded templates on the Library tab only; the
+  // Mine tab shows the user-owned set.
+  const seededIds = new Set(WORKFLOW_TEMPLATES.map((t) => t.id));
+
   res.json({
     templates: templates.map((t) => ({
       id: t.id,
@@ -895,6 +1069,7 @@ app.get("/api/templates", (req, res) => {
       version: t.version,
       stepCount: t.steps.length,
       configFieldCount: t.configFields.length,
+      seeded: seededIds.has(t.id),
     })),
     total: templates.length,
   });
@@ -981,6 +1156,20 @@ app.get("/api/templates/:id/export", (req, res) => {
 });
 
 /** Import a portable workflow template into the in-memory registry */
+app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "Template id is required" });
+    return;
+  }
+  const removed = await deleteImportedTemplate(id);
+  if (!removed) {
+    res.status(404).json({ error: "Template not found" });
+    return;
+  }
+  res.status(204).end();
+}));
+
 app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
   let bundle;
   try {
@@ -1137,6 +1326,23 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<Work
   );
   res.json({ runs, total: runs.length });
 }));
+
+/**
+ * List the caller's in-flight runs across the active workspace.
+ *
+ * Drives the dashboard's bottom-right RunTray. "In flight" = any non-
+ * terminal status (queued / pending / running / awaiting_approval /
+ * cancelling). Capped to 50 rows so the tray never floods.
+ */
+app.get(
+  "/api/runs/in-flight",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const runs = await runStore.listInFlight(req.auth?.sub, req.workspace?.id);
+    res.json({ runs, total: runs.length });
+  }),
+);
 
 /** Get a single run by ID */
 app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
@@ -1766,8 +1972,16 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
   if (!parsedRequest.success) {
     const issue = parsedRequest.error.issues[0];
     const path = issue?.path?.[0];
+    // zod v4 reports missing fields as `invalid_type` with code, not
+    // a literal "Required" message. Re-shape into a path-aware string
+    // for the API consumer.
+    const isMissing =
+      issue?.code === "invalid_type" &&
+      typeof issue.message === "string" &&
+      (/expected\s+\S+,\s+received\s+undefined/i.test(issue.message) ||
+        issue.message === "Required");
     const message =
-      issue?.message === "Required" && typeof path === "string"
+      isMissing && typeof path === "string"
         ? `${path} is required`
         : (issue?.message ?? "Invalid request body");
     res.status(400).json({ error: message });
@@ -1788,16 +2002,24 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
     return;
   }
 
-  const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
   const provider = getProvider({
     provider: resolved.config.provider,
-    model: assemblyModel,
+    model: resolved.config.model,
     apiKey: resolved.apiKey,
+    responseFormat: { type: "json_object" },
+    maxOutputTokens: 8192,
   });
 
   let rawText: string;
   try {
-    rawText = (await provider(buildTeamAssemblyPrompt(parsedRequest.data))).text;
+    rawText = (
+      await provider(
+        buildTeamAssemblyPrompt({
+          ...parsedRequest.data,
+          roleLibrary: parsedRequest.data.roleLibrary ?? [],
+        }),
+      )
+    ).text;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `LLM call failed: ${msg}` });
@@ -2113,6 +2335,10 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
   startTicketNotificationCoordinator();
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_PROMPT_ROUTINE_SCHEDULER !== "false") {
+  startPromptRoutineCoordinator();
 }
 
 // Sentry error handler must come before other error handlers

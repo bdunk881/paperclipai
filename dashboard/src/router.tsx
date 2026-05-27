@@ -1,9 +1,8 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import {
   createBrowserRouter,
   Navigate,
   RouterProvider,
-  useFetcher,
   useLoaderData,
   useParams,
   type ActionFunctionArgs,
@@ -21,23 +20,24 @@ import { getSupabaseStoredSession } from "./auth/supabaseAuth";
 import Layout from "./components/Layout";
 import RouteErrorBoundary from "./components/RouteErrorBoundary";
 import { useAuth } from "./context/AuthContext";
-import AgentActivity from "./pages/AgentActivity";
 import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
 import AgentDetail from "./pages/AgentDetail";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
+import Assignments from "./pages/Assignments";
 import AuthCallback from "./pages/AuthCallback";
 import AuthConfirm from "./pages/AuthConfirm";
-import Escalations from "./pages/Escalations";
+import EnvVars from "./pages/EnvVars";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
+import CreditPackSuccess from "./pages/CreditPackSuccess";
 import Hire from "./pages/Hire";
 import HiringPlanReview from "./pages/HiringPlanReview";
-import WorkspaceMemory from "./pages/WorkspaceMemory";
 import Dashboard from "./pages/Dashboard";
 import LandingPage from "./pages/LandingPage";
+import Connections from "./pages/Connections";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
@@ -45,6 +45,7 @@ import MCPIntegrations from "./pages/MCPIntegrations";
 import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
+import SkillsTriage from "./pages/SkillsTriage";
 import MissionState from "./pages/MissionState";
 import MissionDetail from "./pages/MissionDetail";
 import NotificationsSettings from "./pages/NotificationsSettings";
@@ -53,14 +54,16 @@ import Pricing from "./pages/Pricing";
 import ProfileSettings from "./pages/ProfileSettings";
 import SecuritySettings from "./pages/SecuritySettings";
 import Settings from "./pages/Settings";
+// HEL-213 PR I: user-avatar dropdown pages.
+import Account from "./pages/Account";
+import Members from "./pages/Members";
+import Billing from "./pages/Billing";
 import SocialAuthCallback from "./pages/SocialAuthCallback";
 import TicketActorView from "./pages/TicketActorView";
 import TicketDetail from "./pages/TicketDetail";
-import TicketSlaDashboard from "./pages/TicketSlaDashboard";
 import TicketSlaSettings from "./pages/TicketSlaSettings";
-import TicketTeamView from "./pages/TicketTeamView";
-import Tickets from "./pages/Tickets";
-import Templates from "./pages/Templates";
+import Routines from "./pages/Routines";
+import PromptRoutineNew from "./pages/PromptRoutineNew";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import WorkflowBuilderSetupCoachDemo from "./pages/WorkflowBuilderSetupCoachDemo";
 import {
@@ -173,37 +176,6 @@ async function ticketsAction({ request }: ActionFunctionArgs): Promise<CreateTic
   }
 }
 
-function TicketsRoute() {
-  const fetcher = useFetcher<CreateTicketRouteActionData>();
-
-  const submit = useCallback(
-    (payload: CreateTicketRouteActionPayload) => {
-      const formData = new FormData();
-      formData.set("title", payload.title);
-      formData.set("description", payload.description);
-      formData.set("priority", payload.priority);
-      formData.set("primaryActorKey", payload.primaryActorKey);
-      formData.set("collaboratorKeys", JSON.stringify(payload.collaboratorKeys));
-      formData.set("dueDate", payload.dueDate);
-      formData.set("tags", payload.tags);
-      formData.set("workspaceId", payload.workspaceId ?? "");
-      formData.set("externalSyncRequested", String(payload.externalSyncRequested));
-      fetcher.submit(formData, { method: "post" });
-    },
-    [fetcher]
-  );
-
-  return (
-    <Tickets
-      routeAction={{
-        data: fetcher.data,
-        state: fetcher.state,
-        submit,
-      }}
-    />
-  );
-}
-
 function TicketDetailRoute() {
   const initialData = useLoaderData() as TicketDetailRouteData;
   return <TicketDetail initialData={initialData} />;
@@ -212,6 +184,15 @@ function TicketDetailRoute() {
 const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage />, errorElement: <RouteErrorBoundary /> },
   { path: "/checkout/success", element: <CheckoutSuccess />, errorElement: <RouteErrorBoundary /> },
+  {
+    path: "/billing/credits/success",
+    element: (
+      <PrivateRoute>
+        <CreditPackSuccess />
+      </PrivateRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   { path: "/auth/callback", element: <AuthCallback />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/confirm", element: <AuthConfirm />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/social-callback", element: <SocialAuthCallback />, errorElement: <RouteErrorBoundary /> },
@@ -243,11 +224,18 @@ const routes: RouteObject[] = [
         ? [{ path: "builder/demo/setup-coach", element: <WorkflowBuilderSetupCoachDemo /> }]
         : []),
       { path: "builder/:templateId", element: <WorkflowBuilder /> },
-      { path: "templates", element: <Templates /> },
-      { path: "templates/:templateId", element: <WorkflowBuilder /> },
+      // HEL-208 / PR E: Templates renamed → Routines. Studio is reached
+      // exclusively via row click → `/builder/:templateId`; the old
+      // `/templates/:templateId` Studio-landing shortcut has been removed
+      // alongside it. `/templates` still redirects below for stale links.
+      { path: "routines", element: <Routines /> },
+      { path: "routines/new-prompt", element: <PromptRoutineNew /> },
 
       // Run pillar
-      { path: "agents/activity", loader: activityLoader, element: <AgentActivity /> },
+      // HEL-204 PR A: /agents/activity merged into Assignments → Activity tab.
+      // Loader still pre-warms the observability cache so the tab renders
+      // instantly when the redirect lands.
+      { path: "agents/activity", loader: activityLoader, element: <Navigate to="/assignments?tab=activity" replace /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
       // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
       // Linked from AgentTeamDetail and OrgStructure (via the agent card).
@@ -262,9 +250,12 @@ const routes: RouteObject[] = [
       // below or it'd get masked.
       { path: "agents/:agentId", element: <AgentDetail /> },
       { path: "approvals", loader: approvalsLoader, element: <Approvals /> },
-      // DASH-46: Ask-the-CEO surface. Backend was live since HEL-92 but
-      // no page consumed it (HEL-139 C3 + HEL-140 H3).
-      { path: "escalations", element: <Escalations /> },
+      // HEL-204 PR A: Escalations merged into Approvals as a Queue sub-tab.
+      // Old /escalations bookmarks land on the unified queue.
+      { path: "escalations", element: <Navigate to="/approvals?tab=queue" replace /> },
+      // HEL-204 PR A: Approval policies moved off Settings into the
+      // Approvals → Policies sub-tab.
+      { path: "settings/approvals", element: <Navigate to="/approvals?tab=policies" replace /> },
       { path: "mission-state", element: <MissionState /> },
 
       // Workforce pillar
@@ -278,34 +269,72 @@ const routes: RouteObject[] = [
       { path: "team", element: <Navigate to="/workspace/org-structure" replace /> },
 
       // Connect pillar
+      // HEL-205: unified Connections hub with sub-tabs. The legacy direct
+      // routes below still resolve (for deep-links from external surfaces),
+      // and `/integrations`, `/settings/llm`, `/settings/mcp` redirect into
+      // the hub with the right tab pre-selected.
+      { path: "connections", element: <Connections /> },
       { path: "integrations/mcp", element: <MCPIntegrations /> },
+      // HEL-206 (PR C): encrypted env vars surface. Lives as a standalone
+      // route until PR B (HEL-205) lands the Connections hub with tabs.
+      { path: "env-vars", element: <EnvVars /> },
       // HEL-179: operator-visible health surface for every workspace connector
       // (status pills + Reconnect CTA on auth_failed). Backed by the existing
       // `GET /api/connectors/health` route + `getConnectorHealth()` typed
       // client that have been wired for months but never had a UI.
       { path: "integrations/health", element: <ConnectorHealth /> },
       { path: "memory", element: <Memory /> },
-      // HEL-90/92: Workspace memory (instructions + knowledge + episodes)
-      { path: "settings/memory", element: <WorkspaceMemory /> },
+      // HEL-207: Workspace memory + the legacy /workspace/memory path are
+      // both folded into /memory; the scope picker on Memory.tsx supersedes
+      // the separate Workspace Memory page (deleted in PR D).
+      { path: "settings/memory", element: <Navigate to="/memory" replace /> },
+      { path: "workspace/memory", element: <Navigate to="/memory" replace /> },
 
-      // Settings + per-tab sub-routes (still v2-chromed since #772)
-      { path: "settings", element: <Settings /> },
+      // HEL-213 PR I: user-avatar dropdown surfaces Account/Members/Billing
+      // as their own top-level routes. The previous /settings/* sub-pages
+      // that these absorb (general, security, profile, billing) redirect
+      // to /account or /billing so bookmarks land somewhere useful.
+      { path: "account", element: <Account /> },
+      { path: "members", element: <Members /> },
+      { path: "billing", element: <Billing /> },
+
+      // Settings + per-tab sub-routes (still v2-chromed since #772). The
+      // legacy /settings tab strip lives on /settings/tabs because /settings
+      // itself now redirects to /account; the absorbed tabs (general,
+      // security, profile, billing) also redirect. /settings/legacy-profile
+      // + /settings/legacy-security keep the per-page editors mounted so the
+      // imports stay used until Account.tsx reaches parity.
+      { path: "settings", element: <Navigate to="/account" replace /> },
+      { path: "settings/general", element: <Navigate to="/account" replace /> },
+      { path: "settings/profile", element: <Navigate to="/account" replace /> },
+      { path: "settings/security", element: <Navigate to="/account" replace /> },
+      { path: "settings/billing", element: <Navigate to="/billing" replace /> },
+      { path: "settings/tabs", element: <Settings /> },
+      { path: "settings/legacy-profile", element: <ProfileSettings /> },
+      { path: "settings/legacy-security", element: <SecuritySettings /> },
       { path: "settings/api-keys", element: <ApiKeys /> },
       { path: "settings/llm-providers", element: <LLMProviders /> },
       { path: "settings/mcp-servers", element: <McpServers /> },
+      { path: "settings/skills", element: <SkillsTriage /> },
       { path: "settings/notifications", element: <NotificationsSettings /> },
-      { path: "settings/profile", element: <ProfileSettings /> },
-      { path: "settings/security", element: <SecuritySettings /> },
       { path: "settings/mission-assignment-sla", element: <TicketSlaSettings /> },
+
+      // HEL-204 PR A: unified Assignments hub with sub-tabs
+      // (Queue · By mission · SLA · Activity · By team). Replaces the
+      // tab-less /mission-assignments queue plus /agents/activity and
+      // /settings/mission-assignment-sla surfaces. The ticket-detail and
+      // actor routes still live under /mission-assignments for now since
+      // those are detail panels rather than hub sub-tabs.
+      { path: "assignments", loader: ticketsLoader, action: ticketsAction, element: <Assignments /> },
 
       // Mission assignments subsystem (HITL) — formerly "Tickets". Reachable
       // from Approvals. The pages cross-link each other; old /tickets* URLs
       // redirect into here so bookmarks / shared links keep working.
-      { path: "mission-assignments", loader: ticketsLoader, action: ticketsAction, element: <TicketsRoute /> },
+      { path: "mission-assignments", element: <Navigate to="/assignments" replace /> },
       { path: "mission-assignments/:ticketId", loader: ticketDetailLoader, element: <TicketDetailRoute /> },
       { path: "mission-assignments/actors/:actorType/:actorId", element: <TicketActorView /> },
-      { path: "mission-assignments/sla", element: <TicketSlaDashboard /> },
-      { path: "mission-assignments/team", element: <TicketTeamView /> },
+      { path: "mission-assignments/sla", element: <Navigate to="/assignments?tab=sla" replace /> },
+      { path: "mission-assignments/team", element: <Navigate to="/assignments?tab=team" replace /> },
 
       // Backwards-compat redirects for old /tickets* URLs.
       { path: "tickets", element: <Navigate to="/mission-assignments" replace /> },
@@ -322,19 +351,28 @@ const routes: RouteObject[] = [
       // Keeps stale bookmarks / share-links landing somewhere useful instead
       // of on half-converted v1 pages.
       // ---------------------------------------------------------------------
-      { path: "agents", element: <Navigate to="/templates" replace /> },
+      // HEL-208 / PR E: legacy `/templates*` paths redirect to the
+      // renamed Routines hub.
+      { path: "templates", element: <Navigate to="/routines" replace /> },
+      { path: "templates/:templateId", element: <RedirectTemplateToBuilder /> },
+      { path: "agents", element: <Navigate to="/routines" replace /> },
       { path: "agents/my", element: <Navigate to="/workspace/org-structure" replace /> },
-      { path: "agents/routines", element: <Navigate to="/templates" replace /> },
+      { path: "agents/routines", element: <Navigate to="/routines" replace /> },
       // UX-5 note: the old catch-all `agents/:templateId` → /templates
       // redirect used to mask real agent IDs (so OrgStructure's
       // "View agent" links dead-ended). Removed; `agents/:agentId`
       // above now resolves to the AgentDetail hub. v1 deploy-template
       // URL keeps its redirect since `deploy/...` is structurally
       // distinct from a UUID.
-      { path: "agents/deploy/:templateId", element: <Navigate to="/templates" replace /> },
-      { path: "integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "agents/deploy/:templateId", element: <Navigate to="/routines" replace /> },
+      // HEL-205: route the legacy entry points into the new Connections hub
+      // with the right tab pre-selected. Old direct routes above still
+      // resolve for any external deep-links that bypass the hub.
+      { path: "integrations", element: <Navigate to="/connections?tab=integrations" replace /> },
+      { path: "settings/llm", element: <Navigate to="/connections?tab=models" replace /> },
+      { path: "settings/mcp", element: <Navigate to="/connections?tab=mcp" replace /> },
       // HEL-179: `/integrations/health` redirect retired — real page mounted above.
-      { path: "settings/integrations", element: <Navigate to="/integrations/mcp" replace /> },
+      { path: "settings/integrations", element: <Navigate to="/connections?tab=integrations" replace /> },
       { path: "logs", element: <Navigate to="/agents/activity" replace /> },
       { path: "monitor", element: <Navigate to="/" replace /> },
       { path: "history", element: <Navigate to="/agents/activity" replace /> },
@@ -388,6 +426,17 @@ function RedirectTicketActor() {
   );
 }
 
+/**
+ * HEL-208 / PR E: old `/templates/:templateId` deep-link used to drop the
+ * user straight onto the Studio canvas. Studio is now only reachable via
+ * the Routines hub row click, so redirect into `/builder/:templateId`
+ * (which is the same destination, just under its real path).
+ */
+function RedirectTemplateToBuilder() {
+  const { templateId } = useParams<{ templateId: string }>();
+  return <Navigate to={`/builder/${templateId ?? ""}`} replace />;
+}
+
 function readString(value: FormDataEntryValue | null): string {
   return typeof value === "string" ? value : "";
 }
@@ -404,3 +453,5 @@ function readStringArray(value: FormDataEntryValue | null): string[] {
     return [];
   }
 }
+
+// deploy-trigger: 2026-05-24T23:36:52Z — force clean rebuild

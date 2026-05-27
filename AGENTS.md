@@ -58,7 +58,7 @@ Compress a sprawling but mature open-source codebase into one sharp customer loo
 | Layer | Service |
 |---|---|
 | Frontend hosting | Cloudflare Pages/Workers |
-| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — consolidated TS Express per the [P2.5 backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). Legacy `autoflow-fastapi-*` apps retired in HEL-97.) |
+| Backend compute | Fly.io (`autoflow-api-{dev,staging,production}` — consolidated TS Express per the [P2.5 backend consolidation](https://linear.app/helloautoflow/project/p25-backend-consolidation-ts-express-on-fly-a2f0e7006ec9). Legacy `autoflow-fastapi-*` relay shims retired in HEL-97 — `api.{dev-,staging-,}helloautoflow.com` now point straight at the Express.) |
 | Database + auth (CIAM) | Supabase |
 | Cache + queue broker | Upstash Redis (BullMQ in P3) |
 | Object storage | Cloudflare R2 |
@@ -67,7 +67,7 @@ Compress a sprawling but mature open-source codebase into one sharp customer loo
 | Billing | Stripe |
 | Support | Intercom (we eat our own integration) |
 
-Azure is being dropped (per [HEL-11](https://linear.app/helloautoflow/issue/HEL-11)) — pricing untenable. Vercel is sundowning where landing isn't already on Cloudflare Pages.
+Azure is being dropped (per [HEL-11](https://linear.app/helloautoflow/issue/HEL-11)) — pricing untenable. Vercel was fully retired in HEL-todo-vercel-retire: dashboard + landing + docs all serve from Cloudflare Pages now, with the QA-preview-access edge handler running as a Cloudflare Pages Function (`dashboard/functions/api/qa-preview-access.ts`).
 
 ---
 

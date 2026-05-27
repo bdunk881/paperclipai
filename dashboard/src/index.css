@@ -7,6 +7,12 @@
    .af2-h1, .af2-tabs, .af2-list, .af2-btn, .af2-pill, etc.). */
 @import "./af2-components.css";
 
+/* AutoFlow v2 "Consolidation Preview" shell — namespaced under .af2-v2
+   so pages can opt in to the unprefixed prototype class names (.btn,
+   .card, .row, .pill, .tabs, .filterbar, etc.) without conflicting
+   with Tailwind or the older af2-* classes. */
+@import "./styles/af2-v2-shell.css";
+
 @tailwind base;
 @tailwind components;
 
@@ -483,6 +489,91 @@
     50% {
       box-shadow: 0 12px 28px color-mix(in srgb, var(--af2-clay) 32%, transparent);
     }
+  }
+
+  /* Subtle pulsing dot — used by live-refresh indicators (Connections,
+     Dashboard stat tiles, etc.). */
+  @keyframes af2-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-clay, #c25b3a) 55%, transparent);
+    }
+    70% {
+      box-shadow: 0 0 0 8px color-mix(in srgb, var(--af2-clay, #c25b3a) 0%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-clay, #c25b3a) 0%, transparent);
+    }
+  }
+
+  /* Brief warm flash for rows whose state just changed (connector health
+     change, ticket move, etc.). */
+  @keyframes af2-flash {
+    0% {
+      background-color: color-mix(in srgb, var(--af2-clay-soft, #f4e2d6) 65%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  /* Used by the dashboard stat tiles to softly bump the number when it
+     increments from a poll. */
+  @keyframes af2-count-bump {
+    0% {
+      transform: translateY(4px);
+      opacity: 0.4;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* ApprovalDrawer slide-in (right edge) + backdrop fade. */
+  @keyframes af2-drawer-slide-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0.6;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes af2-backdrop-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Wake-strip entry fade-up — used when an approval-driven agent
+     starts working. */
+  @keyframes af2-wake-in {
+    from {
+      transform: translateY(4px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* Backdrop for the cmdk command palette. cmdk renders the dialog
+     without a built-in overlay; we paint the page underneath with a
+     soft ink wash so the palette feels like a modal. */
+  [cmdk-dialog] {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+  }
+  [cmdk-item][data-selected="true"] {
+    background: var(--af2-paper-2);
+  }
+  [cmdk-item][data-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 

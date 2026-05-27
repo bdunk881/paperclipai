@@ -41,6 +41,10 @@ vi.mock("../api/client", () => ({
   listLLMConfigs: listLLMConfigsMock,
 }));
 
+vi.mock("../api/hostedFreeModelsApi", () => ({
+  getHostedFreeCatalog: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({
     user: { id: "user-1", email: "user@example.com", name: "Test User" },
@@ -140,7 +144,8 @@ describe("Hire page (HEL-23, v2)", () => {
     fireEvent.change(screen.getByLabelText(/Mission statement/i), {
       target: { value: "Launch the R-7" },
     });
-    fireEvent.change(screen.getByLabelText(/^Industry/i), {
+    fireEvent.click(screen.getByRole("button", { name: /^Industry$/i }));
+    fireEvent.change(screen.getByLabelText(/^Industry$/i), {
       target: { value: "Industrial robotics" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Save draft/i }));
@@ -206,7 +211,9 @@ describe("Hire page (HEL-23, v2)", () => {
 
     await waitFor(() => expect(createMissionMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(generateHiringPlanMock).toHaveBeenCalledTimes(1));
-    expect(generateHiringPlanMock).toHaveBeenCalledWith("mission-new", "mock-token");
+    expect(generateHiringPlanMock).toHaveBeenCalledWith("mission-new", "mock-token", {
+      llmConfigId: "cfg-1",
+    });
     // After a successful generate, the page navigates to the side-by-side
     // review surface (HEL-105). The Hire page itself does not render the
     // generated plan inline.

@@ -1,54 +1,48 @@
 /**
- * Dashboard / Home — v2 editorial Home page.
+ * Dashboard / Home — v2 "Consolidation Preview" port + live extensions.
  *
- * Matches `docs/design/v2/pages.jsx::AF2_Home`:
- *   - "Good {timeOfDay}, {firstName}." headline + sub-summary
- *   - 4-column stat strip (missions in flight / hours saved · 7d / spend ·
- *     month / approval p50)
- *   - Active missions table (left, ~62% width)
- *   - The room right now agent list (left, under the table)
- *   - Needs your stamp approval queue (right sidebar)
- *   - Spend by agent · this week bar list (right sidebar, bottom)
+ * Maps to docs/design/v2/preview/consolidation.html lines 1296-1326 plus
+ * the second-wave interactivity work:
  *
- * The earlier non-v2 Dashboard (Execution Burndown / Spend vs Budget /
- * Queued Approvals / Artifact Review / Org Status panels) was structurally
- * the old "Customer command center" iteration. The full restructure replaces
- * it; the heavy observability streaming + ticket-routing flows were moved
- * to their canonical pages (Activity / Tickets) where they belong.
+ *  - Mission selector + "All" + persisted defaults via useHomeFilters.
+ *  - Date range (Today / 7d / 30d / Custom) shared by the stat tiles,
+ *    sparkline windows, and the bottom charts.
+ *  - Live SSE subscription against /api/activity-events/stream so the
+ *    page invalidates its snapshot in real time instead of polling. The
+ *    react-query refetchInterval falls back to 60s if the stream is
+ *    disconnected.
+ *  - Inline ApprovalDrawer that resolves approvals without leaving the
+ *    page and animates the affected agent "waking up" in a strip below
+ *    the stat tiles.
+ *  - Bottom-of-page charts (spend over time, agent activity, idle
+ *    agents) so the page no longer trails off into white space.
  */
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ApprovalRequest } from "../api/client";
-import type { Agent, AgentHeartbeat } from "../api/agentApi";
-import type { BudgetRow } from "../api/canonicalApi";
 import type { Mission } from "../api/missionsApi";
-import { missionLinkTo } from "../lib/missionNavigation";
 import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { useHomeSnapshotQuery } from "../hooks/queries/useHomeSnapshotQuery";
-import type { WorkflowRun } from "../types/workflow";
-import { AgentPresencePill } from "../components/AgentPresencePill";
-import { useAgentPresence } from "../hooks/useAgentPresence";
 import { OnboardingBanner } from "../components/OnboardingBanner";
-
-interface AgentSnapshot {
-  agent: Agent;
-  budgetCents: number | null;
-  capCents: number | null;
-  heartbeat: AgentHeartbeat | null;
-}
-
-// Cap how many agents we show in "The room right now" (heartbeats come from
-// the workspace snapshot bulk map — no per-agent fan-out).
-const ROOM_NOW_DISPLAY_LIMIT = 6;
-
-function greetingPart(): "morning" | "afternoon" | "evening" {
-  const hour = new Date().getHours();
-  if (hour < 12) return "morning";
-  if (hour < 18) return "afternoon";
-  return "evening";
-}
+import { AnimatedNumber } from "../components/AnimatedNumber";
+import { Sparkline } from "../components/Sparkline";
+import { HomeFilterBar } from "../components/home/HomeFilterBar";
+import {
+  isWithinRange,
+  useHomeFilters,
+  type HomeFilters,
+} from "../hooks/useHomeFilters";
+import { useWorkspaceLiveStream } from "../hooks/useWorkspaceLiveStream";
+import { ApprovalDrawer } from "../components/home/ApprovalDrawer";
+import { AgentWakeStrip } from "../components/home/AgentWakeStrip";
+import { SpendChart } from "../components/charts/SpendChart";
+import { AgentActivityChart } from "../components/charts/AgentActivityChart";
+import { IdleAgentsCallout } from "../components/home/IdleAgentsCallout";
+import { queryKeys } from "../lib/queryKeys";
+import { useRegisterCommandActions } from "../context/CommandPaletteContext";
 
 function formatTodayChrome(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -58,7 +52,7 @@ function formatTodayChrome(): string {
   });
 }
 
-function formatCurrency(value: number, fractionDigits = 0): string {
+function formatCurrency(value: number, fractionDigits = 2): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -67,106 +61,88 @@ function formatCurrency(value: number, fractionDigits = 0): string {
   }).format(value);
 }
 
-function initialsFor(name: string | undefined | null): string {
-  if (!name) return "—";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "—";
-}
-
 function firstName(name: string | undefined | null): string {
   if (!name) return "there";
   return name.trim().split(/\s+/)[0] ?? "there";
 }
 
-function teamNameFor(agent: Agent): string | null {
-  const raw = (agent.metadata as Record<string, unknown> | undefined)?.teamName;
-  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
+function approvalShortId(approval: ApprovalRequest): string {
+  const id = approval.id ?? "";
+  const short = id.replace(/-/g, "").slice(0, 6).toUpperCase();
+  return short ? `APR-${short}` : "APR-—";
 }
 
-function missionPillTone(mission: Mission): {
-  className: string;
-  label: string;
-  progressColor: string;
-} {
-  switch (mission.status) {
-    case "blocked":
-      return {
-        className: "af2-pill af2-pill-clay",
-        label: "blocked",
-        progressColor: "var(--af2-clay)",
-      };
-    case "review":
-    case "awaiting_approval":
-      return {
-        className: "af2-pill af2-pill-pending",
-        label: "review",
-        progressColor: "var(--af2-mustard)",
-      };
-    case "scheduled":
-    case "draft":
-      return {
-        className: "af2-pill",
-        label: mission.status,
-        progressColor: "var(--af2-ink-3)",
-      };
-    default:
-      return {
-        className: "af2-pill af2-pill-live",
-        label: "in-flight",
-        progressColor: "var(--af2-sage)",
-      };
-  }
+function approvalSummary(approval: ApprovalRequest): string {
+  const assignee = approval.assignee?.trim() || "Agent";
+  const message = approval.stepName || approval.message || "needs your stamp";
+  return `${assignee} · ${message}`;
 }
 
-function missionDueText(mission: Mission, latestRuns: WorkflowRun[]): string {
-  // Without a dedicated due-date field on Mission, we fall back to inferring
-  // urgency from the latest run state for the mission. If no run is linked,
-  // show an em-dash.
-  const latest = latestRuns.find((run) => run.input?.missionId === mission.id);
-  if (!latest) return "—";
-  if (latest.status === "failed") return "overdue";
-  if (latest.status === "running") return "in flight";
-  if (latest.status === "completed") return "done";
-  return latest.status;
+function missionShortId(mission: Mission): string {
+  const id = mission.id ?? "";
+  const short = id.replace(/-/g, "").slice(0, 4).toUpperCase();
+  return short ? `M-${short}` : "M-—";
 }
 
-function approvalCostUsd(approval: ApprovalRequest): string {
-  // ApprovalRequest doesn't currently carry a cost field. Display "—" so the
-  // structure renders identically to the v2 reference; the real number wires
-  // through once HEL-118's step_results rollup is consumed here.
-  void approval;
-  return "—";
+function missionToneClass(mission: Mission): string {
+  if (mission.status === "completed") return "pill sage dot";
+  if (mission.status === "archived") return "pill dot";
+  if (mission.status === "paused") return "pill plum dot";
+  return "pill sage dot";
+}
+
+function missionStatusLabel(mission: Mission): string {
+  if (mission.status === "completed") return "complete";
+  if (mission.status === "archived") return "archived";
+  if (mission.status === "paused") return "paused";
+  return "on track";
+}
+
+// Capacity of the in-memory history buffer that feeds the sparklines.
+// At a 60s poll, 20 samples ≈ 20 minutes of trailing data.
+const STAT_HISTORY_LIMIT = 20;
+
+function useStatHistory(value: number): number[] {
+  const [history, setHistory] = useState<number[]>([]);
+  const lastRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!Number.isFinite(value)) return;
+    if (lastRef.current === value) return;
+    lastRef.current = value;
+    setHistory((prev) => {
+      const next = [...prev, value];
+      if (next.length > STAT_HISTORY_LIMIT) next.shift();
+      return next;
+    });
+  }, [value]);
+  return history;
+}
+
+// Determine whether an approval belongs to a mission. Approvals don't
+// carry missionId today; we fall back to the linked agent's metadata.
+function approvalMissionId(
+  approval: ApprovalRequest,
+  agentMissionById: Map<string, string | null>,
+): string | null {
+  if (!approval.agentId) return null;
+  return agentMissionById.get(approval.agentId) ?? null;
 }
 
 export default function Dashboard() {
   const { user } = useAuth();
-  useWorkspace();
-  const presence = useAgentPresence();
+  const { activeWorkspace, activeWorkspaceId } = useWorkspace();
+  const queryClient = useQueryClient();
   const snapshotQuery = useHomeSnapshotQuery();
+
+  const { filters, setMissionId, setRangePreset, setCustomRange } =
+    useHomeFilters(activeWorkspaceId ?? null);
 
   const missions = snapshotQuery.data?.missions ?? [];
   const approvals = snapshotQuery.data?.approvals ?? [];
-  const runs = (snapshotQuery.data?.runs ?? []) as WorkflowRun[];
-  const agentSnapshots = useMemo((): AgentSnapshot[] => {
-    const agentList = snapshotQuery.data?.agents ?? [];
-    const budgetList = snapshotQuery.data?.budgets ?? [];
-    const heartbeats = snapshotQuery.data?.heartbeats ?? {};
-    const budgetByAgent = new Map<string, BudgetRow>();
-    for (const row of budgetList) {
-      if (row.scopeKind === "agent" && row.scopeId) {
-        budgetByAgent.set(row.scopeId, row);
-      }
-    }
-    return agentList.map((agent) => {
-      const budget = budgetByAgent.get(agent.id);
-      return {
-        agent,
-        budgetCents: budget?.usedCents ?? null,
-        capCents: budget?.capCents ?? null,
-        heartbeat: (heartbeats[agent.id] as AgentHeartbeat | null | undefined) ?? null,
-      };
-    });
-  }, [snapshotQuery.data]);
+  const agents = snapshotQuery.data?.agents ?? [];
+  const budgets = snapshotQuery.data?.budgets ?? [];
+  const runs = snapshotQuery.data?.runs ?? [];
+  const heartbeats = snapshotQuery.data?.heartbeats ?? {};
 
   const loading = snapshotQuery.isLoading && !snapshotQuery.data;
   const error =
@@ -175,45 +151,179 @@ export default function Dashboard() {
       : snapshotQuery.error
         ? "Failed to load dashboard"
         : null;
-  const isRefreshing = snapshotQuery.isFetching && Boolean(snapshotQuery.data);
+
+  // --- Live stream wiring ---------------------------------------------------
+  //
+  // Subscribe to the workspace activity SSE; on any non-heartbeat event,
+  // invalidate the home snapshot so the tiles + lists refresh against
+  // the latest state. The polling interval in the query hook stays in
+  // place as a safety net for when the stream is disconnected.
+  const liveStream = useWorkspaceLiveStream({
+    path: "activity-events/stream",
+    enabled: !!activeWorkspaceId,
+    onEvent: (evt) => {
+      if (evt.name === "heartbeat") return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.home(activeWorkspaceId ?? "none"),
+      });
+    },
+  });
+  const isLive = liveStream.state === "connected";
+
+  // Map each agent to its mission so we can filter approvals + spend
+  // by the selected mission. The agent.metadata.missionId convention
+  // is the same one OrgStructure uses.
+  const agentMissionById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const a of agents) {
+      const raw = a.metadata?.missionId;
+      map.set(a.id, typeof raw === "string" && raw.length > 0 ? raw : null);
+    }
+    return map;
+  }, [agents]);
+
+  // --- Filtered slices ------------------------------------------------------
+  const filteredApprovals = useMemo(() => {
+    return approvals.filter((a) => {
+      if (filters.missionId) {
+        const mid = approvalMissionId(a, agentMissionById);
+        if (mid !== filters.missionId) return false;
+      }
+      if (a.requestedAt && !isWithinRange(a.requestedAt, filters.range)) {
+        return false;
+      }
+      return true;
+    });
+  }, [approvals, filters, agentMissionById]);
+
+  const filteredMissions = useMemo(() => {
+    if (!filters.missionId) return missions;
+    return missions.filter((m) => m.id === filters.missionId);
+  }, [missions, filters.missionId]);
+
+  const filteredAgents = useMemo(() => {
+    if (!filters.missionId) return agents;
+    return agents.filter(
+      (a) => agentMissionById.get(a.id) === filters.missionId,
+    );
+  }, [agents, filters.missionId, agentMissionById]);
 
   const totals = useMemo(() => {
-    const activeMissions = missions.filter(
+    const liveMissions = filteredMissions.filter(
       (m) => m.status !== "completed" && m.status !== "archived",
     );
-    // Sum from agent.budgetMonthlyUsd (USD, on every agent row) so we don't
-    // need a per-agent budget fetch to populate the strip. The canonical
-    // /api/budgets cap (capCents) fills in the per-agent bars below.
-    const totalSpendCents = agentSnapshots.reduce(
-      (sum, snap) => sum + (snap.budgetCents ?? 0),
-      0,
+    const pendingApprovals = filteredApprovals.filter(
+      (a) => a.status === "pending",
     );
-    const totalCapCents = agentSnapshots.reduce(
-      (sum, snap) => sum + (snap.capCents ?? Math.round((snap.agent.budgetMonthlyUsd ?? 0) * 100)),
-      0,
-    );
-    const totalSpend = totalSpendCents / 100;
-    const totalBudget = totalCapCents / 100;
-    const liveAgents = agentSnapshots.filter(
-      (snap) => snap.agent.status === "running" || snap.heartbeat?.status === "running",
-    ).length;
-    const pendingApprovals = approvals.filter((a) => a.status === "pending");
-    // Approximate today's spend as 1/30 of monthly used until HEL-118's
-    // step_results.cost_cents aggregation surfaces a real per-day figure.
-    const todaySpend = totalSpend / 30;
-    return {
-      activeMissions,
-      totalSpend,
-      totalBudget,
-      liveAgents,
-      pendingApprovals,
-      todaySpend,
-    };
-  }, [missions, agentSnapshots, approvals]);
+    // Per-agent spend for the filtered scope.
+    const agentIds = new Set(filteredAgents.map((a) => a.id));
+    const totalUsedCents = budgets.reduce((sum, row) => {
+      if (row.scopeKind === "agent" && row.scopeId && agentIds.size > 0) {
+        return agentIds.has(row.scopeId) ? sum + (row.usedCents ?? 0) : sum;
+      }
+      if (
+        row.scopeKind === "workspace" &&
+        !filters.missionId &&
+        agentIds.size === 0
+      ) {
+        // Only count workspace-scope spend when nothing is filtered.
+        return sum + (row.usedCents ?? 0);
+      }
+      return sum;
+    }, 0);
+    // Daily approximation = monthly used / 30 until a real per-day
+    // figure surfaces from step_results (HEL-118).
+    const rangedSpend = totalUsedCents / 100 / 30;
+    return { liveMissions, pendingApprovals, rangedSpend };
+  }, [filteredMissions, filteredApprovals, filteredAgents, budgets, filters.missionId]);
+
+  const approvalsHistory = useStatHistory(totals.pendingApprovals.length);
+  const assignmentsHistory = useStatHistory(
+    totals.liveMissions.length * 3 + totals.pendingApprovals.length,
+  );
+  const spendHistory = useStatHistory(totals.rangedSpend);
+  const missionsHistory = useStatHistory(totals.liveMissions.length);
+
+  const isRefreshing =
+    snapshotQuery.isFetching && !snapshotQuery.isLoading && !isLive;
+
+  // --- Approval drawer + wake animation ------------------------------------
+  const [openApprovalId, setOpenApprovalId] = useState<string | null>(null);
+  const openApproval = useMemo(
+    () => approvals.find((a) => a.id === openApprovalId) ?? null,
+    [approvals, openApprovalId],
+  );
+  const [recentlyWoken, setRecentlyWoken] = useState<
+    Array<{ agentId: string | null; agentName: string; startedAt: number }>
+  >([]);
+
+  // Contribute palette actions for the home page. Pure setter calls;
+  // re-registers when the filter setters change identity (every render
+  // is fine since registerActions is idempotent within a scope).
+  const homeCommandActions = useMemo(
+    () => [
+      {
+        id: "home:range-today",
+        label: "Range · Today",
+        hint: "Home",
+        keywords: "filter date today now",
+        group: "filter" as const,
+        run: () => setRangePreset("today"),
+      },
+      {
+        id: "home:range-7d",
+        label: "Range · Last 7 days",
+        hint: "Home",
+        keywords: "filter date week 7",
+        group: "filter" as const,
+        run: () => setRangePreset("7d"),
+      },
+      {
+        id: "home:range-30d",
+        label: "Range · Last 30 days",
+        hint: "Home",
+        keywords: "filter date month 30",
+        group: "filter" as const,
+        run: () => setRangePreset("30d"),
+      },
+      {
+        id: "home:mission-all",
+        label: "Mission · All missions",
+        hint: "Home",
+        keywords: "filter mission scope clear",
+        group: "filter" as const,
+        run: () => setMissionId(null),
+      },
+    ],
+    [setRangePreset, setMissionId],
+  );
+  useRegisterCommandActions("home", homeCommandActions);
+
+  const handleApprovalResolved = useCallback(
+    (approval: ApprovalRequest, decision: "approved" | "rejected") => {
+      if (decision === "approved") {
+        setRecentlyWoken((prev) => [
+          {
+            agentId: approval.agentId ?? null,
+            agentName: approval.assignee?.trim() || "Agent",
+            startedAt: Date.now(),
+          },
+          ...prev.filter((row) => row.agentId !== approval.agentId),
+        ].slice(0, 4));
+      }
+      setOpenApprovalId(null);
+      // Force an immediate refetch so the stat tiles + lists update
+      // before the SSE invalidation lands.
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.home(activeWorkspaceId ?? "none"),
+      });
+    },
+    [queryClient, activeWorkspaceId],
+  );
 
   if (error && !snapshotQuery.data) {
     return (
-      <div className="af2-page">
+      <div className="af2-v2">
         <ErrorState
           title="Home unavailable"
           message={error}
@@ -223,418 +333,375 @@ export default function Dashboard() {
     );
   }
 
-  const spendPercent = totals.totalBudget > 0
-    ? Math.round((totals.totalSpend / totals.totalBudget) * 100)
-    : 0;
+  const workspaceName = activeWorkspace?.name?.trim() || "Your workspace";
+  const greetingName = firstName(user?.name);
+
+  const topApprovals = totals.pendingApprovals.slice(0, 3);
+  const topMissions = totals.liveMissions.slice(0, 2);
 
   return (
-    <div className="af2-page bg-af2-paper text-af2-ink">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">{formatTodayChrome()}</div>
-          <h1 className="af2-h1 font-af2-serif" style={{ marginTop: 6 }}>
-            Good {greetingPart()}, {firstName(user?.name)}.
-          </h1>
-          <div className="af2-page-head-meta">
-            {loading ? (
-              <SkeletonBlock lines={1} />
-            ) : (
-              <>
-                {totals.liveAgents} agents on the clock · {totals.pendingApprovals.length}{" "}
-                approvals waiting · {formatCurrency(totals.todaySpend, 2)} spent today
-                {isRefreshing ? (
-                  <span className="af2-muted-2" style={{ marginLeft: 8 }}>
-                    · Updating…
-                  </span>
-                ) : null}
-              </>
-            )}
+    <div className="af2-v2">
+      <div className="page-head">
+        <div className="page-head-left">
+          <h1 className="h1">Today</h1>
+          <div className="meta">
+            {workspaceName} · {formatTodayChrome()} · welcome back, {greetingName}.
           </div>
         </div>
-        <div className="af2-page-actions">
-          {/* "Brief an agent" used to live here as a second CTA — same
-              /hire destination as +New mission, which made it a dead
-              duplicate. Page action is the single +New mission CTA
-              now; per-agent hand-offs live on the agent card and in
-              the Mission Assignments modal. */}
-          <Link to="/hire" className="af2-btn af2-btn-clay">
-            ＋ New mission
+      </div>
+
+      <OnboardingBanner
+        show={agents.length === 0 && missions.length === 0}
+        firstName={greetingName === "there" ? "" : greetingName}
+      />
+
+      <HomeFilterBar
+        missions={missions}
+        missionId={filters.missionId}
+        range={filters.range}
+        onMissionChange={setMissionId}
+        onRangePreset={setRangePreset}
+        onCustomRange={setCustomRange}
+      />
+
+      <LiveConnectionIndicator
+        state={liveStream.state}
+        isRefreshing={isRefreshing}
+        lastEventAt={liveStream.lastEventAt}
+      />
+
+      <div className="stat-grid">
+        <StatTile
+          label="approvals waiting"
+          value={totals.pendingApprovals.length}
+          history={approvalsHistory}
+          loading={loading}
+        />
+        <StatTile
+          label="assignments open"
+          value={totals.liveMissions.length * 3 + totals.pendingApprovals.length}
+          history={assignmentsHistory}
+          loading={loading}
+        />
+        <StatTile
+          label="spent in range"
+          value={totals.rangedSpend}
+          history={spendHistory}
+          loading={loading}
+          format={(v) => formatCurrency(v, 2)}
+        />
+        <StatTile
+          label="missions live"
+          value={totals.liveMissions.length}
+          history={missionsHistory}
+          loading={loading}
+        />
+      </div>
+
+      <AgentWakeStrip entries={recentlyWoken} />
+
+      <div className="desc-grid">
+        <div className="card">
+          <h3>Needs your stamp</h3>
+          <p className="desc">
+            Top 3 ·{" "}
+            <Link to="/approvals" className="link-clay">
+              all approvals →
+            </Link>
+          </p>
+          {topApprovals.length > 0 ? (
+            topApprovals.map((approval) => (
+              <button
+                key={approval.id}
+                type="button"
+                onClick={() => setOpenApprovalId(approval.id)}
+                className="feed-item"
+                style={{
+                  display: "flex",
+                  width: "100%",
+                  textAlign: "left",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "8px 4px",
+                  borderRadius: 6,
+                  alignItems: "baseline",
+                  gap: 12,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--af2-paper-2)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                }}
+              >
+                <div className="feed-time">{approvalShortId(approval)}</div>
+                <div className="feed-msg" style={{ flex: 1 }}>
+                  {approvalSummary(approval)}
+                </div>
+                <span
+                  style={{
+                    fontSize: 10.5,
+                    color: "var(--af2-clay)",
+                    fontWeight: 500,
+                  }}
+                >
+                  review →
+                </span>
+              </button>
+            ))
+          ) : approvals.length > 0 ? (
+            <p
+              className="desc"
+              style={{ fontSize: 12, color: "var(--af2-ink-3)" }}
+            >
+              No approvals match the current filters.
+            </p>
+          ) : (
+            <div
+              className="desc"
+              style={{ padding: "12px 0", color: "var(--af2-ink-3)", fontStyle: "italic" }}
+            >
+              Nothing waiting. Agents will queue items here when they need a stamp.
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <h3>Live missions</h3>
+          {topMissions.length > 0 ? (
+            <>
+              {topMissions.map((mission) => (
+                <div className="feed-item" key={mission.id}>
+                  <div className="feed-time">{missionShortId(mission)}</div>
+                  <div className="feed-msg">
+                    <b>{mission.statement?.slice(0, 60) || "Untitled mission"}</b>
+                    {" · "}
+                    <span className={missionToneClass(mission)}>
+                      {missionStatusLabel(mission)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </>
+          ) : missions.length > 0 ? (
+            <p
+              className="desc"
+              style={{ fontSize: 12, color: "var(--af2-ink-3)" }}
+            >
+              No missions match the current filters.
+            </p>
+          ) : (
+            <div
+              className="desc"
+              style={{ padding: "12px 0", color: "var(--af2-ink-3)", fontStyle: "italic" }}
+            >
+              No live missions yet. <Link to="/hire" className="link-clay">Brief one →</Link>
+            </div>
+          )}
+          <Link
+            to="/mission-state"
+            className="link-clay"
+            style={{ fontSize: 12, marginTop: 8, display: "inline-block" }}
+          >
+            all missions →
           </Link>
         </div>
       </div>
 
-      {/* UX-11: show the onboarding guide only when the workspace is
-          fully empty (no agents AND no missions). Auto-hides once
-          there's any data; permanently dismissible via the × button
-          which writes a localStorage flag. */}
-      <OnboardingBanner
-        show={agentSnapshots.length === 0 && missions.length === 0}
-        firstName={firstName(user?.name)}
+      {/* Bottom-of-page charts — fill the space the v2 layout left
+          deliberately empty. Each chart respects the current
+          mission + date-range filters. */}
+      <HomeAnalytics
+        filters={filters}
+        agents={filteredAgents}
+        budgets={budgets}
+        runs={runs}
+        heartbeats={heartbeats}
       />
 
-      <div className="af2-stats" style={{ marginBottom: 22 }}>
-        <div className="af2-stat">
-          <div className="af2-stat-label">Missions in flight</div>
-          <div className="af2-stat-value">{totals.activeMissions.length}</div>
-          <div className="af2-stat-delta">
-            {missions.length} total · {totals.activeMissions.length} active
-          </div>
-        </div>
-        <div className="af2-stat">
-          <div className="af2-stat-label">Hours saved · 7d</div>
-          <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Coming soon</div>
-        </div>
-        <div className="af2-stat">
-          <div className="af2-stat-label">Spend · month</div>
-          <div className="af2-stat-value">{formatCurrency(totals.totalSpend)}</div>
-          <div className="af2-stat-delta">
-            {totals.totalBudget > 0
-              ? `${spendPercent}% of ${formatCurrency(totals.totalBudget)} cap`
-              : "No budget set"}
-          </div>
-        </div>
-        <div className="af2-stat">
-          <div className="af2-stat-label">Approval p50</div>
-          <div className="af2-stat-value">—</div>
-          <div className="af2-stat-delta">Coming soon</div>
-        </div>
-      </div>
+      <ApprovalDrawer
+        approval={openApproval}
+        onClose={() => setOpenApprovalId(null)}
+        onResolved={handleApprovalResolved}
+      />
+    </div>
+  );
+}
 
+function StatTile({
+  label,
+  value,
+  history,
+  loading,
+  format,
+}: {
+  label: string;
+  value: number;
+  history: number[];
+  loading: boolean;
+  format?: (value: number) => string;
+}) {
+  const showSpark = history.length >= 2;
+  return (
+    <div className="stat-card" style={{ position: "relative" }}>
+      <div className="stat-num">
+        {loading ? (
+          <SkeletonBlock lines={1} />
+        ) : (
+          <AnimatedNumber value={value} format={format} />
+        )}
+      </div>
+      <div className="stat-label">{label}</div>
+      {showSpark ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            bottom: 10,
+            opacity: 0.85,
+            pointerEvents: "none",
+          }}
+        >
+          <Sparkline
+            values={history}
+            width={72}
+            height={20}
+            label={`${label} trend`}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LiveConnectionIndicator({
+  state,
+  isRefreshing,
+  lastEventAt,
+}: {
+  state: ReturnType<typeof useWorkspaceLiveStream>["state"];
+  isRefreshing: boolean;
+  lastEventAt: number | null;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    // Re-render every 10s so the "last update Ns ago" label stays fresh.
+    const id = window.setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const connected = state === "connected";
+  const dotColor = connected
+    ? "var(--af2-sage, #6b9e5e)"
+    : state === "error" || state === "reconnecting"
+      ? "var(--af2-clay, #c25b3a)"
+      : "var(--af2-ink-4)";
+  const animate = !connected || isRefreshing;
+  const label = (() => {
+    if (connected) {
+      if (lastEventAt) {
+        const diff = Date.now() - lastEventAt;
+        if (diff < 5_000) return "Live · update just now";
+        if (diff < 60_000)
+          return `Live · last update ${Math.round(diff / 1000)}s ago`;
+        return `Live · last update ${Math.round(diff / 60_000)}m ago`;
+      }
+      return "Live · waiting for activity";
+    }
+    if (state === "connecting") return "Connecting to live stream…";
+    if (state === "reconnecting") return "Reconnecting…";
+    if (state === "error") return "Stream offline · polling fallback";
+    return "Polling fallback";
+  })();
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        margin: "0 0 8px",
+        fontSize: 11,
+        color: "var(--af2-ink-3)",
+      }}
+    >
+      <span
+        aria-label={connected ? "Live" : label}
+        style={{
+          display: "inline-block",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: dotColor,
+          animation: animate ? "af2-pulse 1.2s ease-out infinite" : "none",
+        }}
+      />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+interface HomeAnalyticsProps {
+  filters: HomeFilters;
+  agents: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { agents: infer A }
+      ? A
+      : never
+    : never;
+  budgets: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { budgets: infer B }
+      ? B
+      : never
+    : never;
+  runs: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { runs: infer R }
+      ? R
+      : never
+    : never;
+  heartbeats: ReturnType<typeof useHomeSnapshotQuery>["data"] extends infer T
+    ? T extends { heartbeats: infer H }
+      ? H
+      : never
+    : never;
+}
+
+function HomeAnalytics({ filters, agents, budgets, runs, heartbeats }: HomeAnalyticsProps) {
+  return (
+    <div style={{ marginTop: 16 }}>
       <div
-        className="grid gap-[22px] grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+          gap: 12,
+          alignItems: "stretch",
+        }}
       >
-        <section>
-          <div className="af2-row" style={{ marginBottom: 10 }}>
-            <h3 className="af2-h3">Active missions</h3>
-            <span className="af2-spacer" />
-            <Link to="/mission-state" className="af2-btn af2-btn-ghost af2-btn-sm">
-              All missions →
-            </Link>
-          </div>
-          {totals.activeMissions.length === 0 ? (
-            <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
-              <div className="af2-muted" style={{ fontSize: 13 }}>
-                No active missions yet. <Link to="/hire" className="af2-btn af2-btn-ghost af2-btn-sm" style={{ display: "inline-flex", marginLeft: 8 }}>Start one →</Link>
-              </div>
-            </div>
-          ) : (
-            <div className="af2-list">
-              <div
-                className="af2-list-head"
-                style={{ gridTemplateColumns: "1.7fr 130px 110px 90px 90px" }}
-              >
-                <div>Mission</div>
-                <div>Owner</div>
-                <div>Status</div>
-                <div>Due</div>
-                <div>Approvals</div>
-              </div>
-              {totals.activeMissions.slice(0, 8).map((mission) => {
-                const tone = missionPillTone(mission);
-                const due = missionDueText(mission, runs);
-                const missionApprovals = approvals.filter(
-                  (a) => a.status === "pending" && (a as { missionId?: string }).missionId === mission.id,
-                );
-                const owner = mission.companyName || "Workspace";
-                return (
-                  <Link
-                    key={mission.id}
-                    to={missionLinkTo(mission)}
-                    className="af2-list-row"
-                    style={{
-                      gridTemplateColumns: "1.7fr 130px 110px 90px 90px",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{mission.statement}</div>
-                      <div
-                        style={{
-                          height: 4,
-                          background: "var(--af2-paper-2)",
-                          borderRadius: 4,
-                          marginTop: 6,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: `${mission.status === "completed" ? 100 : 40}%`,
-                            height: "100%",
-                            background: tone.progressColor,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="af2-row">
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          background: "var(--af2-clay-soft)",
-                          color: "var(--af2-clay-2)",
-                          fontSize: 11,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {initialsFor(owner)}
-                      </div>
-                      <span style={{ fontSize: 12.5 }}>{owner.split(" ")[0]}</span>
-                    </div>
-                    <div>
-                      <span className={tone.className}>
-                        <span className="af2-dot" />
-                        {tone.label}
-                      </span>
-                    </div>
-                    <div className="af2-mono" style={{ color: due === "overdue" ? "var(--af2-clay)" : "var(--af2-ink-3)" }}>
-                      {due}
-                    </div>
-                    <div>
-                      {missionApprovals.length > 0 ? (
-                        <span className="af2-pill af2-pill-clay">{missionApprovals.length}</span>
-                      ) : (
-                        <span className="af2-muted-2">—</span>
-                      )}
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-
-          <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
-            The room right now
-          </h3>
-          <div className="af2-card" style={{ padding: 0 }}>
-            {agentSnapshots.length === 0 ? (
-              <div className="af2-muted" style={{ padding: 16, fontSize: 13, textAlign: "center" }}>
-                No agents deployed yet. <Link to="/hire" style={{ color: "var(--af2-clay-2)" }}>Hire an agent →</Link>
-              </div>
-            ) : (
-              agentSnapshots.slice(0, ROOM_NOW_DISPLAY_LIMIT).map((snap, idx) => {
-                const summary =
-                  snap.heartbeat?.summary ??
-                  (snap.agent.status === "idle" ? "Idle · awaiting next mission" : "Awaiting status…");
-                const isWorking = snap.heartbeat?.status === "running" || snap.agent.status === "running";
-                return (
-                  <Link
-                    key={snap.agent.id}
-                    to={`/agents/team/${(snap.agent as Agent & { teamId?: string }).teamId ?? snap.agent.id}`}
-                    className="af2-row"
-                    style={{
-                      padding: "12px 18px",
-                      borderBottom:
-                        idx === Math.min(agentSnapshots.length, 6) - 1 ? 0 : "1px solid var(--af2-line)",
-                      gap: 14,
-                      cursor: "pointer",
-                      textDecoration: "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        width: 32,
-                        height: 32,
-                        borderRadius: "50%",
-                        background: "var(--af2-clay-soft)",
-                        color: "var(--af2-clay-2)",
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {initialsFor(snap.agent.name)}
-                    </div>
-                    <div style={{ minWidth: 160 }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 13.5,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        {snap.agent.name}
-                        <AgentPresencePill presence={presence.get(snap.agent.id)} />
-                      </div>
-                      <div className="af2-muted" style={{ fontSize: 12 }}>
-                        {teamNameFor(snap.agent) ?? "Unassigned"}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, fontSize: 13, color: "var(--af2-ink-2)" }}>
-                      {/* Live presence pill above already shows the
-                          current task / state. The summary fallback
-                          here is the old controlPlane heartbeat
-                          summary, kept for agents whose Redis TTL
-                          lapsed (and so don't appear in `presence`). */}
-                      {presence.has(snap.agent.id) ? null : isWorking ? (
-                        <em className="font-af2-serif" style={{ color: "var(--af2-ink-2)" }}>
-                          "{summary}"
-                        </em>
-                      ) : (
-                        <span className="af2-muted">{summary}</span>
-                      )}
-                    </div>
-                    <div className="af2-mono af2-muted" style={{ fontSize: 11.5 }}>
-                      {(snap.agent as Agent & { model?: string }).model ?? "—"}
-                    </div>
-                  </Link>
-                );
-              })
-            )}
-          </div>
-        </section>
-
-        <aside>
-          <h3 className="af2-h3" style={{ marginBottom: 10 }}>
-            Needs your stamp
-          </h3>
-          <div className="af2-card" style={{ padding: 0 }}>
-            {totals.pendingApprovals.length === 0 ? (
-              <div className="af2-muted" style={{ padding: 16, fontSize: 13, textAlign: "center" }}>
-                Nothing waiting on you.
-              </div>
-            ) : (
-              totals.pendingApprovals.slice(0, 4).map((approval, idx) => {
-                // DASH-14: prefer the real agent FK on the approval row
-                // when present; fall back to the legacy run-id link, then
-                // to the bare assignee name string.
-                const agentById = approval.agentId
-                  ? agentSnapshots.find(
-                      (snap) => snap.agent.id === approval.agentId,
-                    )
-                  : undefined;
-                const owningAgent =
-                  agentById ??
-                  agentSnapshots.find(
-                    (snap) => snap.heartbeat?.createdByRunId === approval.runId,
-                  );
-                const ownerName = owningAgent?.agent.name ?? approval.assignee ?? "—";
-                return (
-                  <div
-                    key={approval.id}
-                    style={{
-                      padding: "14px 16px",
-                      borderBottom:
-                        idx === Math.min(totals.pendingApprovals.length, 4) - 1
-                          ? 0
-                          : "1px solid var(--af2-line)",
-                    }}
-                  >
-                    <div className="af2-row">
-                      <span className="af2-mono af2-muted-2" style={{ fontSize: 11 }}>
-                        {approval.id.slice(0, 8).toUpperCase()}
-                      </span>
-                      <span className="af2-spacer" />
-                      <span className="af2-mono af2-muted" style={{ fontSize: 11 }}>
-                        ● {approval.timeoutMinutes && approval.timeoutMinutes <= 30 ? "high" : "low"}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13.5, marginTop: 4, lineHeight: 1.35 }}>
-                      {approval.message ?? approval.stepName}
-                    </div>
-                    <div className="af2-row" style={{ marginTop: 10, gap: 8 }}>
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 20,
-                          height: 20,
-                          borderRadius: "50%",
-                          background: "var(--af2-clay-soft)",
-                          color: "var(--af2-clay-2)",
-                          fontSize: 10,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {initialsFor(ownerName)}
-                      </div>
-                      <span className="af2-muted" style={{ fontSize: 12 }}>
-                        {firstName(ownerName)} · {approvalCostUsd(approval)}
-                      </span>
-                      <span className="af2-spacer" />
-                      <Link
-                        to={`/approvals`}
-                        className="af2-btn af2-btn-sm"
-                      >
-                        Open
-                      </Link>
-                      <Link
-                        to={`/approvals`}
-                        className="af2-btn af2-btn-sm af2-btn-primary"
-                      >
-                        Approve
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
-            Spend by agent · this week
-          </h3>
-          <div className="af2-card">
-            {agentSnapshots.length === 0 ? (
-              <div className="af2-muted" style={{ fontSize: 13, textAlign: "center" }}>
-                No agent spend recorded yet.
-              </div>
-            ) : (
-              agentSnapshots.slice(0, 5).map((snap) => {
-                const spent = (snap.budgetCents ?? 0) / 100;
-                const budget =
-                  (snap.capCents ?? Math.round((snap.agent.budgetMonthlyUsd ?? 0) * 100)) / 100;
-                const pct = budget > 0 ? spent / budget : 0;
-                const hot = pct > 0.8;
-                return (
-                  <div key={snap.agent.id} style={{ marginBottom: 12 }}>
-                    <div className="af2-row" style={{ fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 500 }}>{firstName(snap.agent.name)}</span>
-                      <span className="af2-muted" style={{ marginLeft: 6 }}>
-                        · {teamNameFor(snap.agent) ?? "Unassigned"}
-                      </span>
-                      <span className="af2-spacer" />
-                      <span className="af2-mono">
-                        {formatCurrency(spent)}{" "}
-                        <span className="af2-muted-2">/ {formatCurrency(budget)}</span>
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 4,
-                        background: "var(--af2-paper-2)",
-                        borderRadius: 3,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${Math.min(pct * 100, 100)}%`,
-                          height: "100%",
-                          background: hot ? "var(--af2-clay)" : "var(--af2-ink-2)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </aside>
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ margin: 0 }}>Spend in range</h3>
+          <p className="desc" style={{ marginTop: 4 }}>
+            Cumulative spend across the selected window.
+          </p>
+          <SpendChart
+            range={filters.range}
+            budgets={budgets}
+            runs={runs}
+            scopedAgentIds={
+              filters.missionId
+                ? new Set(agents.map((a) => a.id))
+                : undefined
+            }
+          />
+        </div>
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ margin: 0 }}>Who's working</h3>
+          <p className="desc" style={{ marginTop: 4 }}>
+            Agent presence distribution.
+          </p>
+          <AgentActivityChart agents={agents} heartbeats={heartbeats} />
+        </div>
       </div>
+      <IdleAgentsCallout agents={agents} heartbeats={heartbeats} />
     </div>
   );
 }

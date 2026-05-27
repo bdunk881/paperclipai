@@ -18,11 +18,8 @@ import { randomUUID } from "crypto";
 import type { Pool } from "pg";
 import type { AgentTraceEvent } from "../engine/agentTrace/types";
 import { AgentTracePublisher } from "../engine/agentTrace/tracePublisher";
-import { emitTrace } from "../engine/agentTrace/emitCallbacks";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../engine/llmRouter";
-import { getProvider } from "../engine/llmProviders";
-import { providerSupportsNativeAgentStream } from "../engine/llmProviders/capabilities";
 import type {
   AgentTool,
   LLMResponse,
@@ -39,6 +36,11 @@ import {
   filterToolsByPermissions,
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
+import { pickBackend } from "./runtime/runAgent";
+import { loadAgentMcpServers } from "./runtime/mcpClient";
+import { createBudgetHook } from "./runtime/budgetHook";
+import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
+import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
 const TOKEN_PREVIEW_TAIL_CHARS = 240;
@@ -70,6 +72,46 @@ export interface RunAgentTurnInput {
   /** @deprecated Prefer `streamTrace` — kept for backward compatibility. */
   streamToPresence?: boolean;
   requestTimeoutMs?: number;
+  /**
+   * Optional routine / ticket context. When set, the trace publisher
+   * forwards each trace envelope to the workspace stream channel so the
+   * per-routine and per-ticket SSE endpoints can surface the transcript
+   * inline.
+   */
+  sourceRoutineId?: string | null;
+  sourceTicketId?: string | null;
+  /**
+   * Permission mode for the run. "plan" maps to the Claude SDK's plan
+   * mode (or a synthesized plan in the fallback backend); useful for
+   * agents that should pause for human review before executing tools.
+   * Defaults to "auto".
+   */
+  permissionMode?: AgentPermissionMode;
+  /**
+   * Skill keys this run should load. Falls back to the agent record's
+   * stored `skills[]` when omitted. Pass an empty array to opt out.
+   */
+  skills?: string[];
+  /**
+   * When true (default), enforce the agent's monthly budget cap via the
+   * pre-tool-use hook. Set false to bypass — e.g. for one-shot internal
+   * runs like the hiring-plan generator that don't bill against an
+   * agent.
+   */
+  enforceBudget?: boolean;
+  /**
+   * Depth in the `delegate_to_subagent` call chain. 0 (or undefined)
+   * means "top-level run." Each recursive runAgentTurn call from the
+   * delegate tool increments this. The delegate tool refuses at the
+   * cap (MAX_DELEGATION_DEPTH = 3).
+   */
+  delegationDepth?: number;
+  /**
+   * The set of agent IDs already on the current delegation call stack.
+   * The delegate tool refuses to call any agent already in this set,
+   * which prevents A→B→A loops.
+   */
+  delegationLineage?: ReadonlySet<string>;
 }
 
 export interface RunAgentTurnResult {
@@ -106,6 +148,22 @@ export async function runAgentTurn(
       }),
     );
   }
+  // Org-chart delegation: when this agent has direct reports, give it
+  // a `delegate_to_subagent` tool. The factory returns null for
+  // non-managers, so we add an undefined-skipping push.
+  const delegateTool = await createDelegateToSubagentTool({
+    pool: input.pool,
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+    parentAgentId: input.agentId,
+    depth: input.delegationDepth ?? 0,
+    lineage: input.delegationLineage,
+    sourceRoutineId: input.sourceRoutineId ?? null,
+    sourceTicketId: input.sourceTicketId ?? null,
+    tier: input.tier,
+    permissionMode: input.permissionMode,
+  });
+  if (delegateTool) candidateTools.push(delegateTool);
   if (input.extraTools) candidateTools.push(...input.extraTools);
 
   const permissions = await loadAgentIntegrationPermissions({
@@ -134,18 +192,11 @@ export async function runAgentTurn(
   }
 
   const providerName = resolved.config.provider;
-  const providerSupportsSystemField =
-    providerName === "anthropic" ||
-    providerName === "openai" ||
-    providerName === "groq" ||
-    providerName === "fireworks" ||
-    providerName === "together" ||
-    providerName === "xai" ||
-    providerName === "perplexity" ||
-    providerName === "deepseek" ||
-    providerName === "ollama" ||
-    providerName === "localai" ||
-    providerName === "opencode_zen";
+  if (!resolved.apiKey) {
+    throw new Error(
+      `LLM credential for provider ${providerName} has no decrypted API key.`,
+    );
+  }
 
   let tracePublisher: AgentTracePublisher | null = null;
   const shouldTrace = streamEnabled && Boolean(input.runId);
@@ -158,6 +209,8 @@ export async function runAgentTurn(
       turnId,
       provider: providerName,
       model,
+      routineId: input.sourceRoutineId ?? null,
+      ticketId: input.sourceTicketId ?? null,
     });
     await tracePublisher.publish({
       type: "turn.started",
@@ -165,60 +218,78 @@ export async function runAgentTurn(
     });
   }
 
+  // Unified trace callback — persists envelopes when tracing is on and
+  // always feeds assistant deltas into the presence preview when streaming
+  // is enabled. The runtime backends emit the same canonical event shapes
+  // as the legacy provider stream did.
   const handleTraceEvent = (event: AgentTraceEvent): void => {
-    if (!tracePublisher) return;
-    void (async () => {
-      const envelope = await tracePublisher!.publish(event);
-      await persistAgentTraceEvent(input.pool, envelope);
-    })();
-
-    if (
-      streamEnabled &&
-      event.type === "assistant.delta"
-    ) {
+    if (tracePublisher) {
+      void (async () => {
+        const envelope = await tracePublisher!.publish(event);
+        await persistAgentTraceEvent(input.pool, envelope);
+      })();
+    }
+    if (streamEnabled && event.type === "assistant.delta") {
       lastPreview = event.accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
       schedulePreviewPublish(input.runId);
     }
   };
 
-  const nativeStream =
-    providerSupportsNativeAgentStream(providerName) || tools.length === 0;
-
-  const provider = getProvider({
-    provider: resolved.config.provider,
+  const binding: ResolvedModelBinding = {
+    provider: providerName,
     model,
     apiKey: resolved.apiKey,
-    requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
-    tools: tools.length > 0 ? tools : undefined,
-    systemPrompt: providerSupportsSystemField ? systemPrompt : undefined,
-    cacheSystemPrompt: providerName === "anthropic",
-    onTrace: shouldTrace && nativeStream ? handleTraceEvent : undefined,
-    onText:
-      streamEnabled && !shouldTrace
-        ? (_delta, accumulated) => {
-            lastPreview = accumulated.slice(-TOKEN_PREVIEW_TAIL_CHARS);
-            schedulePreviewPublish(input.runId);
-          }
-        : undefined,
-  });
+  };
+  const backend = pickBackend(providerName);
 
-  const promptForProvider = providerSupportsSystemField
-    ? input.userPrompt
-    : `${systemPrompt}\n\n---\n\nUSER:\n${input.userPrompt}`;
+  // Resolve skills, MCP servers, and the budget-enforcement hook before
+  // we call into the backend. Skills come from explicit input override or
+  // the agent row's stored list; MCP from the user's mcp_servers; the
+  // budget hook is opt-out (enforceBudget defaults to true).
+  const agentSkillsRow = await input.pool
+    .query<{ skills: string[] | null }>(
+      `SELECT skills FROM agents WHERE id = $1::uuid AND workspace_id = $2::uuid LIMIT 1`,
+      [input.agentId, input.workspaceId],
+    )
+    .catch(() => ({ rows: [] as Array<{ skills: string[] | null }> }));
+  const resolvedSkills =
+    input.skills ?? agentSkillsRow.rows[0]?.skills ?? [];
+  const mcpServers = await loadAgentMcpServers({ userId: input.userId });
+  const hooks =
+    input.enforceBudget === false
+      ? undefined
+      : createBudgetHook({
+          pool: input.pool,
+          workspaceId: input.workspaceId,
+          agentId: input.agentId,
+        });
 
-  let response: LLMResponse;
+  let response: { text: string; usage: NonNullable<LLMResponse["usage"]> };
   try {
-    response = await provider(promptForProvider);
-
-    if (shouldTrace && tracePublisher && !nativeStream) {
-      emitTrace(handleTraceEvent, {
-        type: "assistant.delta",
-        delta: response.text,
-        accumulated: response.text,
-      });
-      const usage = response.usage ?? { promptTokens: 0, completionTokens: 0 };
-      await tracePublisher.publish({ type: "turn.completed", text: response.text, usage });
-    }
+    const runResult = await backend.run(
+      {
+        pool: input.pool,
+        workspaceId: input.workspaceId,
+        userId: input.userId,
+        agentId: input.agentId,
+        runId: input.runId,
+        agentName: input.agentName,
+        agentRoleKey: input.agentRoleKey,
+        systemPrompt,
+        userPrompt: input.userPrompt,
+        tier: input.tier ?? "standard",
+        tools,
+        maxToolIterations: undefined,
+        requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+        onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
+        skills: resolvedSkills,
+        mcpServers,
+        permissionMode: input.permissionMode,
+        hooks,
+      },
+      binding,
+    );
+    response = { text: runResult.text, usage: runResult.usage };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (tracePublisher) {
@@ -234,8 +305,8 @@ export async function runAgentTurn(
 
   return {
     text: response.text,
-    usage: response.usage ?? { promptTokens: 0, completionTokens: 0 },
-    provider: resolved.config.provider,
+    usage: response.usage,
+    provider: providerName,
     model,
     turnId: shouldTrace ? turnId : undefined,
   };

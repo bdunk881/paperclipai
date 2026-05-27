@@ -503,6 +503,88 @@ export const runStore = {
     return cloneRun(updated);
   },
 
+  /**
+   * Return the caller's "in flight" runs across the workspace — anything
+   * that is not yet in a terminal state. Drives the bottom-right RunTray
+   * in the dashboard so an operator can see and cancel pending work
+   * across devices.
+   *
+   * The status set mirrors `WorkflowRun["status"]` excluding the
+   * terminal values (completed / failed / canceled / escalated).
+   */
+  async listInFlight(userId?: string, workspaceId?: string): Promise<WorkflowRun[]> {
+    const IN_FLIGHT = new Set([
+      "queued",
+      "pending",
+      "running",
+      "awaiting_approval",
+      "cancelling",
+    ]);
+    const localRuns = () => {
+      const runs = Array.from(memoryStore.values());
+      return runs
+        .filter((run) => (userId ? run.userId === userId : true))
+        .filter((run) =>
+          workspaceId ? resolveWorkspaceId(run) === workspaceId : true,
+        )
+        .filter((run) => IN_FLIGHT.has(run.status))
+        .map((run) => cloneRun(run));
+    };
+
+    if (!postgresPersistenceAvailable()) {
+      return localRuns();
+    }
+
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query(
+        `
+          SELECT
+            r.id,
+            r.workspace_id::text,
+            r.routine_id::text,
+            v.workflow_id::text,
+            r.workflow_version_id::text,
+            v.version AS workflow_version,
+            v.dag AS workflow_dag,
+            w.external_template_id AS template_id,
+            w.name AS template_name,
+            r.status,
+            r.started_at,
+            r.ended_at,
+            r.input,
+            r.output,
+            r.runtime_state_json,
+            r.error,
+            r.failure_reason,
+            r.failed_at,
+            r.user_id
+          FROM runs r
+          JOIN workflow_versions v ON v.id = r.workflow_version_id
+          JOIN workflows w ON w.id = v.workflow_id
+          WHERE r.status = ANY($1::text[])
+            AND ($2::text IS NULL OR r.user_id = $2)
+            AND ($3::text IS NULL OR r.workspace_id::text = $3)
+          ORDER BY r.started_at DESC
+          LIMIT 50
+        `,
+        [Array.from(IN_FLIGHT), userId ?? null, workspaceId ?? null],
+      );
+      const runs = result.rows.map((row) => mapRowToRun(row));
+      const stepResultsByRunId = await loadStepResultsByRunIds(runs.map((r) => r.id));
+      for (const run of runs) {
+        run.stepResults = stepResultsByRunId.get(run.id) ?? [];
+      }
+      return runs;
+    } catch (err) {
+      console.error(
+        "[runStore] Postgres in-flight read failed, falling back to in-memory:",
+        (err as Error).message,
+      );
+      return localRuns();
+    }
+  },
+
   async list(templateId?: string, userId?: string, status?: string): Promise<WorkflowRun[]> {
     const localRuns = () => {
       const runs = Array.from(memoryStore.values());

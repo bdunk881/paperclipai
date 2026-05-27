@@ -149,3 +149,124 @@ export async function listWakeEvents(accessToken: string): Promise<WakeEventRow[
   );
   return payload.events;
 }
+
+// ---------------------------------------------------------------------------
+// /api/budget (HEL-212 — v2 Budget dashboard)
+// ---------------------------------------------------------------------------
+
+export type BudgetBreakdownScope = "workspace" | "mission" | "team" | "agent";
+
+export interface BudgetBreakdownRow {
+  scopeId: string;
+  scopeLabel: string;
+  byModel: Record<string, number>;
+  total: number;
+}
+
+export interface BudgetBreakdownBucket {
+  date: string;
+  byModel: Record<string, number>;
+  total: number;
+}
+
+export interface BudgetBreakdownResponse {
+  scope: BudgetBreakdownScope;
+  since: string;
+  until: string;
+  model: string | null;
+  rows: BudgetBreakdownRow[];
+  series: BudgetBreakdownBucket[];
+  totals: {
+    byModel: Record<string, number>;
+    all: number;
+    tokens: number;
+    cacheHitRate: number | null;
+  };
+}
+
+export interface BudgetBreakdownQuery {
+  scope?: BudgetBreakdownScope;
+  since?: string;
+  until?: string;
+  model?: string | null;
+}
+
+export async function getBudgetBreakdown(
+  accessToken: string,
+  query: BudgetBreakdownQuery = {},
+): Promise<BudgetBreakdownResponse> {
+  const params = new URLSearchParams();
+  if (query.scope) params.set("scope", query.scope);
+  if (query.since) params.set("since", query.since);
+  if (query.until) params.set("until", query.until);
+  if (query.model) params.set("model", query.model);
+  const qs = params.toString();
+  const res = await trackedFetch(`${BASE}/budget/breakdown${qs ? `?${qs}` : ""}`, {
+    headers: authHeaders(accessToken),
+  });
+  return readJson<BudgetBreakdownResponse>(res, "Failed to load budget breakdown");
+}
+
+export interface BudgetCeilingPayload {
+  scope_kind: BudgetBreakdownScope;
+  scope_id?: string | null;
+  ceiling_usd: number;
+  alert_threshold_pct?: number;
+}
+
+export interface BudgetCeilingResponse {
+  id: string;
+  scopeKind: BudgetBreakdownScope;
+  scopeId: string | null;
+  ceilingUsd: number;
+  alertThresholdPct: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function setBudgetCeiling(
+  accessToken: string,
+  payload: BudgetCeilingPayload,
+): Promise<BudgetCeilingResponse> {
+  const res = await trackedFetch(`${BASE}/budget`, {
+    method: "PUT",
+    headers: {
+      ...authHeaders(accessToken),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  return readJson<BudgetCeilingResponse>(res, "Failed to update budget ceiling");
+}
+
+// TODO(HEL-212 follow-up): real cost-predictor endpoint. For now we return
+// a deterministic range derived from the mission shape so the Pro reveal
+// can ship without a server round-trip.
+export interface CostPredictorInput {
+  statement: string;
+  agentCount: number;
+  durationDays: number;
+}
+
+export interface CostPredictorResponse {
+  loUsd: number;
+  hiUsd: number;
+  basis: string;
+}
+
+export async function predictMissionCost(
+  _accessToken: string,
+  input: CostPredictorInput,
+): Promise<CostPredictorResponse> {
+  // Scaffold: TODO replace with `POST /api/budget/predict`. Returning a
+  // synchronously-resolved promise keeps the UI's loading affordance honest.
+  const base = Math.max(1, input.agentCount) * Math.max(1, input.durationDays) * 4;
+  const wordPenalty = Math.min(80, Math.max(0, input.statement.trim().split(/\s+/).length));
+  const lo = Math.round(base + wordPenalty * 0.4);
+  const hi = Math.round(base * 1.8 + wordPenalty * 1.2);
+  return Promise.resolve({
+    loUsd: lo,
+    hiUsd: hi,
+    basis: `${input.agentCount} agents × ${input.durationDays} days (scaffold range)`,
+  });
+}

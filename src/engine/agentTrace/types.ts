@@ -19,6 +19,15 @@ export interface AgentTraceScope {
   iteration?: number;
   provider: ProviderName;
   model: string;
+  /**
+   * Optional context for the workspace stream channel — when set, the
+   * trace publisher forwards a copy of each envelope to the stream
+   * channel so per-routine / per-ticket SSE endpoints can show the
+   * transcript inline. Unset for ad-hoc runs that aren't linked to a
+   * routine or ticket.
+   */
+  routineId?: string | null;
+  ticketId?: string | null;
 }
 
 export type AgentTraceEvent =

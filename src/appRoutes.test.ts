@@ -865,7 +865,7 @@ describe("POST /api/goals/team-assembly", () => {
     expect(res.body.roadmap306090.day90.ownerRoleKeys).toContain("ceo");
   });
 
-  it("passes the role library and PRD into the prompt", async () => {
+  it("passes the company, PRD, and goal document into the prompt", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
     jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
       config: { provider: "openai", model: "gpt-4" },
@@ -976,8 +976,10 @@ describe("POST /api/goals/team-assembly", () => {
 
     expect(res.status).toBe(200);
     expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("\"title\": \"AI Bookkeeping Concierge for Shopify Brands\""));
-    expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("\"roleKey\": \"backend-engineer\""));
     expect(providerMock).toHaveBeenCalledWith(expect.stringContaining("Company name: LedgerPilot"));
+    // Hire flow is LLM-owned: the role library is intentionally NOT injected
+    // into the prompt — the model invents every role from the mission (PR #984).
+    expect(providerMock).toHaveBeenCalledWith(expect.not.stringContaining("\"roleKey\": \"backend-engineer\""));
   });
 });
 

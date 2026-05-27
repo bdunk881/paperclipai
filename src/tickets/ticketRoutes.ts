@@ -23,6 +23,11 @@ import { getAgentPromptQueue } from "../queue/queues";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import * as Sentry from "@sentry/node";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { handleStreamSse } from "../engine/agentTrace/streamSseHandler";
+import type { WorkspaceStreamEnvelope } from "../engine/agentTrace/streamPublisher";
+
+const TICKET_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // HEL-177: agent execution is the worker's job exclusively. Routes only
 // enqueue. The legacy inline `resolveExecuteAgentPrompt()` fallback was
@@ -86,7 +91,7 @@ const updateTicketSchema = z
 const createUpdateSchema = z.object({
   type: ticketUpdateTypeSchema.default("comment"),
   content: z.string().trim().min(1).max(10000),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   actorType: actorTypeSchema.optional(),
 });
 
@@ -101,7 +106,7 @@ const transitionSchema = z.object({
     keyLearnings: z.string().trim().min(1).max(5000),
     artifactRefs: z.array(z.string().trim().min(1).max(512)).max(25).optional(),
     tags: z.array(z.string().trim().min(1).max(64)).max(25).optional(),
-    extensionMetadata: z.record(z.unknown()).optional(),
+    extensionMetadata: z.record(z.string(), z.unknown()).optional(),
   })).optional(),
 });
 
@@ -1262,6 +1267,79 @@ router.post("/:id/transitions", requireRunId, asyncHandler<WorkspaceAwareRequest
     ...result.aggregate,
     relevantMemories: result.relevantMemories ?? [],
     ...(result.closeContract ? { closeContract: result.closeContract } : {}),
+  });
+}));
+
+// -------------------------------------------------------------------------
+// GET /api/tickets/stream — workspace-wide firehose of ticket activity.
+// Emits ticket.created, ticket.update.appended, and run.lifecycle /
+// trace.forward events that carry a ticketId. List view subscribes for
+// live status badges.
+// -------------------------------------------------------------------------
+router.get("/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+  if (!workspaceId) {
+    res.status(401).json({ error: "Workspace required" });
+    return;
+  }
+  await handleStreamSse(req, res, {
+    workspaceId,
+    filter: (envelope: WorkspaceStreamEnvelope) => {
+      const { event } = envelope;
+      switch (event.kind) {
+        case "ticket.created":
+        case "ticket.update.appended":
+          return true;
+        case "run.lifecycle":
+        case "trace.forward":
+          return Boolean(event.ticketId);
+        default:
+          return false;
+      }
+    },
+  });
+}));
+
+// -------------------------------------------------------------------------
+// GET /api/tickets/:id/stream — scoped to a single ticket. Emits update
+// appends plus the lifecycle + forwarded trace events for runs whose
+// sourceTicketId == :id. Detail view subscribes for live timeline.
+// -------------------------------------------------------------------------
+router.get("/:id/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+  const ticketId = req.params.id;
+  if (!workspaceId) {
+    res.status(401).json({ error: "Workspace required" });
+    return;
+  }
+  if (!TICKET_UUID_RE.test(ticketId)) {
+    res.status(400).json({ error: "Invalid ticket ID format" });
+    return;
+  }
+  const aggregate = await ticketStore.get(ticketId, {
+    workspaceId,
+    userId: (req as AuthenticatedRequest).auth?.sub ?? "",
+  });
+  if (!aggregate || aggregate.ticket.workspaceId !== workspaceId) {
+    res.status(404).json({ error: "Ticket not found" });
+    return;
+  }
+  await handleStreamSse(req, res, {
+    workspaceId,
+    filter: (envelope: WorkspaceStreamEnvelope) => {
+      const { event } = envelope;
+      switch (event.kind) {
+        case "ticket.created":
+          return event.ticketId === ticketId;
+        case "ticket.update.appended":
+          return event.ticketId === ticketId;
+        case "run.lifecycle":
+        case "trace.forward":
+          return event.ticketId === ticketId;
+        default:
+          return false;
+      }
+    },
   });
 }));
 

@@ -8,7 +8,11 @@ import { ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { queryKeys } from "../lib/queryKeys";
-import { useObservabilityQuery } from "../hooks/queries/useObservabilityQuery";
+import {
+  OBSERVABILITY_FEED_TAB,
+  useObservabilityQuery,
+} from "../hooks/queries/useObservabilityQuery";
+import { useEventStream } from "../hooks/useEventStream";
 import { useObservabilityStream } from "../hooks/useObservabilityStream";
 
 /**
@@ -171,6 +175,19 @@ export default function AgentActivity() {
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
+
+  // HEL-218: live activity stream. PR #1025 ships an SSE endpoint that
+  // emits a `stream` event per new `activity_events` row. Subscribing
+  // here invalidates the react-query cache so the feed re-fetches
+  // within ~100ms of any new event, replacing the existing 5s poll.
+  useEventStream("/api/activity-events/stream", {
+    onMessage: () => {
+      if (!activeWorkspaceId) return;
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.observability(activeWorkspaceId, OBSERVABILITY_FEED_TAB),
+      });
+    },
+  });
 
   useObservabilityStream(tab === "live" && streamLive);
 

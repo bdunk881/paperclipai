@@ -38,8 +38,13 @@ import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import {
   TEAM_ASSEMBLY_SCHEMA_VERSION,
   type TeamAssemblyResult,
-  DEFAULT_ROLE_LIBRARY,
 } from "../goals/teamAssembly";
+import {
+  filterDraftByIncludedRoleKeys,
+  resolveIncludedRoleKeys,
+  validateIncludedRoleKeys,
+  type HiringPlanDraft,
+} from "./hiringPlanDraft";
 import { resolveModelForTier } from "../engine/llmRouter";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
@@ -529,64 +534,11 @@ function composeDetailMessage(
   return parts.join(" · ");
 }
 
-const EXECUTIVE_DEFAULT_KPIS = [
-  "Quarterly OKR completion %",
-  "Cross-team unblocks per month",
-  "Direct-report capacity utilization",
-];
-
-const OPERATOR_DEFAULT_KPIS = [
-  "Throughput vs target",
-  "First-response time",
-  "Quality score (errors per task)",
-];
-
-export function libraryEntryToRecommendation(
-  entry: (typeof DEFAULT_ROLE_LIBRARY)[number],
-  existingRoleKeys: Set<string>,
-): TeamAssemblyResult["provisioningPlan"]["agents"][number] {
-  const reportsToRoleKey =
-    entry.defaultReportsToRoleKey != null && existingRoleKeys.has(entry.defaultReportsToRoleKey)
-      ? (entry.defaultReportsToRoleKey as string)
-      : null;
-  return {
-    roleKey: entry.roleKey as string,
-    title: entry.title,
-    roleType: entry.roleType,
-    department: entry.department,
-    headcount: 1,
-    reportsToRoleKey,
-    mandate: entry.mandate,
-    justification: "Pre-built role added from library.",
-    kpis:
-      entry.roleType === "executive" ? [...EXECUTIVE_DEFAULT_KPIS] : [...OPERATOR_DEFAULT_KPIS],
-    skills: [...(entry.defaultSkills as string[])],
-    tools: entry.defaultTools.length > 0 ? [...(entry.defaultTools as string[])] : ["notion"],
-    modelTier: entry.defaultModelTier,
-    budgetMonthlyUsd: null,
-    provisioningInstructions:
-      "Brief this role on your company's specific goals and KPIs on day one.",
-  };
-}
-
 export function createHiringPlanRoutes(
   pool: Pool,
   runQueue: Queue<RunJobPayload> | null = null,
 ) {
   const router = Router();
-
-  // HEL-138: expose the role library so the dashboard can render the pre-built
-  // role picker without bundling the library client-side.
-  // Must be registered before /:hiringPlanId to avoid UUID validation mismatch.
-  router.get("/role-library", (req: AuthenticatedRequest, res) => {
-    const userId = req.auth?.sub;
-    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
-    if (!userId || !workspaceId) {
-      res.status(401).json({ error: "Authenticated user + workspace required" });
-      return;
-    }
-    res.json({ roles: DEFAULT_ROLE_LIBRARY });
-  });
 
   // HEL-105: side-by-side review needs to read the plan + mission context
   // in one call. Returns the draft TeamAssemblyResult under `plan`, plus the
@@ -610,7 +562,7 @@ export function createHiringPlanRoutes(
       id: string;
       mission_id: string;
       mission_statement: string;
-      draft: TeamAssemblyResult;
+      draft: HiringPlanDraft;
       accepted_at: Date | string | null;
       accepted_by_user_id: string | null;
       created_at: Date | string;
@@ -748,7 +700,7 @@ export function createHiringPlanRoutes(
     // Schema sanity check: the draft must be a TeamAssemblyResult matching
     // the schema version this code knows how to provision. A mismatch is a
     // 422 because the user can re-generate the plan rather than retry-retry.
-    const draft = lookup.draft;
+    const draft = lookup.draft as HiringPlanDraft;
     if (!draft || draft.schemaVersion !== TEAM_ASSEMBLY_SCHEMA_VERSION) {
       res.status(422).json({
         error: `Hiring plan schema version mismatch (got ${
@@ -758,7 +710,20 @@ export function createHiringPlanRoutes(
       return;
     }
 
-    const agentsToAdd = draft.provisioningPlan.agents.length;
+    const body = req.body as { includedRoleKeys?: unknown };
+    const bodyIncluded = Array.isArray(body?.includedRoleKeys)
+      ? body.includedRoleKeys.filter((key): key is string => typeof key === "string")
+      : undefined;
+    const includedRoleKeys = resolveIncludedRoleKeys(draft, bodyIncluded);
+    const selectionError = validateIncludedRoleKeys(draft, includedRoleKeys);
+    if (selectionError) {
+      res.status(400).json({ error: selectionError });
+      return;
+    }
+
+    const provisionDraft = filterDraftByIncludedRoleKeys(draft, includedRoleKeys);
+
+    const agentsToAdd = provisionDraft.provisioningPlan.agents.length;
     const capViolation = await assertAgentCapForConfirm(pool, workspaceId, agentsToAdd);
     if (capViolation) {
       res.status(capViolation.status).json(capViolation.body);
@@ -813,7 +778,7 @@ export function createHiringPlanRoutes(
               workspaceId,
               userId,
               lookup!.company_id,
-              draft.provisioningPlan.teamName,
+              provisionDraft.provisioningPlan.teamName,
             );
 
             // 1. Insert agents, build roleKey → agentId map.
@@ -822,7 +787,7 @@ export function createHiringPlanRoutes(
             // HEL-154: rows we seeded so the response can deep-link to them
             // and the post-commit scheduler register knows what to enqueue.
             const seededRoutines: SeededRoutineRow[] = [];
-            for (const agent of draft.provisioningPlan.agents) {
+            for (const agent of provisionDraft.provisioningPlan.agents) {
               const { id, model } = await insertAgent(
                 client,
                 {
@@ -946,7 +911,7 @@ export function createHiringPlanRoutes(
 
             // 2. Insert org_edges from reportingLines.
             const orgEdges: Array<{ managerAgentId: string; agentId: string }> = [];
-            for (const edge of draft.orgChart.reportingLines) {
+            for (const edge of provisionDraft.orgChart.reportingLines) {
               const managerAgentId = roleKeyToAgentId.get(edge.managerRoleKey);
               const reportAgentId = roleKeyToAgentId.get(edge.reportRoleKey);
               if (!managerAgentId || !reportAgentId) {
@@ -1148,9 +1113,7 @@ export function createHiringPlanRoutes(
     res.status(200).json(response);
   }));
 
-  // HEL-138: append one or more pre-built library roles to an existing (unconfirmed)
-  // hiring plan draft. Zero LLM calls — library → JSON merge → UPDATE.
-  router.post("/:hiringPlanId/add-library-roles", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  router.patch("/:hiringPlanId/draft", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = req.auth?.sub;
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
     if (!userId || !workspaceId) {
@@ -1164,121 +1127,174 @@ export function createHiringPlanRoutes(
       return;
     }
 
-    const { roleKeys } = req.body as { roleKeys?: unknown };
-    if (
-      !Array.isArray(roleKeys) ||
-      roleKeys.length === 0 ||
-      roleKeys.some((k) => typeof k !== "string")
-    ) {
-      res.status(400).json({ error: "roleKeys must be a non-empty array of strings" });
+    // Two optional fields on this PATCH:
+    //   - includedRoleKeys: which agents the reviewer wants to provision
+    //   - tierOverrides:    per-agent tier reassignment (Phase 2b, HEL-todo).
+    //                        Reviewer picks "use Power instead of Standard"
+    //                        for a specific agent, on top of the LLM-suggested
+    //                        tier. We mutate the draft's
+    //                        provisioningPlan.agents[].modelTier in place so
+    //                        the existing confirm path picks them up without
+    //                        any further wiring — same {provider, model}
+    //                        resolution applies via the workspace's tier
+    //                        routing matrix.
+    const body = req.body as {
+      includedRoleKeys?: unknown;
+      tierOverrides?: unknown;
+    };
+
+    const wantsIncluded = body.includedRoleKeys !== undefined;
+    const wantsOverrides = body.tierOverrides !== undefined;
+    if (!wantsIncluded && !wantsOverrides) {
+      res.status(400).json({
+        error: "Provide at least one of includedRoleKeys or tierOverrides.",
+      });
       return;
     }
 
-    const libraryByKey = new Map<string, (typeof DEFAULT_ROLE_LIBRARY)[number]>(
-      DEFAULT_ROLE_LIBRARY.map((r) => [r.roleKey as string, r]),
-    );
-    const unknownKeys = (roleKeys as string[]).filter((k) => !libraryByKey.has(k));
-    if (unknownKeys.length > 0) {
-      res.status(400).json({ error: `Unknown role keys: ${unknownKeys.join(", ")}` });
-      return;
+    let includedRoleKeys: string[] | null = null;
+    if (wantsIncluded) {
+      if (
+        !Array.isArray(body.includedRoleKeys) ||
+        (body.includedRoleKeys as unknown[]).some((key) => typeof key !== "string")
+      ) {
+        res
+          .status(400)
+          .json({ error: "includedRoleKeys must be an array of strings" });
+        return;
+      }
+      includedRoleKeys = body.includedRoleKeys as string[];
+    }
+
+    let tierOverrides: Record<string, "lite" | "standard" | "power"> | null = null;
+    if (wantsOverrides) {
+      if (
+        !body.tierOverrides ||
+        typeof body.tierOverrides !== "object" ||
+        Array.isArray(body.tierOverrides)
+      ) {
+        res
+          .status(400)
+          .json({ error: "tierOverrides must be an object keyed by roleKey" });
+        return;
+      }
+      const validTiers = new Set(["lite", "standard", "power"]);
+      const out: Record<string, "lite" | "standard" | "power"> = {};
+      for (const [roleKey, tier] of Object.entries(
+        body.tierOverrides as Record<string, unknown>,
+      )) {
+        if (typeof roleKey !== "string" || roleKey.trim() === "") {
+          res.status(400).json({ error: "tierOverrides keys must be non-empty role keys" });
+          return;
+        }
+        if (typeof tier !== "string" || !validTiers.has(tier)) {
+          res.status(400).json({
+            error: `tierOverrides.${roleKey} must be one of "lite" | "standard" | "power"`,
+          });
+          return;
+        }
+        out[roleKey] = tier as "lite" | "standard" | "power";
+      }
+      tierOverrides = out;
     }
 
     try {
-      type AddResult =
-        | { notFound: true }
-        | { alreadyAccepted: true }
-        | { duplicates: string[] }
-        | { plan: TeamAssemblyResult };
-
-      const result = await withWorkspaceContext(
-        pool,
-        { workspaceId, userId },
-        async (client): Promise<AddResult> => {
-          const planResult = await client.query<PlanLookupRow>(
-            `SELECT hp.id AS hiring_plan_id,
-                    hp.mission_id,
-                    hp.draft,
-                    hp.accepted_at,
-                    m.company_id,
-                    c.workspace_id
-               FROM hiring_plans hp
-               JOIN missions m ON m.id = hp.mission_id
-               JOIN companies c ON c.id = m.company_id
-              WHERE hp.id = $1
-              LIMIT 1`,
-            [hiringPlanId],
-          );
-
-          if (planResult.rows.length === 0) return { notFound: true };
-
-          const lookup = planResult.rows[0];
-          if (lookup.accepted_at) return { alreadyAccepted: true };
-
-          const draft = lookup.draft;
-          const existingRoleKeys = new Set(draft.provisioningPlan.agents.map((a) => a.roleKey));
-          const duplicates = (roleKeys as string[]).filter((k) => existingRoleKeys.has(k));
-          if (duplicates.length > 0) return { duplicates };
-
-          const newAgents = (roleKeys as string[]).map((key) =>
-            libraryEntryToRecommendation(libraryByKey.get(key)!, existingRoleKeys),
-          );
-
-          const updatedDraft: TeamAssemblyResult = {
-            ...draft,
-            orgChart: {
-              ...draft.orgChart,
-              executives: [
-                ...draft.orgChart.executives,
-                ...newAgents.filter((a) => a.roleType === "executive"),
-              ],
-              operators: [
-                ...draft.orgChart.operators,
-                ...newAgents.filter((a) => a.roleType === "operator"),
-              ],
-              reportingLines: [
-                ...draft.orgChart.reportingLines,
-                ...newAgents
-                  .filter((a) => a.reportsToRoleKey !== null)
-                  .map((a) => ({
-                    managerRoleKey: a.reportsToRoleKey!,
-                    reportRoleKey: a.roleKey,
-                  })),
-              ],
-            },
-            provisioningPlan: {
-              ...draft.provisioningPlan,
-              agents: [...draft.provisioningPlan.agents, ...newAgents],
-            },
-          };
-
-          await client.query(
-            `UPDATE hiring_plans SET draft = $2 WHERE id = $1`,
-            [hiringPlanId, JSON.stringify(updatedDraft)],
-          );
-
-          return { plan: updatedDraft };
-        },
-      );
-
-      if ("notFound" in result) {
+      const lookup = await loadHiringPlanScopedToWorkspace(pool, hiringPlanId, workspaceId, userId);
+      if (!lookup) {
         res.status(404).json({ error: "Hiring plan not found" });
         return;
       }
-      if ("alreadyAccepted" in result) {
+      if (lookup.accepted_at) {
         res.status(409).json({ error: "Hiring plan already accepted" });
         return;
       }
-      if ("duplicates" in result) {
-        res
-          .status(409)
-          .json({ error: `Role(s) already in plan: ${result.duplicates.join(", ")}` });
-        return;
+
+      const draft = lookup.draft as HiringPlanDraft;
+
+      // Validate selection if provided. (We still validate even when only
+      // overrides are sent because resolveIncludedRoleKeys may default the
+      // selection to "all," but the existing helper only validates an
+      // explicit array.)
+      if (includedRoleKeys !== null) {
+        const selectionError = validateIncludedRoleKeys(draft, includedRoleKeys);
+        if (selectionError) {
+          res.status(400).json({ error: selectionError });
+          return;
+        }
       }
 
-      res.json({ plan: result.plan });
+      // Validate every tierOverride key matches an agent in the draft.
+      if (tierOverrides !== null) {
+        const knownRoles = new Set(
+          draft.provisioningPlan.agents.map((a) => a.roleKey),
+        );
+        const unknown = Object.keys(tierOverrides).filter(
+          (k) => !knownRoles.has(k),
+        );
+        if (unknown.length > 0) {
+          res.status(400).json({
+            error: `tierOverrides references unknown role keys: ${unknown.join(", ")}`,
+          });
+          return;
+        }
+      }
+
+      // Build the next draft. Selection changes nest under draft.selection.
+      // Tier overrides are applied directly onto provisioningPlan.agents (+
+      // orgChart.executives / operators where the same role exists), so the
+      // existing confirm path picks them up without conditional logic.
+      const nextAgents = tierOverrides
+        ? draft.provisioningPlan.agents.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.provisioningPlan.agents;
+
+      const nextExecutives = tierOverrides
+        ? draft.orgChart.executives.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.orgChart.executives;
+
+      const nextOperators = tierOverrides
+        ? draft.orgChart.operators.map((a) =>
+            tierOverrides![a.roleKey]
+              ? { ...a, modelTier: tierOverrides![a.roleKey] }
+              : a,
+          )
+        : draft.orgChart.operators;
+
+      const updated: HiringPlanDraft = {
+        ...draft,
+        orgChart: {
+          ...draft.orgChart,
+          executives: nextExecutives,
+          operators: nextOperators,
+        },
+        provisioningPlan: {
+          ...draft.provisioningPlan,
+          agents: nextAgents,
+        },
+        selection:
+          includedRoleKeys !== null
+            ? { includedRoleKeys }
+            : draft.selection,
+      };
+
+      await withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+        await client.query(`UPDATE hiring_plans SET draft = $2::jsonb WHERE id = $1`, [
+          hiringPlanId,
+          JSON.stringify(updated),
+        ]);
+      });
+
+      res.json({ plan: updated });
     } catch (err) {
-      console.error(`[hiring-plans] add-library-roles failed: ${(err as Error).message}`);
-      res.status(500).json({ error: "Failed to add library roles" });
+      console.error(`[hiring-plans] patch draft failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to update hiring plan draft" });
     }
   }));
 

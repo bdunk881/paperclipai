@@ -111,14 +111,14 @@ describe("POST /api/missions (HEL-23 create)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 when the statement exceeds 4000 characters", async () => {
+  it("returns 400 when the statement exceeds 50000 characters", async () => {
     const app = buildApp({
       sub: "user-1",
       workspaceId: "11111111-1111-4111-8111-111111111111",
     });
     const res = await request(app)
       .post("/api/missions")
-      .send({ statement: "a".repeat(4001) });
+      .send({ statement: "a".repeat(50_001) });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/too long/i);
   });
@@ -480,5 +480,33 @@ describe("teamAssemblyRequestFromMission", () => {
     expect(prompt).toContain("Cloud scheduler for industrial welding robots.");
     expect(prompt).toContain(baseMission.statement);
     expect(prompt).not.toContain("Own strategy, resource allocation");
+  });
+
+  // HEL-211 — owner-defined free-form context pills serialise into the
+  // team-assembly prompt as `${label}: ${value}` after the canonical
+  // fields. The prompt builder receives them via importedContextSummary
+  // so they sit beside the structured prompts (industry, runway, etc.).
+  it("serialises owner-defined customContext entries into the prompt", () => {
+    const request = teamAssemblyRequestFromMission({
+      ...baseMission,
+      metadata: {
+        industry: "Healthtech",
+        customContext: [
+          { label: "Compliance", value: "HIPAA + SOC 2 required" },
+          { label: "Geography", value: "US only for v1" },
+        ],
+      },
+    });
+
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Compliance: HIPAA + SOC 2 required",
+    );
+    expect(request.normalizedGoalDocument.importedContextSummary).toContain(
+      "Geography: US only for v1",
+    );
+
+    const prompt = buildTeamAssemblyPrompt(request);
+    expect(prompt).toContain("Compliance: HIPAA + SOC 2 required");
+    expect(prompt).toContain("Geography: US only for v1");
   });
 });

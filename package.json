@@ -17,15 +17,18 @@
     "validate:required-checks": "node scripts/validate-required-checks.js",
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts",
     "worker": "node dist/worker.js",
-    "worker:dev": "infisical run --env=dev -- ts-node src/worker.ts"
+    "worker:dev": "infisical run --env=dev -- ts-node src/worker.ts",
+    "skills:import": "ts-node --transpile-only scripts/import-skills.ts"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@anthropic-ai/sdk": "^0.94.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1034.0",
     "@google-cloud/vertexai": "^1.12.0",
     "@google/generative-ai": "^0.24.1",
     "@mistralai/mistralai": "^2.2.1",
     "@nicokaiser/passport-apple": "^3.3.0",
+    "@openai/agents": "^0.11.5",
     "@sentry/node": "^10.51.0",
     "@sentry/profiling-node": "^10.51.0",
     "@supabase/ssr": "^0.7.0",
@@ -33,7 +36,7 @@
     "@types/multer": "^2.1.0",
     "bullmq": "^5.76.8",
     "cors": "^2.8.6",
-    "express": "^4.18.2",
+    "express": "^4.22.2",
     "express-rate-limit": "^7.5.1",
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
@@ -48,7 +51,7 @@
     "pg": "^8.20.0",
     "stripe": "^21.0.1",
     "uuid": "^14.0.0",
-    "zod": "^3.22.4"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

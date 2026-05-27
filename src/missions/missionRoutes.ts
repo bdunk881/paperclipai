@@ -36,18 +36,21 @@ import {
   type TeamAssemblyResult,
 } from "../goals/teamAssembly";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
-import { resolveModelForTier } from "../engine/llmRouter";
 import { getProvider } from "../engine/llmProviders";
+import { listConnectorHealth } from "../connectors/health";
 import { computeHiringPlanCostCents } from "./hiringPlanCost";
 import { recordHiringPlanCost } from "./hiringPlanCostWriter";
 import { ensureUserProfileExists } from "../user/profileStore";
-import {
-  buildResolvedFromHostedFree,
-  getDefaultHostedFreeProvider,
-  resolveHostedFreeApiKey,
-} from "../hostedFreeModels/providers";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { registerMissionTeamRoutes } from "./missionTeamRoutes";
+import {
+  attachDefaultSelection,
+  type HiringPlanDraft,
+} from "./hiringPlanDraft";
+import { resolveHiringPlanLlm } from "./resolveHiringPlanLlm";
+
+/** Abuse guard — missions.statement is unbounded text in Postgres. */
+const MAX_STATEMENT_LENGTH = 50_000;
 
 export interface MissionRow {
   id: string;
@@ -61,12 +64,27 @@ export interface MissionRow {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * HEL-211 — owner-defined free-form context pills surfaced on the Hire page
+ * alongside the four canonical fields. Each entry is serialised into the
+ * team-assembly prompt as `${label}: ${value}` after the canonical
+ * fields so the LLM has the same weight of signal.
+ */
+export interface MissionCustomContextEntry {
+  label: string;
+  value: string;
+}
+
 export interface MissionMetadata {
   industry?: string;
   targetCustomer?: string;
   successMetric?: string;
   runway?: string;
+  customContext?: MissionCustomContextEntry[];
 }
+
+const MAX_CUSTOM_CONTEXT_ENTRIES = 12;
+const MAX_CUSTOM_CONTEXT_LABEL_LENGTH = 64;
 
 export interface MissionListItem {
   id: string;
@@ -79,7 +97,6 @@ export interface MissionListItem {
   latestHiringPlanId: string | null;
 }
 
-const MAX_STATEMENT_LENGTH = 4000;
 const MAX_METADATA_FIELD_LENGTH = 280;
 
 function trimMetadataField(value: unknown): string | undefined {
@@ -89,6 +106,36 @@ function trimMetadataField(value: unknown): string | undefined {
   return trimmed.length > MAX_METADATA_FIELD_LENGTH
     ? trimmed.slice(0, MAX_METADATA_FIELD_LENGTH)
     : trimmed;
+}
+
+function trimCustomContextLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > MAX_CUSTOM_CONTEXT_LABEL_LENGTH
+    ? trimmed.slice(0, MAX_CUSTOM_CONTEXT_LABEL_LENGTH)
+    : trimmed;
+}
+
+/**
+ * HEL-211 — coerce arbitrary input into a vetted list of owner-defined
+ * context entries. Drops entries with an empty label *or* value (both
+ * halves are load-bearing for the prompt template) and caps the list
+ * length so a malicious / runaway client can't blow up the prompt.
+ */
+function sanitizeCustomContext(input: unknown): MissionCustomContextEntry[] | undefined {
+  if (!Array.isArray(input)) return undefined;
+  const entries: MissionCustomContextEntry[] = [];
+  for (const raw of input) {
+    if (entries.length >= MAX_CUSTOM_CONTEXT_ENTRIES) break;
+    if (!raw || typeof raw !== "object") continue;
+    const candidate = raw as Record<string, unknown>;
+    const label = trimCustomContextLabel(candidate.label);
+    const value = trimMetadataField(candidate.value);
+    if (!label || !value) continue;
+    entries.push({ label, value });
+  }
+  return entries.length > 0 ? entries : undefined;
 }
 
 function sanitizeMetadata(input: unknown): MissionMetadata {
@@ -103,6 +150,8 @@ function sanitizeMetadata(input: unknown): MissionMetadata {
   if (successMetric) out.successMetric = successMetric;
   const runway = trimMetadataField(raw.runway);
   if (runway) out.runway = runway;
+  const customContext = sanitizeCustomContext(raw.customContext);
+  if (customContext) out.customContext = customContext;
   return out;
 }
 
@@ -182,7 +231,10 @@ async function loadMissionScopedToWorkspace(
  * should design roles from the goal. Other callers may pass a library
  * explicitly when they want vocabulary reference material.
  */
-export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssemblyRequest {
+export function teamAssemblyRequestFromMission(
+  mission: MissionRow,
+  connectedToolSlugs: string[] = [],
+): TeamAssemblyRequest {
   const metadata = sanitizeMetadata(mission.metadata);
 
   const constraints: string[] = [];
@@ -201,6 +253,14 @@ export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssembl
     summaryLines.push(`Success metric: ${metadata.successMetric}`);
   }
   if (metadata.runway) summaryLines.push(`Budget / runway: ${metadata.runway}`);
+  // HEL-211: serialise the owner-defined free-form pills after the
+  // canonical fields. Same `${label}: ${value}` shape so the LLM
+  // treats them with the same weight as the structured prompts.
+  if (metadata.customContext && metadata.customContext.length > 0) {
+    for (const entry of metadata.customContext) {
+      summaryLines.push(`${entry.label}: ${entry.value}`);
+    }
+  }
 
   return {
     companyName: mission.company_name ?? undefined,
@@ -216,6 +276,7 @@ export function teamAssemblyRequestFromMission(mission: MissionRow): TeamAssembl
       planReadinessThreshold: 0.6,
     },
     roleLibrary: [],
+    connectedToolSlugs,
   };
 }
 
@@ -223,7 +284,7 @@ async function persistHiringPlanDraft(
   pool: Pool,
   workspaceId: string,
   missionId: string,
-  draft: TeamAssemblyResult,
+  draft: HiringPlanDraft,
 ): Promise<string> {
   const id = randomUUID();
   await withWorkspaceContext(
@@ -797,40 +858,42 @@ export function createMissionRoutes(
       return;
     }
 
-    let resolved = await llmConfigStore.getDecryptedDefault(userId);
-    if (!resolved) {
-      const hostedFree = getDefaultHostedFreeProvider();
-      const hostedFreeKey = hostedFree ? resolveHostedFreeApiKey(hostedFree) : null;
-      if (hostedFree && hostedFreeKey) {
-        resolved = buildResolvedFromHostedFree(hostedFree, hostedFreeKey);
-      }
-    }
-    if (!resolved) {
+    const body = req.body as { llmConfigId?: unknown };
+    const requestedLlmConfigId =
+      typeof body?.llmConfigId === "string" && body.llmConfigId.trim().length > 0
+        ? body.llmConfigId.trim()
+        : undefined;
+
+    const llmChoice = await resolveHiringPlanLlm(userId, requestedLlmConfigId);
+    if (!llmChoice) {
       res.status(422).json({
-        error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
+        error: requestedLlmConfigId
+          ? "LLM configuration not found or unavailable. Choose a connected model in Settings."
+          : "No LLM provider configured. Go to Settings > LLM Providers to connect one.",
       });
       return;
     }
 
-    const assemblyModel = resolveModelForTier(resolved.config.provider, "power");
+    const { resolved, llmConfigId, assemblyModel } = llmChoice;
     const provider = getProvider({
       provider: resolved.config.provider,
       model: assemblyModel,
       apiKey: resolved.apiKey,
-      // Ask the provider for native JSON-mode output. The team-assembly
-      // prompt was the original trigger for the Mistral "Sure! Here's
-      // the plan:\n```json\n…```" 502 — switching to json_object mode
-      // forces clean JSON on every provider that supports it (OpenAI,
-      // Anthropic via forced tool-use, Mistral, Gemini, Groq, Fireworks,
-      // Together, xAI, DeepSeek, Perplexity, Ollama, LocalAI, OpenCode
-      // Zen). Providers without native mode (Bedrock, Vertex AI, Cohere)
-      // ignore the hint; the Tier 1 chatty-tolerant extractor catches
-      // their output downstream. The full zod schema still validates the
-      // shape after extraction, so type-safety is preserved.
       responseFormat: { type: "json_object" },
+      maxOutputTokens: 8192,
     });
 
-    const request = teamAssemblyRequestFromMission(mission);
+    let connectedToolSlugs: string[] = [];
+    try {
+      const health = await listConnectorHealth(userId);
+      connectedToolSlugs = health
+        .filter((record) => record.state === "healthy")
+        .map((record) => record.connectorKey);
+    } catch {
+      connectedToolSlugs = [];
+    }
+
+    const request = teamAssemblyRequestFromMission(mission, connectedToolSlugs);
     // HEL-74: wrap the LLM call so we can capture wall time + token usage
     // and emit a step_results row regardless of parse success/failure.
     //
@@ -901,9 +964,15 @@ export function createMissionRoutes(
     }
     const llmDurationMs = Date.now() - llmStartedAtMs;
 
-    let plan: TeamAssemblyResult;
+    let plan: HiringPlanDraft;
     try {
-      plan = parseTeamAssemblyResponse(rawText);
+      const parsed = parseTeamAssemblyResponse(rawText);
+      plan = attachDefaultSelection(parsed);
+      plan.generationMeta = {
+        provider: resolved.config.provider,
+        model: assemblyModel,
+        llmConfigId,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[missions] plan parse failed: ${msg}`);
@@ -977,10 +1046,255 @@ export function createMissionRoutes(
       schemaVersion: TEAM_ASSEMBLY_SCHEMA_VERSION,
       plan,
       costCents: costResult.costCents,
+      provider: resolved.config.provider,
+      model: assemblyModel,
+      llmConfigId,
+      promptTokens,
+      completionTokens,
     });
   }));
 
+  // ---------------------------------------------------------------------
+  // POST /api/missions/:missionId/complete — HEL-210
+  //
+  // Flags a mission as complete without tearing the team down. Optional
+  // `note` is appended to `missions.metadata.completionNote`. Returns
+  // 409 if the mission is already in a terminal state.
+  // ---------------------------------------------------------------------
+  router.post(
+    "/:missionId/complete",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+
+      const missionId = req.params.missionId;
+      if (!missionId || !UUID_RE.test(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const body = req.body as { note?: unknown };
+      const note =
+        typeof body?.note === "string" && body.note.trim().length > 0
+          ? body.note.trim().slice(0, 2000)
+          : null;
+
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) => {
+            const existing = await client.query<{
+              status: string;
+              metadata: MissionMetadata | null;
+            }>(
+              `SELECT m.status, m.metadata
+                 FROM missions m
+                 JOIN companies c ON c.id = m.company_id
+                WHERE m.id = $1 AND c.workspace_id = $2
+                LIMIT 1`,
+              [missionId, workspaceId],
+            );
+            if (existing.rows.length === 0) {
+              throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+            }
+            const current = existing.rows[0];
+            if (current.status === "completed" || current.status === "archived") {
+              throw Object.assign(
+                new Error("Mission already terminal."),
+                { code: "ALREADY_TERMINAL" },
+              );
+            }
+            const nextMetadata: Record<string, unknown> = {
+              ...(current.metadata ?? {}),
+            };
+            if (note) nextMetadata.completionNote = note;
+            nextMetadata.completedAt = new Date().toISOString();
+            const updated = await client.query<{
+              status: string;
+              completed_at: string;
+            }>(
+              `UPDATE missions
+                  SET status = 'completed',
+                      metadata = $1::jsonb
+                WHERE id = $2
+                RETURNING status, (metadata->>'completedAt') AS completed_at`,
+              [JSON.stringify(nextMetadata), missionId],
+            );
+            return updated.rows[0];
+          },
+        );
+        res.status(200).json({
+          id: missionId,
+          status: result.status,
+          completedAt: result.completed_at,
+        });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "NOT_FOUND") {
+          res.status(404).json({ error: "Mission not found" });
+          return;
+        }
+        if (code === "ALREADY_TERMINAL") {
+          res.status(409).json({ error: (err as Error).message });
+          return;
+        }
+        console.error(`[missions] complete failed: ${(err as Error).message}`);
+        Sentry.captureException(err, {
+          tags: { route: "POST /api/missions/:missionId/complete" },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        res.status(500).json({ error: "Failed to complete mission" });
+      }
+    }),
+  );
+
+  // ---------------------------------------------------------------------
+  // POST /api/missions/:missionId/stop — HEL-210
+  //
+  // Terminates open assignments + archives the mission. Idempotent.
+  // ---------------------------------------------------------------------
+  router.post(
+    "/:missionId/stop",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+
+      const missionId = req.params.missionId;
+      if (!missionId || !UUID_RE.test(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) => {
+            const own = await client.query<{ id: string; company_id: string }>(
+              `SELECT m.id, m.company_id
+                 FROM missions m
+                 JOIN companies c ON c.id = m.company_id
+                WHERE m.id = $1 AND c.workspace_id = $2
+                LIMIT 1`,
+              [missionId, workspaceId],
+            );
+            if (own.rows.length === 0) {
+              throw Object.assign(new Error("Mission not found"), { code: "NOT_FOUND" });
+            }
+            const companyId = own.rows[0].company_id;
+            const agentRows = await client.query<{
+              id: string;
+              metadata: unknown;
+              company_id: string;
+              status: string;
+            }>(
+              `SELECT id, metadata, company_id, status
+                 FROM agents
+                WHERE workspace_id = $1
+                  AND status <> 'terminated'`,
+              [workspaceId],
+            );
+            const agentIds = agentRows.rows
+              .filter((row) => {
+                if (row.status === "terminated") return false;
+                const meta =
+                  row.metadata && typeof row.metadata === "object"
+                    ? (row.metadata as Record<string, unknown>)
+                    : {};
+                if (meta.missionId === missionId) return true;
+                return row.company_id === companyId;
+              })
+              .map((row) => row.id);
+
+            if (agentIds.length > 0) {
+              await client.query(
+                `UPDATE agents
+                    SET status = 'terminated', updated_at = NOW()
+                  WHERE id = ANY($1::uuid[])`,
+                [agentIds],
+              );
+              await client.query(
+                `DELETE FROM org_edges
+                  WHERE workspace_id = $1
+                    AND (manager_agent_id = ANY($2::uuid[]) OR agent_id = ANY($2::uuid[]))`,
+                [workspaceId, agentIds],
+              );
+              await client.query(
+                `UPDATE agents
+                    SET reporting_to_agent_id = NULL
+                  WHERE id = ANY($1::uuid[])`,
+                [agentIds],
+              );
+            }
+
+            await client.query(
+              `UPDATE missions SET status = 'stopped' WHERE id = $1`,
+              [missionId],
+            );
+
+            return { terminatedAgentCount: agentIds.length };
+          },
+        );
+
+        res.status(200).json({
+          id: missionId,
+          status: "stopped",
+          terminatedAgentCount: result.terminatedAgentCount,
+        });
+      } catch (err) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code === "NOT_FOUND") {
+          res.status(404).json({ error: "Mission not found" });
+          return;
+        }
+        console.error(`[missions] stop failed: ${(err as Error).message}`);
+        Sentry.captureException(err, {
+          tags: { route: "POST /api/missions/:missionId/stop" },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        res.status(500).json({ error: "Failed to stop mission" });
+      }
+    }),
+  );
+
   registerMissionTeamRoutes(router, pool);
+
+  // -------------------------------------------------------------------------
+  // HEL-214 / PR J scaffold — POST /api/missions/:missionId/team-assembly/sandbox
+  //
+  // TODO: HEL-214 wire real implementation. Pro Mode's MissionPromptEditor
+  // re-runs team assembly with a hand-edited prompt; today we return a
+  // synthetic plan so the UI flow is reviewable.
+  // -------------------------------------------------------------------------
+  router.post(
+    "/:missionId/team-assembly/sandbox",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const body = (req.body ?? {}) as { prompt?: unknown };
+      const prompt =
+        typeof body.prompt === "string" ? body.prompt : "<no prompt>";
+      res.status(200).json({
+        missionId: req.params.missionId,
+        echoedPrompt: prompt,
+        plan: {
+          roles: [
+            { roleKey: "founder", title: "Founder", reportsTo: null },
+            { roleKey: "marketing_lead", title: "Marketing Lead", reportsTo: "founder" },
+            { roleKey: "growth_associate", title: "Growth Associate", reportsTo: "marketing_lead" },
+          ],
+          rationale: "Scaffold plan. Real implementation arrives in a follow-up.",
+        },
+      });
+    }),
+  );
 
   return router;
 }

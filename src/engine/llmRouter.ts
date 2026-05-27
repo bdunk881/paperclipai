@@ -114,6 +114,14 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     standard: "big-pickle",
     power: "big-pickle",
   },
+  openrouter: {
+    // OpenRouter is selected by the credits router based on the
+    // upstream provider+model — these slugs are the launch defaults
+    // when a BYOK caller somehow lands on openrouter directly.
+    lite: "anthropic/claude-haiku-4.5",
+    standard: "anthropic/claude-sonnet-4.6",
+    power: "anthropic/claude-opus-4.7",
+  },
 };
 
 // ---------------------------------------------------------------------------

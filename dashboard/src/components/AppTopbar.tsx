@@ -8,10 +8,13 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { CircleHelp, Inbox, Plus, Search, X } from "lucide-react";
+import { CircleHelp, Plus, Search, X } from "lucide-react";
+import { NotificationCenter } from "./notifications/NotificationCenter";
 import * as Sentry from "@sentry/react";
 import { useAuth } from "../context/AuthContext";
+import { useExperienceMode } from "../context/ExperienceModeContext";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
+import { Af2UserMenu } from "./Af2UserMenu";
 import { searchEntities, type GlobalSearchResult } from "../api/searchApi";
 
 // AppTopbar - v2 chrome strap that sits across the top of the authenticated
@@ -27,8 +30,13 @@ type AppTopbarProps = {
 export function AppTopbar({ leading }: AppTopbarProps = {}) {
   const navigate = useNavigate();
   const { user, requireAccessToken } = useAuth();
+  const { mode: experienceMode, setMode: setExperienceMode } = useExperienceMode();
   const searchLaunchRef = useRef<HTMLButtonElement | null>(null);
   const paletteInputRef = useRef<HTMLInputElement | null>(null);
+  // HEL-213 PR I: anchor refs + open state for the user-avatar dropdown.
+  const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [userMenuAnchor, setUserMenuAnchor] = useState<DOMRect | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GlobalSearchResult[]>([]);
@@ -226,15 +234,8 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         <span className="hidden sm:inline">New mission</span>
       </Link>
 
-      <button
-        type="button"
-        onClick={() => navigate("/approvals")}
-        title="Inbox - Approvals"
-        aria-label="Inbox - Approvals"
-        className="flex h-10 w-10 items-center justify-center rounded-lg text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
-      >
-        <Inbox size={16} />
-      </button>
+      <NotificationCenter />
+
 
       <button
         type="button"
@@ -246,14 +247,51 @@ export function AppTopbar({ leading }: AppTopbarProps = {}) {
         <CircleHelp size={16} />
       </button>
 
-      <Link
-        to="/settings/profile"
+      {/* HEL-203 PR 1: Pro/Simple experience toggle sits inline with the
+          avatar. Persisted via ExperienceModeContext → PATCH /api/user-
+          profile/preferences. Visual is intentionally compact — the
+          dashboard's main density signal is the toggle pill itself. */}
+      <button
+        type="button"
+        onClick={() => setExperienceMode(experienceMode === "pro" ? "simple" : "pro")}
+        title={experienceMode === "pro" ? "Switch to Simple mode" : "Switch to Pro mode"}
+        aria-pressed={experienceMode === "pro"}
+        aria-label="Toggle Pro mode"
+        className={`hidden h-8 items-center rounded-full border px-3 text-[11px] font-semibold uppercase tracking-wide transition sm:inline-flex ${
+          experienceMode === "pro"
+            ? "border-af2-ink bg-af2-ink text-af2-paper"
+            : "border-af2-line bg-af2-paper-2 text-af2-ink-3 hover:text-af2-ink"
+        }`}
+      >
+        Pro
+      </button>
+
+      {/* HEL-213 PR I: avatar opens the Af2UserMenu dropdown (Account /
+          Members / Billing / Sign out). The previous /settings/profile
+          link still works via redirect from the router so existing
+          bookmarks keep landing somewhere useful. */}
+      <button
+        ref={avatarButtonRef}
+        type="button"
+        onClick={() => {
+          const rect = avatarButtonRef.current?.getBoundingClientRect() ?? null;
+          setUserMenuAnchor(rect);
+          setUserMenuOpen((open) => !open);
+        }}
+        aria-haspopup="menu"
+        aria-expanded={userMenuOpen}
         title={user?.name ?? user?.email ?? "Profile"}
-        aria-label="Open profile settings"
+        aria-label="Open user menu"
         className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-af2-clay to-af2-mustard text-[11px] font-bold uppercase text-white"
       >
         {initials}
-      </Link>
+      </button>
+
+      <Af2UserMenu
+        open={userMenuOpen}
+        onClose={() => setUserMenuOpen(false)}
+        anchorRect={userMenuAnchor}
+      />
 
       {searchOpen ? (
         <div

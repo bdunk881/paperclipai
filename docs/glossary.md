@@ -16,7 +16,6 @@ internal surfaces. The original rename from the legacy `control_plane_*` /
 | Mission | `missions` | 022 (metadata in 032) | Free-text statement of what the company is trying to do; drives team generation. |
 | Hiring plan | `hiring_plans` | 022 | LLM-generated draft team structure awaiting human approval. |
 | Agent | `agents` | 015 / 021 | Persistent named worker (role, model tier, tools, budget). |
-| Agent assignment | `agent_assignments` | 031 | Agent ↔ mission/team mapping. |
 | Org edge | `org_edges` | 031 | Manager → report graph between agents. |
 | Agent team | `agent_teams` | 015 / 021 | Named group of agents executing one workflow. |
 | Routine | `routines` | 023 | Scheduled or triggered run definition for a workflow. |

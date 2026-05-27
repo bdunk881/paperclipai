@@ -5,6 +5,29 @@
  * All external SDK calls are mocked — no real HTTP requests are made.
  */
 
+// Mistral, Gemini, Bedrock, and Vertex SDKs are mocked at the module
+// level so importing the registry — which transitively imports every
+// adapter — doesn't drag ESM-only payloads through Jest's default
+// CJS transformer.
+jest.mock("@mistralai/mistralai", () => ({
+  __esModule: true,
+  Mistral: jest.fn(),
+}));
+jest.mock("@google/generative-ai", () => ({
+  __esModule: true,
+  GoogleGenerativeAI: jest.fn(),
+}));
+jest.mock("@google-cloud/vertexai", () => ({
+  __esModule: true,
+  VertexAI: jest.fn(),
+}));
+jest.mock("@aws-sdk/client-bedrock-runtime", () => ({
+  __esModule: true,
+  BedrockRuntimeClient: jest.fn(),
+  ConverseCommand: jest.fn(),
+  ConverseStreamCommand: jest.fn(),
+}));
+
 import { getProviderAdapter, getSupportedAdapterProviders } from "./index";
 
 // ---------------------------------------------------------------------------
@@ -72,13 +95,35 @@ describe("provider adapter registry (HEL-82)", () => {
     expect(typeof adapter.invoke).toBe("function");
   });
 
-  it("throws a clear error for unimplemented providers (e.g., gemini in v1)", () => {
-    expect(() => getProviderAdapter("gemini")).toThrow(/not implemented.*v1/);
+  it("returns a working adapter for every wired provider (HEL-224 closed the cohere + long-tail gap)", () => {
+    // Spot-check the providers that were previously throwing.
+    expect(getProviderAdapter("cohere").provider).toBe("cohere");
+    expect(getProviderAdapter("groq").provider).toBe("groq");
+    expect(getProviderAdapter("xai").provider).toBe("xai");
   });
 
-  it("lists the v1 supported providers", () => {
+  it("lists every wired provider", () => {
     const supported = getSupportedAdapterProviders().sort();
-    expect(supported).toEqual(["anthropic", "openai"]);
+    expect(supported).toEqual(
+      expect.arrayContaining([
+        "anthropic",
+        "bedrock",
+        "cohere",
+        "deepseek",
+        "fireworks",
+        "gemini",
+        "groq",
+        "localai",
+        "mistral",
+        "ollama",
+        "opencode_zen",
+        "openai",
+        "perplexity",
+        "together",
+        "vertex-ai",
+        "xai",
+      ]),
+    );
   });
 
   it("Anthropic adapter refuses to invoke without an API key", async () => {

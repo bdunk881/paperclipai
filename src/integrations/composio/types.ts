@@ -28,7 +28,7 @@ export interface ComposioCredentialPublic {
 }
 
 export interface ComposioConnectionHealth {
-  status: "ok" | "degraded" | "down";
+  status: "ok" | "degraded" | "down" | "disabled";
   checkedAt: string;
   authMethod?: ComposioAuthMethod;
   tokenRefreshStatus?: "not_applicable";

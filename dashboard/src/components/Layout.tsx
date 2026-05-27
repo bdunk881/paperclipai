@@ -4,17 +4,13 @@ import {
   Home,
   Target,
   Stamp,
-  MessageSquare,
-  Activity,
   ClipboardList,
+  Plug,
+  BookOpen,
+  Brain,
   Users,
   UserPlus,
   Wallet,
-  Wand2,
-  BookOpen,
-  Plug,
-  Sparkles,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -26,12 +22,16 @@ import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
 import { AppTopbar } from "./AppTopbar";
 import { OnboardingTour } from "./OnboardingTour";
+import { RunTray } from "./RunTray";
+import { CommandPalette } from "./CommandPalette";
+import { CommandPaletteProvider } from "../context/CommandPaletteContext";
 
-// v2 four-pillar IA (HEL-31). Labels follow the v2 design (`docs/design/v2/data.jsx`,
-// `docs/design/v2/shell.jsx`); routes map to existing dashboard pages until the
-// per-page restyle work in HEL-32 lands. New v2-native pages (Hire intake,
-// Studio, Library) are tracked separately and will replace these route fallbacks
-// when they ship.
+// v2 consolidation IA (3 pillars). Mirrors the final plan at
+// `docs/design/v2/preview/consolidation.html`:
+//   Run       – live work surfaces (orders, queues, scopes, knowledge)
+//   Workforce – the people side (team, hiring, money)
+//   Build     – authoring (routines list; Studio opens inline from a row click)
+// Account / Members / Billing live in the topbar avatar dropdown, NOT here.
 type NavItem = {
   to: string;
   icon: ElementType;
@@ -45,27 +45,23 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { to: "/", icon: Home, label: "Home", end: true },
       { to: "/mission-state", icon: Target, label: "Missions" },
-      // DASH-9: lift Mission Assignments to a top-level Run nav entry.
-      // Previously it was only reachable via cross-link from Approvals,
-      // which made the queue feel buried (and broke the natural flow
-      // of "mission → deploy → assign work").
-      {
-        to: "/mission-assignments",
-        icon: ClipboardList,
-        label: "Assignments",
-      },
+      // HEL-204: Mission Assignments is the dispatch queue (formerly /tickets).
+      // Activity is absorbed as a sub-tab on this page; no separate entry.
+      { to: "/mission-assignments", icon: ClipboardList, label: "Assignments" },
+      // HEL-204: Escalations are merged into Approvals as inline cards in the
+      // Queue sub-tab; the standalone /escalations route redirects here.
       { to: "/approvals", icon: Stamp, label: "Approvals" },
-      // DASH-46: Ask-the-CEO escalation log.
-      { to: "/escalations", icon: MessageSquare, label: "Escalations" },
-      { to: "/agents/activity", icon: Activity, label: "Activity" },
+      // HEL-205: single Connections hub absorbs the v1 Integrations + Models
+      // + MCP entries that used to live in a separate "Connect" pillar.
+      { to: "/connections", icon: Plug, label: "Connections" },
+      // HEL-207: scope-aware Memory page (Instructions / Knowledge / Episodes).
+      { to: "/memory", icon: Brain, label: "Memory" },
     ],
   },
   {
     title: "Workforce",
     items: [
       { to: "/workspace/org-structure", icon: Users, label: "Team" },
-      // HEL-23: Hire = mission intake (`/hire` → Hire.tsx). AgentCatalog
-      // (`/agents`) is reachable from the Build > Library entry below.
       { to: "/hire", icon: UserPlus, label: "Hire" },
       { to: "/workspace/budget-dashboard", icon: Wallet, label: "Budget" },
     ],
@@ -73,16 +69,10 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
   {
     title: "Build",
     items: [
-      { to: "/builder", icon: Wand2, label: "Studio" },
-      { to: "/templates", icon: BookOpen, label: "Library" },
-    ],
-  },
-  {
-    title: "Connect",
-    items: [
-      { to: "/integrations/mcp", icon: Plug, label: "Integrations" },
-      { to: "/settings/llm-providers", icon: Sparkles, label: "Models" },
-      { to: "/settings", icon: Settings, label: "Settings", end: true },
+      // HEL-208 / PR E: Routines is the only Build entry. Studio launches
+      // inline via the "Launch in Studio →" action on a Mine row, not from
+      // a standalone sidebar shortcut.
+      { to: "/routines", icon: BookOpen, label: "Routines" },
     ],
   },
 ] as const;
@@ -208,6 +198,7 @@ export default function Layout() {
   );
 
   return (
+    <CommandPaletteProvider>
     <div className="flex h-screen flex-col bg-af2-paper text-af2-ink transition-colors duration-200">
       {isNavigating ? (
         <div
@@ -284,6 +275,16 @@ export default function Layout() {
       {/* DASH-17: anchored first-visit tour. Self-gates on a
           localStorage flag so it never reappears after dismissal. */}
       <OnboardingTour />
+
+      {/* Bottom-right floating tray of in-flight runs. Server-driven via
+          /api/runs/in-flight + the routines SSE stream; auto-hides when
+          there's nothing to show. */}
+      <RunTray />
+
+      {/* ⌘K command palette. Mount once per app shell; page components
+          register their own actions via useRegisterCommandActions(). */}
+      <CommandPalette />
     </div>
+    </CommandPaletteProvider>
   );
 }

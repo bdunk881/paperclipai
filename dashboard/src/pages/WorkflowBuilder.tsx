@@ -45,9 +45,13 @@ import {
   type Node,
   type NodeProps,
   type NodeTypes,
+  type ReactFlowInstance,
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
+// HEL-214 / PR J: Pro Mode actionable reveal.
+import { ProReveal } from "../components/pro/ProReveal";
+import { StepDebugger } from "../components/pro/StepDebugger";
 import {
   createTemplate,
   deployWorkflowAsTeam,
@@ -87,13 +91,20 @@ import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { StepSetupCoach, buildStepSetupContext } from "../components/workflow/StepSetupCoach";
 import { WorkflowNextStepsStrip } from "../components/workflow/WorkflowNextStepsStrip";
-import { WorkflowSetupChecklistPanel } from "../components/workflow/WorkflowSetupChecklistPanel";
+import {
+  WorkflowSetupChecklistPanel,
+  GuidedSetupCards,
+} from "../components/workflow/WorkflowSetupChecklistPanel";
 import {
   getWorkflowSuggestedNextSteps,
   validateCronExpression,
   validateIntervalMinutes,
+  STEP_KIND_COPY,
+  STEP_PALETTE_SECTIONS,
   type SuggestedNextStep,
 } from "./workflowStepSetup";
+import { StudioAssistantPanel } from "../components/workflow/StudioAssistantPanel";
+import { LaunchTeamModal } from "../components/workflow/LaunchTeamModal";
 import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
 
 const KIND_META: Record<
@@ -469,6 +480,11 @@ export default function WorkflowBuilder() {
   const [showHelp, setShowHelp] = useState(false);
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [showCopilot, setShowCopilot] = useState(Boolean(incomingState?.copilotPrompt));
+  // HEL-209: merged Studio assistant panel (Build · Ask · Fix step).
+  // Toggled by the same PanelRightOpen/Close icons that used to open the
+  // legacy Copilot — the new panel absorbs both Copilot and the
+  // "Generate with AI" modal so operators only have one place to ask.
+  const [studioAssistantOpen, setStudioAssistantOpen] = useState(false);
   const [deployBusy, setDeployBusy] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
   const [latestDeployment, setLatestDeployment] = useState<ControlPlaneDeployment | null>(null);
@@ -522,6 +538,13 @@ export default function WorkflowBuilder() {
   const [canonicalWorkflowId, setCanonicalWorkflowId] = useState<string | null>(null);
   const studioHeaderRef = useRef<HTMLDivElement | null>(null);
   const [studioHeaderHeight, setStudioHeaderHeight] = useState(0);
+  // Palette → canvas drag-drop (HTML5 DnD). The palette button sets a kind
+  // on dataTransfer; the canvas wrapper reads it on drop and uses xyflow's
+  // screenToFlowPosition() so the new step lands where the cursor released.
+  const reactFlowInstanceRef = useRef<ReactFlowInstance<WorkflowFlowNode, Edge> | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [paletteDragKind, setPaletteDragKind] = useState<StepKind | null>(null);
+  const [canvasDropActive, setCanvasDropActive] = useState(false);
   const workflowStudioStyle = useMemo(
     () =>
       ({
@@ -901,15 +924,17 @@ export default function WorkflowBuilder() {
     }));
   }, [copilotInput, template.steps]);
 
-  function addStep(kind: StepKind) {
+  function addStep(kind: StepKind, dropPosition?: XYPosition) {
     const newStepId = "step-" + Date.now();
     let autoLinkError: string | null = null;
     setTemplate((t) => {
       const nextIndex = t.steps.length;
-      const defaultPosition = {
-        x: FLOW_STEP_X,
-        y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
-      };
+      const defaultPosition = dropPosition
+        ? { x: Math.round(dropPosition.x), y: Math.round(dropPosition.y) }
+        : {
+            x: FLOW_STEP_X,
+            y: FLOW_STEP_Y + nextIndex * FLOW_STEP_GAP_Y,
+          };
       const newStep = buildDefaultStep(kind, newStepId, defaultPosition);
       const nextSteps = [...t.steps, newStep];
       if (nextSteps.length < 2) {
@@ -1047,7 +1072,10 @@ export default function WorkflowBuilder() {
         template,
         flowEdges,
         llmConfigs,
-        (kind) => KIND_META[kind]?.label ?? kind
+        // HEL-209: surface the operator-friendly display label so
+        // readiness items and coach copy speak the same language as the
+        // palette/inspector.
+        (kind) => STEP_KIND_COPY[kind]?.displayLabel ?? KIND_META[kind]?.label ?? kind
       ),
     [template, flowEdges, llmConfigs]
   );
@@ -1336,7 +1364,9 @@ export default function WorkflowBuilder() {
           an item adds that step kind via the same `addStep` handler the
           inline AddStepMenu uses. Hidden in builder pop-out (?popout=1)
           so the canvas can go full-bleed. */}
-      {!isBuilderPopout && <StudioPalette onAdd={addStep} />}
+      {!isBuilderPopout && (
+        <StudioPalette onAdd={addStep} onDragKind={setPaletteDragKind} />
+      )}
 
       {/* Left panel — canvas */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -1498,6 +1528,24 @@ export default function WorkflowBuilder() {
                 Pro mode {proMode ? "ON" : "OFF"}
               </button>
             </Tooltip>
+            {/* HEL-209: new merged Studio assistant. The old Copilot
+                button is kept alongside so existing test selectors keep
+                working; the legacy sidebar will retire when the assistant
+                fully covers Copilot's use cases. */}
+            <button
+              type="button"
+              onClick={() => setStudioAssistantOpen((open) => !open)}
+              className="af2-btn af2-btn-sm"
+              aria-label="Toggle Studio assistant"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              {studioAssistantOpen ? (
+                <PanelRightClose size={14} />
+              ) : (
+                <PanelRightOpen size={14} />
+              )}
+              Studio assistant
+            </button>
             <button
               type="button"
               onClick={() => setShowCopilot((open) => !open)}
@@ -1560,7 +1608,7 @@ export default function WorkflowBuilder() {
               }}
             >
               {deployBusy ? <Loader size={14} className="animate-spin" /> : <Send size={14} />}
-              Deploy as Team
+              Launch team
             </button>
             <button
               type="button"
@@ -1618,7 +1666,49 @@ export default function WorkflowBuilder() {
         {/* Canvas — HEL-100 v2: paper-2 surface with the existing dot
             grid (Background gap=20) matches docs/design/v2/styles.css
             (radial-gradient over var(--af2-paper-2)). */}
-        <div className="relative flex-1 overflow-hidden bg-af2-paper-2">
+        <div
+          ref={canvasWrapperRef}
+          className={clsx(
+            "relative flex-1 overflow-hidden bg-af2-paper-2 transition-colors",
+            canvasDropActive &&
+              "ring-2 ring-inset ring-af2-clay/40 bg-af2-clay-soft/20",
+          )}
+          onDragOver={(e) => {
+            if (!paletteDragKind && !e.dataTransfer.types.includes("application/x-autoflow-step")) {
+              return;
+            }
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!canvasDropActive) setCanvasDropActive(true);
+          }}
+          onDragLeave={(e) => {
+            // Only clear when the pointer leaves the wrapper itself, not a child.
+            if (e.currentTarget === e.target) setCanvasDropActive(false);
+          }}
+          onDrop={(e) => {
+            const kind =
+              (e.dataTransfer.getData("application/x-autoflow-step") as StepKind) ||
+              paletteDragKind;
+            setCanvasDropActive(false);
+            setPaletteDragKind(null);
+            if (!kind) return;
+            e.preventDefault();
+            const instance = reactFlowInstanceRef.current;
+            const wrapper = canvasWrapperRef.current;
+            if (instance && wrapper) {
+              const rect = wrapper.getBoundingClientRect();
+              const position = instance.screenToFlowPosition({
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+              });
+              // Nudge left/up by half a node so the cursor lands at the
+              // visual center rather than the top-left corner.
+              addStep(kind, { x: position.x - 110, y: position.y - 36 });
+            } else {
+              addStep(kind);
+            }
+          }}
+        >
           {template.steps.length === 0 ? (
             <EmptyCanvas onAdd={addStep} templates={allTemplates} />
           ) : (
@@ -1632,6 +1722,10 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
+                onInit={(instance) =>
+                  (reactFlowInstanceRef.current =
+                    instance as ReactFlowInstance<WorkflowFlowNode, Edge>)
+                }
                 onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
                 onPaneClick={() => setSelectedStepId(null)}
                 onConnect={handleConnect}
@@ -1713,6 +1807,21 @@ export default function WorkflowBuilder() {
           onModelChange={setCopilotModel}
           references={copilotReferences}
           liveMessage={copilotLiveMessage}
+        />
+      )}
+
+      {/* HEL-209: Studio assistant — merged Build/Ask/Fix-step panel that
+          absorbs the old Copilot + Generate-with-AI flows. Lives next to
+          the canvas; toggled via the Studio assistant button in the
+          header. */}
+      {studioAssistantOpen && (
+        <StudioAssistantPanel
+          selectedStep={selectedStep}
+          onClose={() => setStudioAssistantOpen(false)}
+          onApplyGeneratedSteps={(steps) => {
+            setTemplate((t) => ({ ...t, steps }));
+            setStudioAssistantOpen(false);
+          }}
         />
       )}
 
@@ -1800,6 +1909,18 @@ export default function WorkflowBuilder() {
             id={proMode ? "pro-inspector-panel-inspector" : undefined}
             role={proMode ? "tabpanel" : undefined}
           >
+            {/* HEL-209: guided per-kind inspector cards. Rendered above the
+                shared StepSetupCoach so operators get kind-specific UI
+                (file-type chips, LLM tier + model dropdowns, rule
+                builder, etc.) instead of falling back to the generic
+                Description textarea. */}
+            <div className="px-4 pt-4">
+              <GuidedSetupCards
+                step={selectedStep}
+                readonly={isReadonlyBuilder}
+                onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
+              />
+            </div>
             <StepSetupCoach
               step={selectedStep}
               setupContext={stepSetupContext}
@@ -2110,11 +2231,18 @@ export default function WorkflowBuilder() {
       )}
 
       {showDeployModal && (
-        <DeployAsTeamModal
+        <LaunchTeamModal
           template={template}
           busy={deployBusy}
+          error={deployError}
           onClose={() => setShowDeployModal(false)}
-          onDeploy={handleDeployTeam}
+          onDeploy={async (payload) => {
+            await handleDeployTeam({
+              teamName: payload.teamName ?? `${template.name} Team`,
+              budgetMonthlyUsd: payload.budgetMonthlyUsd,
+              defaultIntervalMinutes: payload.defaultIntervalMinutes,
+            });
+          }}
         />
       )}
 
@@ -2136,6 +2264,12 @@ export default function WorkflowBuilder() {
           onClose={() => setDiffTargetVersionId(null)}
         />
       )}
+      <ProReveal
+        label="Step debugger"
+        description="Run the routine paused, inspect IO, mutate, and resume."
+      >
+        <StepDebugger />
+      </ProReveal>
     </div>
   );
 }
@@ -3104,36 +3238,30 @@ function formatRunMs(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-// HEL-100 v2 left rail. Mirrors docs/design/v2/studio.jsx::AF2_Studio
-// — three sections (Triggers / Tools / Logic), each item clickable.
-// Sections are derived from KIND_META so adding a new StepKind there
-// flows through here (after assigning it to a section below).
-const STUDIO_PALETTE_SECTIONS: Array<{
-  title: string;
-  kinds: StepKind[];
-}> = [
-  {
-    title: "Triggers",
-    kinds: ["trigger", "cron_trigger", "interval_trigger", "file_trigger"],
-  },
-  {
-    title: "Tools",
-    kinds: ["llm", "transform", "action", "mcp", "agent"],
-  },
-  {
-    title: "Logic",
-    kinds: ["condition", "approval", "output"],
-  },
-];
-
-function StudioPalette({ onAdd }: { onAdd: (kind: StepKind) => void }) {
+// HEL-209 / PR E.2 left rail. Three sections — "When to start" /
+// "What to do" / "Control flow" — pulled from `STEP_PALETTE_SECTIONS` in
+// `workflowStepSetup.ts`. Items now show the operator-friendly display
+// label + a one-line subtitle so first-time users understand what each
+// kind actually does without opening it. The underlying `StepKind` enum
+// is unchanged — `stepHandlers.ts` is untouched.
+//
+// Drag-from-palette: each item is draggable and sets the kind on
+// dataTransfer + paletteDragKind. The canvas wrapper reads either and
+// drops a node at the cursor via xyflow's screenToFlowPosition.
+function StudioPalette({
+  onAdd,
+  onDragKind,
+}: {
+  onAdd: (kind: StepKind) => void;
+  onDragKind: (kind: StepKind | null) => void;
+}) {
   return (
     <aside
       data-testid="studio-palette"
       aria-label="Node palette"
       className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-af2-line bg-af2-paper px-4 py-5 lg:flex"
     >
-      {STUDIO_PALETTE_SECTIONS.map((section) => (
+      {STEP_PALETTE_SECTIONS.map((section) => (
         <div key={section.title}>
           <p
             className="af2-eyebrow"
@@ -3151,24 +3279,43 @@ function StudioPalette({ onAdd }: { onAdd: (kind: StepKind) => void }) {
           <ul className="space-y-1.5" role="list">
             {section.kinds.map((kind) => {
               const meta = KIND_META[kind];
+              const copy = STEP_KIND_COPY[kind];
               return (
                 <li key={kind}>
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "copy";
+                      e.dataTransfer.setData("application/x-autoflow-step", kind);
+                      onDragKind(kind);
+                    }}
+                    onDragEnd={() => onDragKind(null)}
                     onClick={() => onAdd(kind)}
-                    aria-label={`Add ${meta.label} step`}
-                    className="flex w-full items-center gap-2.5 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-left text-[13px] text-af2-ink-2 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
+                    aria-label={`Add ${copy.displayLabel} step`}
+                    title="Click to add, or drag onto the canvas"
+                    className="flex w-full items-start gap-2.5 rounded-lg border border-af2-line bg-af2-card px-3 py-2 text-left text-[13px] text-af2-ink-2 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink active:cursor-grabbing cursor-grab"
                   >
                     <span
                       className={clsx(
-                        "flex h-6 w-6 items-center justify-center rounded border",
+                        "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded border",
                         meta.chipBg,
                         meta.chipColor,
                       )}
                     >
                       {meta.icon}
                     </span>
-                    <span className="truncate">{meta.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-semibold text-af2-ink">
+                        {copy.displayLabel}
+                      </span>
+                      <span
+                        className="mt-0.5 block text-[11px] leading-snug text-af2-ink-4"
+                        style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                      >
+                        {copy.subtitle}
+                      </span>
+                    </span>
                   </button>
                 </li>
               );
@@ -3206,8 +3353,13 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
               key={kind}
               onClick={() => { onAdd(kind); setOpen(false); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left rounded-lg hover:bg-af2-paper-2 transition text-af2-ink-2"
+              title={STEP_KIND_COPY[kind].displayLabel}
             >
               <span className={clsx("rounded p-1", meta.chipBg, meta.chipColor)}>{meta.icon}</span>
+              {/* HEL-209: keep the engine-level label here for the empty-
+                  canvas fallback menu so existing tests + muscle memory
+                  hold. The Studio palette + canvas surface the new
+                  display labels. */}
               {meta.label}
             </button>
           ))}
@@ -4010,200 +4162,6 @@ function Field({
   );
 }
 
-function DeployAsTeamModal({
-  template,
-  busy,
-  onClose,
-  onDeploy,
-}: {
-  template: WorkflowTemplate;
-  busy: boolean;
-  onClose: () => void;
-  onDeploy: (input: {
-    teamName: string;
-    budgetMonthlyUsd?: number;
-    defaultIntervalMinutes?: number;
-  }) => Promise<void>;
-}) {
-  const actionableSteps = template.steps.filter(
-    (step) => !["trigger", "output", "file_trigger"].includes(step.kind)
-  );
-  const [teamName, setTeamName] = useState(`${template.name} Team`);
-  const [budgetMonthlyUsd, setBudgetMonthlyUsd] = useState(120);
-  const [defaultIntervalMinutes, setDefaultIntervalMinutes] = useState(30);
-
-  // HEL-100 v2: DeployAsTeamModal restyle. Drops the slate-* + bg-white
-  // chrome for af2 tokens (paper / card / ink / line) so the modal
-  // matches the rest of the v2 paper aesthetic. Behaviour and layout
-  // unchanged.
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-af2-ink/55 backdrop-blur-[2px] px-4">
-      <div className="af2-card max-h-[90vh] w-full max-w-4xl overflow-hidden shadow-af2-lg">
-        <div className="flex items-center justify-between border-b border-af2-line px-6 py-5">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-af2-sage">
-              Deploy as Team
-            </p>
-            <h2 className="font-af2-serif mt-1 text-xl font-medium text-af2-ink">
-              Promote this workflow into a live agent roster
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close deploy as team dialog"
-            className="rounded-full border border-af2-line p-2 text-af2-ink-3 transition hover:border-af2-line-2 hover:bg-af2-paper-2 hover:text-af2-ink"
-            disabled={busy}
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="grid gap-0 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="border-b border-af2-line p-6 lg:border-b-0 lg:border-r">
-            <div className="mb-5">
-              <h3 className="af2-eyebrow">Team preview</h3>
-              <p className="mt-2 text-sm text-af2-ink-3">
-                The manager owns orchestration, then actionable workflow steps become worker agents.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <div className="rounded-md border border-af2-clay/30 bg-af2-clay/10 px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-af2-clay text-white">
-                    <Bot size={18} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-af2-ink">
-                      {template.name} Manager
-                    </p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-af2-clay">
-                      workflow-manager
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {actionableSteps.map((step, index) => (
-                <div
-                  key={step.id}
-                  className="rounded-md border border-af2-line bg-af2-paper-2 px-5 py-4"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-af2-ink">
-                        {step.name}
-                      </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.16em] text-af2-ink-4">
-                        {step.agentRoleKey ?? `${step.kind}-${index + 1}`}
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-semibold text-af2-ink-2 shadow-sm">
-                      {step.agentScheduleType === "interval"
-                        ? `${step.agentScheduleValue || defaultIntervalMinutes} min`
-                        : step.agentScheduleType === "cron"
-                        ? step.agentScheduleValue || "cron"
-                        : "manual"}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-af2-ink-2">
-                      {step.agentModel ?? step.llmConfigId ?? "Default model"}
-                    </span>
-                    <span className="rounded-full border border-af2-line bg-af2-card px-3 py-1 text-xs font-medium text-af2-ink-2">
-                      ${step.agentBudgetMonthlyUsd ?? 0}/mo
-                    </span>
-                    {(step.agentSkills ?? []).slice(0, 3).map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-full border border-af2-sage/30 bg-af2-sage/10 px-3 py-1 text-xs font-medium text-af2-sage"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <form
-            className="space-y-5 p-6"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onDeploy({
-                teamName,
-                budgetMonthlyUsd,
-                defaultIntervalMinutes,
-              });
-            }}
-          >
-            <div>
-              <h3 className="af2-eyebrow">Launch settings</h3>
-              <p className="mt-2 text-sm text-af2-ink-3">
-                Pick a name, a monthly budget cap, and the default schedule cadence for new worker agents.
-              </p>
-            </div>
-
-            <Field label="Team Name">
-              <input
-                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                value={teamName}
-                onChange={(event) => setTeamName(event.target.value)}
-              />
-            </Field>
-
-            <Field label="Monthly Team Budget (USD)">
-              <input
-                type="number"
-                min={0}
-                step="10"
-                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                value={budgetMonthlyUsd}
-                onChange={(event) => setBudgetMonthlyUsd(Number(event.target.value) || 0)}
-              />
-            </Field>
-
-            <Field label="Default Interval Minutes">
-              <input
-                type="number"
-                min={1}
-                className="w-full rounded-xl border border-af2-line-2 bg-af2-card px-3 py-2 text-sm text-af2-ink focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                value={defaultIntervalMinutes}
-                onChange={(event) => setDefaultIntervalMinutes(Number(event.target.value) || 1)}
-              />
-            </Field>
-
-            <div className="rounded-md border border-af2-mustard/30 bg-af2-mustard/10 px-4 py-3 text-sm text-af2-mustard">
-              Deploying creates a control-plane team and agent roster. Start/stop lifecycle controls are not exposed by the current backend yet, so monitoring and task handoff are the primary post-deploy actions available in this release.
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Cancel agent team deployment"
-                className="rounded-full border border-af2-line-2 px-4 py-2 text-sm font-medium text-af2-ink-2 transition hover:bg-af2-paper-2 hover:text-af2-ink"
-                disabled={busy}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={busy}
-                aria-label="Confirm agent team deployment"
-                className="inline-flex items-center gap-2 rounded-full bg-af2-sage px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-af2-sage-2 disabled:opacity-60"
-              >
-                {busy ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
-                Confirm deployment
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // FileUploadModal — triggered when the workflow has a file_trigger step

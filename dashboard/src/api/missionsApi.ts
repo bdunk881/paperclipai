@@ -10,14 +10,29 @@
 
 import { getApiBasePath } from "./baseUrl";
 import { trackedFetch } from "./trackedFetch";
+import type { TeamAssemblyRoleLibraryEntry } from "./client";
 
 const BASE = getApiBasePath();
+
+export type RoleLibraryEntry = TeamAssemblyRoleLibraryEntry;
+
+/**
+ * HEL-211 — owner-defined free-form context pills surfaced on the Hire page
+ * alongside the four canonical fields. Each entry is serialised into the
+ * team-assembly prompt as `${label}: ${value}` after the canonical
+ * fields so the LLM has the same weight of signal.
+ */
+export interface MissionCustomContextEntry {
+  label: string;
+  value: string;
+}
 
 export interface MissionMetadata {
   industry?: string;
   targetCustomer?: string;
   successMetric?: string;
   runway?: string;
+  customContext?: MissionCustomContextEntry[];
 }
 
 export interface Mission {
@@ -36,11 +51,8 @@ export interface MissionCreateInput {
   metadata?: MissionMetadata;
 }
 
-export interface GeneratedPlanResponse {
-  hiringPlanId: string;
-  missionId: string;
-  schemaVersion: number;
-  plan: unknown;
+export interface GenerateHiringPlanOptions {
+  llmConfigId?: string;
 }
 
 function buildHeaders(accessToken: string, extra?: HeadersInit): HeadersInit {
@@ -62,6 +74,17 @@ async function parseJsonOrError<T>(response: Response, fallback: string): Promis
     throw new Error(detail ? `${base}: ${detail}` : base);
   }
   return response.json() as Promise<T>;
+}
+
+export async function getRoleLibrary(accessToken: string): Promise<RoleLibraryEntry[]> {
+  const response = await trackedFetch(`${BASE}/role-library`, {
+    headers: buildHeaders(accessToken),
+  });
+  const payload = await parseJsonOrError<{ roleLibrary: RoleLibraryEntry[] }>(
+    response,
+    `Failed to fetch role library: ${response.status}`,
+  );
+  return payload.roleLibrary;
 }
 
 export async function listMissions(accessToken: string): Promise<Mission[]> {
@@ -157,6 +180,71 @@ export async function retireMissionTeam(
   );
 }
 
+/**
+ * HEL-210: positive-tone "Complete mission" action. Distinct from
+ * `retireMissionTeam` (which terminates agents) — completing a mission
+ * marks the brief as Done without tearing the team down. Optional
+ * `note` is stored on the mission as a success blurb.
+ */
+export interface CompleteMissionInput {
+  note?: string;
+}
+
+export interface CompleteMissionResponse {
+  id: string;
+  status: string;
+  completedAt: string;
+}
+
+export async function completeMission(
+  missionId: string,
+  input: CompleteMissionInput,
+  accessToken: string,
+): Promise<CompleteMissionResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/complete`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        input.note && input.note.trim().length > 0 ? { note: input.note.trim() } : {},
+      ),
+    },
+  );
+  return parseJsonOrError<CompleteMissionResponse>(
+    response,
+    `Failed to complete mission: ${response.status}`,
+  );
+}
+
+/**
+ * HEL-210: terminate open assignments and stop the mission. Different
+ * from "Complete" — this is the bail-out path when the brief is no
+ * longer worth running. Mirrors retire-team semantics on the backend.
+ */
+export interface StopMissionResponse {
+  id: string;
+  status: string;
+  terminatedAgentCount: number;
+}
+
+export async function stopMission(
+  missionId: string,
+  accessToken: string,
+): Promise<StopMissionResponse> {
+  const response = await trackedFetch(
+    `${BASE}/missions/${encodeURIComponent(missionId)}/stop`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken),
+    },
+  );
+  return parseJsonOrError<StopMissionResponse>(
+    response,
+    `Failed to stop mission: ${response.status}`,
+  );
+}
+
 export async function deleteMission(
   missionId: string,
   accessToken: string,
@@ -190,12 +278,16 @@ const GENERATE_PLAN_TIMEOUT_MS = 90_000;
 export async function generateHiringPlan(
   missionId: string,
   accessToken: string,
+  options: GenerateHiringPlanOptions = {},
 ): Promise<GeneratedPlanResponse> {
   const response = await trackedFetch(
     `${BASE}/missions/${encodeURIComponent(missionId)}/generate-plan`,
     {
       method: "POST",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        options.llmConfigId ? { llmConfigId: options.llmConfigId } : {},
+      ),
     },
     { timeoutMs: GENERATE_PLAN_TIMEOUT_MS },
   );
@@ -243,12 +335,16 @@ export interface ConfirmHiringPlanResponse {
 export async function confirmHiringPlan(
   hiringPlanId: string,
   accessToken: string,
+  includedRoleKeys?: string[],
 ): Promise<ConfirmHiringPlanResponse> {
   const response = await trackedFetch(
     `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/confirm`,
     {
       method: "POST",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(
+        includedRoleKeys && includedRoleKeys.length > 0 ? { includedRoleKeys } : {},
+      ),
     },
   );
   return parseJsonOrError<ConfirmHiringPlanResponse>(
@@ -314,6 +410,27 @@ export interface HiringPlan {
     day60: PhasePlan;
     day90: PhasePlan;
   };
+  selection?: {
+    includedRoleKeys: string[];
+  };
+  generationMeta?: {
+    provider: string;
+    model: string;
+    llmConfigId: string | null;
+  };
+}
+
+export interface GeneratedPlanResponse {
+  hiringPlanId: string;
+  missionId: string;
+  schemaVersion: number;
+  plan: HiringPlan;
+  costCents?: number;
+  provider?: string;
+  model?: string;
+  llmConfigId?: string | null;
+  promptTokens?: number;
+  completionTokens?: number;
 }
 
 /**
@@ -361,49 +478,47 @@ export async function getHiringPlan(
   );
 }
 
-// ---------------------------------------------------------------------------
-// HEL-138: role library + add-library-roles endpoints.
-// ---------------------------------------------------------------------------
-
-export interface RoleLibraryEntry {
-  roleKey: string;
-  title: string;
-  roleType: "executive" | "operator";
-  department: string;
-  mandate: string;
-  defaultReportsToRoleKey: string | null | undefined;
-  defaultSkills: readonly string[];
-  defaultTools: readonly string[];
-  defaultModelTier: "lite" | "standard" | "power";
-  hiringSignals: readonly string[];
-}
-
-export async function getRoleLibrary(accessToken: string): Promise<RoleLibraryEntry[]> {
-  const response = await trackedFetch(`${BASE}/hiring-plans/role-library`, {
-    headers: buildHeaders(accessToken),
-  });
-  const payload = await parseJsonOrError<{ roles: RoleLibraryEntry[] }>(
-    response,
-    `Failed to fetch role library: ${response.status}`,
-  );
-  return payload.roles;
-}
-
-export async function addLibraryRoles(
+export async function patchHiringPlanSelection(
   hiringPlanId: string,
-  roleKeys: string[],
+  includedRoleKeys: string[],
   accessToken: string,
 ): Promise<{ plan: HiringPlan }> {
   const response = await trackedFetch(
-    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/add-library-roles`,
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/draft`,
     {
-      method: "POST",
+      method: "PATCH",
       headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ roleKeys }),
+      body: JSON.stringify({ includedRoleKeys }),
     },
   );
   return parseJsonOrError<{ plan: HiringPlan }>(
     response,
-    `Failed to add library roles: ${response.status}`,
+    `Failed to update hiring plan selection: ${response.status}`,
+  );
+}
+
+/**
+ * Phase 2b — per-mission tier override. The reviewer can override the
+ * LLM-suggested tier on a per-agent basis BEFORE confirming the plan; the
+ * tier change mutates the draft's provisioningPlan.agents[].modelTier in
+ * place server-side so the existing confirm path provisions with the
+ * overridden tier. Keys are `roleKey`s from `provisioningPlan.agents`.
+ */
+export async function patchHiringPlanTierOverrides(
+  hiringPlanId: string,
+  tierOverrides: Record<string, "lite" | "standard" | "power">,
+  accessToken: string,
+): Promise<{ plan: HiringPlan }> {
+  const response = await trackedFetch(
+    `${BASE}/hiring-plans/${encodeURIComponent(hiringPlanId)}/draft`,
+    {
+      method: "PATCH",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ tierOverrides }),
+    },
+  );
+  return parseJsonOrError<{ plan: HiringPlan }>(
+    response,
+    `Failed to update per-agent tier: ${response.status}`,
   );
 }

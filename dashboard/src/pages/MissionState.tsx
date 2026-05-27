@@ -1,457 +1,347 @@
 /**
- * Missions page (HEL-32 v2 rebuild).
+ * Missions page — v2 prototype port (consolidation.html lines 650-712).
  *
- * Mirrors the v2 reference (`docs/design/v2/pages.jsx::AF2_Missions`):
- *   - af2-page chrome with eyebrow + serif h1 + meta
- *   - Templates / +New mission action buttons
- *   - Status tab strip ("In flight (N)" / "Review (N)" / "Scheduled (N)" /
- *     "Done (N)" / "All") with live counters from the missions list
- *   - 2-column card grid: ID, status pill, statement, success metric,
- *     progress bar, owner avatar + due
- *
- * Data: `listMissions` from `../api/missionsApi`. Gated on `activeWorkspaceId`
- * so the call doesn't fire before a workspace exists. Each card links to the
- * hiring-plan review page if the mission has a `latestHiringPlanId`, else
- * falls back to `/hire`.
- *
- * Previously this page was a single-mission "Mission State" view backed by
- * the `/api/control-plane/teams/:id/mission-state` contract. That contract +
- * the loader-driven route are removed here; the route now renders straight
- * from the workspace missions list.
+ * Eyebrow "Run", h1 "Missions". Filterbar uses a seg control
+ * (Live/Archived/All) + search, and the list renders card-list rows
+ * with M-* ids, status pill, started timestamp, spend, plus inline
+ * Stop / Complete actions. Clicking a row toggles a drawer with
+ * Statement / Team / Assignments subtabs.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Trash2 } from "lucide-react";
-import { deleteMission, type Mission } from "../api/missionsApi";
-import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import type { Mission } from "../api/missionsApi";
+import { CompleteMissionModal } from "../components/missions/CompleteMissionModal";
+import { StopMissionModal } from "../components/missions/StopMissionModal";
 import { missionLinkTo } from "../lib/missionNavigation";
-import { useToast } from "../components/ToastProvider";
-import { ErrorState, SkeletonBlock } from "../components/UiStates";
-import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { queryKeys } from "../lib/queryKeys";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 
-type TabKey = "in_flight" | "review" | "scheduled" | "done" | "all";
+type StatusFilter = "live" | "archived" | "all";
+type DrawerTab = "statement" | "team" | "assignments";
 
-interface TabDef {
-  key: TabKey;
-  label: string;
-  match: (mission: Mission) => boolean;
-}
-
-const TABS: TabDef[] = [
-  {
-    key: "in_flight",
-    label: "In flight",
-    // DASH-34: hiring-plan confirm sets missions.status to 'active'
-    // (see src/missions/hiringPlanRoutes.ts: "UPDATE missions SET
-    // status = 'active'"). The tab matcher previously didn't include
-    // 'active', so confirmed missions with a provisioned team only
-    // showed up under "All" — the default "In flight" view looked
-    // empty even when a team was visible on the Teams page.
-    match: (m) =>
-      m.status === "in_flight" ||
-      m.status === "active" ||
-      m.status === "blocked" ||
-      m.status === "running",
-  },
-  {
-    key: "review",
-    label: "Review",
-    match: (m) => m.status === "review" || m.status === "awaiting_approval",
-  },
-  {
-    key: "scheduled",
-    label: "Scheduled",
-    match: (m) => m.status === "scheduled" || m.status === "draft",
-  },
-  {
-    key: "done",
-    label: "Done",
-    match: (m) => m.status === "completed" || m.status === "archived",
-  },
-  { key: "all", label: "All", match: () => true },
+const FILTERS: Array<{ key: StatusFilter; label: string }> = [
+  { key: "live", label: "Live" },
+  { key: "archived", label: "Archived" },
+  { key: "all", label: "All" },
 ];
 
-function initialsFor(name: string | null | undefined): string {
-  if (!name) return "—";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "—";
+function isArchived(status: string): boolean {
+  return status === "archived" || status === "completed" || status === "stopped";
 }
 
-function progressFor(status: string): number {
-  switch (status) {
-    case "completed":
-    case "archived":
-      return 1;
-    case "review":
-    case "awaiting_approval":
-      return 0.75;
-    case "in_flight":
-    case "active":
-    case "running":
-      return 0.5;
-    case "blocked":
-      return 0.4;
-    case "scheduled":
-    case "draft":
-      return 0.1;
-    default:
-      return 0.1;
-  }
+function pillFor(status: string): { tone: string; label: string } {
+  if (status === "blocked") return { tone: "clay", label: "blocked" };
+  if (status === "review" || status === "awaiting_approval")
+    return { tone: "mustard", label: "review" };
+  if (status === "scheduled" || status === "draft")
+    return { tone: "", label: status };
+  if (status === "completed") return { tone: "sage", label: "done" };
+  if (status === "archived") return { tone: "", label: "archived" };
+  if (status === "stopped") return { tone: "clay", label: "stopped" };
+  return { tone: "mustard", label: "at risk" };
 }
 
-function pillFor(status: string): { className: string; label: string } {
-  if (status === "blocked") {
-    return { className: "af2-pill af2-pill-clay", label: "blocked" };
-  }
-  if (status === "review" || status === "awaiting_approval") {
-    return { className: "af2-pill af2-pill-pending", label: "review" };
-  }
-  if (status === "scheduled" || status === "draft") {
-    return { className: "af2-pill", label: status };
-  }
-  if (status === "completed" || status === "archived") {
-    return { className: "af2-pill", label: "done" };
-  }
-  // default: in_flight / running / unknown
-  return { className: "af2-pill af2-pill-live", label: "in flight" };
-}
-
-function progressColor(status: string): string {
-  if (status === "blocked") return "var(--af2-clay)";
-  return "var(--af2-sage)";
-}
-
-function shortId(id: string): string {
-  return id.slice(0, 8).toUpperCase();
-}
-
-function dueText(mission: Mission): string {
-  return mission.metadata?.runway?.trim() || "—";
-}
-
-function successMetricText(mission: Mission): string {
-  return mission.metadata?.successMetric?.trim() || "—";
-}
-
-function ownerFor(mission: Mission): { display: string; sub: string } {
-  const company = mission.companyName?.trim() || "Workspace";
-  const first = company.split(/\s+/)[0] ?? company;
-  return { display: company, sub: `Owner · ${first}` };
+function relativeStarted(iso: string | undefined): string {
+  if (!iso) return "started recently";
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return "started recently";
+  const diffDays = Math.floor((Date.now() - ms) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return "started today";
+  if (diffDays === 1) return "started 1d ago";
+  return `started ${diffDays}d ago`;
 }
 
 export default function MissionState() {
-  const { requireAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const toast = useToast();
-  const highlightMissionId = searchParams.get("mission");
-
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const missionsQuery = useMissionsQuery();
   const missions = missionsQuery.data ?? [];
-  const loading = missionsQuery.isLoading && !missionsQuery.data;
-  const error =
-    missionsQuery.error instanceof Error ? missionsQuery.error.message : null;
-  const [activeTab, setActiveTab] = useState<TabKey>("in_flight");
-  const [discardTarget, setDiscardTarget] = useState<Mission | null>(null);
-  const [discarding, setDiscarding] = useState(false);
-  const highlightedRef = useRef<HTMLDivElement | null>(null);
+
+  const initialFilter = (searchParams.get("status") as StatusFilter | null) ?? "live";
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(
+    FILTERS.some((f) => f.key === initialFilter) ? initialFilter : "live",
+  );
+  const [search, setSearch] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("statement");
+  const [completeTarget, setCompleteTarget] = useState<Mission | null>(null);
+  const [stopTarget, setStopTarget] = useState<Mission | null>(null);
 
   useEffect(() => {
     document.title = "Missions | AutoFlow";
   }, []);
 
   useEffect(() => {
-    if (!highlightMissionId || loading) return;
-    const match = missions.find((m) => m.id === highlightMissionId);
-    if (match && missionLinkTo(match).startsWith("/missions/")) {
-      navigate(missionLinkTo(match), { replace: true });
-      return;
-    }
-    highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightMissionId, loading, missions, navigate]);
+    const next = new URLSearchParams(searchParams);
+    if (statusFilter === "live") next.delete("status");
+    else next.set("status", statusFilter);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
+
+  const visible = useMemo(() => {
+    return missions
+      .filter((m) => {
+        if (statusFilter === "all") return true;
+        if (statusFilter === "archived") return isArchived(m.status);
+        return !isArchived(m.status);
+      })
+      .filter((m) =>
+        search.trim()
+          ? m.statement.toLowerCase().includes(search.trim().toLowerCase())
+          : true,
+      );
+  }, [missions, search, statusFilter]);
+
+  const refreshAfterMutation = async () => {
+    if (!activeWorkspaceId) return;
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.missions(activeWorkspaceId),
+    });
+  };
 
   const counts = useMemo(() => {
-    const result: Record<TabKey, number> = {
-      in_flight: 0,
-      review: 0,
-      scheduled: 0,
-      done: 0,
-      all: missions.length,
-    };
-    for (const tab of TABS) {
-      if (tab.key === "all") continue;
-      result[tab.key] = missions.filter(tab.match).length;
+    let live = 0;
+    let archived = 0;
+    for (const m of missions) {
+      if (isArchived(m.status)) archived += 1;
+      else live += 1;
     }
-    return result;
+    return { live, archived, all: missions.length };
   }, [missions]);
 
-  const visibleMissions = useMemo(() => {
-    const tab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
-    return missions.filter(tab.match);
-  }, [missions, activeTab]);
-
   return (
-    <div className="af2-page">
-      <div className="af2-page-head">
-        <div>
-          <div className="af2-eyebrow">Workforce · Missions</div>
-          <h1 className="af2-h1" style={{ marginTop: 6 }}>
-            Missions
-          </h1>
-          <div className="af2-page-head-meta">
-            Briefs you give your team. Each becomes a plan, a budget, and a
-            paper trail.
+    <div className="af2-v2">
+      <div className="page-head">
+        <div className="page-head-left">
+          <div className="eyebrow">Run</div>
+          <h1 className="h1">Missions</h1>
+          <div className="meta">
+            {counts.live} live · {counts.archived} archived · click a row to
+            expand inline
           </div>
         </div>
-        <div className="af2-page-actions">
-          <Link
-            to="/templates"
-            className="af2-btn"
-            style={{ textDecoration: "none" }}
+        <div className="page-head-right">
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => navigate("/hire")}
           >
-            Templates
-          </Link>
-          <Link to="/hire" className="af2-btn af2-btn-clay" style={{ textDecoration: "none" }}>
-            ＋ New mission
-          </Link>
+            + New mission
+          </button>
         </div>
       </div>
 
-      <div className="af2-tabs">
-        {TABS.map((tab) => {
-          const label =
-            tab.key === "all" ? tab.label : `${tab.label} (${counts[tab.key]})`;
-          return (
+      <div className="filterbar">
+        <div className="seg">
+          {FILTERS.map((f) => (
             <button
-              key={tab.key}
+              key={f.key}
               type="button"
-              className={`af2-tab${activeTab === tab.key ? " active" : ""}`}
-              onClick={() => setActiveTab(tab.key)}
+              aria-selected={statusFilter === f.key}
+              onClick={() => setStatusFilter(f.key)}
             >
-              {label}
+              {f.label}
             </button>
-          );
-        })}
+          ))}
+        </div>
+        <input
+          type="search"
+          placeholder="Search statement…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="grow" />
+        <span style={{ fontSize: 12, color: "var(--af2-ink-3)" }}>
+          {visible.length} missions
+        </span>
       </div>
 
-      {loading ? (
-        <div className="af2-card" style={{ padding: 24 }}>
-          <SkeletonBlock lines={3} />
-        </div>
-      ) : error ? (
-        <ErrorState
-          title="Missions unavailable"
-          message={error}
-          onRetry={() => void missionsQuery.refetch()}
-        />
-      ) : visibleMissions.length === 0 ? (
-        <div
-          className="af2-card"
-          style={{
-            padding: "32px 24px",
-            textAlign: "center",
-            borderStyle: "dashed",
-            borderColor: "var(--af2-line-2)",
-          }}
-        >
-          <p
-            className="font-af2-serif"
-            style={{ fontSize: 16, color: "var(--af2-ink)", margin: 0 }}
-          >
-            No missions in this view yet.
-          </p>
-          <p
-            className="af2-muted"
-            style={{ fontSize: 13, marginTop: 8, lineHeight: 1.5 }}
-          >
-            A mission is what your team is trying to accomplish. Brief one,
-            and we'll draft the team to run it.
-          </p>
-          <Link
-            to="/hire"
-            className="af2-btn af2-btn-clay"
+      <div className="card card-list" style={{ padding: 0 }}>
+        {missions.length === 0 ? (
+          <div style={{ padding: 32, textAlign: "center", fontSize: 13 }}>
+            <p className="desc" style={{ marginBottom: 12 }}>
+              No active missions yet.
+            </p>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() => navigate("/hire")}
+            >
+              + New mission
+            </button>
+          </div>
+        ) : (
+          visible.map((m) => {
+              const isOpen = openId === m.id;
+              const pill = pillFor(m.status);
+              const archived = isArchived(m.status);
+              const shortId = m.id.slice(0, 8).toUpperCase();
+              return (
+                <div key={m.id}>
+                  <div
+                    className={`row${isOpen ? " expanded" : ""}`}
+                    style={{
+                      gridTemplateColumns: "80px 1fr 110px 130px 100px 180px",
+                    }}
+                    onClick={() => {
+                      if (isOpen) setOpenId(null);
+                      else {
+                        setOpenId(m.id);
+                        setDrawerTab("statement");
+                      }
+                    }}
+                  >
+                    <div className="id">{shortId}</div>
+                    <div>
+                      <b>{m.statement}</b>
+                      <br />
+                      <span
+                        style={{ color: "var(--af2-ink-3)", fontSize: 12 }}
+                      >
+                        {m.companyName}
+                      </span>
+                    </div>
+                    <div>
+                      <span className={`pill dot ${pill.tone}`}>{pill.label}</span>
+                    </div>
+                    <div className="id">{relativeStarted(m.createdAt)}</div>
+                    <div>—</div>
+                    <div className="actions">
+                      {!archived ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStopTarget(m);
+                            }}
+                          >
+                            Stop
+                          </button>
+                          <button
+                            type="button"
+                            className="btn sage sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCompleteTarget(m);
+                            }}
+                          >
+                            Complete
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(missionLinkTo(m));
+                          }}
+                        >
+                          Open
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className={`row-drawer${isOpen ? " open" : ""}`}>
+                    <div className="row-drawer-head">
+                      <div>
+                        <div className="eyebrow" style={{ marginBottom: 4 }}>
+                          Mission · {archived ? "archived" : "live"}
+                        </div>
+                        <h3>{m.statement}</h3>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn ghost sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenId(null);
+                        }}
+                      >
+                        Collapse ↑
+                      </button>
+                    </div>
+                    <div className="subtabs">
+                      {(
+                        [
+                          { key: "statement", label: "Statement" },
+                          { key: "team", label: "Team" },
+                          { key: "assignments", label: "Assignments" },
+                        ] as Array<{ key: DrawerTab; label: string }>
+                      ).map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          className="subtab"
+                          aria-selected={drawerTab === t.key}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDrawerTab(t.key);
+                          }}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    {drawerTab === "statement" ? (
+                      <p style={{ fontSize: 13 }}>{m.statement}</p>
+                    ) : drawerTab === "team" ? (
+                      <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
+                        Team breakdown for this mission appears here once team
+                        assembly completes.
+                      </p>
+                    ) : (
+                      <p style={{ fontSize: 13, color: "var(--af2-ink-3)" }}>
+                        Per-agent assignments roll up here once tasks ship.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+        )}
+        {missions.length > 0 && visible.length === 0 ? (
+          <div
             style={{
-              marginTop: 14,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
+              padding: 32,
+              textAlign: "center",
+              color: "var(--af2-ink-3)",
+              fontSize: 13,
             }}
           >
-            Brief a new mission →
-          </Link>
-        </div>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 16,
-          }}
-        >
-          {visibleMissions.map((mission) => {
-            const pill = pillFor(mission.status);
-            const owner = ownerFor(mission);
-            const progress = progressFor(mission.status);
-            const color = progressColor(mission.status);
+            No missions match this view yet.
+          </div>
+        ) : null}
+      </div>
 
-            const highlighted = highlightMissionId === mission.id;
-            return (
-              <div
-                key={mission.id}
-                ref={highlighted ? highlightedRef : undefined}
-                className="af2-card"
-                style={{
-                  padding: 20,
-                  display: "block",
-                  outline: highlighted ? "2px solid var(--af2-sage)" : undefined,
-                }}
-              >
-                <Link
-                  to={missionLinkTo(mission)}
-                  style={{
-                    textDecoration: "none",
-                    color: "inherit",
-                    display: "block",
-                  }}
-                >
-                <div className="af2-row">
-                  <span
-                    className="af2-mono af2-muted-2"
-                    style={{ fontSize: 11 }}
-                  >
-                    {shortId(mission.id)}
-                  </span>
-                  <span className="af2-spacer" />
-                  <span className={pill.className}>
-                    <span className="af2-dot" />
-                    {pill.label}
-                  </span>
-                </div>
-                <div
-                  className="af2-h3"
-                  style={{ marginTop: 8, fontSize: 18 }}
-                >
-                  {mission.statement}
-                </div>
-                <div
-                  className="af2-muted"
-                  style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.5 }}
-                >
-                  Success metric · {successMetricText(mission)}
-                </div>
-                <div
-                  style={{
-                    height: 6,
-                    background: "var(--af2-paper-2)",
-                    borderRadius: 4,
-                    marginTop: 14,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${progress * 100}%`,
-                      height: "100%",
-                      background: color,
-                    }}
-                  />
-                </div>
-                <div className="af2-row" style={{ marginTop: 14 }}>
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      background: "var(--af2-clay-soft)",
-                      color: "var(--af2-clay-2)",
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {initialsFor(owner.display)}
-                  </div>
-                  <span style={{ fontSize: 12.5, fontWeight: 500 }}>
-                    {owner.display}
-                  </span>
-                  <span className="af2-muted" style={{ fontSize: 12 }}>
-                    · {owner.sub}
-                  </span>
-                  <span className="af2-spacer" />
-                  <span
-                    className="af2-mono af2-muted"
-                    style={{ fontSize: 11.5 }}
-                  >
-                    {dueText(mission)}
-                  </span>
-                </div>
-                </Link>
-                <div style={{ marginTop: 12, textAlign: "right" }}>
-                  <button
-                    type="button"
-                    className="af2-btn af2-btn-ghost af2-btn-sm"
-                    style={{ color: "var(--af2-clay)" }}
-                    aria-label="Discard mission"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setDiscardTarget(mission);
-                    }}
-                  >
-                    <Trash2 size={14} style={{ marginRight: 4, verticalAlign: "middle" }} />
-                    Discard
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Real-mission modals */}
+      {completeTarget ? (
+        <CompleteMissionModal
+          open
+          onClose={() => setCompleteTarget(null)}
+          missionId={completeTarget.id}
+          missionStatement={completeTarget.statement}
+          onCompleted={() => void refreshAfterMutation()}
+        />
+      ) : null}
+      {stopTarget ? (
+        <StopMissionModal
+          open
+          onClose={() => setStopTarget(null)}
+          missionId={stopTarget.id}
+          missionStatement={stopTarget.statement}
+          onStopped={() => void refreshAfterMutation()}
+        />
+      ) : null}
 
-      <ConfirmDestructiveModal
-        open={discardTarget !== null}
-        onClose={() => setDiscardTarget(null)}
-        eyebrow="Discard mission"
-        title="Discard this mission?"
-        message={
-          discardTarget
-            ? `"${discardTarget.statement.slice(0, 140)}${
-                discardTarget.statement.length > 140 ? "…" : ""
-              }"\n\nAny draft hiring plan will also be deleted. This can't be undone.`
-            : ""
-        }
-        confirmLabel="Discard mission"
-        confirming={discarding}
-        onConfirm={async () => {
-          if (!discardTarget) return;
-          setDiscarding(true);
-          try {
-            const token = await requireAccessToken();
-            await deleteMission(discardTarget.id, token);
-            toast.success("Mission discarded.");
-            setDiscardTarget(null);
-            if (activeWorkspaceId) {
-              await queryClient.invalidateQueries({
-                queryKey: queryKeys.missions(activeWorkspaceId),
-              });
-              await queryClient.invalidateQueries({
-                queryKey: queryKeys.home(activeWorkspaceId),
-              });
-            }
-          } catch (err) {
-            toast.error(err instanceof Error ? err.message : "Failed to discard mission");
-          } finally {
-            setDiscarding(false);
-          }
-        }}
-      />
     </div>
   );
 }
+

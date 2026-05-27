@@ -16,6 +16,9 @@ import { Router } from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { memoryStore } from "../engine/memoryStore";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
+import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 
 const router = Router();
 
@@ -124,6 +127,73 @@ router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     typeof workflowId === "string" ? workflowId : undefined
   );
   res.json({ entries, total: entries.length });
+}));
+
+// ---------------------------------------------------------------------------
+// GET /api/memory/episodes?as_of=ISO_DATE
+//
+// Powers the Pro EpisodeScrubber on the Memory page. Returns the most-recent
+// 50 agent_episodes rows that existed at the requested timestamp (i.e.
+// created_at <= as_of). RLS via withWorkspaceContext keeps the read scoped
+// to the caller's workspace.
+// ---------------------------------------------------------------------------
+
+router.get("/episodes", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+  const workspaceId = req.workspace?.id;
+  const userId = req.auth?.sub;
+  if (!workspaceId || !userId) {
+    res.status(401).json({ error: "Authenticated workspace context is required" });
+    return;
+  }
+
+  const asOfRaw = typeof req.query.as_of === "string" ? req.query.as_of : null;
+  const asOf = asOfRaw ? new Date(asOfRaw) : new Date();
+  if (Number.isNaN(asOf.getTime())) {
+    res.status(400).json({ error: "as_of must be a valid ISO date string" });
+    return;
+  }
+
+  if (!isPostgresPersistenceEnabled()) {
+    res.json({ asOf: asOf.toISOString(), episodes: [] });
+    return;
+  }
+
+  try {
+    const rows = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      async (client) => {
+        const result = await client.query<{
+          id: string;
+          title: string;
+          created_at: string;
+          agent_id: string;
+        }>(
+          `SELECT id, title, created_at, agent_id
+             FROM agent_episodes
+             WHERE created_at <= $1
+             ORDER BY created_at DESC
+             LIMIT 50`,
+          [asOf.toISOString()],
+        );
+        return result.rows;
+      },
+    );
+
+    res.json({
+      asOf: asOf.toISOString(),
+      episodes: rows.map((row) => ({
+        id: row.id,
+        label: row.title,
+        startedAt: row.created_at,
+        endedAt: null,
+        agentId: row.agent_id,
+      })),
+    });
+  } catch (err) {
+    console.error("[memory] episode scrub query failed:", (err as Error).message);
+    res.status(500).json({ error: "Failed to load episodes" });
+  }
 }));
 
 // ---------------------------------------------------------------------------

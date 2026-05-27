@@ -1,11 +1,10 @@
 name: Deploy TS Express API to Fly (staging)
 
 # HEL-95 — deploys the consolidated AutoFlow Express backend to
-# `autoflow-api-staging`. Runs in parallel with the legacy
-# `autoflow-fastapi-staging` deploy until HEL-97 cleanup retires it.
+# `autoflow-api-staging`. The legacy `autoflow-fastapi-staging` relay
+# shim was retired in HEL-97.
 #
-# Hostname: staging-api.helloautoflow.com (custom domain on this Fly app
-# after DNS swap).
+# Hostname: staging-api.helloautoflow.com (custom domain on this Fly app).
 
 on:
   push:
@@ -121,5 +120,5 @@ jobs:
             echo "## Deploy: ${FLY_APP}"
             echo
             echo "- Health: $(curl -s -o /dev/null -w '%{http_code}' https://${FLY_APP}.fly.dev/health)"
-            echo "- Custom domain (post-cutover): https://staging-api.helloautoflow.com"
+            echo "- Custom domain: https://staging-api.helloautoflow.com"
           } >> "$GITHUB_STEP_SUMMARY"

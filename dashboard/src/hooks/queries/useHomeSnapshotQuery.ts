@@ -17,5 +17,11 @@ export function useHomeSnapshotQuery() {
       return fetchHomeSnapshot(token);
     },
     enabled: Boolean(activeWorkspaceId) && accessMode !== "preview",
+    // SSE drives most refreshes via invalidateQueries. We still keep a
+    // 30s background poll as a safety net for when the stream is
+    // disconnected (CORS, hot-reload, etc.). Skips when tab is hidden.
+    refetchInterval: () =>
+      typeof document !== "undefined" && document.hidden ? false : 30_000,
+    refetchIntervalInBackground: false,
   });
 }

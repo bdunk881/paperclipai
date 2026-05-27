@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@autoflow/logo-dev": path.resolve(__dirname, "../shared/logoDev/index.ts"),
       "@testing-library/react": path.resolve(__dirname, "src/test/render.tsx"),
       "@testing-library/react-original": path.resolve(
         __dirname,
@@ -21,6 +22,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
     globalTeardown: ["./src/test-global-teardown.ts"],
+    include: [
+      "src/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+      // Cloudflare Pages Functions live outside src/. They run at the edge,
+      // not in the React bundle, so they don't ship with the dashboard JS —
+      // but their tests still belong in vitest alongside everything else.
+      "functions/**/*.{test,spec}.?(c|m)[jt]s?(x)",
+    ],
     exclude: ["node_modules/**", "e2e/**"],
     pool: "forks",
     poolOptions: {
@@ -45,7 +53,8 @@ export default defineConfig({
         "src/pages/AgentDetail.tsx",          // UX-5 agent hub (463 lines, 0% cov)
         "src/pages/AgentJobDescription.tsx",  // Wave-3 LLM wizard page
         "src/pages/AgentStandingTasks.tsx",   // Wave-4 standing tasks page
-        "src/pages/WorkspaceMemory.tsx",      // Workspace memory hub (HEL-90/92)
+        // HEL-207: WorkspaceMemory.tsx deleted; the scope picker on Memory.tsx
+        // (already excluded above) absorbed its 3-tab view.
         "src/components/JobDescriptionWizardModal.tsx", // LLM hiring-plan modal
         // --- pure fetch-wrapper API files with no coverage ---
         // These are thin network clients (one function ≈ one fetch call + error

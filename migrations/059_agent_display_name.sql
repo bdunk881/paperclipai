@@ -1,0 +1,13 @@
+-- HEL-210 / HEL-211: optional human-friendly name for agents.
+--
+-- The existing `agents.name` column is filled by the hiring-plan
+-- provisioner from the LLM-generated role title (e.g. "Director of
+-- Growth"). Owners want to give individual agents a friendlier handle
+-- they can rename without losing the role label — e.g. "Casey" — so
+-- the org list reads "Casey · Director of Growth" instead of
+-- "Director of Growth · Director of Growth".
+--
+-- Nullable so existing rows continue to fall back to `name` until the
+-- owner provides a value. Shared with HEL-211 — whichever lands first
+-- creates 059.
+alter table agents add column if not exists display_name text;

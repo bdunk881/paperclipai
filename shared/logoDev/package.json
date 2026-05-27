@@ -1,0 +1,8 @@
+{
+  "name": "@autoflow/logo-dev",
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "react": ">=18"
+  }
+}

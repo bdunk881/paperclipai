@@ -156,7 +156,7 @@ jobs:
           echo "  dev.helloautoflow.com     -> autoflow-dashboard-dev-git.pages.dev"
           echo "  docs.helloautoflow.com    -> autoflow-docs.pages.dev"
           echo "  www.helloautoflow.com     -> autoflow-landing.pages.dev"
-          echo "  api.dev.helloautoflow.com -> autoflow-fastapi-dev.fly.dev"
+          echo "  dev-api.helloautoflow.com -> autoflow-api-dev.fly.dev"
           echo ""
           echo "Note: helloautoflow.com root domain DNS update (A->CNAME) requires"
           echo "manual step or separate workflow once Pages domain is verified."

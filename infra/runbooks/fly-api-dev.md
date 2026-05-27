@@ -11,9 +11,8 @@ Behind this hostname is every `/api/*` route the dashboard expects: missions,
 agents, runs, billing, integrations, llm-configs, observability, control plane,
 landing public endpoints, etc.
 
-Runs in parallel with `autoflow-fastapi-dev` (the legacy relay shim from the
-aborted Phase-3 cutover — see `backend/fly-cutover-probe-matrix.md`) until
-HEL-97 retires the FastAPI app entirely.
+Replaced the legacy `autoflow-fastapi-dev` relay shim (from the aborted
+Phase-3 cutover), which was retired in HEL-97.
 
 ## First-time setup
 
@@ -46,8 +45,7 @@ flyctl certs check dev-api.helloautoflow.com -a autoflow-api-dev   # confirm "Co
 
 ### 3. GitHub Actions secrets
 
-Required at the repo level (alongside the Cloudflare + Fly secrets already used
-by the FastAPI workflow):
+Required at the repo level:
 
 - `INFISICAL_CLIENT_ID` / `INFISICAL_CLIENT_SECRET` — universal-auth machine ID
 - `FLY_API_TOKEN` — Fly deploy token, accessible via Infisical's dev env
@@ -87,7 +85,6 @@ The smoke verifies:
 - CORS preflight from `dev.helloautoflow.com` is allowed
 - `/api/protected` returns 401 (auth wired correctly)
 - OAuth callback + Stripe webhook surfaces return real handler responses
-  (no `Public edge relay is not configured` placeholders from the FastAPI shim)
 
 ## Inspecting + debugging
 
@@ -110,15 +107,6 @@ flyctl deploy --image registry.fly.io/autoflow-api-dev:<previous-tag> --strategy
 
 The DNS doesn't change during a rollback — only the underlying Fly app image
 changes. Custom domain + Cloudflare CNAME stay valid.
-
-## Relationship to autoflow-fastapi-dev
-
-| Question | Answer |
-|---|---|
-| Are both apps running? | Yes, in parallel until HEL-97 cleanup. |
-| Which one does the dashboard hit? | After HEL-84 lands the dashboard's host-map points dev → `dev-api.helloautoflow.com` (this app). Before that, dashboards point at `autoflow-fastapi-dev`. |
-| Which one handles Stripe webhooks? | Stripe is configured with the legacy hostname for now. Production webhook URL doesn't change during cutover — only the Fly app behind it (HEL-96). |
-| When does the FastAPI app go away? | After HEL-96 (production cutover) is stable for 7+ days. HEL-97 destroys all three FastAPI Fly apps + removes the related code. |
 
 ## See also
 

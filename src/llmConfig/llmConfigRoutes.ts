@@ -14,6 +14,8 @@ import {
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
 import { requireEntitlement } from "../middleware/requireEntitlement";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { getWorkspaceTierMatrix, setWorkspaceTierMatrix } from "./tierRouter";
+import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 
 const VALID_PROVIDERS: LLMProvider[] = [...PROVIDER_NAMES];
 const API_KEY_PROVIDERS = new Set<LLMProvider>([
@@ -345,20 +347,73 @@ router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
   res.json(updated);
 });
 
-router.delete("/:id", (req: AuthenticatedRequest, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user is required" });
-    return;
-  }
+router.delete(
+  "/:id",
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user is required" });
+      return;
+    }
 
-  const deleted = llmConfigStore.delete(req.params.id, userId);
-  if (!deleted) {
-    res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
-    return;
-  }
+    // Look up the credential BEFORE deleting so we know which provider's
+    // tier-routing bindings to inspect afterwards.
+    const existing = llmConfigStore.get(req.params.id, userId);
+    if (!existing) {
+      res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
+      return;
+    }
+    const removedProvider = existing.provider;
 
-  res.status(204).send();
-});
+    const deleted = llmConfigStore.delete(req.params.id, userId);
+    if (!deleted) {
+      res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
+      return;
+    }
+
+    // After delete: if this was the LAST credential for the provider, sweep
+    // any workspace tier-routing binding that still points at it (Phase 2b
+    // followup). Otherwise on next read the binding 400s with "Cannot route
+    // X tier to Y: no credential for that provider in this workspace" and
+    // the dashboard surfaces a confusing error toast — the user has no
+    // mental model for "the binding I set last week is now invalid because
+    // I just disconnected the only key for it."
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (workspaceId) {
+      try {
+        const remaining = await llmConfigStore.listAsync(userId);
+        const stillHasProvider = remaining.some(
+          (c) => c.provider === removedProvider,
+        );
+        if (!stillHasProvider) {
+          const matrix = await getWorkspaceTierMatrix(workspaceId);
+          let dirty = false;
+          const next: typeof matrix = {};
+          for (const [tierKey, binding] of Object.entries(matrix)) {
+            if (binding && binding.provider === removedProvider) {
+              dirty = true; // drop this entry — slot falls back to auto
+              continue;
+            }
+            if (binding) next[tierKey as keyof typeof matrix] = binding;
+          }
+          if (dirty) {
+            await setWorkspaceTierMatrix(workspaceId, next);
+            console.log(
+              `[llm-credentials] Last ${removedProvider} key removed for workspace ${workspaceId}; pruned tier-routing bindings.`,
+            );
+          }
+        }
+      } catch (err) {
+        // The credential delete already succeeded — never roll it back on a
+        // sweep failure. Just log so the operator can clean up by hand.
+        console.warn(
+          `[llm-credentials] tier-routing sweep after disconnect failed: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    res.status(204).send();
+  }),
+);
 
 export default router;

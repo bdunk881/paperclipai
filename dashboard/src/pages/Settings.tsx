@@ -48,6 +48,7 @@ import {
   type CompanyLifecycleStatus,
 } from "../api/controlPlane";
 import { Af2Button } from "../components/af2";
+import { CompanyLogo } from "@autoflow/logo-dev";
 
 type TabKey =
   | "general"
@@ -1319,6 +1320,7 @@ function CredentialsTab({ requireAccessToken }: CredentialsTabProps) {
         manageLabel="Manage models"
         rows={(llm ?? []).map((cfg) => ({
           key: cfg.id,
+          integrationId: cfg.provider,
           left: cfg.label,
           middle: `${cfg.provider} · ${cfg.model}`,
           right: cfg.isDefault ? "Default · " : "",
@@ -1331,12 +1333,13 @@ function CredentialsTab({ requireAccessToken }: CredentialsTabProps) {
         title="Integrations"
         countLabel={`${connectedIntegrations} connected · ${integrationRows.length} available`}
         emptyText="No integrations connected."
-        manageHref="/integrations/mcp"
+        manageHref="/connections?tab=integrations"
         manageLabel="Manage integrations"
         rows={integrationRows
           .filter((r) => r.status?.connected)
           .map((r) => ({
             key: r.key,
+            integrationId: r.key,
             left: r.name,
             middle: r.category,
             right: r.status?.authMethod
@@ -1376,6 +1379,7 @@ interface CredentialsSectionProps {
   manageLabel: string;
   rows: Array<{
     key: string;
+    integrationId?: string;
     left: string;
     middle: string;
     right: string;
@@ -1453,15 +1457,33 @@ function CredentialsSection({
               <div style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    fontWeight: 600,
-                    fontSize: 13.5,
-                    color: "var(--af2-ink)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    minWidth: 0,
                   }}
                 >
-                  {r.left}
+                  {r.integrationId ? (
+                    <CompanyLogo
+                      integrationId={r.integrationId}
+                      name={r.left}
+                      size={24}
+                      style={{ borderRadius: 6, flexShrink: 0 }}
+                    />
+                  ) : null}
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: 13.5,
+                      color: "var(--af2-ink)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      minWidth: 0,
+                    }}
+                  >
+                    {r.left}
+                  </div>
                 </div>
                 <div
                   className="af2-muted"

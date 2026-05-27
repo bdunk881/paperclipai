@@ -11,7 +11,9 @@ export function buildLandingApiUrl(path: string): string {
   }
 
   if (process.env.NODE_ENV !== "production") {
-    return `http://localhost:8000${normalizedPath}`;
+    // Express backend default port (src/index.ts). The FastAPI dev port
+    // (8000) it used to target was retired in HEL-97.
+    return `http://localhost:3000${normalizedPath}`;
   }
 
   return normalizedPath;

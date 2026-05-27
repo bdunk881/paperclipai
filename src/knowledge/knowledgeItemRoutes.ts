@@ -6,7 +6,8 @@
  * human-verified items.
  *
  * Mounted at `/api/knowledge-items` to avoid collision with the legacy
- * `/api/knowledge` (FastAPI-flavored knowledge bases — retired in HEL-97).
+ * `/api/knowledge` (knowledge-bases endpoints from the retired FastAPI
+ * relay shim — HEL-97).
  *
  * Search (hybrid semantic + lexical with org-chart-aware ranking) lands in
  * HEL-89 on top of this CRUD foundation.

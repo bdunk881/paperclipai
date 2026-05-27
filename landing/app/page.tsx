@@ -3,12 +3,13 @@
  *
  * Editorial port of `Projects/AutoFlow/v2/AutoFlow Landing.html`. Design
  * tokens + the `.lp-*` / `.af2-*` classes live in `./v2.css`. Real form
- * submissions still hit the FastAPI backend via `buildLandingApiUrl()`
+ * submissions hit the Express backend via `buildLandingApiUrl()`
  * (see `landing/lib/publicApi.ts`).
  */
 
 import { Link } from "react-router";
 import { useState } from "react";
+import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
 
 export function meta() {
@@ -219,190 +220,9 @@ function Avatar({
   );
 }
 
-// Inline brand logos for the strip + integrations grid. Faithful to the
-// inline SVGs from `Projects/AutoFlow/v2/data.jsx::AF2_LOGOS`.
-function BrandLogo({ name, size = 20 }: { name: string; size?: number }) {
-  const sz = size;
-  switch (name) {
-    case "Slack":
-      return (
-        <svg viewBox="0 0 60 60" width={sz} height={sz} aria-hidden="true">
-          <path fill="#36C5F0" d="M22 38a4 4 0 1 1-4-4h4zm2 0a4 4 0 1 1 8 0v10a4 4 0 1 1-8 0z" />
-          <path fill="#2EB67D" d="M28 14a4 4 0 1 1 4 4h-4zm0 2a4 4 0 1 1 0 8H18a4 4 0 1 1 0-8z" />
-          <path fill="#ECB22E" d="M48 22a4 4 0 1 1 4 4h-4zm-2 0a4 4 0 1 1-8 0V12a4 4 0 1 1 8 0z" />
-          <path fill="#E01E5A" d="M38 46a4 4 0 1 1-4-4h4zm0-2a4 4 0 1 1 0-8h10a4 4 0 1 1 0 8z" />
-        </svg>
-      );
-    case "GitHub":
-      return (
-        <svg viewBox="0 0 24 24" width={sz} height={sz} aria-hidden="true">
-          <path
-            fill="#1a1410"
-            d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.92.58.1.79-.25.79-.55v-2c-3.2.69-3.87-1.36-3.87-1.36-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.02 1.75 2.69 1.24 3.34.95.1-.74.4-1.24.72-1.53-2.55-.29-5.24-1.27-5.24-5.66 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.17.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.19-1.48 3.15-1.17 3.15-1.17.62 1.58.23 2.75.11 3.04.74.8 1.18 1.82 1.18 3.07 0 4.4-2.7 5.37-5.27 5.65.41.36.78 1.06.78 2.13v3.16c0 .31.21.66.79.55C20.21 21.39 23.5 17.08 23.5 12 23.5 5.65 18.35.5 12 .5z"
-          />
-        </svg>
-      );
-    case "Linear":
-      return (
-        <svg viewBox="0 0 100 100" width={sz} height={sz} aria-hidden="true">
-          <defs>
-            <linearGradient id={`lin-${name}`} x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0" stopColor="#5E6AD2" />
-              <stop offset="1" stopColor="#26C6DA" />
-            </linearGradient>
-          </defs>
-          <path
-            fill={`url(#lin-${name})`}
-            d="M1.2 61.6 38.4 98.8a50 50 0 0 1-37.2-37.2zm0-13.7L52.1 98.8a50 50 0 0 0 12.6-1.6L2.8 35.4a50 50 0 0 0-1.6 12.5zm5.5-21.5 66.9 66.9a50 50 0 0 0 9.4-6.3L13 17.3a50 50 0 0 0-6.3 9.1zm12.7-15L84 76a50 50 0 1 0-64.6-64.6z"
-          />
-        </svg>
-      );
-    case "HubSpot":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path
-            fill="#FF7A59"
-            d="M22.4 11.7V8.5a2.5 2.5 0 1 0-2 0v3.2a8.5 8.5 0 0 0-3.5 1.4l-9.5-7.4a3 3 0 1 0-1.3 1.5l9.4 7.3a8.5 8.5 0 0 0 .1 9.6l-2.8 2.8a2.7 2.7 0 1 0 1.5 1.4l2.8-2.8a8.5 8.5 0 1 0 5.3-15.8zm-1 13.3a4.6 4.6 0 1 1 0-9.2 4.6 4.6 0 0 1 0 9.2z"
-          />
-        </svg>
-      );
-    case "Stripe":
-      return (
-        <svg viewBox="0 0 60 25" width={32} height={14} aria-hidden="true">
-          <path
-            fill="#635BFF"
-            d="M59.6 14.1c0-4.3-2-7.6-5.9-7.6-3.9 0-6.4 3.4-6.4 7.6 0 4.9 2.7 7.4 6.8 7.4 2 0 3.5-.5 4.6-1.1v-3.4c-1.1.6-2.4 1-4 1-1.6 0-3-.6-3.2-2.5h8c0-.2.1-.9.1-1.4zm-8.1-1.6c0-1.8 1.1-2.6 2.1-2.6 1 0 2.1.7 2.1 2.6h-4.2zm-10.4-6c-1.7 0-2.7.8-3.3 1.3l-.2-1H34v19.4l4.1-.9v-4.7c.6.4 1.5 1 3 1 3 0 5.8-2.4 5.8-7.7 0-4.8-2.8-7.4-5.8-7.4zm-1 11.3c-1 0-1.6-.4-2-.8V11.3c.4-.5 1-.9 2-.9 1.6 0 2.7 1.7 2.7 3.7 0 2-1.1 3.7-2.7 3.7zM27.7 5.5l4.1-.9V1.2l-4.1.9v3.4zm0 1.3h4.1v14.4h-4.1V6.8zm-4.4 1.2-.3-1.2h-3.5v14.4h4.1V11.6c1-1.3 2.6-1 3.1-.9V6.8c-.5-.2-2.4-.5-3.4 1.2zm-8.2-4.7-4 .8v13.2c0 2.4 1.8 4.2 4.3 4.2 1.4 0 2.4-.3 3-.5v-3.3c-.5.2-3.2 1-3.2-1.5v-5.9h3.2V6.8h-3.2l-.1-3.5zM4.2 11c0-.6.5-.9 1.4-.9 1.2 0 2.7.4 4 1.1V7.4c-1.4-.5-2.7-.7-4-.7-3.3 0-5.5 1.7-5.5 4.6 0 4.5 6.2 3.7 6.2 5.7 0 .8-.7 1-1.6 1-1.4 0-3.1-.5-4.5-1.3v3.9c1.5.6 3 .9 4.5.9 3.3 0 5.7-1.7 5.7-4.5 0-4.8-6.2-3.9-6.2-5.9z"
-          />
-        </svg>
-      );
-    case "Notion":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path
-            fill="#fff"
-            stroke="#1a1410"
-            strokeWidth="1.5"
-            d="M5 6.5 19 5l8 1v20l-7 1.5L5 25.5V6.5z"
-          />
-          <path fill="#1a1410" d="m11 11 9 .5v11l-2 .3-7-9.5V22l-1.5.3V11z" />
-        </svg>
-      );
-    case "Gmail":
-      return (
-        <svg viewBox="0 0 48 36" width={22} height={18} aria-hidden="true">
-          <path fill="#4285F4" d="M3 36h7V19L0 11.5V33a3 3 0 0 0 3 3z" />
-          <path fill="#34A853" d="M38 36h7a3 3 0 0 0 3-3V11.5L38 19v17z" />
-          <path fill="#FBBC04" d="M38 5v14l10-7.5V6.5C48 3.6 44.7 1.9 42.4 3.7L38 5z" />
-          <path fill="#EA4335" d="M10 19V5l14 10.5L38 5v14L24 29.5 10 19z" />
-          <path fill="#C5221F" d="M0 6.5v5L10 19V5L5.6 3.7C3.3 1.9 0 3.6 0 6.5z" />
-        </svg>
-      );
-    case "Sentry":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path
-            fill="#362D59"
-            d="M16 4a2 2 0 0 1 1.7 1l8 14a2 2 0 0 1-1.7 3h-3.5a13 13 0 0 0-9-12L14 6.6a2 2 0 0 1 2-2.6zm-4.5 7.5L9 14a10 10 0 0 1 8 8h-3a7 7 0 0 0-5.3-5.4L7 19c4 .5 7.2 3.6 7.7 7.5h-7a1 1 0 0 1-.9-1.5l4.7-13.5z"
-          />
-        </svg>
-      );
-    case "Anthropic":
-      return (
-        <svg viewBox="0 0 64 64" width={sz} height={sz} aria-hidden="true">
-          <circle cx="32" cy="32" r="30" fill="#1a1410" />
-          <path fill="#D4A27F" d="M21 19h6l9 26h-6l-2-6h-9l-2 6h-6l10-26zm1 15h6l-3-9-3 9zm17-15h5v26h-5z" />
-        </svg>
-      );
-    case "OpenAI":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <circle cx="16" cy="16" r="15" fill="#1a1410" />
-          <path
-            fill="#10A37F"
-            d="M22 14a3.6 3.6 0 0 0-.3-3 3.7 3.7 0 0 0-4-1.8 3.7 3.7 0 0 0-2.8-1.2 3.7 3.7 0 0 0-3.6 2.6 3.7 3.7 0 0 0-2.5 1.8 3.7 3.7 0 0 0 .5 4.4 3.6 3.6 0 0 0 .3 3 3.7 3.7 0 0 0 4 1.8 3.7 3.7 0 0 0 2.8 1.2 3.7 3.7 0 0 0 3.6-2.6 3.7 3.7 0 0 0 2.5-1.8 3.7 3.7 0 0 0-.5-4.4zm-5.5 7.7a2.7 2.7 0 0 1-1.8-.7v-5l4.3 2.5v3a.3.3 0 0 1-.1.2 2.8 2.8 0 0 1-2.4.7zm-5.9-2.5a2.8 2.8 0 0 1 0-2.7L13 18l4.4-2.5v3l-4.3 2.4a.3.3 0 0 1-.3 0zm-1-7.7a2.8 2.8 0 0 1 1.4-1.2v5l4.4 2.5L11 19.2a.3.3 0 0 1-.3 0z"
-          />
-        </svg>
-      );
-    case "Google":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path fill="#4285F4" d="M16 13v6h8a8 8 0 0 1-8 6 9 9 0 1 1 6-15.7l4.4-4.4A15 15 0 1 0 16 31a14.4 14.4 0 0 0 14-15c0-1-.1-2-.3-3H16z" />
-        </svg>
-      );
-    case "Bedrock":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path fill="#FF9900" d="M4 22l12-6 12 6-12 6zM16 6l12 6-12 6L4 12z" />
-        </svg>
-      );
-    case "Shopify":
-      return (
-        <svg viewBox="0 0 109 124" width={18} height={20} aria-hidden="true">
-          <path fill="#95BF47" d="M74 23c0-.4-.4-.6-.6-.6-.2 0-4 .1-4 .1s-2.6-2.6-2.9-2.9c-.3-.3-.9-.2-1.1-.1L64 20c-.1-.4-.4-1-.6-1.6-1-1.9-2.6-3-4.4-3h-.4c-.1-.2-.2-.3-.3-.4-.8-.9-1.9-1.3-3.1-1.3-2.5.1-5 1.9-7 5.1-1.5 2.3-2.6 5.1-2.9 7.3-2.9.9-4.9 1.5-5 1.5-1.4.5-1.5.5-1.7 1.9C38.5 30 35 56.4 35 56.4l28.5 5L78 57.7S74 23.4 74 23z" />
-          <path fill="#5E8E3E" d="M73.4 22.4s-3.7.1-3.7.1-2.6-2.5-2.9-2.8c-.1-.1-.3-.2-.4-.2v18.4l14.5-3.6S74 23.3 74 22.7c-.1-.2-.4-.3-.6-.3z" />
-          <path fill="#fff" d="m63.6 30.7-1.7 6.3s-1.9-.9-4.1-.7c-3.3.2-3.3 2.3-3.3 2.8.2 2.8 7.5 3.4 7.9 9.9.3 5.1-2.7 8.6-7.1 8.9-5.3.3-8.2-2.8-8.2-2.8L48.3 51s2.9 2.2 5.2 2c1.5-.1 2.1-1.4 2-2.2-.3-3.6-6.2-3.4-6.6-9.4-.3-5 3-10.1 10.1-10.5 2.9-.3 4.6.4 4.6.4z" />
-        </svg>
-      );
-    case "Apollo":
-      return (
-        <svg viewBox="0 0 64 64" width={sz} height={sz} aria-hidden="true">
-          <circle cx="32" cy="32" r="28" fill="#22118b" />
-          <path fill="#fff" d="M32 14 18 46h6l3-7h10l3 7h6L32 14zm-3 19 3-7 3 7h-6z" />
-        </svg>
-      );
-    case "Attio":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <circle cx="16" cy="16" r="15" fill="#1a1410" />
-          <path fill="#f6f1e7" d="M16 8 9 24h3l1.5-3.5h5L20 24h3L16 8zm-1.5 9.5L16 14l1.5 3.5h-3z" />
-        </svg>
-      );
-    case "Intercom":
-      return (
-        <svg viewBox="0 0 28 32" width={18} height={20} aria-hidden="true">
-          <path fill="#0057FF" d="M26 0H2C.9 0 0 .9 0 2v25c0 1.1.9 2 2 2h6l3 3 3-3h12c1.1 0 2-.9 2-2V2c0-1.1-.9-2-2-2zM10 8h2v10h-2V8zm-4 1h2v8H6V9zm-4 1h2v6H2v-6zm22 9.7c-.3.3-3.5 3.3-10 3.3s-9.7-3-10-3.3c-.4-.4-.5-1-.1-1.4.4-.4 1-.5 1.4-.1.1.1 2.7 2.6 8.7 2.6 6.1 0 8.6-2.5 8.7-2.6.4-.4 1-.4 1.4 0 .4.4.4 1.1-.1 1.5zM26 16h-2v-6h2v6zm-4 1h-2V9h2v8zm-4 1h-2V8h2v10z" />
-        </svg>
-      );
-    case "Teams":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path fill="#5059C9" d="M19 11h7a2 2 0 0 1 2 2v7a4 4 0 0 1-4 4 5 5 0 0 1-5-5V11zm5-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-          <path fill="#7B83EB" d="M14 11h-9a1 1 0 0 0-1 1v10a6 6 0 0 0 12 0V12a1 1 0 0 0-1-1zm-3.5-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />
-          <path fill="#fff" d="M6 14h9v2h-3.5v8h-2v-8H6z" />
-        </svg>
-      );
-    case "PostHog":
-      return (
-        <svg viewBox="0 0 40 40" width={sz} height={sz} aria-hidden="true">
-          <path fill="#1D4AFF" d="M5 5h30v30H5z" />
-          <path fill="#fff" d="m9 9 11 11h-7L9 16zm0 7 11 11h-7L9 23zm14 0 8 8h-8z" />
-        </svg>
-      );
-    case "Datadog":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <path fill="#632CA6" d="M28 4 16 28l-3-6 6-1-3-6 6-1-3-6 9-4z" />
-        </svg>
-      );
-    case "DocuSign":
-      return (
-        <svg viewBox="0 0 32 32" width={sz} height={sz} aria-hidden="true">
-          <circle cx="16" cy="16" r="15" fill="#FFCC22" />
-          <path fill="#1a1410" d="M11 9h7c4 0 7 3 7 7s-3 7-7 7h-7V9zm3 3v8h4c2.2 0 4-1.8 4-4s-1.8-4-4-4h-4z" />
-        </svg>
-      );
-    default:
-      return (
-        <span className="af2-mark" aria-hidden="true">
-          {name.charAt(0)}
-        </span>
-      );
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Hero CTA: routes to /signup. Clicking "Hire your first agent" also pings
-// the FastAPI waitlist-signup endpoint as a top-of-funnel intent log
+// the Express waitlist-signup endpoint as a top-of-funnel intent log
 // (anonymous click; backend tolerates empty/missing email).
 
 function HireAgentCta() {
@@ -414,7 +234,7 @@ function HireAgentCta() {
 }
 
 // Pricing CTA → Stripe Checkout (production-wired) or a /signup fallback for
-// Tinker tier. The checkout endpoint lives in the FastAPI backend.
+// Tinker tier. The checkout endpoint lives in the Express backend.
 function PricingCta({
   tier,
 }: {
@@ -687,7 +507,7 @@ export default function Home() {
                   color: "var(--af2-ink-2)",
                 }}
               >
-                <BrandLogo name={n} />
+                <CompanyLogo name={n} integrationId={n.toLowerCase()} size={20} />
                 <span>{n}</span>
               </span>
             ))}
@@ -1034,7 +854,7 @@ export default function Home() {
           {INTEGRATIONS.map((it) => (
             <div key={it.name} className="af2-card" style={{ padding: 14, textAlign: "center" }}>
               <div style={{ height: 36, display: "grid", placeItems: "center" }}>
-                <BrandLogo name={it.name} />
+                <CompanyLogo name={it.name} integrationId={it.name.toLowerCase()} size={28} />
               </div>
               <div style={{ fontSize: 12, fontWeight: 500, marginTop: 8 }}>{it.name}</div>
               <div style={{ fontSize: 10.5, color: "var(--af2-ink-3)", marginTop: 1 }}>

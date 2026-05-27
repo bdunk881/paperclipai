@@ -17,6 +17,8 @@ import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import type { RunJobPayload } from "../queue/queues";
 import { addRepeatableJob, removeRepeatableJob } from "../queue/scheduler";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { handleStreamSse } from "../engine/agentTrace/streamSseHandler";
+import type { WorkspaceStreamEnvelope } from "../engine/agentTrace/streamPublisher";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -340,6 +342,125 @@ export function createRoutineRoutes(
       console.error("[routines] patch failed:", (err as Error).message);
       res.status(500).json({ error: "Failed to update routine" });
     }
+  }));
+
+  // -------------------------------------------------------------------------
+  // HEL-214 / PR J scaffold — POST /api/routines/:id/debug-run
+  //
+  // TODO: HEL-214 wire real implementation. Pro Mode's StepDebugger runs a
+  // routine in paused mode, surfaces each step's IO, and lets the user
+  // mutate + resume. Real wiring will route through the run engine with a
+  // pause flag; for now we return a synthetic three-step trace.
+  // -------------------------------------------------------------------------
+  router.post("/:id/debug-run", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const body = (req.body ?? {}) as {
+      mode?: unknown;
+      runId?: unknown;
+      stepIndex?: unknown;
+      output?: unknown;
+    };
+    const mode = body.mode === "resume" ? "resume" : "paused";
+    const runId =
+      mode === "resume" && typeof body.runId === "string"
+        ? body.runId
+        : `dbg_${Math.random().toString(36).slice(2, 10)}`;
+
+    const baseSteps = [
+      {
+        index: 0,
+        name: "fetch_input",
+        input: { trigger: "manual" },
+        output: { docId: "doc_42", contentLength: 1240 },
+        status: "ok" as const,
+      },
+      {
+        index: 1,
+        name: "summarize",
+        input: { docId: "doc_42" },
+        output: { summary: "Three highlights about the doc." },
+        status: mode === "resume" ? ("ok" as const) : ("paused" as const),
+      },
+      {
+        index: 2,
+        name: "send_email",
+        input: { to: "owner@example.com", body: "<pending>" },
+        output: null as unknown,
+        status: mode === "resume" ? ("ok" as const) : ("paused" as const),
+      },
+    ];
+
+    if (
+      mode === "resume" &&
+      typeof body.stepIndex === "number" &&
+      body.stepIndex >= 0 &&
+      body.stepIndex < baseSteps.length &&
+      body.output !== undefined
+    ) {
+      baseSteps[body.stepIndex]!.output = body.output;
+    }
+
+    res.status(200).json({ runId, mode, steps: baseSteps });
+  }));
+
+  // -------------------------------------------------------------------------
+  // GET /api/routines/stream — workspace-wide firehose of routine activity.
+  // Emits run.lifecycle and forwarded trace events for every routine in the
+  // workspace. Useful for list-view live status badges.
+  // -------------------------------------------------------------------------
+  router.get("/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Workspace required" });
+      return;
+    }
+    await handleStreamSse(req, res, {
+      workspaceId,
+      filter: (envelope: WorkspaceStreamEnvelope) => {
+        const { event } = envelope;
+        if (event.kind === "run.lifecycle" || event.kind === "trace.forward") {
+          return Boolean(event.routineId);
+        }
+        return false;
+      },
+    });
+  }));
+
+  // -------------------------------------------------------------------------
+  // GET /api/routines/:id/stream — scoped to a single routine.
+  // Emits the lifecycle events for runs of THIS routine plus the forwarded
+  // trace events from in-flight runs so the detail page can render the
+  // live transcript inline.
+  // -------------------------------------------------------------------------
+  router.get("/:id/stream", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    const routineId = req.params.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Workspace required" });
+      return;
+    }
+    if (!UUID_RE.test(routineId)) {
+      res.status(400).json({ error: "Invalid routine ID format" });
+      return;
+    }
+    const ownership = await pool.query<{ id: string }>(
+      `SELECT id::text FROM routines
+        WHERE id = $1::uuid AND workspace_id = $2::uuid`,
+      [routineId, workspaceId],
+    );
+    if (!ownership.rows[0]) {
+      res.status(404).json({ error: "Routine not found" });
+      return;
+    }
+    await handleStreamSse(req, res, {
+      workspaceId,
+      filter: (envelope: WorkspaceStreamEnvelope) => {
+        const { event } = envelope;
+        if (event.kind === "run.lifecycle" || event.kind === "trace.forward") {
+          return event.routineId === routineId;
+        }
+        return false;
+      },
+    });
   }));
 
   return router;

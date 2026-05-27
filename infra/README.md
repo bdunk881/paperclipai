@@ -18,8 +18,9 @@ Supabase, and Cloudflare Pages.
 
 | App | Platform | Workflow |
 |---|---|---|
-| `backend` dev | Fly.io | `.github/workflows/deploy-fly-fastapi-dev.yml` |
-| `backend` staging | Fly.io | `.github/workflows/deploy-fly-fastapi-staging.yml` |
+| `autoflow-api-dev` | Fly.io | `.github/workflows/deploy-fly-api-dev.yml` |
+| `autoflow-api-staging` | Fly.io | `.github/workflows/deploy-fly-api-staging.yml` |
+| `autoflow-api-production` | Fly.io | `.github/workflows/deploy-fly-api-production.yml` |
 | `dashboard` | Cloudflare Pages | `.github/workflows/dashboard-cloudflare-pages.yml` |
 | `docs` | Cloudflare Pages | `.github/workflows/docs-cloudflare-pages.yml` |
 | `landing` | Cloudflare Pages | `.github/workflows/landing-cloudflare-pages.yml` |
@@ -62,23 +63,11 @@ Non-secret runtime values such as `APP_ENV`, `INFISICAL_ENV`, and allowed origin
 | `PRODUCTION_SUPABASE_URL` | Shared staging/master Supabase project URL used by dashboard builds |
 | `PRODUCTION_SUPABASE_PUBLISHABLE_KEY` | Shared staging/master publishable key used by dashboard builds |
 
-### FastAPI Fly.io
-
-| Secret / Variable | Description |
-|---|---|
-| `FLY_API_TOKEN` | Fly.io deploy token with access to the staging and production FastAPI apps |
-| `FLY_STAGING_APP_NAME` | Optional override for the Fly app name |
-| `FLY_STAGING_BASE_URL` | Optional override for the public Fly hostname used by smoke checks |
-| `FLY_STAGING_SMOKE_USER_ID` | Optional user id sent through the staging smoke requests |
-| `FLY_PRODUCTION_APP_NAME` | Optional override for the production Fly app name |
-| `FLY_PRODUCTION_BASE_URL` | Optional override for the production Fly hostname used by smoke checks |
-| `FLY_PRODUCTION_SMOKE_USER_ID` | Optional user id sent through production smoke requests |
-| `FLY_PRODUCTION_RELAY_BASE_URL` | Optional direct backend host to relay callbacks/webhooks during a production cutover window; if omitted, the workflow uses `https://api.helloautoflow.com` |
-
 ## Daily operations
 
-- **Deploy backend dev:** push to `dev` — `.github/workflows/deploy-fly-fastapi-dev.yml` deploys `autoflow-fastapi-dev`.
-- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-fly-fastapi-staging.yml` deploys `autoflow-fastapi-staging`.
+- **Deploy backend dev:** push to `dev` — `.github/workflows/deploy-fly-api-dev.yml` deploys `autoflow-api-dev` (custom domain `dev-api.helloautoflow.com`).
+- **Deploy backend staging:** push to `staging` — `.github/workflows/deploy-fly-api-staging.yml` deploys `autoflow-api-staging` (custom domain `staging-api.helloautoflow.com`).
+- **Deploy backend production:** push to `master` — `.github/workflows/deploy-fly-api-production.yml` deploys `autoflow-api-production` (custom domain `api.helloautoflow.com`).
 - **Promotion flow:** all feature work lands through PRs into `dev`, then `dev` promotes to `staging`, then `staging` promotes to `master`.
 - **Deploy dashboard:** pushes and PRs with `dashboard/**` changes run `.github/workflows/dashboard-cloudflare-pages.yml`.
 - **Deploy docs:** pushes and PRs with `docs/**` changes run `.github/workflows/docs-cloudflare-pages.yml`.
@@ -87,10 +76,13 @@ Non-secret runtime values such as `APP_ENV`, `INFISICAL_ENV`, and allowed origin
 - **Rollback:** redeploy the last healthy Fly release for backend or re-run the previous Pages deployment for the affected frontend app.
 ## Protected Preview QA Access
 
-- Set `QA_PREVIEW_ACCESS_TOKEN` only on the dashboard Vercel project's `preview` environment.
+- On the dashboard Cloudflare Pages project, set these env vars **only on preview deployments**:
+  - `QA_PREVIEW_ACCESS_TOKEN` — shared secret QA hits the endpoint with.
+  - `QA_PREVIEW_DEPLOYMENT_KIND=preview` — gates the endpoint to preview-only.
+  - `APP_JWT_SECRET` — same value the Express backend uses; tokens issued by the Pages Function are verified by Express.
 - Share QA links in the form `https://<preview-host>/agents?qaPreviewToken=<token>`.
-- The dashboard validates the token through `/api/qa-preview-access`, seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
-- Do not set `QA_PREVIEW_ACCESS_TOKEN` on `production`.
+- The dashboard validates the token through the same-origin `/api/qa-preview-access` endpoint (a Cloudflare Pages Function at `dashboard/functions/api/qa-preview-access.ts`), seeds a temporary local auth user, and then unlocks the protected `/agents` routes for smoke testing.
+- Do **not** set `QA_PREVIEW_ACCESS_TOKEN` on the production Pages deployment (or, if you must, set `QA_PREVIEW_DEPLOYMENT_KIND=production` so the function refuses even with a valid token).
 
 ## DNS
 
@@ -107,12 +99,6 @@ Manage DNS through Cloudflare and keep production API records pointed at the act
 
 - Workflow: `.github/workflows/qa-integration-evidence.yml`
 - Smoke script: `infra/scripts/qa_integration_smoke.sh`
-
-## FastAPI Fly.io
-
-- Workflow: `.github/workflows/deploy-fly-fastapi-staging.yml`
-- Smoke script: `infra/scripts/fly_fastapi_smoke.sh`
-- Runbook: `infra/runbooks/fly-fastapi-staging.md`
 
 ## Observability Rollups
 

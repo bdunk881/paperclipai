@@ -1,14 +1,12 @@
 # Fly.io config for the TS Express backend, PRODUCTION environment (HEL-96).
 #
 # Runs the consolidated AutoFlow API (src/app.ts) deployed via docker/api/Dockerfile.
-# Public hostname: api.helloautoflow.com (Cloudflare CNAME to
+# Public hostname: api.helloautoflow.com (Cloudflare CNAME directly to
 # autoflow-api-production.fly.dev — the SAME hostname OAuth providers and
-# Stripe webhooks already point at). The cutover is a DNS swap, not a URL
-# change, so provider configs never need to update.
+# Stripe webhooks already point at).
 #
 # Replaces autoflow-fastapi-production (the relay shim from the aborted
-# Phase-3 cutover). The FastAPI app stays running in parallel during cutover;
-# HEL-97 retires it after 7 days of stable production.
+# Phase-3 cutover, retired in HEL-97).
 
 app = "autoflow-api-production"
 primary_region = "ord"

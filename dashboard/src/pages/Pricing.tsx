@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Zap, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { getApiBasePath } from "../api/baseUrl";
 
 const TIERS = [
   {
@@ -113,13 +114,15 @@ async function startCheckout(tierId: string, getAccessToken: () => Promise<strin
 
   // /api/billing/checkout is requireAuth-mounted upstream (HEL-17 hardening).
   // Forward the user's access token; without it the request 401s.
+  // baseUrl prepends the correct backend origin per environment — used to be a
+  // Vercel rewrite to the same URL, retired with the Vercel deploy target.
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = await getAccessToken();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch("/api/billing/checkout", {
+  const res = await fetch(`${getApiBasePath()}/billing/checkout`, {
     method: "POST",
     headers,
     body: JSON.stringify({ tier: tierId }),

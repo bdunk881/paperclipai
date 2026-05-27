@@ -23,6 +23,10 @@ export const PROVIDER_NAMES = [
   // OpenAI-compatible. Used by the hosted free tier (Big Pickle) — see
   // src/hostedFreeModels/providers.ts.
   "opencode_zen",
+  // OpenAI-compatible multi-vendor gateway. Used as the Phase 1 backbone
+  // for hosted-credits routing — see src/billing/credits/creditsRouter.ts.
+  // Single prepaid balance fronts every underlying provider.
+  "openrouter",
 ] as const;
 
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
@@ -151,23 +155,16 @@ export interface LLMProviderConfig {
    */
   onText?: (delta: string, accumulated: string) => void;
   /**
-   * Optional agentic tool loop. When at least one tool is supplied,
-   * the provider runs a multi-turn loop: model emits a tool call →
-   * provider invokes the matching handler → handler's result is fed
-   * back as a tool message → model continues until it stops calling
-   * tools. The final assistant text is returned in `LLMResponse.text`.
-   *
-   * Mutually exclusive with `responseFormat` (JSON-mode forces tool
-   * use to a single fixed tool — there's no loop). Providers that
-   * haven't been wired (everything except Anthropic today) silently
-   * ignore `tools` and fall back to the single-turn completion path.
-   *
-   * `maxToolIterations` caps the loop to prevent runaway agents — a
-   * model that keeps emitting tool calls past the cap returns its
-   * last text turn with an `[interrupted: max iterations]` suffix.
-   * Defaults to 8 when omitted.
+   * @deprecated The agentic tool-loop now lives in
+   * `src/agents/runtime/fallbackAgentBackend.ts` (and the SDK backends).
+   * Passing `tools` to `getProvider(...)` throws at runtime — route
+   * agent runs through `runAgent()` instead. Field kept on the type
+   * temporarily so external schemas / serialized configs that still
+   * include it don't blow up at compile time; remove once HEL-82.x is
+   * archived.
    */
   tools?: AgentTool[];
+  /** @deprecated See `tools` above. */
   maxToolIterations?: number;
   /**
    * Optional system prompt. When set, Anthropic receives this in its
@@ -438,5 +435,18 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   ],
   opencode_zen: [
     "big-pickle",
+  ],
+  // Multi-vendor gateway — model IDs use OpenRouter's
+  // `vendor/model-slug` convention. The credits router translates from
+  // our internal { provider, model } pairs at call time.
+  openrouter: [
+    "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.7",
+    "anthropic/claude-haiku-4.5",
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "google/gemini-3.5-flash",
+    "deepseek/deepseek-v4-pro",
+    "meta-llama/llama-3.3-70b-instruct",
   ],
 };

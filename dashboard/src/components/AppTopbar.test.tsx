@@ -20,6 +20,13 @@ vi.mock("../context/AuthContext", () => ({
   }),
 }));
 
+// HEL-203 PR 1: ExperienceModeContext is now read by AppTopbar for the
+// Pro/Simple toggle. Stub it so AppTopbar's tests don't need to mount the
+// real provider (which would also drag in an API call on first render).
+vi.mock("../context/ExperienceModeContext", () => ({
+  useExperienceMode: () => ({ mode: "simple", setMode: vi.fn(), loading: false }),
+}));
+
 vi.mock("../api/searchApi", () => ({
   searchEntities: searchEntitiesMock,
 }));
@@ -207,15 +214,18 @@ describe("AppTopbar", () => {
     expect(screen.getByRole("button", { name: /inbox/i })).toBeInTheDocument();
   });
 
-  it("renders the user avatar as a link to /settings/profile with initials", () => {
+  it("renders the user avatar as a button that opens the Af2UserMenu (HEL-203/HEL-213)", () => {
+    // HEL-203 PR 1 + HEL-213 PR I: avatar is now a button that toggles
+    // Af2UserMenu instead of a direct link to /settings/profile.
+    // Navigation to Account / Members / Billing happens through the menu.
     render(
       <MemoryRouter>
         <AppTopbar />
       </MemoryRouter>,
     );
 
-    const avatar = screen.getByRole("link", { name: /open profile settings/i });
-    expect(avatar).toHaveAttribute("href", "/settings/profile");
+    const avatar = screen.getByRole("button", { name: /open user menu/i });
+    expect(avatar).toHaveAttribute("aria-haspopup", "menu");
     expect(avatar).toHaveTextContent("JD");
   });
 

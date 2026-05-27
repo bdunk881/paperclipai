@@ -1,8 +1,8 @@
 name: Deploy TS Express API to Fly (dev)
 
 # HEL-83 — deploys the consolidated AutoFlow Express backend (src/app.ts)
-# to the `autoflow-api-dev` Fly app. Runs in parallel with the legacy
-# `autoflow-fastapi-dev` deploy until HEL-97 cleanup retires the FastAPI app.
+# to the `autoflow-api-dev` Fly app. The legacy `autoflow-fastapi-dev`
+# relay shim was retired in HEL-97.
 #
 # Hostname: dev-api.helloautoflow.com (custom domain on this Fly app).
 

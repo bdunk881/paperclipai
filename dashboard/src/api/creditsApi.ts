@@ -102,8 +102,37 @@ export function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/**
+ * Trigger a browser download of the full ledger CSV. Streams via a
+ * temporary anchor click rather than `window.location` so the
+ * Authorization header attaches and the page doesn't navigate away.
+ */
+export async function downloadLedgerCsv(accessToken: string): Promise<void> {
+  const res = await fetch(`${BASE}/credits/wallet/ledger.csv`, {
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Ledger export failed: ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  try {
+    const link = document.createElement("a");
+    link.href = url;
+    // Server sets Content-Disposition with a sensible filename; the
+    // download attribute is a fallback if the browser ignores the header.
+    link.download = "credit-ledger.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Auto-topup (PR #3 — Phase 3, migration 076)
+// Auto-topup (PR #1075 — Phase 3, migration 076)
 // ---------------------------------------------------------------------------
 
 /**

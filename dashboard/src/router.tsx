@@ -54,6 +54,8 @@ import OrgStructure from "./pages/OrgStructure";
 import Pricing from "./pages/Pricing";
 import ProfileSettings from "./pages/ProfileSettings";
 import SecuritySettings from "./pages/SecuritySettings";
+import MfaEnrollmentWizard from "./pages/MfaEnrollmentWizard";
+import { MfaEnforcementGate } from "./auth/MfaEnforcementGate";
 import Settings from "./pages/Settings";
 // HEL-213 PR I: user-avatar dropdown pages.
 import Account from "./pages/Account";
@@ -83,6 +85,14 @@ import {
 } from "./router/loaders";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  return <MfaEnforcementGate>{children}</MfaEnforcementGate>;
+}
+
+// Auth-only gate without MFA enforcement — used for the enrollment wizard
+// itself so a user with no factors can reach it without redirect-looping.
+function AuthOnlyRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   return user ? <>{children}</> : <Navigate to="/login" replace />;
 }
@@ -217,6 +227,15 @@ const routes: RouteObject[] = [
   },
   { path: "/signup", element: <Navigate to="/login?mode=signup" replace /> },
   { path: "/reset-password", element: <ResetPassword />, errorElement: <RouteErrorBoundary /> },
+  {
+    path: "/onboarding/mfa",
+    element: (
+      <AuthOnlyRoute>
+        <MfaEnrollmentWizard />
+      </AuthOnlyRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   {
     path: "/",
     element: (

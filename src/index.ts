@@ -44,14 +44,17 @@ async function startServer() {
   const [
     { startOpenrouterHealthJob },
     { startCreditExpirationJob },
+    { startCreditAnomalyDetector },
     { startCreditAutoTopupJob },
   ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
+    import("./billing/credits/creditAnomalyDetectorJob"),
     import("./billing/credits/creditAutoTopupJob"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
+  startCreditAnomalyDetector();
   startCreditAutoTopupJob();
 }
 

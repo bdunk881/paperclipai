@@ -7,10 +7,19 @@
  * parent's tool call instead of interleaving them into one flat list.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render } from "../test/render";
 import { screen, within } from "@testing-library/react-original";
 import type { AgentTraceEnvelope } from "../api/agentTrace";
+
+// useIsPaidTier reads from AuthProvider + WorkspaceProvider which the
+// shared test render doesn't supply. The tree-view enrichment behind
+// the gate is exercised in JsonTreeViewer's own tests; here we only
+// care about parent→child trace rendering, so stub the gate to free.
+vi.mock("../hooks/useIsPaidTier", () => ({
+  useIsPaidTier: () => ({ isPaid: false, plan: null, loading: false }),
+}));
+
 import { AgentTraceTimeline } from "./AgentTraceTimeline";
 
 const PARENT_TURN = "turn-parent";

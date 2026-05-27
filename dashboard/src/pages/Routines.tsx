@@ -366,7 +366,10 @@ export default function Routines({
     if (initialTemplates && sseRefreshKey === 0) return;
     let cancelled = false;
     void (async () => {
-      setLoading(true);
+      // Only show the big spinner on first paint; SSE-triggered reloads
+      // should refresh in the background without flashing the empty state.
+      const isFirstPaint = sseRefreshKey === 0;
+      if (isFirstPaint) setLoading(true);
       setError(null);
       try {
         const token = (await getAccessToken()) ?? undefined;
@@ -387,7 +390,7 @@ export default function Routines({
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && isFirstPaint) setLoading(false);
       }
     })();
     return () => {

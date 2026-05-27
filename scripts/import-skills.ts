@@ -129,6 +129,22 @@ function writeManifest(manifest: Manifest): void {
   fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
 }
 
+// A trusted-origin manifest entry should not be silently replaced by a
+// scan from an untrusted re-vendor of the same skillKey. The skills.sh
+// catalog contains umbrella repos (e.g. sickn33/antigravity-awesome-skills)
+// that re-vendor entries from anthropics/skills under the same skillKey;
+// without this guard, those rescans overwrite the canonical entry with
+// `untrusted_origin` findings.
+function isTrustRegression(
+  previous: ManifestEntry | undefined,
+  candidateFindings: ScanFinding[],
+): boolean {
+  if (!previous) return false;
+  const prevTrusted = previous.findings.some((f) => f.code === "trusted_origin");
+  const candidateUntrusted = candidateFindings.some((f) => f.code === "untrusted_origin");
+  return prevTrusted && candidateUntrusted;
+}
+
 // Strict allowlists for ref components. GitHub permits alphanumerics + `_`,
 // `-`, and `.` in usernames + repo names — match that and bound length so
 // the value going into `git clone https://github.com/<owner>/<repo>.git`
@@ -370,9 +386,15 @@ async function processRepoBatch(
         });
 
         console.log(`  • ${skillKey} — ${summarize(report)}`);
-        for (const f of [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings]) {
+        const allFindings = [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings];
+        for (const f of allFindings) {
           if (f.severity === "info") continue;
           console.log(`      [${f.severity}] ${f.code}: ${f.message}${f.file ? ` (${f.file})` : ""}`);
+        }
+
+        if (isTrustRegression(previous, allFindings)) {
+          console.log(`      → kept previous entry (trusted source ${previous!.ref} preferred over ${ref})`);
+          continue;
         }
 
         options.manifest.entries[skillKey] = {
@@ -380,7 +402,7 @@ async function processRepoBatch(
           skillKey,
           verdict: report.verdict,
           scannedAt: report.scannedAt,
-          findings: [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings],
+          findings: allFindings,
         };
 
         if (report.verdict === "approved") {
@@ -481,9 +503,15 @@ async function processRef(
       });
 
       console.log(`  • ${skillKey} — ${summarize(report)}`);
-      for (const f of [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings]) {
+      const allFindings = [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings];
+      for (const f of allFindings) {
         if (f.severity === "info") continue;
         console.log(`      [${f.severity}] ${f.code}: ${f.message}${f.file ? ` (${f.file})` : ""}`);
+      }
+
+      if (isTrustRegression(previous, allFindings)) {
+        console.log(`      → kept previous entry (trusted source ${previous!.ref} preferred over ${ref})`);
+        continue;
       }
 
       options.manifest.entries[skillKey] = {
@@ -491,7 +519,7 @@ async function processRef(
         skillKey,
         verdict: report.verdict,
         scannedAt: report.scannedAt,
-        findings: [...report.staticFindings, ...report.provenanceFindings, ...report.llmFindings],
+        findings: allFindings,
       };
 
       if (report.verdict === "approved") {

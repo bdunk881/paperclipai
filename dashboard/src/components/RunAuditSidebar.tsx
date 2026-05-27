@@ -23,6 +23,8 @@ import type { StepResult, WorkflowRun } from "../types/workflow";
 import { buildWorkflowBuilderRoute } from "../utils/workflowBuilderRoute";
 import { replayRunFromStep } from "../api/client";
 import { getSupabaseStoredSession } from "../auth/supabaseAuth";
+import { JsonTreeViewer } from "./JsonTreeViewer";
+import { useIsPaidTier } from "../hooks/useIsPaidTier";
 
 type StepStatus = StepResult["status"];
 
@@ -219,6 +221,11 @@ function JsonPanel({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const { isPaid } = useIsPaidTier();
+  // Pro users get a collapsible JSON tree by default with a "Raw"
+  // escape hatch for copy-paste. Free users see the existing flat
+  // indented renderer (no toggle to keep the surface uncluttered).
+  const [view, setView] = useState<"tree" | "raw">("tree");
 
   return (
     <div className="overflow-hidden rounded-xl border border-af2-line bg-af2-paper-3">
@@ -233,7 +240,39 @@ function JsonPanel({
       </button>
       {open && (
         <div className="run-audit-mono overflow-x-auto px-3 py-3 text-xs leading-6 text-af2-ink-2">
-          <JsonValue value={value} />
+          {isPaid && (
+            <div className="mb-2 flex justify-end gap-1 text-[10px] font-semibold uppercase tracking-[0.18em]">
+              <button
+                type="button"
+                onClick={() => setView("tree")}
+                className={clsx(
+                  "rounded px-2 py-0.5 transition",
+                  view === "tree"
+                    ? "bg-af2-clay/15 text-af2-clay"
+                    : "text-af2-ink-4 hover:bg-af2-paper-2",
+                )}
+              >
+                Tree
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("raw")}
+                className={clsx(
+                  "rounded px-2 py-0.5 transition",
+                  view === "raw"
+                    ? "bg-af2-clay/15 text-af2-clay"
+                    : "text-af2-ink-4 hover:bg-af2-paper-2",
+                )}
+              >
+                Raw
+              </button>
+            </div>
+          )}
+          {isPaid && view === "tree" ? (
+            <JsonTreeViewer value={value} />
+          ) : (
+            <JsonValue value={value} />
+          )}
         </div>
       )}
     </div>

@@ -1,6 +1,50 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import SecuritySettings from "./SecuritySettings";
+
+// HEL-mfa: SecuritySettings now embeds MfaSettingsCard which uses
+// useNavigate(). Wrap the render in MemoryRouter so the hook resolves.
+function renderSecuritySettings() {
+  return render(
+    <MemoryRouter>
+      <SecuritySettings />
+    </MemoryRouter>,
+  );
+}
+
+// Stub the MFA API so the embedded card mounts cleanly without firing
+// real fetches into the tests that don't care about MFA.
+vi.mock("../api/mfaApi", () => ({
+  getMfaPolicy: vi.fn(async () => ({
+    hasWebauthn: false,
+    hasTotp: false,
+    hasAnyFactor: false,
+    hasRecoveryCodes: false,
+    enrollmentCompletedAt: null,
+    lastVerifiedAt: null,
+    lastVerifiedMethod: null,
+    recoveryCodesIssuedAt: null,
+    webauthnDevices: [],
+  })),
+  regenerateRecoveryCodes: vi.fn(),
+  removeTotpFactor: vi.fn(),
+  removeWebauthnCredential: vi.fn(),
+  consumeRecoveryCode: vi.fn(),
+  beginWebauthnRegistration: vi.fn(),
+  finishWebauthnRegistration: vi.fn(),
+  beginWebauthnAuthentication: vi.fn(),
+  finishWebauthnAuthentication: vi.fn(),
+  enrollTotp: vi.fn(),
+  verifyTotpEnrollment: vi.fn(),
+}));
+
+vi.mock("../auth/mfa", () => ({
+  registerPasskey: vi.fn(),
+  verifyPasskey: vi.fn(),
+  isWebauthnAvailable: () => false,
+  platformAuthenticatorAvailable: vi.fn(async () => false),
+}));
 
 const requireAccessTokenMock = vi.fn();
 const logoutMock = vi.fn();
@@ -70,7 +114,7 @@ describe("SecuritySettings", () => {
   });
 
   it("loads and renders active session data", async () => {
-    render(<SecuritySettings />);
+    renderSecuritySettings();
 
     expect(screen.getByText("Loading sessions...")).toBeInTheDocument();
     expect(await screen.findByText("Chrome on macOS")).toBeInTheDocument();
@@ -82,7 +126,7 @@ describe("SecuritySettings", () => {
 
   it("validates and updates the password", async () => {
     updatePasswordMock.mockResolvedValue(undefined);
-    render(<SecuritySettings />);
+    renderSecuritySettings();
     await screen.findByText("Chrome on macOS");
 
     fireEvent.change(screen.getByLabelText("Current Password"), { target: { value: "old-password" } });
@@ -119,7 +163,7 @@ describe("SecuritySettings", () => {
     revokeSecuritySessionMock.mockResolvedValue({ currentSessionRevoked: false });
     revokeOtherSecuritySessionsMock.mockResolvedValue(undefined);
 
-    render(<SecuritySettings />);
+    renderSecuritySettings();
     await screen.findByText("Safari on iOS");
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
@@ -139,7 +183,7 @@ describe("SecuritySettings", () => {
 
   it("logs out after revoking the current session", async () => {
     revokeSecuritySessionMock.mockResolvedValue({ currentSessionRevoked: true });
-    render(<SecuritySettings />);
+    renderSecuritySettings();
     await screen.findByText("Chrome on macOS");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out current session" }));
@@ -152,7 +196,7 @@ describe("SecuritySettings", () => {
 
   it("surfaces session loading errors", async () => {
     listSecuritySessionsMock.mockRejectedValue(new Error("Sessions unavailable"));
-    render(<SecuritySettings />);
+    renderSecuritySettings();
 
     expect(await screen.findByText("Sessions unavailable")).toBeInTheDocument();
     expect(screen.getByText("No active session data available")).toBeInTheDocument();

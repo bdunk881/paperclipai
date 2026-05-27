@@ -13,4 +13,6 @@ export const queryKeys = {
   entitlements: (id: string) => ["workspace", id, "entitlements"] as const,
   observability: (id: string, tab: string) => ["workspace", id, "observability", tab] as const,
   tickets: (id: string) => ["workspace", id, "tickets"] as const,
+  inFlightRuns: (id: string) => ["workspace", id, "in-flight-runs"] as const,
+  notifications: (id: string) => ["workspace", id, "notifications"] as const,
 };

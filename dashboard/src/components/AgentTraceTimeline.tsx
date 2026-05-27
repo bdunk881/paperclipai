@@ -1,4 +1,7 @@
+import { useState } from "react";
 import type { AgentTraceEnvelope } from "../api/agentTrace";
+import { JsonTreeViewer } from "./JsonTreeViewer";
+import { useIsPaidTier } from "../hooks/useIsPaidTier";
 
 interface AgentTraceTimelineProps {
   events: AgentTraceEnvelope[];
@@ -138,23 +141,32 @@ function labelForEvent(envelope: AgentTraceEnvelope): string {
   }
 }
 
-function bodyForEvent(envelope: AgentTraceEnvelope): string | null {
+/**
+ * Resolve the row body. When the event has a structured payload (e.g.
+ * tool_call.completed arguments), we return both the text rendering AND
+ * the raw value so Pro users can flip to a collapsible tree.
+ */
+function bodyForEvent(
+  envelope: AgentTraceEnvelope,
+): { text: string; raw?: unknown } | null {
   const e = envelope.event;
   switch (e.type) {
     case "assistant.delta":
-      return String(e.accumulated ?? e.delta ?? "");
+      return { text: String(e.accumulated ?? e.delta ?? "") };
     case "reasoning.delta":
-      return String(e.accumulated ?? e.delta ?? "");
-    case "tool_call.completed":
-      return JSON.stringify(e.arguments ?? {}, null, 2);
+      return { text: String(e.accumulated ?? e.delta ?? "") };
+    case "tool_call.completed": {
+      const args = e.arguments ?? {};
+      return { text: JSON.stringify(args, null, 2), raw: args };
+    }
     case "tool_result":
-      return String(e.outputPreview ?? "");
+      return { text: String(e.outputPreview ?? "") };
     case "turn.completed":
-      return String(e.text ?? "");
+      return { text: String(e.text ?? "") };
     case "turn.error":
-      return String(e.message ?? "");
+      return { text: String(e.message ?? "") };
     case "tool_call.args.delta":
-      return String(e.accumulatedJson ?? e.delta ?? "");
+      return { text: String(e.accumulatedJson ?? e.delta ?? "") };
     default:
       return null;
   }
@@ -166,18 +178,41 @@ function bodyForEvent(envelope: AgentTraceEnvelope): string | null {
  */
 function TraceRow({ envelope }: { envelope: AgentTraceEnvelope }) {
   const body = bodyForEvent(envelope);
+  const { isPaid } = useIsPaidTier();
+  // Tree view is only meaningful when there's a structured payload.
+  // Default to the raw <pre> until the user explicitly opens the tree.
+  const [view, setView] = useState<"raw" | "tree">("raw");
+  const canShowTree = isPaid && body?.raw !== undefined;
   return (
     <li className="rounded border border-ink/10 bg-cream/50 px-2 py-1.5">
-      <div className="flex justify-between gap-2 font-ui text-ink/70">
+      <div className="flex items-center justify-between gap-2 font-ui text-ink/70">
         <span>{labelForEvent(envelope)}</span>
-        <span className="font-mono text-[10px] text-ink/50">
-          {new Date(envelope.at).toLocaleTimeString()}
-        </span>
+        <div className="flex items-center gap-2">
+          {canShowTree && (
+            <button
+              type="button"
+              onClick={() => setView((v) => (v === "tree" ? "raw" : "tree"))}
+              className="rounded border border-ink/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink/60 transition hover:bg-ink/5"
+              aria-pressed={view === "tree"}
+            >
+              {view === "tree" ? "Raw" : "Tree"}
+            </button>
+          )}
+          <span className="font-mono text-[10px] text-ink/50">
+            {new Date(envelope.at).toLocaleTimeString()}
+          </span>
+        </div>
       </div>
       {body ? (
-        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-ink/90">
-          {body.length > 1500 ? `${body.slice(0, 1500)}…` : body}
-        </pre>
+        canShowTree && view === "tree" ? (
+          <div className="mt-1 max-h-32 overflow-auto">
+            <JsonTreeViewer value={body.raw} />
+          </div>
+        ) : (
+          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-ink/90">
+            {body.text.length > 1500 ? `${body.text.slice(0, 1500)}…` : body.text}
+          </pre>
+        )
       ) : null}
     </li>
   );

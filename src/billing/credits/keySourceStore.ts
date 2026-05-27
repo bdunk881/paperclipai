@@ -357,3 +357,132 @@ export async function insertKeySource(args: InsertKeySourceArgs): Promise<string
 export function __resetInMemoryStateForTests(): void {
   inMemoryKeySources.clear();
 }
+
+/**
+ * HEL-250: list every row in the pool (admin panel use only). Excludes the
+ * decrypted secret — the table renders metadata + masked tail only.
+ */
+export async function listKeySources(): Promise<KeySourceRow[]> {
+  if (!persistenceAvailable()) {
+    return [...inMemoryKeySources.values()]
+      .map((r) => {
+        const { keyCiphertext: _ignored, ...meta } = r;
+        return meta;
+      })
+      .sort((a, b) => a.priority - b.priority);
+  }
+  const result = await queryPostgres<{
+    id: string;
+    source_kind: string;
+    provider: string;
+    label: string;
+    status: string;
+    throttled_until: Date | null;
+    prepaid_balance_usd: string | null;
+    prepaid_balance_observed_at: Date | null;
+    daily_spend_cap_usd: string | null;
+    current_day_spend_usd: string;
+    current_day_key: string | null;
+    last_429_at: Date | null;
+    consecutive_429_count: number;
+    priority: number;
+  }>(
+    `SELECT id, source_kind, provider, label, status,
+            throttled_until, prepaid_balance_usd, prepaid_balance_observed_at,
+            daily_spend_cap_usd, current_day_spend_usd, current_day_key,
+            last_429_at, consecutive_429_count, priority
+       FROM platform_provider_keys
+      ORDER BY priority ASC, label ASC`,
+  );
+  return result.rows.map(rowToShape);
+}
+
+/**
+ * HEL-250: swap a key's ciphertext atomically. Used when an existing key has
+ * been compromised. Clears `prepaid_balance_observed_at` so the watchdog
+ * recomputes on the next tick — the new key may belong to a different
+ * prepaid account.
+ *
+ * Returns true on success, false when the row doesn't exist.
+ */
+export async function rotateKeySourceCiphertext(
+  keySourceId: string,
+  newApiKey: string,
+): Promise<boolean> {
+  if (!persistenceAvailable()) {
+    const row = inMemoryKeySources.get(keySourceId);
+    if (!row) return false;
+    row.keyCiphertext = `inmem:${newApiKey}`;
+    row.prepaidBalanceUsd = null;
+    row.prepaidBalanceObservedAt = null;
+    row.consecutive429Count = 0;
+    return true;
+  }
+  const ciphertext = connectorSecretVault.encrypt(newApiKey);
+  const result = await queryPostgres(
+    `UPDATE platform_provider_keys
+        SET key_ciphertext = $2,
+            key_version = key_version + 1,
+            prepaid_balance_usd = NULL,
+            prepaid_balance_observed_at = NULL,
+            consecutive_429_count = 0,
+            updated_at = now()
+      WHERE id = $1`,
+    [keySourceId, ciphertext],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export interface UpdateKeySourceMetaArgs {
+  priority?: number;
+  dailySpendCapUsd?: number | null;
+  label?: string;
+}
+
+/**
+ * HEL-250: update non-secret metadata. Pass undefined to leave a field
+ * unchanged; pass null on dailySpendCapUsd to clear it.
+ */
+export async function updateKeySourceMeta(
+  keySourceId: string,
+  patch: UpdateKeySourceMetaArgs,
+): Promise<boolean> {
+  if (
+    patch.priority === undefined
+    && patch.dailySpendCapUsd === undefined
+    && patch.label === undefined
+  ) {
+    return true;
+  }
+
+  if (!persistenceAvailable()) {
+    const row = inMemoryKeySources.get(keySourceId);
+    if (!row) return false;
+    if (patch.priority !== undefined) row.priority = patch.priority;
+    if (patch.dailySpendCapUsd !== undefined) row.dailySpendCapUsd = patch.dailySpendCapUsd;
+    if (patch.label !== undefined) row.label = patch.label;
+    return true;
+  }
+
+  // Build a dynamic SET clause from only the fields the caller is changing.
+  const set: string[] = [];
+  const args: unknown[] = [keySourceId];
+  if (patch.priority !== undefined) {
+    args.push(patch.priority);
+    set.push(`priority = $${args.length}`);
+  }
+  if (patch.dailySpendCapUsd !== undefined) {
+    args.push(patch.dailySpendCapUsd);
+    set.push(`daily_spend_cap_usd = $${args.length}`);
+  }
+  if (patch.label !== undefined) {
+    args.push(patch.label);
+    set.push(`label = $${args.length}`);
+  }
+  set.push(`updated_at = now()`);
+  const result = await queryPostgres(
+    `UPDATE platform_provider_keys SET ${set.join(", ")} WHERE id = $1`,
+    args,
+  );
+  return (result.rowCount ?? 0) > 0;
+}

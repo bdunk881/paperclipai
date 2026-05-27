@@ -49,6 +49,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 // HEL-214 / PR J: Pro Mode actionable reveal.
 import { ProReveal } from "../components/pro/ProReveal";
 import { StepDebugger } from "../components/pro/StepDebugger";
@@ -392,6 +393,7 @@ type FlowNodeData = {
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
   onRemove: (id: string) => void;
+  onDuplicate: (id: string) => void;
   isFirst: boolean;
   isLast: boolean;
   teamAgent?: ControlPlaneAgent;
@@ -989,6 +991,33 @@ export default function WorkflowBuilder() {
     setGraphError(null);
   }
 
+  // HEL-239: duplicate the step inline. Clone its config + visual
+  // position with a small offset so the new node doesn't render exactly
+  // on top of the source, and inherit the same edge target as the
+  // original (the duplicate appears as a sibling, not an in-line copy).
+  function duplicateStep(id: string) {
+    const source = template.steps.find((s) => s.id === id);
+    if (!source) return;
+    const newStepId = `step-${Date.now()}`;
+    const sourcePos = (source.config?.[STEP_POSITION_KEY] as { x?: number; y?: number } | undefined);
+    const newPosition: XYPosition = {
+      x: (sourcePos?.x ?? 0) + 48,
+      y: (sourcePos?.y ?? 0) + 48,
+    };
+    const clone: WorkflowStep = {
+      ...source,
+      id: newStepId,
+      name: `${source.name} copy`,
+      config: {
+        ...(source.config ?? {}),
+        [STEP_POSITION_KEY]: { x: Math.round(newPosition.x), y: Math.round(newPosition.y) },
+      },
+    };
+    setTemplate((t) => ({ ...t, steps: [...t.steps, clone] }));
+    setSelectedStepId(newStepId);
+    setGraphError(null);
+  }
+
   function updateStepPosition(id: string, position: XYPosition) {
     setTemplate((t) => ({
       ...t,
@@ -1038,6 +1067,7 @@ export default function WorkflowBuilder() {
         onMoveUp: (stepId: string) => moveStep(stepId, -1),
         onMoveDown: (stepId: string) => moveStep(stepId, 1),
         onRemove: removeStep,
+        onDuplicate: duplicateStep,
         isFirst: idx === 0,
         isLast: idx === template.steps.length - 1,
         teamAgent,
@@ -2931,6 +2961,102 @@ function AgentSlots({ step }: { step: WorkflowStep }) {
   );
 }
 
+/**
+ * Right-click context menu wrapper for canvas step nodes (HEL-239).
+ *
+ * Surfaces the same actions the inspector buttons + arrow-key shortcuts
+ * already expose, plus two clipboard utilities power users keep asking
+ * for. Radix's ContextMenu handles long-press on touch out of the box.
+ */
+function StepNodeContextMenu({
+  children,
+  stepId,
+  step,
+  isFirst,
+  isLast,
+  onSelect,
+  onMoveUp,
+  onMoveDown,
+  onDuplicate,
+  onRemove,
+}: {
+  children: React.ReactNode;
+  stepId: string;
+  step: WorkflowStep;
+  isFirst: boolean;
+  isLast: boolean;
+  onSelect: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const copy = async (text: string): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard API can be blocked by sandbox / focus rules.
+      // Drop silently — the menu item won't no-op visibly but the
+      // failure is rare and recoverable (user can copy from inspector).
+    }
+  };
+  const itemCls =
+    "flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-xs text-af2-ink-2 outline-none data-[disabled]:pointer-events-none data-[disabled]:text-af2-ink-4 data-[highlighted]:bg-af2-paper-2 data-[highlighted]:text-af2-ink";
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          className="z-50 min-w-[180px] rounded-lg border border-af2-line bg-af2-card p-1 shadow-af2-lg"
+          loop
+        >
+          <ContextMenu.Item className={itemCls} onSelect={onSelect}>
+            Open inspector
+          </ContextMenu.Item>
+          <ContextMenu.Item className={itemCls} onSelect={onDuplicate}>
+            Duplicate step
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-af2-line" />
+          <ContextMenu.Item
+            className={itemCls}
+            disabled={isFirst}
+            onSelect={onMoveUp}
+          >
+            Move up
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={itemCls}
+            disabled={isLast}
+            onSelect={onMoveDown}
+          >
+            Move down
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-af2-line" />
+          <ContextMenu.Item
+            className={itemCls}
+            onSelect={() => void copy(stepId)}
+          >
+            Copy step ID
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={itemCls}
+            onSelect={() => void copy(JSON.stringify(step, null, 2))}
+          >
+            Copy step config
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-af2-line" />
+          <ContextMenu.Item
+            className={clsx(itemCls, "text-af2-clay data-[highlighted]:text-af2-clay")}
+            onSelect={onRemove}
+          >
+            Delete step
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
 function WorkflowStepNode({
   id,
   data,
@@ -2940,19 +3066,31 @@ function WorkflowStepNode({
   return (
     <div className="w-[280px]">
       <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-af2-ink-3" />
-      <StepNode
+      <StepNodeContextMenu
+        stepId={id}
         step={data.step}
-        selected={selected ?? false}
-        dragging={dragging ?? false}
-        teamAgent={data.teamAgent}
-        teamAgentHref={data.teamAgentHref}
+        isFirst={data.isFirst}
+        isLast={data.isLast}
         onSelect={() => data.onSelect(id)}
         onMoveUp={() => data.onMoveUp(id)}
         onMoveDown={() => data.onMoveDown(id)}
+        onDuplicate={() => data.onDuplicate(id)}
         onRemove={() => data.onRemove(id)}
-        isFirst={data.isFirst}
-        isLast={data.isLast}
-      />
+      >
+        <StepNode
+          step={data.step}
+          selected={selected ?? false}
+          dragging={dragging ?? false}
+          teamAgent={data.teamAgent}
+          teamAgentHref={data.teamAgentHref}
+          onSelect={() => data.onSelect(id)}
+          onMoveUp={() => data.onMoveUp(id)}
+          onMoveDown={() => data.onMoveDown(id)}
+          onRemove={() => data.onRemove(id)}
+          isFirst={data.isFirst}
+          isLast={data.isLast}
+        />
+      </StepNodeContextMenu>
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-af2-ink-3" />
     </div>
   );

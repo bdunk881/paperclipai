@@ -216,6 +216,10 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
       return handleCustomerUpdated(event.data.object as Stripe.Customer);
     case "payment_intent.payment_failed":
       return handlePaymentIntentFailed(event.data.object as Stripe.PaymentIntent);
+    case "setup_intent.succeeded":
+      return handleSetupIntentSucceeded(event.data.object as Stripe.SetupIntent);
+    case "payment_intent.succeeded":
+      return handlePaymentIntentSucceeded(event.data.object as Stripe.PaymentIntent);
     default:
       console.log(`[stripe/webhook] Unhandled event type: ${event.type}`);
   }
@@ -609,6 +613,109 @@ async function handlePaymentIntentFailed(paymentIntent: Stripe.PaymentIntent): P
     `[stripe/webhook] payment_intent.payment_failed — PI ${paymentIntent.id}, ` +
     `customer ${typeof paymentIntent.customer === "string" ? paymentIntent.customer : paymentIntent.customer?.id ?? "unknown"}, ` +
     `error: ${lastError?.message ?? "unknown"} (code: ${lastError?.code ?? "none"})`
+  );
+}
+
+/**
+ * setup_intent.succeeded — fires when a customer finishes adding a
+ * card via the auto-topup setup flow (mode='setup' Checkout). We
+ * grab the customer_id + payment_method_id and persist them on the
+ * wallet so the auto-topup worker can fire off-session PaymentIntents.
+ *
+ * The confirm endpoint (POST /api/credits/wallet/setup-checkout/confirm)
+ * does the same work synchronously on the dashboard redirect — the
+ * webhook is the durable retry path when the dashboard call fails or
+ * the customer closes the tab before redirect completes.
+ */
+async function handleSetupIntentSucceeded(setupIntent: Stripe.SetupIntent): Promise<void> {
+  const meta = (setupIntent.metadata ?? {}) as Record<string, string>;
+  if (meta.kind !== "credits_auto_topup_setup") return;
+
+  const workspaceId = meta.workspaceId;
+  if (!workspaceId) {
+    console.error(
+      `[stripe/webhook] setup_intent.succeeded ${setupIntent.id} missing workspaceId metadata`,
+    );
+    return;
+  }
+
+  const stripeCustomerId =
+    typeof setupIntent.customer === "string"
+      ? setupIntent.customer
+      : setupIntent.customer?.id;
+  const paymentMethodId =
+    typeof setupIntent.payment_method === "string"
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id;
+
+  if (!stripeCustomerId || !paymentMethodId) {
+    console.error(
+      `[stripe/webhook] setup_intent.succeeded ${setupIntent.id} for workspace ${workspaceId} ` +
+        `missing customer or payment_method`,
+    );
+    return;
+  }
+
+  const { setWalletStripeCustomerId, setWalletStripePaymentMethodId } = await import(
+    "./credits/walletStore"
+  );
+  await setWalletStripeCustomerId(workspaceId, stripeCustomerId);
+  await setWalletStripePaymentMethodId(workspaceId, paymentMethodId);
+  console.log(
+    `[stripe/webhook] auto-topup setup completed for workspace ${workspaceId} ` +
+      `(customer=${stripeCustomerId}, payment_method=${paymentMethodId})`,
+  );
+}
+
+/**
+ * payment_intent.succeeded — fires when an auto-topup off-session
+ * charge clears. Only handles PaymentIntents with metadata.kind =
+ * "credits_auto_topup" (credit pack purchases land via
+ * checkout.session.completed). Grants the configured amount of credits
+ * via the existing grant_credits idempotency (so retries are safe).
+ */
+async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent): Promise<void> {
+  const meta = (paymentIntent.metadata ?? {}) as Record<string, string>;
+  if (meta.kind !== "credits_auto_topup") return;
+
+  const workspaceId = meta.workspaceId;
+  const amountCredits = meta.amountCredits;
+  if (!workspaceId || !amountCredits) {
+    console.error(
+      `[stripe/webhook] credits_auto_topup payment_intent.succeeded ${paymentIntent.id} ` +
+        `missing workspaceId/amountCredits metadata`,
+    );
+    return;
+  }
+
+  let credits: bigint;
+  try {
+    credits = BigInt(amountCredits);
+  } catch {
+    console.error(
+      `[stripe/webhook] credits_auto_topup PI ${paymentIntent.id} bad amountCredits=${amountCredits}`,
+    );
+    return;
+  }
+
+  const { grantCredits } = await import("./credits/walletStore");
+  const result = await grantCredits({
+    workspaceId,
+    credits,
+    grantType: "purchase",
+    idempotencyKey: `credits_auto_topup__${paymentIntent.id}`,
+    relatedKind: "stripe_payment_intent",
+    relatedId: paymentIntent.id,
+    metadata: {
+      kind: "credits_auto_topup",
+      amountUsdCents: paymentIntent.amount,
+      triggerCredits: meta.triggerCredits,
+      balanceBefore: meta.balanceBefore,
+    },
+  });
+  console.log(
+    `[stripe/webhook] auto-topup granted ${credits.toString()} credits to workspace ${workspaceId} ` +
+      `(PI ${paymentIntent.id}, balance_after=${result.balanceAfter}, reason=${result.reason})`,
   );
 }
 

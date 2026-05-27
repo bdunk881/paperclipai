@@ -32,6 +32,7 @@ import AuthConfirm from "./pages/AuthConfirm";
 import EnvVars from "./pages/EnvVars";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
+import AutoTopupSetupSuccess from "./pages/AutoTopupSetupSuccess";
 import CreditPackSuccess from "./pages/CreditPackSuccess";
 import Hire from "./pages/Hire";
 import HiringPlanReview from "./pages/HiringPlanReview";
@@ -199,6 +200,15 @@ const routes: RouteObject[] = [
     element: (
       <PrivateRoute>
         <CreditPackSuccess />
+      </PrivateRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  {
+    path: "/billing/credits/auto-topup/success",
+    element: (
+      <PrivateRoute>
+        <AutoTopupSetupSuccess />
       </PrivateRoute>
     ),
     errorElement: <RouteErrorBoundary />,

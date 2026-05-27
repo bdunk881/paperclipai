@@ -168,3 +168,90 @@ describe("GET /api/workflows/:workflowId/versions/:versionId", () => {
     expect(res.body.error).toMatch(/Invalid version ID/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// HEL-241C — POST /api/workflows/:workflowId/presence
+// ---------------------------------------------------------------------------
+
+import { createPresenceStore } from "./presenceStore";
+
+function buildPresenceApp(
+  authOverrides: { sub?: string; workspaceId?: string } = {},
+) {
+  const app = express();
+  app.use(express.json());
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (authOverrides.sub) {
+      (req as Request & { auth?: { sub: string } }).auth = { sub: authOverrides.sub };
+    }
+    if (authOverrides.workspaceId) {
+      (req as Request & { workspace?: { id: string; role: string } }).workspace = {
+        id: authOverrides.workspaceId,
+        role: "owner",
+      };
+    }
+    next();
+  });
+  const store = createPresenceStore();
+  app.use("/api/workflows", createWorkflowRoutes(stubPool, store));
+  return { app, store };
+}
+
+describe("POST /api/workflows/:workflowId/presence", () => {
+  const goodWorkflowId = "22222222-2222-4222-8222-222222222222";
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("returns 401 when unauthed", async () => {
+    const { app } = buildPresenceApp({ workspaceId });
+    const res = await request(app).post(`/api/workflows/${goodWorkflowId}/presence`).send({});
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects malformed workflow ids", async () => {
+    const { app } = buildPresenceApp({ sub: "user-1", workspaceId });
+    const res = await request(app).post(`/api/workflows/not-a-uuid/presence`).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("heartbeat returns the live peer list excluding the caller", async () => {
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    // Pre-seed a peer.
+    store.upsert(goodWorkflowId, {
+      userId: "user-2",
+      name: "Other",
+      color: "#000",
+      selectedStepId: null,
+      lastSeen: Date.now(),
+    });
+    const res = await request(app)
+      .post(`/api/workflows/${goodWorkflowId}/presence`)
+      .send({ name: "Bryan", selectedStepId: "step-a" });
+    expect(res.status).toBe(200);
+    expect(res.body.peers).toHaveLength(1);
+    expect(res.body.peers[0].userId).toBe("user-2");
+    // Caller's own state is recorded in the store, just not echoed back.
+    const allPeers = store.peers(goodWorkflowId);
+    expect(allPeers.map((p) => p.userId).sort()).toEqual(["user-1", "user-2"]);
+    const self = allPeers.find((p) => p.userId === "user-1")!;
+    expect(self.name).toBe("Bryan");
+    expect(self.selectedStepId).toBe("step-a");
+  });
+
+  it("trims and truncates the display name to keep payloads bounded", async () => {
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    const longName = "  " + "a".repeat(200) + "  ";
+    await request(app)
+      .post(`/api/workflows/${goodWorkflowId}/presence`)
+      .send({ name: longName });
+    const self = store.peers(goodWorkflowId).find((p) => p.userId === "user-1")!;
+    expect(self.name.length).toBe(80);
+    expect(self.name.startsWith("a")).toBe(true);
+  });
+
+  it("falls back to 'Teammate' when no name is provided", async () => {
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    await request(app).post(`/api/workflows/${goodWorkflowId}/presence`).send({});
+    const self = store.peers(goodWorkflowId).find((p) => p.userId === "user-1")!;
+    expect(self.name).toBe("Teammate");
+  });
+});

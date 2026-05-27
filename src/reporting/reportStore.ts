@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { getPostgresPool, inMemoryAllowed, isPostgresConfigured } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 import { GeneratedReport, ReportDelivery, ReportKind, ReportMetric, ReportSection, ReportTemplateConfig } from "./types";
 
 interface ReportRow {
@@ -71,46 +72,46 @@ async function persist(report: GeneratedReport): Promise<void> {
     return;
   }
 
-  await queryPostgres(
-    `
-      INSERT INTO generated_reports (
-        id, user_id, team_id, kind, title, summary, period_start, period_end,
-        template_json, sections_json, metrics_json, delivery_json, source_json,
-        created_at, updated_at
-      )
-      VALUES (
-        $1, $2, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15
-      )
-      ON CONFLICT (id) DO UPDATE
-      SET title = EXCLUDED.title,
-          summary = EXCLUDED.summary,
-          period_start = EXCLUDED.period_start,
-          period_end = EXCLUDED.period_end,
-          template_json = EXCLUDED.template_json,
-          sections_json = EXCLUDED.sections_json,
-          metrics_json = EXCLUDED.metrics_json,
-          delivery_json = EXCLUDED.delivery_json,
-          source_json = EXCLUDED.source_json,
-          updated_at = EXCLUDED.updated_at
-    `,
-    [
-      report.id,
-      report.userId,
-      report.teamId ?? null,
-      report.kind,
-      report.title,
-      report.summary,
-      report.periodStart ?? null,
-      report.periodEnd ?? null,
-      serializeJson(report.template),
-      serializeJson(report.sections),
-      serializeJson(report.metrics),
-      serializeJson(report.delivery),
-      serializeJson(report.source),
-      report.createdAt,
-      report.updatedAt,
-    ]
-  );
+  await withUserContext(getPostgresPool(), report.userId, async (client) => {
+    await client.query(
+      `INSERT INTO generated_reports (
+         id, user_id, team_id, kind, title, summary, period_start, period_end,
+         template_json, sections_json, metrics_json, delivery_json, source_json,
+         created_at, updated_at
+       )
+       VALUES (
+         $1, $2, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15
+       )
+       ON CONFLICT (id) DO UPDATE
+       SET title = EXCLUDED.title,
+           summary = EXCLUDED.summary,
+           period_start = EXCLUDED.period_start,
+           period_end = EXCLUDED.period_end,
+           template_json = EXCLUDED.template_json,
+           sections_json = EXCLUDED.sections_json,
+           metrics_json = EXCLUDED.metrics_json,
+           delivery_json = EXCLUDED.delivery_json,
+           source_json = EXCLUDED.source_json,
+           updated_at = EXCLUDED.updated_at`,
+      [
+        report.id,
+        report.userId,
+        report.teamId ?? null,
+        report.kind,
+        report.title,
+        report.summary,
+        report.periodStart ?? null,
+        report.periodEnd ?? null,
+        serializeJson(report.template),
+        serializeJson(report.sections),
+        serializeJson(report.metrics),
+        serializeJson(report.delivery),
+        serializeJson(report.source),
+        report.createdAt,
+        report.updatedAt,
+      ],
+    );
+  });
 }
 
 export const reportStore = {
@@ -142,18 +143,18 @@ export const reportStore = {
         .map(cloneReport);
     }
 
-    const result = await queryPostgres<ReportRow>(
-      `
-        SELECT *
-        FROM generated_reports
-        WHERE user_id = $1
-          AND ($2::uuid IS NULL OR team_id = $2::uuid)
-          AND ($3::text IS NULL OR kind = $3)
-        ORDER BY created_at DESC
-      `,
-      [userId, filters?.teamId ?? null, filters?.kind ?? null]
-    );
-    return result.rows.map(mapRow);
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<ReportRow>(
+        `SELECT *
+           FROM generated_reports
+          WHERE user_id = $1
+            AND ($2::uuid IS NULL OR team_id = $2::uuid)
+            AND ($3::text IS NULL OR kind = $3)
+          ORDER BY created_at DESC`,
+        [userId, filters?.teamId ?? null, filters?.kind ?? null],
+      );
+      return result.rows.map(mapRow);
+    });
   },
 
   async getById(id: string, userId: string): Promise<GeneratedReport | undefined> {
@@ -162,11 +163,13 @@ export const reportStore = {
       return report && report.userId === userId ? cloneReport(report) : undefined;
     }
 
-    const result = await queryPostgres<ReportRow>(
-      "SELECT * FROM generated_reports WHERE id = $1 AND user_id = $2",
-      [id, userId]
-    );
-    return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<ReportRow>(
+        "SELECT * FROM generated_reports WHERE id = $1 AND user_id = $2",
+        [id, userId],
+      );
+      return result.rows[0] ? mapRow(result.rows[0]) : undefined;
+    });
   },
 
   async clear(): Promise<void> {
@@ -174,6 +177,6 @@ export const reportStore = {
     if (!postgresPersistenceAvailable()) {
       return;
     }
-    await queryPostgres("DELETE FROM generated_reports");
+    await getPostgresPool().query("DELETE FROM generated_reports");
   },
 };

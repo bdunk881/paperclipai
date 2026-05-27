@@ -25,7 +25,7 @@ export async function loadAgentMcpServers(input: {
     for (const server of servers) {
       // The public shape strips authHeaderValue. Fetch the full record so
       // the runtime can forward the bearer token to the MCP server.
-      const full = await mcpStore.get(server.id);
+      const full = await mcpStore.get(server.id, input.userId);
       if (!full) continue;
       result.push({
         name: sanitizeName(full.name),

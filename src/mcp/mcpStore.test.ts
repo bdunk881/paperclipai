@@ -77,13 +77,13 @@ describe("mcpStore.get", () => {
       authHeaderKey: "Authorization",
       authHeaderValue: "secret",
     });
-    const full = await mcpStore.get(s.id);
+    const full = await mcpStore.get(s.id, uid);
     expect(full).toBeDefined();
     expect(full!.authHeaderValue).toBe("secret");
   });
 
   it("returns undefined for unknown id", async () => {
-    expect(await mcpStore.get("nope")).toBeUndefined();
+    expect(await mcpStore.get("nope", uid)).toBeUndefined();
   });
 });
 

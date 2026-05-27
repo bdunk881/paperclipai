@@ -22,6 +22,7 @@ import logoLockup from "../assets/logo/lockup.svg";
 import { useAuth } from "../context/AuthContext";
 import { AppTopbar } from "./AppTopbar";
 import { OnboardingTour } from "./OnboardingTour";
+import { RunTray } from "./RunTray";
 
 // v2 consolidation IA (3 pillars). Mirrors the final plan at
 // `docs/design/v2/preview/consolidation.html`:
@@ -271,6 +272,11 @@ export default function Layout() {
       {/* DASH-17: anchored first-visit tour. Self-gates on a
           localStorage flag so it never reappears after dismissal. */}
       <OnboardingTour />
+
+      {/* Bottom-right floating tray of in-flight runs. Server-driven via
+          /api/runs/in-flight + the routines SSE stream; auto-hides when
+          there's nothing to show. */}
+      <RunTray />
     </div>
   );
 }

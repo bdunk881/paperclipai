@@ -1295,6 +1295,23 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<Work
   res.json({ runs, total: runs.length });
 }));
 
+/**
+ * List the caller's in-flight runs across the active workspace.
+ *
+ * Drives the dashboard's bottom-right RunTray. "In flight" = any non-
+ * terminal status (queued / pending / running / awaiting_approval /
+ * cancelling). Capped to 50 rows so the tray never floods.
+ */
+app.get(
+  "/api/runs/in-flight",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const runs = await runStore.listInFlight(req.auth?.sub, req.workspace?.id);
+    res.json({ runs, total: runs.length });
+  }),
+);
+
 /** Get a single run by ID */
 app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const run = await runStore.get(req.params.id);

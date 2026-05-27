@@ -74,3 +74,24 @@ export async function getBlogPost(slug: string) {
     { slug },
   );
 }
+
+/* ── HEL-278: pricing tier marketing overlay ──────────────── */
+
+/**
+ * Editorial overlay on top of DB-driven subscription_tiers. Keyed by
+ * `tierId` matching `subscription_tiers.id`. All fields except `tierId`
+ * are optional — when omitted the loader falls through to the DB value.
+ */
+export interface PricingTierOverlay {
+  tierId: string;
+  eyebrow?: string;
+  bullets?: string[];
+  ctaLabel?: string;
+  priceUnit?: string;
+}
+
+export async function getPricingOverlays() {
+  return sanityFetch<PricingTierOverlay[]>(
+    `*[_type == "pricingTierOverlay"]{tierId, eyebrow, bullets, ctaLabel, priceUnit}`,
+  );
+}

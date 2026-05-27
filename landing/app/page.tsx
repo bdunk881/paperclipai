@@ -11,6 +11,7 @@ import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
+import { getPricingOverlays, type PricingTierOverlay } from "@/lib/sanity";
 
 export function meta() {
   return [
@@ -121,6 +122,12 @@ interface Tier {
   features: string[];
   ctaLabel: string;
   priceUnit: string;
+  /**
+   * Editorial eyebrow (HEL-278). When present, sourced from a Sanity
+   * `pricingTierOverlay` document; falls through to the inline
+   * `EYEBROW_BY_ID` map when omitted.
+   */
+  eyebrow?: string;
 }
 
 interface Pack {
@@ -228,18 +235,58 @@ const FALLBACK_PRICING: PricingLoaderData = {
   ],
 };
 
+/**
+ * Apply Sanity overlays to API tiers. Precedence: Sanity > API. The third
+ * tier (the inline EYEBROW_BY_ID fallback below) only kicks in at render
+ * time for `eyebrow` and is handled in the JSX, not here.
+ */
+function mergeOverlays(
+  tiers: Tier[],
+  overlays: PricingTierOverlay[] | null,
+): Tier[] {
+  if (!overlays || overlays.length === 0) return tiers;
+  const byId = new Map(overlays.map((o) => [o.tierId, o]));
+  return tiers.map((tier) => {
+    const overlay = byId.get(tier.id);
+    if (!overlay) return tier;
+    return {
+      ...tier,
+      eyebrow: overlay.eyebrow ?? tier.eyebrow,
+      features: overlay.bullets ?? tier.features,
+      ctaLabel: overlay.ctaLabel ?? tier.ctaLabel,
+      priceUnit: overlay.priceUnit ?? tier.priceUnit,
+    };
+  });
+}
+
 export async function loader(): Promise<PricingLoaderData> {
-  try {
-    const res = await fetch(buildLandingApiUrl("/api/public/landing/pricing"));
-    if (!res.ok) {
-      throw new Error(`pricing endpoint returned ${res.status}`);
+  // Pricing API + Sanity overlays in parallel. Sanity overlay failures
+  // (missing creds, GROQ errors) return null inside sanityFetch — they
+  // never block the prerender; the loader just falls through to the
+  // API/fallback values.
+  const apiPromise = (async () => {
+    try {
+      const res = await fetch(buildLandingApiUrl("/api/public/landing/pricing"));
+      if (!res.ok) {
+        throw new Error(`pricing endpoint returned ${res.status}`);
+      }
+      return (await res.json()) as PricingLoaderData;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[landing/loader/pricing] using fallback snapshot: ${message}`);
+      return FALLBACK_PRICING;
     }
-    return (await res.json()) as PricingLoaderData;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[landing/loader/pricing] using fallback snapshot: ${message}`);
-    return FALLBACK_PRICING;
-  }
+  })();
+
+  const [apiData, overlays] = await Promise.all([
+    apiPromise,
+    getPricingOverlays(),
+  ]);
+
+  return {
+    tiers: mergeOverlays(apiData.tiers, overlays),
+    packs: apiData.packs,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -954,7 +1001,7 @@ export default function Home() {
                 className="af2-eyebrow"
                 style={{ color: t.isPopular ? "var(--af2-clay-2)" : undefined }}
               >
-                {EYEBROW_BY_ID[t.id] ?? ""}
+                {t.eyebrow ?? EYEBROW_BY_ID[t.id] ?? ""}
               </span>
               <h3>{t.displayName}</h3>
               <div className="lp-price">

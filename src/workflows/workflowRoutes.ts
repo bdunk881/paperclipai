@@ -35,6 +35,11 @@ import { AuthenticatedRequest } from "../auth/authMiddleware";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { asyncHandler } from "../middleware/asyncHandler";
+import {
+  createPresenceStore,
+  colorForUser,
+  type PresenceStore,
+} from "./presenceStore";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NAME_LENGTH = 200;
@@ -108,7 +113,18 @@ async function insertWorkflowVersion(
   };
 }
 
-export function createWorkflowRoutes(pool: Pool) {
+/**
+ * HEL-241C — Shared in-process presence store. Single per-process
+ * instance; rebuilt on cold start (presence is ephemeral by design).
+ * Exported so tests can inject their own deterministic clock.
+ */
+export const defaultPresenceStore: PresenceStore = createPresenceStore();
+
+export function createWorkflowRoutes(
+  pool: Pool,
+  /** Test seam — defaults to the process-wide presence store. */
+  presenceStore: PresenceStore = defaultPresenceStore,
+) {
   const router = Router();
 
   // ---------------------------------------------------------------------
@@ -561,6 +577,57 @@ export function createWorkflowRoutes(pool: Pool) {
       res.status(500).json({ error: "Failed to list workflows" });
     }
   }));
+
+  // ---------------------------------------------------------------------
+  // HEL-241C — Workflow presence (collaborative awareness)
+  // ---------------------------------------------------------------------
+  // POST /api/workflows/:workflowId/presence — heartbeat + snapshot.
+  //
+  // Combines write + read in a single round-trip: the client posts its
+  // own state and gets back the live peer list. Poll every 5s while
+  // the Studio is open. Stale entries (no heartbeat in 30s) are
+  // reaped automatically on each read — no explicit "leave" call
+  // needed when the user closes the tab.
+  //
+  // Body shape:
+  //   { selectedStepId?: string | null, name?: string }
+  //
+  // Response:
+  //   { peers: PresenceState[] }   (excludes the caller)
+  //
+  // Auth: same workspace gating as the rest of /api/workflows.
+  // ---------------------------------------------------------------------
+  router.post(
+    "/:workflowId/presence",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+      const { workflowId } = req.params;
+      if (!UUID_RE.test(workflowId)) {
+        res.status(400).json({ error: "workflowId must be a uuid" });
+        return;
+      }
+      const body = (req.body ?? {}) as {
+        selectedStepId?: string | null;
+        name?: string;
+      };
+      const trimmedName =
+        typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
+      presenceStore.upsert(workflowId, {
+        userId,
+        name: trimmedName || "Teammate",
+        color: colorForUser(userId),
+        selectedStepId:
+          typeof body.selectedStepId === "string" ? body.selectedStepId : null,
+        lastSeen: Date.now(),
+      });
+      res.json({ peers: presenceStore.peers(workflowId, userId) });
+    }),
+  );
 
   return router;
 }

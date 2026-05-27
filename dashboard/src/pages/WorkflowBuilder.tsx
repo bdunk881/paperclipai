@@ -112,6 +112,8 @@ import {
 } from "./workflowStepSetup";
 import { StudioAssistantPanel } from "../components/workflow/StudioAssistantPanel";
 import { NodeConfigForm } from "../components/workflow/NodeConfigForm";
+import { PresenceStack } from "../components/workflow/PresenceStack";
+import { useWorkflowPresence } from "../hooks/useWorkflowPresence";
 import { LaunchTeamModal } from "../components/workflow/LaunchTeamModal";
 import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
 
@@ -432,7 +434,7 @@ export default function WorkflowBuilder() {
   const { templateId } = useParams<{ templateId?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { requireAccessToken, getAccessToken } = useAuth();
+  const { user, requireAccessToken, getAccessToken } = useAuth();
   const { activeWorkspaceId } = useWorkspace();
   const incomingState = location.state as BuilderLocationState;
   // HEL-100: builder pop-out (?popout=1) hides every piece of chrome —
@@ -545,6 +547,12 @@ export default function WorkflowBuilder() {
   // when the canonical /api/workflows POST returns; subsequent saves call
   // POST /api/workflows/:id/versions to create immutable versions.
   const [canonicalWorkflowId, setCanonicalWorkflowId] = useState<string | null>(null);
+  // HEL-241C — resolved access token, used by useWorkflowPresence. The
+  // hook needs a string, but useAuth.getAccessToken is async, so we
+  // resolve it once on mount and keep it in local state. The token is
+  // long-lived; if it expires the hook's heartbeat will fail silently
+  // and the user can refresh.
+  const [presenceAccessToken, setPresenceAccessToken] = useState<string | null>(null);
   const studioHeaderRef = useRef<HTMLDivElement | null>(null);
   const [studioHeaderHeight, setStudioHeaderHeight] = useState(0);
   // Palette → canvas drag-drop (HTML5 DnD). The palette button sets a kind
@@ -611,6 +619,37 @@ export default function WorkflowBuilder() {
   // gets set on first save in the dual-write path, but a freshly
   // loaded template starts at null — meaning the Versions tab would
   // stay in its "Save to start version history" state even though the
+  // HEL-241C — resolve the access token once so useWorkflowPresence
+  // can heartbeat. Silent on failure; the hook no-ops when token is
+  // null, so worst case the user just doesn't see peer avatars.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!cancelled) setPresenceAccessToken(token ?? null);
+      } catch {
+        if (!cancelled) setPresenceAccessToken(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getAccessToken]);
+
+  const { peers: presencePeers } = useWorkflowPresence({
+    workflowId: canonicalWorkflowId,
+    accessToken: presenceAccessToken,
+    name: user?.name || user?.email || "Teammate",
+    selectedStepId: selectedStepId,
+  });
+
+  const stepNamesById = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const s of template.steps) out[s.id] = s.name || s.kind;
+    return out;
+  }, [template.steps]);
+
   // canonical workflow exists. listCanonicalWorkflows with the
   // ?externalTemplateId filter finds the match; silent on failure
   // since the panel falls back to the draft state cleanly.
@@ -1588,6 +1627,10 @@ export default function WorkflowBuilder() {
                 Pro mode {proMode ? "ON" : "OFF"}
               </button>
             </Tooltip>
+            {/* HEL-241C — collaborative presence avatars. Renders
+                nothing when no peers are active, so the header stays
+                quiet for solo editing. */}
+            <PresenceStack peers={presencePeers} stepNames={stepNamesById} />
             {/* HEL-209: new merged Studio assistant. The old Copilot
                 button is kept alongside so existing test selectors keep
                 working; the legacy sidebar will retire when the assistant

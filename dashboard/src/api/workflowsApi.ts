@@ -164,3 +164,45 @@ export async function getCanonicalWorkflowVersion(
     `Failed to load workflow version: ${response.status}`,
   );
 }
+
+// ---------------------------------------------------------------------------
+// HEL-241C — Presence (collaborative awareness)
+// ---------------------------------------------------------------------------
+
+export interface WorkflowPresencePeer {
+  userId: string;
+  name: string;
+  color: string;
+  selectedStepId?: string | null;
+  lastSeen: number;
+}
+
+export interface WorkflowPresenceResponse {
+  peers: WorkflowPresencePeer[];
+}
+
+/**
+ * Heartbeat the caller's presence and pull the current peer list in
+ * one round-trip. Designed to be called on a 5s interval while the
+ * Studio is open. The server reaps any peer that hasn't called within
+ * the last PRESENCE_TTL_MS (30s), so closing the tab eventually
+ * removes the user automatically — no explicit "leave" needed.
+ */
+export async function heartbeatWorkflowPresence(
+  workflowId: string,
+  input: { selectedStepId?: string | null; name?: string },
+  accessToken: string,
+): Promise<WorkflowPresenceResponse> {
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/presence`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify(input),
+    },
+  );
+  return parseJsonOrError<WorkflowPresenceResponse>(
+    response,
+    `Failed to heartbeat presence: ${response.status}`,
+  );
+}

@@ -129,6 +129,7 @@ describe("GET /api/public/landing/pricing", () => {
       isPopular: false,
       features: ["3 workspaces", "Daily Sonnet credit cap"],
       ctaLabel: "Get started",
+      priceUnit: "/mo",
       enabled: true,
     },
     {
@@ -142,6 +143,7 @@ describe("GET /api/public/landing/pricing", () => {
       isPopular: false,
       features: ["Everything in Explore", "5,000 daily credits"],
       ctaLabel: "Start 14-day trial",
+      priceUnit: "/mo",
       enabled: true,
     },
   ];
@@ -190,6 +192,7 @@ describe("GET /api/public/landing/pricing", () => {
       isPopular: false,
       features: ["3 workspaces", "Daily Sonnet credit cap"],
       ctaLabel: "Get started",
+      priceUnit: "/mo",
     });
     expect(response.body.packs[0]).toEqual({
       id: "pack_25",

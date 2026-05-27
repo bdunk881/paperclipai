@@ -200,6 +200,67 @@ export const CURATED_ACTIONS: { value: string; label: string }[] = [
   { value: "hubspot.upsert", label: "Update HubSpot record" },
 ];
 
+// ---------------------------------------------------------------------------
+// HEL-241A — Schema-driven inspector field manifests.
+//
+// Each entry below replaces a `selectedStep.kind === "..."` JSX branch
+// in WorkflowBuilder.tsx with a flat field manifest the NodeConfigForm
+// component can render generically. Keys must match WorkflowStep
+// members so the form reads/writes the right slot. Migrating one kind
+// at a time keeps the diff reviewable — only the four small kinds
+// land in this PR (`condition`, `approval`, `mcp`, `file_trigger`);
+// the larger `agent` + `llm` setups follow.
+// ---------------------------------------------------------------------------
+
+import type { FieldDef } from "../components/workflow/NodeConfigForm";
+
+export const STEP_FIELD_MANIFEST: Partial<Record<StepKind, FieldDef[]>> = {
+  condition: [
+    {
+      widget: "text",
+      key: "condition",
+      label: "Condition expression",
+      mono: true,
+      placeholder: 'e.g. urgency === "high"',
+      help: "Evaluated against the run context. Branches whose expression is true follow the condition's edge.",
+    },
+  ],
+  approval: [
+    {
+      widget: "number",
+      key: "approvalTimeoutMinutes",
+      label: "Timeout (minutes)",
+      placeholder: "60",
+      min: 1,
+      defaultValue: 60,
+    },
+    {
+      widget: "info",
+      key: "approval-callout",
+      tone: "mustard",
+      text: "Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.",
+    },
+  ],
+  mcp: [
+    {
+      widget: "text",
+      key: "mcpServerUrl",
+      label: "Integration server URL",
+      mono: true,
+      placeholder: "https://mcp.example.com/sse",
+    },
+  ],
+  file_trigger: [
+    {
+      widget: "string-array",
+      key: "acceptedFileTypes",
+      label: "Accepted file types (comma-separated)",
+      placeholder: ".pdf, .png, .jpg, .mp3, .wav",
+      separator: "comma",
+    },
+  ],
+};
+
 export function validateCronExpression(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return "Add a schedule so this routine knows when to run.";

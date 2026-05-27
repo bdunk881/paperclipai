@@ -1,11 +1,15 @@
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
 import { getStripe, PRICING_TIERS, TierKey } from "../billing/stripeClient";
+import { listEnabledTiers } from "../billing/tiersRepository";
+import { listEnabledPacks } from "../billing/credits/packCatalog";
 import { asyncHandler } from "../middleware/asyncHandler";
 
 const router = Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const PRICING_CACHE_SECONDS = 300;
 
 function resolveLandingBaseUrl(req: Request): string {
   const configured = (
@@ -97,6 +101,45 @@ async function createCheckoutSession(
 
   return session.url;
 }
+
+router.get("/pricing", asyncHandler<Request>(async (_req, res: Response) => {
+  try {
+    const [tiers, packs] = await Promise.all([
+      listEnabledTiers(),
+      listEnabledPacks(),
+    ]);
+
+    res.setHeader(
+      "Cache-Control",
+      `public, max-age=${PRICING_CACHE_SECONDS}, s-maxage=${PRICING_CACHE_SECONDS}`,
+    );
+    res.json({
+      tiers: tiers.map((tier) => ({
+        id: tier.id,
+        displayName: tier.displayName,
+        priceUsdCents: tier.priceUsdCents,
+        currency: tier.currency,
+        trialDays: tier.trialDays,
+        sortOrder: tier.sortOrder,
+        isPopular: tier.isPopular,
+        features: tier.features,
+        ctaLabel: tier.ctaLabel,
+      })),
+      packs: packs.map((pack) => ({
+        id: pack.id,
+        displayName: pack.displayName,
+        priceUsdCents: pack.priceUsdCents,
+        creditsGranted: Number(pack.creditsGranted),
+        bonusPercent: pack.bonusPercent,
+        sortOrder: pack.sortOrder,
+      })),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[landing/public/pricing] ${message}`);
+    res.status(500).json({ error: "Failed to load pricing" });
+  }
+}));
 
 router.post("/checkout", asyncHandler<Request>(async (req, res: Response) => {
   try {

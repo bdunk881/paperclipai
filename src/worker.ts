@@ -25,7 +25,7 @@
 import "./instrument";
 
 import * as Sentry from "@sentry/node";
-import { Worker, Job } from "bullmq";
+import { Worker, Job, MetricsTime } from "bullmq";
 import {
   buildRoutineCronAgentPromptJobId,
   isJobIdAlreadyExists,
@@ -178,7 +178,13 @@ const runsWorker = new Worker<RunJobPayload>(
   async (job: Job<RunJobPayload>) => {
     await handleRunsJob(job.data);
   },
-  { connection, concurrency: 5 }
+  {
+    connection,
+    concurrency: 5,
+    // HEL infra dashboard PR #3: keep 24h of one-minute throughput buckets so
+    // the custom queue inspector can render a sparkline. Cheap (1440 keys).
+    metrics: { maxDataPoints: MetricsTime.ONE_HOUR * 24 },
+  }
 );
 
 runsWorker.on("completed", (job) => {
@@ -255,7 +261,11 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       triggerKind: job.data.triggerKind,
     });
   },
-  { connection, concurrency: 3 }
+  {
+    connection,
+    concurrency: 3,
+    metrics: { maxDataPoints: MetricsTime.ONE_HOUR * 24 },
+  }
 );
 
 agentPromptWorker.on("completed", (job) => {

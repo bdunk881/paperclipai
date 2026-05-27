@@ -1,13 +1,14 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   fetchInfraCompute,
   type FlyAppView,
   type FlyMachine,
   type JobRunRow,
-  type QueueCounters,
 } from "../api/infraApi";
 import { MetricCard } from "../components/infra/MetricCard";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
+import { QueueInspector } from "./infra/QueueInspector";
 
 function shortTimeAgo(value: string | null): string {
   if (!value) return "—";
@@ -87,42 +88,69 @@ function FlyApp({ view }: { view: FlyAppView }) {
   );
 }
 
-function QueueRow({ q }: { q: QueueCounters }) {
-  if (!q.available || q.error) {
-    return (
-      <tr>
-        <td><strong>{q.name}</strong></td>
-        <td colSpan={6} className="muted">
-          {q.error ?? "queue unavailable (Redis not configured)"}
-        </td>
-      </tr>
-    );
-  }
+function QueuesSection({
+  flyMachines,
+  bullboardUrl,
+  redis,
+}: {
+  flyMachines: FlyMachine[];
+  bullboardUrl?: string;
+  redis?: { configured: boolean; reachable: boolean };
+}) {
+  const [tab, setTab] = useState<"inspector" | "bullboard">("inspector");
   return (
-    <tr>
-      <td><strong>{q.name}</strong></td>
-      <td>{q.waiting ?? 0}</td>
-      <td>{q.active ?? 0}</td>
-      <td>{q.delayed ?? 0}</td>
-      <td>
-        {(q.failed ?? 0) > 0 ? (
-          <span className="pill warning">{q.failed}</span>
-        ) : (
-          <span>0</span>
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h2 style={{ margin: 0 }}>BullMQ queues</h2>
+        {redis && (
+          <MetricCard
+            label="Redis"
+            value={redis.reachable ? "up" : redis.configured ? "down" : "n/a"}
+            level={redis.reachable ? "ok" : redis.configured ? "error" : "neutral"}
+            hint={redis.configured ? "configured" : "not configured"}
+          />
         )}
-      </td>
-      <td>{q.completed ?? 0}</td>
-      <td>
-        <AskAgentButton
-          context={{
-            kind: "queue_state",
-            source: "admin.infra.compute",
-            subjectRef: { queue: q.name },
-            payload: { counters: q },
-          }}
-        />
-      </td>
-    </tr>
+      </div>
+      <div className="tabs" style={{ marginTop: "0.5rem" }}>
+        <button
+          type="button"
+          className={tab === "inspector" ? "active" : ""}
+          onClick={() => setTab("inspector")}
+        >
+          Inspector
+        </button>
+        <button
+          type="button"
+          className={tab === "bullboard" ? "active" : ""}
+          onClick={() => setTab("bullboard")}
+        >
+          Bull-Board (expert)
+        </button>
+      </div>
+      {tab === "inspector" ? (
+        <QueueInspector flyMachines={flyMachines} />
+      ) : (
+        <div>
+          <p className="muted" style={{ marginTop: 0 }}>
+            The OSS bull-board UI is mounted read-only behind the same{" "}
+            <code className="code">requirePlatformAdmin</code> gate. Use this for deep
+            inspection of attributes the custom inspector doesn't surface yet.
+          </p>
+          {bullboardUrl && (
+            <iframe
+              src={bullboardUrl}
+              title="bull-board"
+              style={{
+                width: "100%",
+                height: "720px",
+                border: "1px solid #e6e8eb",
+                borderRadius: "6px",
+              }}
+            />
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -167,58 +195,12 @@ export function InfraComputePage() {
         )}
       </div>
 
-      <div className="card">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <h2 style={{ margin: 0 }}>BullMQ queues</h2>
-          {data && (
-            <div className="row" style={{ gap: "0.5rem" }}>
-              <span className="muted">Custom inspector lands in PR #3.</span>
-              <a
-                href={data.bullboard_url}
-                target="_blank"
-                rel="noreferrer"
-                style={{ fontSize: "0.85rem" }}
-              >
-                Open bull-board (read-only) ↗
-              </a>
-            </div>
-          )}
-        </div>
-        {isLoading || !data ? (
-          <span className="muted">Loading…</span>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Queue</th>
-                <th>Waiting</th>
-                <th>Active</th>
-                <th>Delayed</th>
-                <th>Failed</th>
-                <th>Completed</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.queues.map((q) => (
-                <QueueRow key={q.name} q={q} />
-              ))}
-            </tbody>
-          </table>
-        )}
-        {data && (
-          <div className="row" style={{ marginTop: "0.5rem" }}>
-            <MetricCard
-              label="Redis"
-              value={data.redis.reachable ? "up" : data.redis.configured ? "down" : "n/a"}
-              level={
-                data.redis.reachable ? "ok" : data.redis.configured ? "error" : "neutral"
-              }
-              hint={data.redis.configured ? "configured" : "not configured"}
-            />
-          </div>
-        )}
-      </div>
+      <QueuesSection
+        flyMachines={data ? data.fly.flatMap((v) => v.machines) : []}
+        bullboardUrl={data?.bullboard_url}
+        redis={data?.redis}
+      />
+
 
       <div className="card">
         <h2>Scheduled jobs · last 10 runs</h2>

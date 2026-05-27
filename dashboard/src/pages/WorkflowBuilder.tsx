@@ -50,6 +50,11 @@ import {
 } from "@xyflow/react";
 import clsx from "clsx";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import {
+  PanelGroup,
+  Panel,
+  PanelResizeHandle,
+} from "react-resizable-panels";
 // HEL-214 / PR J: Pro Mode actionable reveal.
 import { ProReveal } from "../components/pro/ProReveal";
 import { StepDebugger } from "../components/pro/StepDebugger";
@@ -1383,23 +1388,46 @@ export default function WorkflowBuilder() {
 
   return (
     <div
-      className="workflow-studio-shell relative flex h-full min-w-0 overflow-hidden"
+      className="workflow-studio-shell relative h-full min-w-0 overflow-hidden"
       data-testid="workflow-studio-shell"
       data-copilot-open={showCopilot ? "true" : "false"}
       data-inspector-open={selectedStep ? "true" : "false"}
       style={workflowStudioStyle}
     >
-      {/* HEL-100 v2: left palette rail — Triggers / Tools / Logic
-          sections, mirrors docs/design/v2/studio.jsx::AF2_Studio. Clicking
-          an item adds that step kind via the same `addStep` handler the
-          inline AddStepMenu uses. Hidden in builder pop-out (?popout=1)
-          so the canvas can go full-bleed. */}
-      {!isBuilderPopout && (
-        <StudioPalette onAdd={addStep} onDragKind={setPaletteDragKind} />
-      )}
+      {/* HEL-242 — Studio panels are now flex siblings inside a
+          PanelGroup. autoSaveId persists user-resized widths to
+          localStorage so each operator's preferred ratios stick across
+          sessions. The Copilot drawer + assistant panel + modals are
+          still absolutely positioned (they're overlays, not layout). */}
+      <PanelGroup
+        direction="horizontal"
+        autoSaveId="af2.studio.layout.v1"
+        className="h-full w-full"
+      >
+        {/* HEL-100 v2: left palette rail — Triggers / Tools / Logic
+            sections, mirrors docs/design/v2/studio.jsx::AF2_Studio.
+            Hidden entirely in builder pop-out (?popout=1) so the
+            canvas can go full-bleed. */}
+        {!isBuilderPopout && (
+          <>
+            <Panel
+              id="studio-palette"
+              order={1}
+              defaultSize={15}
+              minSize={5}
+              maxSize={28}
+              collapsible
+              collapsedSize={4}
+              className="min-w-0"
+            >
+              <StudioPalette onAdd={addStep} onDragKind={setPaletteDragKind} />
+            </Panel>
+            <PanelResizeHandle className="w-1 bg-transparent transition-colors hover:bg-af2-clay/30 data-[resize-handle-active]:bg-af2-clay/50" />
+          </>
+        )}
 
-      {/* Left panel — canvas */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Center panel — canvas */}
+        <Panel id="studio-canvas" order={2} defaultSize={isBuilderPopout ? 100 : 60} minSize={30} className="flex min-w-0 flex-col overflow-hidden">
         {runError && (
           <div className="px-6 py-2 bg-af2-clay-soft/30 border-b border-af2-clay/30 text-sm text-af2-clay">
             {runError}
@@ -1821,7 +1849,407 @@ export default function WorkflowBuilder() {
             </>
           )}
         </div>
-      </div>
+      </Panel>
+
+      {/* HEL-242 — resize handle + right rail (inspector). The
+          inspector is now a flex sibling, not an absolute overlay; the
+          slide-in feel is replaced by a stable rail that always
+          renders an InspectorEmptyState when no step is selected. */}
+      {!isBuilderPopout && (
+        <>
+          <PanelResizeHandle className="w-1 bg-transparent transition-colors hover:bg-af2-clay/30 data-[resize-handle-active]:bg-af2-clay/50" />
+          <Panel
+            id="studio-inspector"
+            order={3}
+            defaultSize={25}
+            minSize={15}
+            maxSize={50}
+            collapsible
+            collapsedSize={3}
+            className="min-w-0 overflow-y-auto border-l border-af2-line bg-af2-card"
+          >
+            {selectedStep ? (
+              <div data-testid="workflow-inspector-panel" className="h-full">
+                <div className="flex items-center justify-between gap-3 border-b border-af2-line px-5 py-3">
+                  <div className="af2-eyebrow">
+                    Step setup{proMode ? " · Pro" : ""}
+                  </div>
+                  <button
+                    onClick={() => setSelectedStepId(null)}
+                    aria-label="Close step setup"
+                    className="shrink-0 rounded p-1 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+
+                {/* HEL-100 v2 Pro inspector tabs — when Pro mode is on, the
+                    right rail switches between Inspector / Versions /
+                    Observability per AF2_Studio. Inspector keeps the existing
+                    form; Versions + Observability are stub panels in this PR
+                    and get real data wiring in follow-ups. */}
+                {proMode && (
+                  <div
+                    role="tablist"
+                    aria-label="Pro inspector tabs"
+                    className="flex items-center gap-1 border-b border-af2-line px-3 pt-3"
+                  >
+                    {(
+                      [
+                        ["inspector", "Setup"],
+                        ["versions", "Versions"],
+                        ["observability", "Observability"],
+                      ] as const
+                    ).map(([key, label]) => {
+                      const active = proInspectorTab === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          aria-controls={`pro-inspector-panel-${key}`}
+                          onClick={() => setProInspectorTab(key)}
+                          className={clsx(
+                            "rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition",
+                            active
+                              ? "border-af2-clay text-af2-ink"
+                              : "border-transparent text-af2-ink-3 hover:text-af2-ink"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {proMode && proInspectorTab === "versions" && (
+                  <VersionsPanel
+                    template={template}
+                    canonicalWorkflowId={canonicalWorkflowId}
+                    versions={workflowVersions}
+                    loading={versionsLoading}
+                    error={versionsError}
+                    actionError={versionsActionError}
+                    restoringVersionId={restoringVersionId}
+                    onCompare={(versionId) => setDiffTargetVersionId(versionId)}
+                    onRestore={handleRestoreVersion}
+                  />
+                )}
+                {proMode && proInspectorTab === "observability" && (
+                  <ObservabilityPanel runs={runHistory} />
+                )}
+
+                <div
+                  className={clsx(
+                    proMode && proInspectorTab !== "inspector" ? "hidden" : "block"
+                  )}
+                  id={proMode ? "pro-inspector-panel-inspector" : undefined}
+                  role={proMode ? "tabpanel" : undefined}
+                >
+                  {/* HEL-209: guided per-kind inspector cards. Rendered above the
+                      shared StepSetupCoach so operators get kind-specific UI
+                      (file-type chips, LLM tier + model dropdowns, rule
+                      builder, etc.) instead of falling back to the generic
+                      Description textarea. */}
+                  <div className="px-4 pt-4">
+                    <GuidedSetupCards
+                      step={selectedStep}
+                      readonly={isReadonlyBuilder}
+                      onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
+                    />
+                  </div>
+                  <StepSetupCoach
+                    step={selectedStep}
+                    setupContext={stepSetupContext}
+                    readonly={isReadonlyBuilder}
+                    proMode={proMode}
+                    advancedExpandedDefault={proMode}
+                    llmConfigs={llmConfigs}
+                    llmConfigsLoading={llmConfigsLoading}
+                    llmConfigsError={llmConfigsError}
+                    timezoneOptions={timezoneOptions}
+                    cronValidationError={cronValidationError}
+                    cronPreview={cronPreview}
+                    intervalValidationError={intervalValidationError}
+                    onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
+                    onFocusField={focusCoachField}
+                    onSuggestedAction={handleSuggestedNextStep}
+                    advancedContent={
+                      <>
+                  <Field label="Kind">
+                    <select
+                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
+                      value={selectedStep.kind}
+                      disabled={isReadonlyBuilder}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, { kind: e.target.value as StepKind })
+                      }
+                    >
+                      {(Object.keys(KIND_META) as StepKind[]).map((k) => (
+                        <option key={k} value={k}>
+                          {KIND_META[k].label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+
+                  <Field label="Description">
+                    <textarea
+                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none bg-af2-card text-af2-ink"
+                      rows={3}
+                      value={selectedStep.description}
+                      disabled={isReadonlyBuilder}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, { description: e.target.value })
+                      }
+                    />
+                  </Field>
+
+                  {selectedStep.kind === "condition" && (
+                    <Field label="Condition Expression">
+                      <input
+                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
+                        placeholder='e.g. urgency === "high"'
+                        value={selectedStep.condition ?? ""}
+                        disabled={isReadonlyBuilder}
+                        onChange={(e) =>
+                          updateStep(selectedStep.id, { condition: e.target.value })
+                        }
+                      />
+                    </Field>
+                  )}
+
+                  {selectedStep.kind === "agent" && (
+                    <>
+                      {latestDeployment && deploymentAgentByStepId.get(selectedStep.id) && (
+                        <div className="rounded-xl border border-af2-sage/30 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
+                          <p className="font-medium">This node is mapped to a deployed agent.</p>
+                          <a
+                            href={`/agents/team/${latestDeployment.team.id}?agent=${encodeURIComponent(
+                              deploymentAgentByStepId.get(selectedStep.id)!.id
+                            )}`}
+                            className="mt-2 inline-flex text-xs font-semibold text-af2-sage underline"
+                          >
+                            Open agent detail
+                          </a>
+                        </div>
+                      )}
+                      <Field label="Role Key">
+                        <input
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="e.g. workflow-manager"
+                          value={selectedStep.agentRoleKey ?? ""}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, { agentRoleKey: e.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Model">
+                        <input
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="e.g. claude-sonnet-4-6"
+                          value={selectedStep.agentModel ?? ""}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, { agentModel: e.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Instructions">
+                        <textarea
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none"
+                          rows={4}
+                          placeholder="System instructions for this agent…"
+                          value={selectedStep.agentInstructions ?? ""}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, { agentInstructions: e.target.value })
+                          }
+                        />
+                      </Field>
+                      <Field label="Assigned Skills (comma-separated)">
+                        <input
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="paperclip, para-memory-files, security-review"
+                          value={(selectedStep.agentSkills ?? []).join(", ")}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, {
+                              agentSkills: e.target.value
+                                .split(",")
+                                .map((skill) => skill.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Monthly Budget (USD)">
+                        <input
+                          type="number"
+                          min={0}
+                          step="1"
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="0"
+                          value={selectedStep.agentBudgetMonthlyUsd ?? 0}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, {
+                              agentBudgetMonthlyUsd: Number(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Trigger Schedule">
+                        <select
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
+                          value={selectedStep.agentScheduleType ?? "manual"}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, {
+                              agentScheduleType: e.target.value as WorkflowStep["agentScheduleType"],
+                            })
+                          }
+                        >
+                          <option value="manual">Manual handoff</option>
+                          <option value="interval">Interval heartbeat</option>
+                          <option value="cron">Cron schedule</option>
+                        </select>
+                      </Field>
+                      {(selectedStep.agentScheduleType === "interval" ||
+                        selectedStep.agentScheduleType === "cron") && (
+                        <Field label={selectedStep.agentScheduleType === "interval" ? "Interval Minutes" : "Cron Expression"}>
+                          <input
+                            className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                            placeholder={selectedStep.agentScheduleType === "interval" ? "30" : "0 * * * *"}
+                            value={selectedStep.agentScheduleValue ?? ""}
+                            disabled={isReadonlyBuilder}
+                            onChange={(e) =>
+                              updateStep(selectedStep.id, { agentScheduleValue: e.target.value })
+                            }
+                          />
+                        </Field>
+                      )}
+                      <Field label="Parallel Worker Slots">
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="1"
+                          value={selectedStep.subAgentSlots ?? 1}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, { subAgentSlots: parseInt(e.target.value, 10) || 1 })
+                          }
+                        />
+                      </Field>
+                    </>
+                  )}
+
+                  {selectedStep.kind === "approval" && (
+                    <>
+                      <Field label="Timeout (minutes)">
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                          placeholder="60"
+                          value={selectedStep.approvalTimeoutMinutes ?? 60}
+                          disabled={isReadonlyBuilder}
+                          onChange={(e) =>
+                            updateStep(selectedStep.id, {
+                              approvalTimeoutMinutes: parseInt(e.target.value, 10) || 60,
+                            })
+                          }
+                        />
+                      </Field>
+                      <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
+                        Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.
+                      </div>
+                    </>
+                  )}
+
+                  {selectedStep.kind === "mcp" && (
+                    <Field label="Integration Server URL">
+                      <input
+                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
+                        placeholder="https://mcp.example.com/sse"
+                        value={selectedStep.mcpServerUrl ?? ""}
+                        disabled={isReadonlyBuilder}
+                        onChange={(e) =>
+                          updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
+                        }
+                      />
+                    </Field>
+                  )}
+
+                  {selectedStep.kind === "file_trigger" && (
+                    <Field label="Accepted File Types (comma-separated)">
+                      <input
+                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                        placeholder=".pdf, .png, .jpg, .mp3, .wav"
+                        value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
+                        disabled={isReadonlyBuilder}
+                        onChange={(e) =>
+                          updateStep(selectedStep.id, {
+                            acceptedFileTypes: e.target.value
+                              .split(",")
+                              .map((t) => t.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                      />
+                    </Field>
+                  )}
+
+                  <Field label="Input Keys (comma-separated)">
+                    <input
+                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                      placeholder="key1, key2"
+                      value={selectedStep.inputKeys.join(", ")}
+                      disabled={isReadonlyBuilder}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, {
+                          inputKeys: e.target.value
+                            .split(",")
+                            .map((k) => k.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </Field>
+
+                  <Field label="Output Keys (comma-separated)">
+                    <input
+                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
+                      placeholder="result1, result2"
+                      value={selectedStep.outputKeys.join(", ")}
+                      disabled={isReadonlyBuilder}
+                      onChange={(e) =>
+                        updateStep(selectedStep.id, {
+                          outputKeys: e.target.value
+                            .split(",")
+                            .map((k) => k.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                    />
+                  </Field>
+                      </>
+                    }
+                  />
+                </div>
+              </div>
+            ) : (
+              <InspectorEmptyState />
+            )}
+          </Panel>
+        </>
+      )}
+      </PanelGroup>
 
       {showCopilot && (
         <WorkflowCopilotSidebar
@@ -1855,386 +2283,6 @@ export default function WorkflowBuilder() {
         />
       )}
 
-      {/* Right panel — step detail */}
-      {selectedStep && (
-        <div
-          data-testid="workflow-inspector-panel"
-          className="workflow-studio-panel workflow-studio-inspector animate-slide-up absolute z-20 overflow-y-auto border-l border-af2-line bg-af2-card shadow-xl transition-[right,transform] duration-200"
-        >
-          <div className="flex items-center justify-between gap-3 border-b border-af2-line px-5 py-3">
-            <div className="af2-eyebrow">
-              Step setup{proMode ? " · Pro" : ""}
-            </div>
-            <button
-              onClick={() => setSelectedStepId(null)}
-              aria-label="Close step setup"
-              className="shrink-0 rounded p-1 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* HEL-100 v2 Pro inspector tabs — when Pro mode is on, the
-              right rail switches between Inspector / Versions /
-              Observability per AF2_Studio. Inspector keeps the existing
-              form; Versions + Observability are stub panels in this PR
-              and get real data wiring in follow-ups. */}
-          {proMode && (
-            <div
-              role="tablist"
-              aria-label="Pro inspector tabs"
-              className="flex items-center gap-1 border-b border-af2-line px-3 pt-3"
-            >
-              {(
-                [
-                  ["inspector", "Setup"],
-                  ["versions", "Versions"],
-                  ["observability", "Observability"],
-                ] as const
-              ).map(([key, label]) => {
-                const active = proInspectorTab === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    aria-controls={`pro-inspector-panel-${key}`}
-                    onClick={() => setProInspectorTab(key)}
-                    className={clsx(
-                      "rounded-t-md border-b-2 px-3 py-2 text-xs font-medium transition",
-                      active
-                        ? "border-af2-clay text-af2-ink"
-                        : "border-transparent text-af2-ink-3 hover:text-af2-ink"
-                    )}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {proMode && proInspectorTab === "versions" && (
-            <VersionsPanel
-              template={template}
-              canonicalWorkflowId={canonicalWorkflowId}
-              versions={workflowVersions}
-              loading={versionsLoading}
-              error={versionsError}
-              actionError={versionsActionError}
-              restoringVersionId={restoringVersionId}
-              onCompare={(versionId) => setDiffTargetVersionId(versionId)}
-              onRestore={handleRestoreVersion}
-            />
-          )}
-          {proMode && proInspectorTab === "observability" && (
-            <ObservabilityPanel runs={runHistory} />
-          )}
-
-          <div
-            className={clsx(
-              proMode && proInspectorTab !== "inspector" ? "hidden" : "block"
-            )}
-            id={proMode ? "pro-inspector-panel-inspector" : undefined}
-            role={proMode ? "tabpanel" : undefined}
-          >
-            {/* HEL-209: guided per-kind inspector cards. Rendered above the
-                shared StepSetupCoach so operators get kind-specific UI
-                (file-type chips, LLM tier + model dropdowns, rule
-                builder, etc.) instead of falling back to the generic
-                Description textarea. */}
-            <div className="px-4 pt-4">
-              <GuidedSetupCards
-                step={selectedStep}
-                readonly={isReadonlyBuilder}
-                onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
-              />
-            </div>
-            <StepSetupCoach
-              step={selectedStep}
-              setupContext={stepSetupContext}
-              readonly={isReadonlyBuilder}
-              proMode={proMode}
-              advancedExpandedDefault={proMode}
-              llmConfigs={llmConfigs}
-              llmConfigsLoading={llmConfigsLoading}
-              llmConfigsError={llmConfigsError}
-              timezoneOptions={timezoneOptions}
-              cronValidationError={cronValidationError}
-              cronPreview={cronPreview}
-              intervalValidationError={intervalValidationError}
-              onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
-              onFocusField={focusCoachField}
-              onSuggestedAction={handleSuggestedNextStep}
-              advancedContent={
-                <>
-            <Field label="Kind">
-              <select
-                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-af2-card text-af2-ink"
-                value={selectedStep.kind}
-                disabled={isReadonlyBuilder}
-                onChange={(e) =>
-                  updateStep(selectedStep.id, { kind: e.target.value as StepKind })
-                }
-              >
-                {(Object.keys(KIND_META) as StepKind[]).map((k) => (
-                  <option key={k} value={k}>
-                    {KIND_META[k].label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Description">
-              <textarea
-                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none bg-af2-card text-af2-ink"
-                rows={3}
-                value={selectedStep.description}
-                disabled={isReadonlyBuilder}
-                onChange={(e) =>
-                  updateStep(selectedStep.id, { description: e.target.value })
-                }
-              />
-            </Field>
-
-            {selectedStep.kind === "condition" && (
-              <Field label="Condition Expression">
-                <input
-                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                  placeholder='e.g. urgency === "high"'
-                  value={selectedStep.condition ?? ""}
-                  disabled={isReadonlyBuilder}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, { condition: e.target.value })
-                  }
-                />
-              </Field>
-            )}
-
-            {selectedStep.kind === "agent" && (
-              <>
-                {latestDeployment && deploymentAgentByStepId.get(selectedStep.id) && (
-                  <div className="rounded-xl border border-af2-sage/30 bg-af2-sage/10 px-4 py-3 text-sm text-af2-sage">
-                    <p className="font-medium">This node is mapped to a deployed agent.</p>
-                    <a
-                      href={`/agents/team/${latestDeployment.team.id}?agent=${encodeURIComponent(
-                        deploymentAgentByStepId.get(selectedStep.id)!.id
-                      )}`}
-                      className="mt-2 inline-flex text-xs font-semibold text-af2-sage underline"
-                    >
-                      Open agent detail
-                    </a>
-                  </div>
-                )}
-                <Field label="Role Key">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="e.g. workflow-manager"
-                    value={selectedStep.agentRoleKey ?? ""}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { agentRoleKey: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Model">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="e.g. claude-sonnet-4-6"
-                    value={selectedStep.agentModel ?? ""}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { agentModel: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Instructions">
-                  <textarea
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 resize-none"
-                    rows={4}
-                    placeholder="System instructions for this agent…"
-                    value={selectedStep.agentInstructions ?? ""}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { agentInstructions: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Assigned Skills (comma-separated)">
-                  <input
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="paperclip, para-memory-files, security-review"
-                    value={(selectedStep.agentSkills ?? []).join(", ")}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        agentSkills: e.target.value
-                          .split(",")
-                          .map((skill) => skill.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Monthly Budget (USD)">
-                  <input
-                    type="number"
-                    min={0}
-                    step="1"
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="0"
-                    value={selectedStep.agentBudgetMonthlyUsd ?? 0}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        agentBudgetMonthlyUsd: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="Trigger Schedule">
-                  <select
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 bg-white"
-                    value={selectedStep.agentScheduleType ?? "manual"}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        agentScheduleType: e.target.value as WorkflowStep["agentScheduleType"],
-                      })
-                    }
-                  >
-                    <option value="manual">Manual handoff</option>
-                    <option value="interval">Interval heartbeat</option>
-                    <option value="cron">Cron schedule</option>
-                  </select>
-                </Field>
-                {(selectedStep.agentScheduleType === "interval" ||
-                  selectedStep.agentScheduleType === "cron") && (
-                  <Field label={selectedStep.agentScheduleType === "interval" ? "Interval Minutes" : "Cron Expression"}>
-                    <input
-                      className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                      placeholder={selectedStep.agentScheduleType === "interval" ? "30" : "0 * * * *"}
-                      value={selectedStep.agentScheduleValue ?? ""}
-                      disabled={isReadonlyBuilder}
-                      onChange={(e) =>
-                        updateStep(selectedStep.id, { agentScheduleValue: e.target.value })
-                      }
-                    />
-                  </Field>
-                )}
-                <Field label="Parallel Worker Slots">
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="1"
-                    value={selectedStep.subAgentSlots ?? 1}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, { subAgentSlots: parseInt(e.target.value, 10) || 1 })
-                    }
-                  />
-                </Field>
-              </>
-            )}
-
-            {selectedStep.kind === "approval" && (
-              <>
-                <Field label="Timeout (minutes)">
-                  <input
-                    type="number"
-                    min={1}
-                    className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                    placeholder="60"
-                    value={selectedStep.approvalTimeoutMinutes ?? 60}
-                    disabled={isReadonlyBuilder}
-                    onChange={(e) =>
-                      updateStep(selectedStep.id, {
-                        approvalTimeoutMinutes: parseInt(e.target.value, 10) || 60,
-                      })
-                    }
-                  />
-                </Field>
-                <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
-                  Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.
-                </div>
-              </>
-            )}
-
-            {selectedStep.kind === "mcp" && (
-              <Field label="Integration Server URL">
-                <input
-                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                  placeholder="https://mcp.example.com/sse"
-                  value={selectedStep.mcpServerUrl ?? ""}
-                  disabled={isReadonlyBuilder}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
-                  }
-                />
-              </Field>
-            )}
-
-            {selectedStep.kind === "file_trigger" && (
-              <Field label="Accepted File Types (comma-separated)">
-                <input
-                  className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                  placeholder=".pdf, .png, .jpg, .mp3, .wav"
-                  value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
-                  disabled={isReadonlyBuilder}
-                  onChange={(e) =>
-                    updateStep(selectedStep.id, {
-                      acceptedFileTypes: e.target.value
-                        .split(",")
-                        .map((t) => t.trim())
-                        .filter(Boolean),
-                    })
-                  }
-                />
-              </Field>
-            )}
-
-            <Field label="Input Keys (comma-separated)">
-              <input
-                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                placeholder="key1, key2"
-                value={selectedStep.inputKeys.join(", ")}
-                disabled={isReadonlyBuilder}
-                onChange={(e) =>
-                  updateStep(selectedStep.id, {
-                    inputKeys: e.target.value
-                      .split(",")
-                      .map((k) => k.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </Field>
-
-            <Field label="Output Keys (comma-separated)">
-              <input
-                className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                placeholder="result1, result2"
-                value={selectedStep.outputKeys.join(", ")}
-                disabled={isReadonlyBuilder}
-                onChange={(e) =>
-                  updateStep(selectedStep.id, {
-                    outputKeys: e.target.value
-                      .split(",")
-                      .map((k) => k.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </Field>
-                </>
-              }
-            />
-          </div>
-        </div>
-      )}
 
       {/* File Upload Modal */}
       {showFileUploadModal && (
@@ -3383,6 +3431,49 @@ function formatRunMs(ms: number): string {
 // kind actually does without opening it. The underlying `StepKind` enum
 // is unchanged — `stepHandlers.ts` is untouched.
 //
+/**
+ * HEL-242 — Empty state for the inspector right-rail.
+ *
+ * When no step is selected, the inspector pane stays mounted as a flex
+ * sibling (so the user can still drag it to resize). We fill the empty
+ * space with something useful: a short tagline + a keyboard shortcut
+ * cheatsheet. This is the "answer to 'what is this empty rail'" piece
+ * I want to grow over time — eventually it can show connector health,
+ * tip of the day, or run history sparklines for the active routine.
+ */
+function InspectorEmptyState() {
+  const shortcuts: Array<{ keys: string; action: string }> = [
+    { keys: "⌘K", action: "Open command palette" },
+    { keys: "⌘ Enter", action: "Run the routine" },
+    { keys: "Delete", action: "Remove a selected step" },
+    { keys: "Right-click", action: "Step actions on the canvas" },
+  ];
+  return (
+    <div className="flex h-full flex-col gap-4 px-6 py-6">
+      <div className="af2-eyebrow">Step setup</div>
+      <p className="text-sm leading-6 text-af2-ink-3">
+        Click a step on the canvas to configure it. Use the palette on
+        the left to add new steps, or drag steps directly onto the canvas.
+      </p>
+      <div className="rounded-xl border border-af2-line bg-af2-paper-3 p-4">
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.22em] text-af2-ink-4">
+          Keyboard shortcuts
+        </div>
+        <ul className="space-y-2 text-xs">
+          {shortcuts.map((s) => (
+            <li key={s.keys} className="flex items-center justify-between gap-3">
+              <span className="text-af2-ink-3">{s.action}</span>
+              <kbd className="rounded border border-af2-line bg-af2-card px-1.5 py-0.5 font-mono text-[10px] text-af2-ink-2">
+                {s.keys}
+              </kbd>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // Drag-from-palette: each item is draggable and sets the kind on
 // dataTransfer + paletteDragKind. The canvas wrapper reads either and
 // drops a node at the cursor via xyflow's screenToFlowPosition.
@@ -3397,7 +3488,7 @@ function StudioPalette({
     <aside
       data-testid="studio-palette"
       aria-label="Node palette"
-      className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto border-r border-af2-line bg-af2-paper px-4 py-5 lg:flex"
+      className="flex h-full flex-col gap-5 overflow-y-auto border-r border-af2-line bg-af2-paper px-4 py-5"
     >
       {STEP_PALETTE_SECTIONS.map((section) => (
         <div key={section.title}>

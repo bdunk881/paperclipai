@@ -1,6 +1,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+
+// useIsPaidTier reads from AuthProvider + WorkspaceProvider which
+// these unit tests don't supply. The Pro tree-view enrichment is
+// covered by JsonTreeViewer's own tests; here we only care about
+// the sidebar's step-card behaviour, so stub the gate to free.
+vi.mock("../hooks/useIsPaidTier", () => ({
+  useIsPaidTier: () => ({ isPaid: false, plan: null, loading: false }),
+}));
+
 import { RunAuditSidebar } from "./RunAuditSidebar";
 import type { WorkflowRun } from "../types/workflow";
 import * as apiClient from "../api/client";

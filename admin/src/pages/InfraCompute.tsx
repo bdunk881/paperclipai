@@ -7,6 +7,7 @@ import {
   type JobRunRow,
 } from "../api/infraApi";
 import { MetricCard } from "../components/infra/MetricCard";
+import { InfraTabs } from "../components/infra/InfraTabs";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
 import { QueueInspector } from "./infra/QueueInspector";
 
@@ -173,6 +174,7 @@ export function InfraComputePage() {
 
   return (
     <>
+      <InfraTabs />
       <div className="row" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
         <h1 style={{ fontSize: "1.3rem", margin: 0 }}>Infrastructure · Compute</h1>
         <button onClick={() => refetch()} disabled={isFetching}>

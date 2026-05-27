@@ -107,9 +107,11 @@ import {
   validateIntervalMinutes,
   STEP_KIND_COPY,
   STEP_PALETTE_SECTIONS,
+  STEP_FIELD_MANIFEST,
   type SuggestedNextStep,
 } from "./workflowStepSetup";
 import { StudioAssistantPanel } from "../components/workflow/StudioAssistantPanel";
+import { NodeConfigForm } from "../components/workflow/NodeConfigForm";
 import { LaunchTeamModal } from "../components/workflow/LaunchTeamModal";
 import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
 
@@ -2007,18 +2009,17 @@ export default function WorkflowBuilder() {
                     />
                   </Field>
 
-                  {selectedStep.kind === "condition" && (
-                    <Field label="Condition Expression">
-                      <input
-                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                        placeholder='e.g. urgency === "high"'
-                        value={selectedStep.condition ?? ""}
-                        disabled={isReadonlyBuilder}
-                        onChange={(e) =>
-                          updateStep(selectedStep.id, { condition: e.target.value })
-                        }
-                      />
-                    </Field>
+                  {/* HEL-241A — condition/approval/mcp/file_trigger
+                      kinds now render via NodeConfigForm. Their field
+                      manifests live in workflowStepSetup.ts and the
+                      generic renderer handles every widget shape. */}
+                  {STEP_FIELD_MANIFEST[selectedStep.kind] && (
+                    <NodeConfigForm
+                      fields={STEP_FIELD_MANIFEST[selectedStep.kind]!}
+                      step={selectedStep}
+                      onChange={(patch) => updateStep(selectedStep.id, patch)}
+                      disabled={isReadonlyBuilder}
+                    />
                   )}
 
                   {selectedStep.kind === "agent" && (
@@ -2147,62 +2148,6 @@ export default function WorkflowBuilder() {
                         />
                       </Field>
                     </>
-                  )}
-
-                  {selectedStep.kind === "approval" && (
-                    <>
-                      <Field label="Timeout (minutes)">
-                        <input
-                          type="number"
-                          min={1}
-                          className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                          placeholder="60"
-                          value={selectedStep.approvalTimeoutMinutes ?? 60}
-                          disabled={isReadonlyBuilder}
-                          onChange={(e) =>
-                            updateStep(selectedStep.id, {
-                              approvalTimeoutMinutes: parseInt(e.target.value, 10) || 60,
-                            })
-                          }
-                        />
-                      </Field>
-                      <div className="px-3 py-2.5 rounded-lg border border-af2-mustard/30 bg-af2-mustard/10 text-xs text-af2-mustard leading-relaxed">
-                        Workflow will pause at this step until the assignee approves or rejects. On timeout, the workflow escalates or continues based on your escalation policy.
-                      </div>
-                    </>
-                  )}
-
-                  {selectedStep.kind === "mcp" && (
-                    <Field label="Integration Server URL">
-                      <input
-                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30 font-mono"
-                        placeholder="https://mcp.example.com/sse"
-                        value={selectedStep.mcpServerUrl ?? ""}
-                        disabled={isReadonlyBuilder}
-                        onChange={(e) =>
-                          updateStep(selectedStep.id, { mcpServerUrl: e.target.value })
-                        }
-                      />
-                    </Field>
-                  )}
-
-                  {selectedStep.kind === "file_trigger" && (
-                    <Field label="Accepted File Types (comma-separated)">
-                      <input
-                        className="w-full px-3 py-2 text-sm border border-af2-line-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-af2-clay/30"
-                        placeholder=".pdf, .png, .jpg, .mp3, .wav"
-                        value={(selectedStep.acceptedFileTypes ?? []).join(", ")}
-                        disabled={isReadonlyBuilder}
-                        onChange={(e) =>
-                          updateStep(selectedStep.id, {
-                            acceptedFileTypes: e.target.value
-                              .split(",")
-                              .map((t) => t.trim())
-                              .filter(Boolean),
-                          })
-                        }
-                      />
-                    </Field>
                   )}
 
                   <Field label="Input Keys (comma-separated)">

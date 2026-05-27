@@ -130,3 +130,54 @@ export async function downloadLedgerCsv(accessToken: string): Promise<void> {
     URL.revokeObjectURL(url);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Auto-topup (PR #1075 — Phase 3, migration 076)
+// ---------------------------------------------------------------------------
+
+/**
+ * Kick off Stripe Checkout in setup mode to collect a card for
+ * off-session auto-topup. Returns the URL to redirect the browser to.
+ */
+export async function startAutoTopupSetupCheckout(accessToken: string): Promise<string> {
+  const res = await fetch(`${BASE}/credits/wallet/setup-checkout`, {
+    method: "POST",
+    headers: { ...authHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const body = await jsonOrThrow<{ url: string }>(res, "Start auto-topup setup");
+  return body.url;
+}
+
+/** POST /api/credits/wallet/setup-checkout/confirm — landing-page synchronous handoff. */
+export async function confirmAutoTopupSetup(
+  accessToken: string,
+  sessionId: string,
+): Promise<{ ok: boolean; stripeCustomerId?: string; paymentMethodId?: string }> {
+  const res = await fetch(`${BASE}/credits/wallet/setup-checkout/confirm`, {
+    method: "POST",
+    headers: { ...authHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });
+  return jsonOrThrow(res, "Confirm auto-topup setup");
+}
+
+export interface AutoTopupPatch {
+  enabled: boolean;
+  /** Decimal string for bigint compat; only required when enabled=true. */
+  triggerCredits?: string;
+  amountCredits?: string;
+}
+
+/** PATCH /api/credits/wallet/auto-topup — update threshold + amount + enabled. */
+export async function patchAutoTopupConfig(
+  accessToken: string,
+  patch: AutoTopupPatch,
+): Promise<void> {
+  const res = await fetch(`${BASE}/credits/wallet/auto-topup`, {
+    method: "PATCH",
+    headers: { ...authHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  await jsonOrThrow(res, "Update auto-topup config");
+}

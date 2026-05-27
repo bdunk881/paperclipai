@@ -20,6 +20,7 @@ import {
   getPostgresPool,
   inMemoryAllowed,
   isPostgresPersistenceEnabled,
+  queryPostgres,
 } from "../../db/postgres";
 import { withWorkspaceContext } from "../../middleware/workspaceContext";
 
@@ -492,4 +493,160 @@ export function __resetInMemoryStateForTests(): void {
   inMemoryReservations.clear();
   inMemoryLedger.clear();
   inMemoryIdempotencyIndex.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Auto-topup Stripe linkage (migration 076)
+// ---------------------------------------------------------------------------
+
+export interface WalletStripeIds {
+  stripeCustomerId: string | null;
+  stripePaymentMethodId: string | null;
+}
+
+/** Read the Stripe IDs for a workspace's wallet. Returns nulls when wallet absent. */
+export async function getWalletStripeIds(
+  workspaceId: string,
+): Promise<WalletStripeIds> {
+  if (!persistenceAvailable()) {
+    // In-memory store doesn't model Stripe IDs (no auto-topup in dev).
+    return { stripeCustomerId: null, stripePaymentMethodId: null };
+  }
+  const pool = getPostgresPool();
+  const result = await pool.query<{
+    stripe_customer_id: string | null;
+    stripe_payment_method_id: string | null;
+  }>(
+    `SELECT stripe_customer_id, stripe_payment_method_id
+       FROM workspace_credit_wallets
+      WHERE workspace_id = $1`,
+    [workspaceId],
+  );
+  if (result.rowCount === 0) {
+    return { stripeCustomerId: null, stripePaymentMethodId: null };
+  }
+  const row = result.rows[0];
+  return {
+    stripeCustomerId: row.stripe_customer_id,
+    stripePaymentMethodId: row.stripe_payment_method_id,
+  };
+}
+
+/**
+ * Upsert the Stripe customer ID on the wallet. Called when we create
+ * a Customer for the workspace (first auto-topup setup). Creates the
+ * wallet row with a zero balance if it doesn't exist yet — auto-topup
+ * lookup needs a row to attach the customer to.
+ */
+export async function setWalletStripeCustomerId(
+  workspaceId: string,
+  stripeCustomerId: string,
+): Promise<void> {
+  if (!persistenceAvailable()) return;
+  await queryPostgres(
+    `INSERT INTO workspace_credit_wallets (workspace_id, stripe_customer_id)
+     VALUES ($1, $2)
+     ON CONFLICT (workspace_id) DO UPDATE
+       SET stripe_customer_id = EXCLUDED.stripe_customer_id,
+           updated_at = now()`,
+    [workspaceId, stripeCustomerId],
+  );
+}
+
+export async function setWalletStripePaymentMethodId(
+  workspaceId: string,
+  stripePaymentMethodId: string,
+): Promise<void> {
+  if (!persistenceAvailable()) return;
+  await queryPostgres(
+    `UPDATE workspace_credit_wallets
+        SET stripe_payment_method_id = $2,
+            updated_at = now()
+      WHERE workspace_id = $1`,
+    [workspaceId, stripePaymentMethodId],
+  );
+}
+
+export interface AutoTopupConfig {
+  enabled: boolean;
+  triggerCredits: bigint | null;
+  amountCredits: bigint | null;
+}
+
+/**
+ * Update the auto-topup configuration. Enabling without a saved payment
+ * method is allowed at the row level — the worker will skip wallets
+ * that have enabled=true but null payment_method_id, so the customer
+ * can pre-configure thresholds before adding a card.
+ */
+export async function updateAutoTopupConfig(
+  workspaceId: string,
+  config: AutoTopupConfig,
+): Promise<void> {
+  if (!persistenceAvailable()) return;
+  await queryPostgres(
+    `INSERT INTO workspace_credit_wallets
+       (workspace_id, auto_topup_enabled, auto_topup_trigger_credits, auto_topup_amount_credits)
+     VALUES ($1, $2, $3::bigint, $4::bigint)
+     ON CONFLICT (workspace_id) DO UPDATE
+       SET auto_topup_enabled = EXCLUDED.auto_topup_enabled,
+           auto_topup_trigger_credits = EXCLUDED.auto_topup_trigger_credits,
+           auto_topup_amount_credits = EXCLUDED.auto_topup_amount_credits,
+           updated_at = now()`,
+    [
+      workspaceId,
+      config.enabled,
+      config.triggerCredits?.toString() ?? null,
+      config.amountCredits?.toString() ?? null,
+    ],
+  );
+}
+
+export interface WalletNeedingTopup {
+  workspaceId: string;
+  balanceCredits: bigint;
+  triggerCredits: bigint;
+  amountCredits: bigint;
+  stripeCustomerId: string;
+  stripePaymentMethodId: string;
+}
+
+/**
+ * Return wallets ripe for an auto-topup right now: enabled, balance
+ * below trigger, AND with both Stripe IDs populated. The worker
+ * filters further (e.g. by recent-failure backoff) but the basic
+ * predicate lives here.
+ */
+export async function findWalletsNeedingTopup(): Promise<WalletNeedingTopup[]> {
+  if (!persistenceAvailable()) return [];
+  const result = await queryPostgres<{
+    workspace_id: string;
+    balance_credits: string;
+    auto_topup_trigger_credits: string;
+    auto_topup_amount_credits: string;
+    stripe_customer_id: string;
+    stripe_payment_method_id: string;
+  }>(
+    `SELECT workspace_id::text,
+            balance_credits::text,
+            auto_topup_trigger_credits::text,
+            auto_topup_amount_credits::text,
+            stripe_customer_id,
+            stripe_payment_method_id
+       FROM workspace_credit_wallets
+      WHERE auto_topup_enabled = true
+        AND stripe_customer_id IS NOT NULL
+        AND stripe_payment_method_id IS NOT NULL
+        AND auto_topup_trigger_credits IS NOT NULL
+        AND auto_topup_amount_credits IS NOT NULL
+        AND balance_credits < auto_topup_trigger_credits`,
+  );
+  return result.rows.map((row) => ({
+    workspaceId: row.workspace_id,
+    balanceCredits: BigInt(row.balance_credits),
+    triggerCredits: BigInt(row.auto_topup_trigger_credits),
+    amountCredits: BigInt(row.auto_topup_amount_credits),
+    stripeCustomerId: row.stripe_customer_id,
+    stripePaymentMethodId: row.stripe_payment_method_id,
+  }));
 }

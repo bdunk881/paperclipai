@@ -39,6 +39,7 @@ interface CfAccessConfig {
   jwksUri: string;
 }
 
+// allowlist: process-local JWKS fetcher cache keyed by Cloudflare Access team domain
 const remoteJwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 function resolveConfig(): CfAccessConfig | null {

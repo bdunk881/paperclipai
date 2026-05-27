@@ -585,6 +585,66 @@ export const runStore = {
     }
   },
 
+  /**
+   * Lightweight workspace-scoped listing used by the Home snapshot loader.
+   * Skips step_results and uses idx_runs_workspace_started; the snapshot only
+   * needs run-level fields (started_at, status, template) for histograms +
+   * totals, so loading every step_results row for every run was the dominant
+   * cost of GET /api/workspace/snapshot.
+   */
+  async listForSnapshot(workspaceId: string, limit: number): Promise<WorkflowRun[]> {
+    const localRuns = () =>
+      Array.from(memoryStore.values())
+        .filter((run) => resolveWorkspaceId(run) === workspaceId)
+        .sort((a, b) => (a.startedAt < b.startedAt ? 1 : a.startedAt > b.startedAt ? -1 : 0))
+        .slice(0, limit)
+        .map((run) => ({ ...cloneRun(run), stepResults: [] }));
+
+    if (!postgresPersistenceAvailable()) {
+      return localRuns();
+    }
+
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query(
+        `
+          SELECT
+            r.id,
+            r.workspace_id::text,
+            r.routine_id::text,
+            v.workflow_id::text,
+            r.workflow_version_id::text,
+            v.version AS workflow_version,
+            w.external_template_id AS template_id,
+            w.name AS template_name,
+            r.status,
+            r.started_at,
+            r.ended_at,
+            r.input,
+            r.output,
+            r.error,
+            r.failure_reason,
+            r.failed_at,
+            r.user_id
+          FROM runs r
+          JOIN workflow_versions v ON v.id = r.workflow_version_id
+          JOIN workflows w ON w.id = v.workflow_id
+          WHERE r.workspace_id = $1::uuid
+          ORDER BY r.started_at DESC
+          LIMIT $2
+        `,
+        [workspaceId, limit]
+      );
+      return result.rows.map((row) => mapRowToRun(row));
+    } catch (err) {
+      console.error(
+        "[runStore] Postgres snapshot read failed, falling back to in-memory:",
+        (err as Error).message,
+      );
+      return localRuns();
+    }
+  },
+
   async list(templateId?: string, userId?: string, status?: string): Promise<WorkflowRun[]> {
     const localRuns = () => {
       const runs = Array.from(memoryStore.values());

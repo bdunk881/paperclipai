@@ -436,9 +436,9 @@ async function loadApprovals(userId: string): Promise<SnapshotApproval[]> {
   }));
 }
 
-async function loadRuns(userId: string): Promise<SnapshotRun[]> {
-  const runs = await runStore.list(undefined, userId, undefined);
-  return runs.slice(0, HOME_RUN_LIMIT) as unknown as SnapshotRun[];
+async function loadRuns(workspaceId: string): Promise<SnapshotRun[]> {
+  const runs = await runStore.listForSnapshot(workspaceId, HOME_RUN_LIMIT);
+  return runs as unknown as SnapshotRun[];
 }
 
 export async function buildHomeSnapshot(
@@ -476,7 +476,7 @@ export async function buildHomeSnapshot(
 
   const [approvals, runs, heartbeats] = await Promise.all([
     loadApprovals(userId),
-    loadRuns(userId),
+    loadRuns(workspaceId),
     pool
       ? loadHeartbeatsPostgres(pool, workspaceId, userId)
       : loadHeartbeatsInMemory(

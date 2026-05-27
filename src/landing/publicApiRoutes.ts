@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import Stripe from "stripe";
-import { getStripe, PRICING_TIERS, TierKey } from "../billing/stripeClient";
-import { listEnabledTiers } from "../billing/tiersRepository";
+import { getStripe, resolveStripePriceId } from "../billing/stripeClient";
+import { getTierById, listEnabledTiers } from "../billing/tiersRepository";
 import { listEnabledPacks } from "../billing/credits/packCatalog";
 import { asyncHandler } from "../middleware/asyncHandler";
 
@@ -54,16 +54,21 @@ async function createCheckoutSession(
 ): Promise<string> {
   const { tier, email, firstName, companyName, userId } = input;
 
-  if (!tier || !(tier in PRICING_TIERS)) {
-    throw new Error(`invalid_tier:${Object.keys(PRICING_TIERS).join(",")}`);
+  if (!tier) {
+    throw new Error("invalid_tier");
   }
 
-  if (tier === "explore") {
+  const tierRow = await getTierById(tier);
+  if (!tierRow || !tierRow.enabled) {
+    throw new Error("invalid_tier");
+  }
+
+  if (tierRow.priceUsdCents === 0) {
     throw new Error("free_tier");
   }
 
-  const tierConfig = PRICING_TIERS[tier as TierKey];
-  if (!tierConfig.priceId) {
+  const priceId = resolveStripePriceId(tierRow.stripePriceEnv);
+  if (!priceId) {
     throw new Error("price_not_configured");
   }
 
@@ -73,7 +78,7 @@ async function createCheckoutSession(
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     payment_method_types: ["card"],
-    line_items: [{ price: tierConfig.priceId, quantity: 1 }],
+    line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${appBaseUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appBaseUrl}/#pricing`,
     allow_promotion_codes: true,
@@ -86,8 +91,8 @@ async function createCheckoutSession(
     },
   };
 
-  if (tierConfig.trialDays > 0) {
-    params.subscription_data = { trial_period_days: tierConfig.trialDays };
+  if (tierRow.trialDays > 0) {
+    params.subscription_data = { trial_period_days: tierRow.trialDays };
   }
 
   if (email) {
@@ -153,12 +158,12 @@ router.post("/checkout", asyncHandler<Request>(async (req, res: Response) => {
     res.json({ url });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.startsWith("invalid_tier:")) {
-      res.status(400).json({ error: `Invalid tier. Must be one of: ${message.slice("invalid_tier:".length).split(",").join(", ")}` });
+    if (message === "invalid_tier") {
+      res.status(400).json({ error: "Invalid tier" });
       return;
     }
     if (message === "free_tier") {
-      res.status(400).json({ error: "Explore is a free tier - no checkout required" });
+      res.status(400).json({ error: "Free tier - no checkout required" });
       return;
     }
     if (message === "price_not_configured") {

@@ -96,6 +96,7 @@ export function createAgentJobDescriptionRoutes(pool: Pool): Router {
             answers,
           },
           pool,
+          workspaceId,
         );
         res.json({
           title: draft.title,

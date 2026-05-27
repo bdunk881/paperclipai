@@ -2,8 +2,61 @@ import { Router } from "express";
 import { randomBytes } from "crypto";
 import type { Pool, PoolClient } from "pg";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
+import { grantCredits } from "../billing/credits/walletStore";
 import { provisionDefaultWorkspace } from "../middleware/workspaceResolver";
 import { asyncHandler } from "../middleware/asyncHandler";
+
+const DEFAULT_SIGNUP_TRIAL_CREDITS = 10000n;
+
+/**
+ * Free credits granted to a new workspace on creation. Idempotent on
+ * workspace_id so re-running the signup flow (or any future replay)
+ * never double-grants. Configurable via `SIGNUP_TRIAL_CREDITS` env var;
+ * default is 10,000 credits ≈ $1 wholesale, ≈ $1.50 retail — enough
+ * for a customer to evaluate hosted-credits mode without paying first.
+ *
+ * Setting `SIGNUP_TRIAL_CREDITS=0` disables the grant entirely.
+ */
+function readSignupTrialCredits(): bigint {
+  const raw = process.env.SIGNUP_TRIAL_CREDITS?.trim();
+  if (!raw) return DEFAULT_SIGNUP_TRIAL_CREDITS;
+  try {
+    const parsed = BigInt(raw);
+    return parsed >= 0n ? parsed : DEFAULT_SIGNUP_TRIAL_CREDITS;
+  } catch {
+    return DEFAULT_SIGNUP_TRIAL_CREDITS;
+  }
+}
+
+async function grantSignupTrialCredits(workspaceId: string, userId: string): Promise<void> {
+  const credits = readSignupTrialCredits();
+  if (credits <= 0n) return;
+  try {
+    const result = await grantCredits({
+      workspaceId,
+      userId,
+      credits,
+      grantType: "grant",
+      idempotencyKey: `signup_trial__${workspaceId}`,
+      relatedKind: "workspace_signup",
+      relatedId: workspaceId,
+      metadata: { source: "signup_trial", granted_via: "workspace_create" },
+    });
+    if (result.reason === "granted") {
+      console.log(
+        `[workspaces] granted ${credits.toString()} signup-trial credits to workspace ${workspaceId}`,
+      );
+    }
+  } catch (err) {
+    // Best-effort — never fail workspace creation because of a grant
+    // error. The customer can still buy credits or use BYOK.
+    console.error(
+      `[workspaces] signup-trial grant failed for workspace ${workspaceId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
 
 type WorkspaceRow = {
   id: string;
@@ -106,6 +159,13 @@ export function createWorkspaceRoutes(pool: Pool) {
       );
 
       await client.query("COMMIT");
+
+      // HEL-credits-mvp follow-up: grant signup-trial credits so the
+      // workspace can try hosted-credits mode immediately. Best-effort —
+      // the COMMIT above is the source of truth for workspace existence;
+      // a grant failure shouldn't block the response.
+      await grantSignupTrialCredits(workspace.id, userId);
+
       res.status(201).json({
         id: workspace.id,
         name: workspace.name,

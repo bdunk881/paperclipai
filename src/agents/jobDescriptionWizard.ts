@@ -25,7 +25,7 @@ import type { Pool } from "pg";
 import * as Sentry from "@sentry/node";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../engine/llmRouter";
-import { getProvider } from "../engine/llmProviders";
+import { callWithBYOKFallback } from "../billing/credits/hybridCall";
 
 export interface JobDescriptionAnswers {
   /** "In one or two sentences, what's <agent>'s main job?" */
@@ -123,11 +123,18 @@ function validateAnswers(answers: JobDescriptionAnswers): string | null {
  * `pool` is accepted for future use (e.g. recording wizard cost on a
  * separate step_results row) but is not used yet — passing it now keeps
  * the route signature stable.
+ *
+ * When `workspaceId` is provided, BYOK failures (429 / 401 / 403 / 5xx /
+ * network) fall back to hosted credits via `callWithBYOKFallback`. The
+ * wizard succeeds as long as the workspace has either a working BYOK
+ * key OR a funded credits wallet — same code path either way. Customers
+ * without credits get the original BYOK error verbatim.
  */
 export async function draftAgentJobDescription(
   userId: string,
   input: DraftJobDescriptionInput,
   _pool?: Pool,
+  workspaceId?: string,
 ): Promise<DraftJobDescriptionResult> {
   const validationError = validateAnswers(input.answers);
   if (validationError) {
@@ -149,47 +156,71 @@ export async function draftAgentJobDescription(
   // Standard tier — drafting a 3-section job description is a
   // multi-step reasoning task, not a high-stakes one.
   const model = resolveModelForTier(resolved.config.provider, "standard");
-  const provider = getProvider({
-    provider: resolved.config.provider,
-    model,
-    apiKey: resolved.apiKey,
-    // HEL-147: job descriptions are 3 sections (~500-700 tokens
-    // typical). 1000 covers the long tail without budgeting for the
-    // model to ramble across the full 4096 default.
-    maxOutputTokens: 1000,
-  });
-
+  const maxOutputTokens = 1000;
   const prompt = buildJobDescriptionPrompt(input);
 
-  try {
-    const response = await provider(prompt);
-    const body = response.text.trim();
-    if (!body) {
-      throw new Error("LLM returned an empty response");
-    }
-    return {
-      title: `${input.agentName} — Job description`,
-      body,
+  const result = await callWithBYOKFallback({
+    byokConfig: {
       provider: resolved.config.provider,
       model,
-      promptTokens: response.usage?.promptTokens ?? 0,
-      completionTokens: response.usage?.completionTokens ?? 0,
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    Sentry.captureException(err, {
+      apiKey: resolved.apiKey,
+      // HEL-147: job descriptions are 3 sections (~500-700 tokens
+      // typical). 1000 covers the long tail without budgeting for the
+      // model to ramble across the full 4096 default.
+      maxOutputTokens,
+    },
+    prompt,
+    creditsFallback: workspaceId
+      ? {
+          workspaceId,
+          userId,
+          // Rough estimate — prompt is ~300 tokens of fixed scaffolding
+          // plus the answers (~200 each, capped at 600 by the form).
+          promptTokensEstimate: Math.max(800, Math.ceil(prompt.length / 4)),
+          maxOutputTokens,
+          relatedKind: "agent_job_description",
+        }
+      : undefined,
+  });
+
+  if (!result.ok) {
+    const userFacing = (() => {
+      switch (result.error.kind) {
+        case "byok_error_no_fallback":
+          return result.error.message;
+        case "byok_error_fallback_failed":
+          return `${result.error.byokMessage} — credits fallback also failed: ${result.error.fallbackError}`;
+        case "credits_only":
+          return result.error.reason;
+      }
+    })();
+    Sentry.captureException(new Error(userFacing), {
       tags: {
         route: "POST /api/agents/:agentId/job-description/draft",
         phase: "llm_call",
         provider: resolved.config.provider,
         model,
+        error_kind: result.error.kind,
       },
     });
     throw Object.assign(
       new Error(
-        `Wizard call failed (${resolved.config.provider}/${model}): ${msg}`,
+        `Wizard call failed (${resolved.config.provider}/${model}): ${userFacing}`,
       ),
       { code: "LLM_FAILED", provider: resolved.config.provider, model },
     );
   }
+
+  const body = result.response.text.trim();
+  if (!body) {
+    throw new Error("LLM returned an empty response");
+  }
+  return {
+    title: `${input.agentName} — Job description`,
+    body,
+    provider: resolved.config.provider,
+    model,
+    promptTokens: result.response.usage?.promptTokens ?? 0,
+    completionTokens: result.response.usage?.completionTokens ?? 0,
+  };
 }

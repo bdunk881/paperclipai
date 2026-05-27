@@ -1,7 +1,19 @@
+jest.mock("../billing/credits/walletStore", () => ({
+  grantCredits: jest.fn().mockResolvedValue({ granted: true, balanceAfter: 10000n, reason: "granted" }),
+}));
+
 import express from "express";
 import request from "supertest";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
+import { grantCredits } from "../billing/credits/walletStore";
 import { createWorkspaceRoutes } from "./workspaceRoutes";
+
+const mockGrantCredits = grantCredits as jest.Mock;
+
+beforeEach(() => {
+  mockGrantCredits.mockClear();
+  mockGrantCredits.mockResolvedValue({ granted: true, balanceAfter: 10000n, reason: "granted" });
+});
 
 function buildApp(queryImpl: jest.Mock, connectImpl?: jest.Mock) {
   const app = express();
@@ -139,6 +151,100 @@ describe("workspaceRoutes", () => {
     );
     expect(client.query).toHaveBeenNthCalledWith(4, "COMMIT");
     expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  // PR A — signup-trial grant fires after workspace creation.
+  it("grants signup-trial credits after workspace creation (best-effort)", async () => {
+    const query = jest.fn();
+    const client = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({
+          rows: [{ id: "22222222-2222-4222-8222-222222222222", name: "Acme AI" }],
+        })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined),
+      release: jest.fn(),
+    };
+    const connect = jest.fn().mockResolvedValue(client);
+    const app = buildApp(query, connect);
+
+    const res = await request(app)
+      .post("/api/workspaces")
+      .set("Authorization", "Bearer user-123")
+      .send({ name: "Acme AI" });
+
+    expect(res.status).toBe(201);
+    expect(mockGrantCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: "22222222-2222-4222-8222-222222222222",
+        userId: "user-123",
+        credits: 10000n,
+        grantType: "grant",
+        idempotencyKey: "signup_trial__22222222-2222-4222-8222-222222222222",
+      }),
+    );
+  });
+
+  it("succeeds even when the signup-trial grant errors (best-effort)", async () => {
+    mockGrantCredits.mockRejectedValueOnce(new Error("grant failed"));
+    const query = jest.fn();
+    const client = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({
+          rows: [{ id: "22222222-2222-4222-8222-222222222222", name: "Acme AI" }],
+        })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined),
+      release: jest.fn(),
+    };
+    const connect = jest.fn().mockResolvedValue(client);
+    const app = buildApp(query, connect);
+
+    const res = await request(app)
+      .post("/api/workspaces")
+      .set("Authorization", "Bearer user-123")
+      .send({ name: "Acme AI" });
+
+    // 201 success because workspace creation is the source of truth;
+    // grant failures only log a warning.
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe("22222222-2222-4222-8222-222222222222");
+  });
+
+  it("skips the signup-trial grant when SIGNUP_TRIAL_CREDITS=0", async () => {
+    const prev = process.env.SIGNUP_TRIAL_CREDITS;
+    process.env.SIGNUP_TRIAL_CREDITS = "0";
+    try {
+      const query = jest.fn();
+      const client = {
+        query: jest
+          .fn()
+          .mockResolvedValueOnce(undefined)
+          .mockResolvedValueOnce({
+            rows: [{ id: "44444444-4444-4444-8444-444444444444", name: "Trial-off Co" }],
+          })
+          .mockResolvedValueOnce(undefined)
+          .mockResolvedValueOnce(undefined),
+        release: jest.fn(),
+      };
+      const connect = jest.fn().mockResolvedValue(client);
+      const app = buildApp(query, connect);
+
+      const res = await request(app)
+        .post("/api/workspaces")
+        .set("Authorization", "Bearer user-123")
+        .send({ name: "Trial-off Co" });
+
+      expect(res.status).toBe(201);
+      expect(mockGrantCredits).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.SIGNUP_TRIAL_CREDITS;
+      else process.env.SIGNUP_TRIAL_CREDITS = prev;
+    }
   });
 
   // -----------------------------------------------------------------

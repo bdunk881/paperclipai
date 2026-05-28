@@ -251,22 +251,54 @@ export interface MfaServiceDeps {
 }
 
 export interface GetPolicyOptions {
-  /** Supabase `app_metadata.provider` claim. Used to derive `signInMethod`. */
+  /**
+   * Supabase `app_metadata.provider` claim. Used as the IdP HINT for
+   * the typed `signInMethod` value (e.g. `"oauth_google"` vs
+   * `"oauth_github"`), but NOT as the decision signal for whether the
+   * session was OAuth — see `amr` below.
+   */
   provider?: string;
+  /**
+   * HEL-305: the JWT's `amr` claim contains the CURRENT session's
+   * authentication methods (`{method: "oauth"}` for any OAuth IdP
+   * sign-in). Supabase's `app_metadata.provider` is the SIGNUP IdP and
+   * never updates on subsequent sign-ins, so a user who signed up via
+   * email and later linked Google would forever read as
+   * `provider="email"` even when their current session is OAuth.
+   * Use the amr to decide OAuth-vs-password; use `provider` only to
+   * pick the typed flavor.
+   */
+  amr?: Array<{ method: string; timestamp: number }>;
 }
 
 /**
- * HEL-280: Supabase exposes the IdP via `app_metadata.provider`. Map the
- * raw provider name into our typed `SignInMethod`. Unknown providers
- * fall through to `"unknown"` so we always require app-side MFA for
- * anything we don't explicitly trust.
+ * HEL-280 / HEL-305: decide whether the current session is OAuth based
+ * on the JWT's `amr` claim (the per-session signal), and pick a typed
+ * `SignInMethod` flavor using `app_metadata.provider` only as a hint.
+ *
+ * `app_metadata.provider` reflects the user's SIGNUP IdP and doesn't
+ * track which IdP they actually used for the current session — see
+ * HEL-305 for the live data trace.
  */
-function deriveSignInMethod(provider: string | undefined): SignInMethod {
+function deriveSignInMethod(
+  provider: string | undefined,
+  amr: Array<{ method: string }> = [],
+): SignInMethod {
+  const isOauthSession = amr.some((entry) => entry.method === "oauth");
+  if (isOauthSession) {
+    if (provider === "github") return "oauth_github";
+    // Default OAuth flavor is google (the only other IdP we currently
+    // enable in Supabase project settings). If a third provider gets
+    // added without updating this map it falls into oauth_google;
+    // expand the switch then.
+    return "oauth_google";
+  }
   switch (provider) {
     case "google":
-      return "oauth_google";
     case "github":
-      return "oauth_github";
+      // No oauth AMR but provider claims an OAuth IdP — odd state, likely
+      // a stale provider claim. Fall through to password to be safe.
+      return "password";
     case "email":
     case "supabase":
       // Supabase reports `email` for password+OTP+magic-link sign-ins.
@@ -399,7 +431,7 @@ export class MfaService {
   }
 
   async getPolicy(ctx: MfaServiceContext, options: GetPolicyOptions = {}): Promise<MfaPolicySummary> {
-    const signInMethod = deriveSignInMethod(options.provider);
+    const signInMethod = deriveSignInMethod(options.provider, options.amr);
     const isOauth = signInMethod === "oauth_google" || signInMethod === "oauth_github";
 
     const [policy, credentials, activeRecoveryCodes, oauthOverrideOn] = await Promise.all([

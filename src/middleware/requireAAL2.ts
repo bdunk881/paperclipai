@@ -142,19 +142,28 @@ function isAal2EnforcementDisabled(): boolean {
 }
 
 /**
- * HEL-280: OAuth sign-ins via the configured IdPs are accepted as AAL2
- * because Google + GitHub enforce phishing-resistant 2FA on their side.
- * An enterprise workspace can flip this back off via the
+ * HEL-280 / HEL-305: OAuth sign-ins are accepted as AAL2 because Google +
+ * GitHub enforce phishing-resistant 2FA on their side. An enterprise
+ * workspace can flip this back off via the
  * `require_app_mfa_for_oauth_users` workspace feature override.
  *
- * If the request isn't workspace-scoped (no `workspaceId` claim and no
- * `x-workspace-id` header path), we default to trusting the IdP — the
- * workspace-scoped override only makes sense when there's a workspace
- * to scope to.
+ * HEL-305: this used to read `req.auth.provider` (sourced from Supabase's
+ * `app_metadata.provider`), but that column is the SIGNUP IdP, not the
+ * current session's IdP. A user who signed up via email and later linked
+ * Google sees `provider = "email"` forever, even when their current
+ * session was minted via Google. The session AMR claim — populated by
+ * Supabase per sign-in with `{method: "oauth"}` for any OAuth provider —
+ * is the right signal. Whitelisted-IdP enforcement happens at the
+ * Supabase project config layer (only Google + GitHub are enabled).
+ *
+ * If the request isn't workspace-scoped (no `workspaceId` claim), we
+ * default to trusting the IdP — the workspace-scoped override only
+ * makes sense when there's a workspace to scope to.
  */
 async function checkOauthShortcut(req: AuthenticatedRequest): Promise<boolean> {
-  const provider = req.auth?.provider;
-  if (provider !== "google" && provider !== "github") return false;
+  const amr = req.auth?.amr ?? [];
+  const hasOauthAmr = amr.some((entry) => entry.method === "oauth");
+  if (!hasOauthAmr) return false;
   const workspaceId = req.auth?.workspaceId;
   if (!workspaceId) return true;
   const overrideOn = await isWorkspaceFlagEnabled(

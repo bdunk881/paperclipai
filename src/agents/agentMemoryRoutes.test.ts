@@ -288,6 +288,7 @@ describe("Agent memory routes", () => {
 
     await agentMemoryStore.createTicketCloseEntry({
       userId: "flow-user",
+      workspaceId: "flow-user",
       agentId: "agent-1",
       runId: "run-ticket-memory-1",
       ticketId: "ALT-100",
@@ -303,6 +304,7 @@ describe("Agent memory routes", () => {
 
     await agentMemoryStore.createTicketCloseEntry({
       userId: "flow-user",
+      workspaceId: "flow-user",
       agentId: "agent-1",
       runId: "run-ticket-memory-2",
       ticketId: "ALT-101",

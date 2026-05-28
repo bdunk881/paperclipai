@@ -1,5 +1,11 @@
-import { useEffect, useState } from "react";
-import { listAgentWebhooks, sendAsk, type AgentWebhook } from "../../api/agentWebhooksApi";
+import { useEffect, useRef, useState } from "react";
+import {
+  listAgentReplies,
+  listAgentWebhooks,
+  sendAsk,
+  type AgentReply,
+  type AgentWebhook,
+} from "../../api/agentWebhooksApi";
 
 export interface AskAgentContext {
   kind: string;
@@ -22,15 +28,19 @@ export function AskAgentModal({ open, context, onClose }: AskAgentModalProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
+    askId: string;
     status: string;
     httpStatus: number | null;
     excerpt: string | null;
   } | null>(null);
+  const [replies, setReplies] = useState<AgentReply[]>([]);
+  const pollTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setResult(null);
+    setReplies([]);
     setQuestion(context?.defaultQuestion ?? "");
     listAgentWebhooks()
       .then((list) => {
@@ -41,6 +51,34 @@ export function AskAgentModal({ open, context, onClose }: AskAgentModalProps) {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, context]);
+
+  // Poll replies for the in-flight ask. Receivers (Slack, n8n, custom
+  // agents) may take a few seconds to post the agent's answer back to the
+  // public reply endpoint; we poll for up to 5 minutes after the send.
+  useEffect(() => {
+    if (!result?.askId) return;
+    let cancelled = false;
+    const started = Date.now();
+    const MAX_POLL_MS = 5 * 60 * 1000;
+
+    async function poll() {
+      if (cancelled || !result?.askId) return;
+      try {
+        const rows = await listAgentReplies(result.askId);
+        if (!cancelled) setReplies(rows);
+      } catch {
+        // swallow — the modal can still be closed manually
+      }
+      if (!cancelled && Date.now() - started < MAX_POLL_MS) {
+        pollTimer.current = window.setTimeout(poll, 4000);
+      }
+    }
+    void poll();
+    return () => {
+      cancelled = true;
+      if (pollTimer.current !== null) window.clearTimeout(pollTimer.current);
+    };
+  }, [result?.askId]);
 
   async function handleSend() {
     if (!context) return;
@@ -63,7 +101,12 @@ export function AskAgentModal({ open, context, onClose }: AskAgentModalProps) {
         payload: context.payload,
         adminQuestion: question.trim(),
       });
-      setResult({ status: res.status, httpStatus: res.http_status, excerpt: res.excerpt });
+      setResult({
+        askId: res.ask_id,
+        status: res.status,
+        httpStatus: res.http_status,
+        excerpt: res.excerpt,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -152,6 +195,38 @@ export function AskAgentModal({ open, context, onClose }: AskAgentModalProps) {
             {result.httpStatus ? `(HTTP ${result.httpStatus})` : ""}
             {result.excerpt && (
               <pre style={{ whiteSpace: "pre-wrap", margin: "0.4rem 0 0 0" }}>{result.excerpt}</pre>
+            )}
+          </div>
+        )}
+
+        {result && result.status === "sent" && (
+          <div className="card" style={{ marginBottom: "0.75rem" }}>
+            <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.5rem" }}>
+              <strong>Agent replies</strong>
+              {replies.length === 0 ? (
+                <span className="muted">Polling…</span>
+              ) : (
+                <span className="muted">{replies.length} received</span>
+              )}
+            </div>
+            {replies.length === 0 ? (
+              <p className="muted" style={{ marginBottom: 0 }}>
+                Waiting for the webhook receiver to POST back to{" "}
+                <code className="code">…/agent-asks/{result.askId.slice(0, 8)}…/reply</code>.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {replies.map((reply) => (
+                  <li key={reply.id} style={{ marginBottom: "0.5rem" }}>
+                    <div className="muted" style={{ fontSize: "0.78rem" }}>
+                      {new Date(reply.received_at).toLocaleString()}
+                    </div>
+                    <pre style={{ whiteSpace: "pre-wrap", margin: "0.2rem 0 0 0" }}>
+                      {reply.body}
+                    </pre>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

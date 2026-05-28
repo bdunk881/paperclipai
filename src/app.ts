@@ -144,7 +144,11 @@ import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
 import { createSkillsRoutes } from "./skills/skillsRoutes";
 import { createCuratedKnowledgeRoutes } from "./admin/curatedKnowledgeRoutes";
-import { createAdminConsoleRoutes, createImpersonationVerifyRoute } from "./adminConsole";
+import {
+  createAdminConsoleRoutes,
+  createImpersonationVerifyRoute,
+  createPublicAgentReplyRoute,
+} from "./adminConsole";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
   createPortableWorkflowBundle,
@@ -1013,6 +1017,17 @@ app.use(
 // curated-knowledge so the hardening is wanted; just deferring to a
 // follow-up that can verify the impersonation issue/verify flow still
 // works under step-up.
+// HEL infra dashboard PR #8: public async-reply receiver mounted BEFORE
+// the auth-gated admin-console router so external webhook receivers can
+// POST replies without an AutoFlow session. HMAC verification against the
+// original webhook's secret replaces auth.
+if (isPostgresPersistenceEnabled()) {
+  app.use(
+    "/api/admin-console/infra/agent-asks",
+    createPublicAgentReplyRoute(getPostgresPool()),
+  );
+}
+
 const adminConsoleRoutes = isPostgresPersistenceEnabled()
   ? createAdminConsoleRoutes(getPostgresPool())
   : express.Router().all("*", (_req, res) =>

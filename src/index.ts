@@ -33,10 +33,30 @@ async function startServer() {
     import("./app"),
     import("./templates"),
   ]);
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`AutoFlow API running on port ${PORT}`);
     console.log(`Loaded ${WORKFLOW_TEMPLATES.length} workflow templates`);
   });
+
+  // HEL-286: y-websocket upgrade handler for collaborative workflow editing.
+  // Gated on Postgres because the snapshot store is Postgres-only; the
+  // in-memory dev mode skips collab transport (the dashboard's Studio uses
+  // the legacy SSE presence channel as a fallback there).
+  const { isPostgresPersistenceEnabled, getPostgresPool } = await import("./db/postgres");
+  if (isPostgresPersistenceEnabled()) {
+    const { attachYDocUpgradeHandler } = await import(
+      "./workflows/ydoc/attachYDocUpgradeHandler"
+    );
+    const ydocAttachment = attachYDocUpgradeHandler(server, { pool: getPostgresPool() });
+    const shutdown = (signal: string) => {
+      console.log(`[ydoc] ${signal} received; flushing rooms…`);
+      void ydocAttachment.detach().then(() => {
+        console.log("[ydoc] flush complete");
+      });
+    };
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
+  }
 
   // HEL-credits-mvp: start the credits-mode background jobs after the
   // server is accepting traffic. All no-op gracefully when Postgres

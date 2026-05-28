@@ -26,6 +26,10 @@ import type { NextFunction, Response } from "express";
 import jwt, { type JwtPayload } from "jsonwebtoken";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { resolveAppJwtConfig } from "../auth/appAuthTokens";
+import {
+  REQUIRE_APP_MFA_FOR_OAUTH_USERS,
+  isWorkspaceFlagEnabled,
+} from "../security/workspaceFeatureFlags";
 
 export const AAL2_ATTESTATION_COOKIE = "autoflow_aal2_attestation";
 export const AAL2_ATTESTATION_AUDIENCE = "autoflow-aal2";
@@ -137,11 +141,34 @@ function isAal2EnforcementDisabled(): boolean {
   return process.env.MFA_DISABLE_AAL2_ENFORCEMENT === "true";
 }
 
-export function requireAAL2(
+/**
+ * HEL-280: OAuth sign-ins via the configured IdPs are accepted as AAL2
+ * because Google + GitHub enforce phishing-resistant 2FA on their side.
+ * An enterprise workspace can flip this back off via the
+ * `require_app_mfa_for_oauth_users` workspace feature override.
+ *
+ * If the request isn't workspace-scoped (no `workspaceId` claim and no
+ * `x-workspace-id` header path), we default to trusting the IdP — the
+ * workspace-scoped override only makes sense when there's a workspace
+ * to scope to.
+ */
+async function checkOauthShortcut(req: AuthenticatedRequest): Promise<boolean> {
+  const provider = req.auth?.provider;
+  if (provider !== "google" && provider !== "github") return false;
+  const workspaceId = req.auth?.workspaceId;
+  if (!workspaceId) return true;
+  const overrideOn = await isWorkspaceFlagEnabled(
+    workspaceId,
+    REQUIRE_APP_MFA_FOR_OAUTH_USERS,
+  );
+  return !overrideOn;
+}
+
+export async function requireAAL2(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   if (!req.auth?.sub) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -154,6 +181,11 @@ export function requireAAL2(
 
   const supabaseCheck = checkSupabaseAal2(req, ttl);
   if (supabaseCheck.valid) {
+    next();
+    return;
+  }
+
+  if (await checkOauthShortcut(req)) {
     next();
     return;
   }

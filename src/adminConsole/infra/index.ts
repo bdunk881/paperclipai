@@ -13,16 +13,30 @@ import { Router } from "express";
 import type { Pool } from "pg";
 import { createOverviewRoutes } from "./overviewRoutes";
 import { createComputeRoutes } from "./computeRoutes";
+import { createComputeMutationRoutes } from "./computeMutationRoutes";
 import { createBullBoardRouter } from "./bullBoardMount";
 import { createQueueInspectorRoutes } from "./queueInspector/routes";
 import { createEdgeRoutes } from "./edgeRoutes";
+import { createEdgeMutationRoutes } from "./edgeMutationRoutes";
+import { createDataRoutes } from "./dataRoutes";
+import { createDataMutationRoutes } from "./dataMutationRoutes";
+import { requireAAL2 } from "../../middleware/requireAAL2";
 
 export function createInfraRoutes(pool: Pool): Router {
   const router = Router();
   router.use("/overview", createOverviewRoutes(pool));
   router.use("/compute", createComputeRoutes(pool));
   router.use("/queues/inspector", createQueueInspectorRoutes(pool));
-  router.use("/queues/_ui", createBullBoardRouter());
+  // Bull-board accepts retry/promote/clean as of PR #6, so compose
+  // requireAAL2 on the entire iframe path. Admins step up once per
+  // session, then drive the UI freely.
+  router.use("/queues/_ui", requireAAL2, createBullBoardRouter());
   router.use("/edge", createEdgeRoutes(pool));
+  router.use("/data", createDataRoutes(pool));
+  // Mutation sub-routers — each carries requireAAL2 internally so the
+  // read paths above stay AAL1.
+  router.use("/compute/actions", createComputeMutationRoutes(pool));
+  router.use("/edge/actions", createEdgeMutationRoutes(pool));
+  router.use("/data/actions", createDataMutationRoutes(pool));
   return router;
 }

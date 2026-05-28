@@ -7,6 +7,14 @@ import {
   requireAAL2,
   verifyAal2AttestationCookie,
 } from "./requireAAL2";
+import { __resetWorkspaceFlagCacheForTests } from "../security/workspaceFeatureFlags";
+
+const queryPostgresMock = jest.fn();
+
+jest.mock("../db/postgres", () => ({
+  isPostgresPersistenceEnabled: () => true,
+  queryPostgres: (sql: string, params: unknown[]) => queryPostgresMock(sql, params),
+}));
 
 function createResponse() {
   const json = jest.fn();
@@ -23,6 +31,8 @@ function makeReq(opts: {
   aal?: "aal1" | "aal2";
   amr?: { method: string; timestamp: number }[];
   cookie?: string;
+  provider?: string;
+  workspaceId?: string;
 }): AuthenticatedRequest {
   return {
     auth: opts.sub
@@ -30,6 +40,8 @@ function makeReq(opts: {
           sub: opts.sub,
           aal: opts.aal,
           amr: opts.amr,
+          provider: opts.provider,
+          workspaceId: opts.workspaceId,
         }
       : undefined,
     headers: opts.cookie
@@ -53,6 +65,8 @@ describe("requireAAL2", () => {
     // tests don't have to stub this middleware. Delete it here so the
     // real gate behavior is verified by these tests.
     delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
+    queryPostgresMock.mockReset();
+    __resetWorkspaceFlagCacheForTests();
   });
 
   afterAll(() => {
@@ -64,18 +78,18 @@ describe("requireAAL2", () => {
     else process.env.MFA_DISABLE_AAL2_ENFORCEMENT = originalBypass;
   });
 
-  it("rejects unauthenticated requests with 401", () => {
+  it("rejects unauthenticated requests with 401", async () => {
     const req = makeReq({});
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("passes a Supabase JWT with aal=aal2 and a recent totp amr entry", () => {
+  it("passes a Supabase JWT with aal=aal2 and a recent totp amr entry", async () => {
     const req = makeReq({
       sub: "user-1",
       aal: "aal2",
@@ -84,13 +98,13 @@ describe("requireAAL2", () => {
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("rejects aal=aal1 even with recent amr entries", () => {
+  it("rejects aal=aal1 even with recent amr entries", async () => {
     const req = makeReq({
       sub: "user-1",
       aal: "aal1",
@@ -99,13 +113,13 @@ describe("requireAAL2", () => {
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("rejects an expired Supabase amr timestamp", () => {
+  it("rejects an expired Supabase amr timestamp", async () => {
     const req = makeReq({
       sub: "user-1",
       aal: "aal2",
@@ -114,37 +128,37 @@ describe("requireAAL2", () => {
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("passes when a fresh AAL2 attestation cookie matches the user", () => {
+  it("passes when a fresh AAL2 attestation cookie matches the user", async () => {
     const minted = mintAal2Attestation({ userId: "user-1", method: "webauthn" });
     const req = makeReq({ sub: "user-1", aal: "aal1", cookie: minted.token });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("rejects an attestation cookie whose sub does not match req.auth.sub", () => {
+  it("rejects an attestation cookie whose sub does not match req.auth.sub", async () => {
     const minted = mintAal2Attestation({ userId: "user-A", method: "webauthn" });
     const req = makeReq({ sub: "user-B", aal: "aal1", cookie: minted.token });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("rejects an expired attestation cookie", () => {
+  it("rejects an expired attestation cookie", async () => {
     const minted = mintAal2Attestation({
       userId: "user-1",
       method: "webauthn",
@@ -164,12 +178,78 @@ describe("requireAAL2", () => {
     const req = makeReq({ sub: "user-1", aal: "aal1", cookie: expired });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
-    requireAAL2(req, res, next);
+    await requireAAL2(req, res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
 
     // Keep `minted` in scope so the var isn't flagged.
     expect(typeof minted.token).toBe("string");
+  });
+
+  // HEL-280 --------------------------------------------------------------
+
+  it("treats a google-provider session as AAL2 when the workspace flag is off", async () => {
+    queryPostgresMock.mockResolvedValue({ rows: [] });
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "google",
+      workspaceId: "ws-1",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("treats a github-provider session as AAL2 with no workspace bound", async () => {
+    const req = makeReq({ sub: "user-1", aal: "aal1", provider: "github" });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(queryPostgresMock).not.toHaveBeenCalled();
+  });
+
+  it("requires app MFA for OAuth users when require_app_mfa_for_oauth_users is on", async () => {
+    queryPostgresMock.mockResolvedValue({
+      rows: [{ enabled: true, expires_at: null }],
+    });
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "google",
+      workspaceId: "ws-ent",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("does NOT shortcut for non-OAuth providers", async () => {
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "email",
+      workspaceId: "ws-1",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(queryPostgresMock).not.toHaveBeenCalled();
   });
 
   it("emits a Set-Cookie value with the correct flags", () => {

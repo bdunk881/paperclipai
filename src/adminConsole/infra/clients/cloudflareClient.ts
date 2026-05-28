@@ -56,23 +56,71 @@ function resolveBaseUrl(opts: CloudflareClientOptions): string {
   return (opts.baseUrl ?? CF_API_BASE).replace(/\/$/, "");
 }
 
-async function cfRequest<T>(path: string, opts: CloudflareClientOptions): Promise<T> {
+async function cfRequest<T>(
+  path: string,
+  opts: CloudflareClientOptions,
+  method: "GET" | "POST" = "GET",
+  body?: unknown,
+): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const token = resolveToken(opts);
   const url = `${resolveBaseUrl(opts)}${path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetchImpl(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     const scrubbed = text.split(token).join("<redacted>").slice(0, 500);
     throw new CloudflareClientError(res.status, scrubbed);
   }
-  return (await res.json()) as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined as T;
+  }
+}
+
+/**
+ * Rolls back a Cloudflare Pages production deployment to the given
+ * deployment id. Only successful production deploys are valid rollback
+ * targets per CF docs.
+ */
+export async function rollbackDeployment(
+  projectName: string,
+  deploymentId: string,
+  opts: CloudflareClientOptions = {},
+): Promise<unknown> {
+  const accountId = resolveAccountId(opts);
+  return cfRequest(
+    `/accounts/${encodeURIComponent(accountId)}/pages/projects/${encodeURIComponent(projectName)}/deployments/${encodeURIComponent(deploymentId)}/rollback`,
+    opts,
+    "POST",
+  );
+}
+
+/**
+ * Retries a previously-failed Cloudflare Pages deployment.
+ */
+export async function retryDeployment(
+  projectName: string,
+  deploymentId: string,
+  opts: CloudflareClientOptions = {},
+): Promise<unknown> {
+  const accountId = resolveAccountId(opts);
+  return cfRequest(
+    `/accounts/${encodeURIComponent(accountId)}/pages/projects/${encodeURIComponent(projectName)}/deployments/${encodeURIComponent(deploymentId)}/retry`,
+    opts,
+    "POST",
+  );
 }
 
 export interface CFPagesDeploymentStage {

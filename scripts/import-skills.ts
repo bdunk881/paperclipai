@@ -145,6 +145,37 @@ function isTrustRegression(
   return prevTrusted && candidateUntrusted;
 }
 
+// Count actionable (non-info) findings — what the triage UI surfaces as risk.
+function countRiskFindings(findings: ScanFinding[]): { critical: number; warning: number } {
+  let critical = 0;
+  let warning = 0;
+  for (const f of findings) {
+    if (f.severity === "critical") critical += 1;
+    else if (f.severity === "warning") warning += 1;
+  }
+  return { critical, warning };
+}
+
+// When two catalog refs collide on the same skillKey, prefer the scan
+// that carries more risk information. Without this guard, a later scan
+// of e.g. `mindrally/skills@turborepo` (only an untrusted_origin
+// warning) overwrites the previous `antfu/skills@turborepo` entry
+// (which also surfaced multiple env_credentials warnings) and the
+// triage UI loses sight of the credential-related findings.
+function isRiskRegression(
+  previous: ManifestEntry | undefined,
+  candidateFindings: ScanFinding[],
+): boolean {
+  if (!previous) return false;
+  const prev = countRiskFindings(previous.findings);
+  const next = countRiskFindings(candidateFindings);
+  // Treat critical findings as strictly more important than warnings;
+  // fall back to warning count for the tiebreaker.
+  if (next.critical < prev.critical) return true;
+  if (next.critical > prev.critical) return false;
+  return next.warning < prev.warning;
+}
+
 // Strict allowlists for ref components. GitHub permits alphanumerics + `_`,
 // `-`, and `.` in usernames + repo names — match that and bound length so
 // the value going into `git clone https://github.com/<owner>/<repo>.git`
@@ -397,6 +428,11 @@ async function processRepoBatch(
           continue;
         }
 
+        if (isRiskRegression(previous, allFindings)) {
+          console.log(`      → kept previous entry (${previous!.ref} carries more risk findings than ${ref})`);
+          continue;
+        }
+
         options.manifest.entries[skillKey] = {
           ref,
           skillKey,
@@ -415,17 +451,11 @@ async function processRepoBatch(
     }
   } catch (err) {
     console.error(`✖ ${repoKey} — ${(err as Error).message}`);
-    for (const ref of refs) {
-      options.manifest.entries[ref] = {
-        ref,
-        skillKey: ref,
-        verdict: "needs_review",
-        scannedAt: new Date().toISOString(),
-        findings: [
-          { severity: "info", code: "import_error", message: (err as Error).message },
-        ],
-      };
-    }
+    // Don't write a manifest entry — these failures (clone errors,
+    // unsafe skill keys from catalog dirt, kill-mid-flight) would
+    // otherwise pollute the SkillsTriage queue with un-actionable
+    // rows whose `skillKey` contains `/` or `@`. They'll naturally
+    // get retried on the next batch via the dedupe-by-ref logic.
   } finally {
     fs.rmSync(tempBase, { recursive: true, force: true });
   }
@@ -514,6 +544,11 @@ async function processRef(
         continue;
       }
 
+      if (isRiskRegression(previous, allFindings)) {
+        console.log(`      → kept previous entry (${previous!.ref} carries more risk findings than ${ref})`);
+        continue;
+      }
+
       options.manifest.entries[skillKey] = {
         ref,
         skillKey,
@@ -531,19 +566,8 @@ async function processRef(
     }
   } catch (err) {
     console.error(`✖ ${ref} — ${(err as Error).message}`);
-    options.manifest.entries[ref] = {
-      ref,
-      skillKey: ref,
-      verdict: "needs_review",
-      scannedAt: new Date().toISOString(),
-      findings: [
-        {
-          severity: "info",
-          code: "import_error",
-          message: (err as Error).message,
-        },
-      ],
-    };
+    // Don't write a manifest entry — see processRepoBatch above for
+    // rationale (avoids polluting SkillsTriage with un-actionable rows).
   } finally {
     fs.rmSync(tempBase, { recursive: true, force: true });
   }
@@ -590,15 +614,8 @@ async function main(): Promise<void> {
       byRepo.set(key, list);
     } catch (err) {
       console.error(`✖ ${ref} — ${(err as Error).message}`);
-      manifest.entries[ref] = {
-        ref,
-        skillKey: ref,
-        verdict: "needs_review",
-        scannedAt: new Date().toISOString(),
-        findings: [
-          { severity: "info", code: "import_error", message: (err as Error).message },
-        ],
-      };
+      // Skip — see catch blocks above. parseRef failures here mean a
+      // malformed catalog ref; logging is enough.
     }
   }
 

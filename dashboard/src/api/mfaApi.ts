@@ -13,11 +13,25 @@ export interface MfaWebauthnDevice {
   lastUsedAt: string | null;
 }
 
+/**
+ * HEL-280: derived from the Supabase JWT's `app_metadata.provider` claim.
+ * OAuth providers are MFA-satisfied by the IdP unless the workspace flag
+ * `require_app_mfa_for_oauth_users` flips it back on.
+ */
+export type MfaSignInMethod =
+  | "password"
+  | "magic_link"
+  | "oauth_google"
+  | "oauth_github"
+  | "unknown";
+
 export interface MfaPolicy {
   hasWebauthn: boolean;
   hasTotp: boolean;
   hasAnyFactor: boolean;
   hasRecoveryCodes: boolean;
+  signInMethod: MfaSignInMethod;
+  requiresAppMfa: boolean;
   enrollmentCompletedAt: string | null;
   lastVerifiedAt: string | null;
   lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;

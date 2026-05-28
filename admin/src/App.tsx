@@ -12,6 +12,7 @@ import { AgentWebhooksPage } from "./pages/settings/AgentWebhooksPage";
 import { InfraOverviewPage } from "./pages/InfraOverview";
 import { InfraComputePage } from "./pages/InfraCompute";
 import { InfraEdgePage } from "./pages/InfraEdge";
+import { InfraDataPage } from "./pages/InfraData";
 import MfaEnrollmentWizard from "./pages/MfaEnrollmentWizard";
 import { getSupabaseClient } from "./lib/supabase";
 
@@ -52,6 +53,7 @@ function Shell() {
           <Route path="/infra/overview" element={<InfraOverviewPage />} />
           <Route path="/infra/compute" element={<InfraComputePage />} />
           <Route path="/infra/edge" element={<InfraEdgePage />} />
+          <Route path="/infra/data" element={<InfraDataPage />} />
           <Route path="/onboarding/mfa" element={<MfaEnrollmentWizard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -37,6 +37,7 @@ import {
   insertAsk,
   listAgentWebhooks,
   listRecentAsksForWebhook,
+  listRepliesForAsk,
   loadDeliveryMaterial,
   markWebhookUsed,
   updateAgentWebhook,
@@ -271,6 +272,21 @@ export function createAgentWebhookRoutes(pool: Pool): Router {
       const client = r.platformAdminDb!;
       const asks = await listRecentAsksForWebhook(client, id, 25);
       res.json({ asks });
+    }),
+  );
+
+  // Replies for a given ask (HEL infra PR #8). Polled by AskAgentModal
+  // when an ask is in-flight; the reply receive route (replyRoute.ts) is
+  // the public side that the external receiver POSTs to.
+  router.get(
+    "/asks/:askId/replies",
+    asyncHandler(async (req, res) => {
+      const askId = req.params.askId;
+      if (!UUID_RE.test(askId)) return res.status(400).json({ error: "invalid_ask_id" });
+      const r = req as PlatformAdminRequest;
+      const client = r.platformAdminDb!;
+      const replies = await listRepliesForAsk(client, askId, 50);
+      res.json({ replies });
     }),
   );
 

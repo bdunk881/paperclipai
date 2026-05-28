@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { fetchJobDetail, type JobDetail } from "../../api/queuesApi";
+import { promoteJob, removeJob, replayDlqJob, retryJob } from "../../api/computeMutationsApi";
 import { AskAgentButton } from "../agent/AskAgentButton";
+import { ReasonPrompt } from "../ReasonPrompt";
 
 export interface JobInspectorModalProps {
   queueName: string;
   jobId: string | null;
   onClose: () => void;
+  /** Called after a mutation (retry/promote/remove/replay) completes so the queue inspector can refresh. */
+  onMutated?: () => void;
 }
 
 function formatDate(ms: number | null | undefined): string {
@@ -46,10 +50,27 @@ function CodeBlock({ value }: { value: unknown }) {
   );
 }
 
-export function JobInspectorModal({ queueName, jobId, onClose }: JobInspectorModalProps) {
+export function JobInspectorModal({ queueName, jobId, onClose, onMutated }: JobInspectorModalProps) {
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  async function runMutation(label: string, fn: () => Promise<unknown>) {
+    setError(null);
+    setActionMessage(null);
+    try {
+      const result = await fn();
+      const id =
+        result && typeof result === "object" && "new_job_id" in (result as Record<string, unknown>)
+          ? String((result as { new_job_id: string }).new_job_id)
+          : null;
+      setActionMessage(id ? `${label} → new job ${id}` : `${label} succeeded`);
+      onMutated?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   useEffect(() => {
     if (!jobId) {
@@ -160,8 +181,47 @@ export function JobInspectorModal({ queueName, jobId, onClose }: JobInspectorMod
               <CodeBlock value={detail.opts} />
             </Section>
 
-            <div className="muted" style={{ fontSize: "0.78rem" }}>
-              Retry · Promote · Remove buttons land in PR #6.
+            {actionMessage && (
+              <div className="banner" style={{ marginTop: "0.5rem" }}>
+                {actionMessage}
+              </div>
+            )}
+
+            <div className="row" style={{ marginTop: "0.75rem", flexWrap: "wrap", gap: "0.4rem" }}>
+              {detail.state === "failed" && (
+                <ReasonPrompt
+                  label="Retry"
+                  className="primary"
+                  onConfirm={(reason) =>
+                    runMutation("Retry", () => retryJob({ queueName, jobId: detail.id, reason }))
+                  }
+                />
+              )}
+              {detail.state === "delayed" && (
+                <ReasonPrompt
+                  label="Promote"
+                  className="primary"
+                  onConfirm={(reason) =>
+                    runMutation("Promote", () => promoteJob({ queueName, jobId: detail.id, reason }))
+                  }
+                />
+              )}
+              {queueName === "runs-dlq" && (
+                <ReasonPrompt
+                  label="Replay to runs"
+                  className="primary"
+                  onConfirm={(reason) =>
+                    runMutation("Replay", () => replayDlqJob({ jobId: detail.id, reason }))
+                  }
+                />
+              )}
+              <ReasonPrompt
+                label="Remove"
+                className="danger"
+                onConfirm={(reason) =>
+                  runMutation("Remove", () => removeJob({ queueName, jobId: detail.id, reason }))
+                }
+              />
             </div>
           </>
         )}

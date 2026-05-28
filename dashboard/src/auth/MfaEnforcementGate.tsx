@@ -81,7 +81,12 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
     return <>{children}</>;
   }
 
-  if (!state.policy.hasAnyFactor) {
+  // HEL-280: the server now tells us whether app-side MFA is required
+  // for this session. OAuth users come back with requiresAppMfa=false
+  // (unless their workspace flipped the override flag on), so we skip
+  // the enrollment redirect for them. Password/magic-link users still
+  // hit the gate.
+  if (state.policy.requiresAppMfa && !state.policy.hasAnyFactor) {
     return (
       <Navigate
         to="/onboarding/mfa"

@@ -30,6 +30,7 @@ import { createAbuseSignalsRoutes } from "./abuseSignalsRoutes";
 import { createCreditsPoolRoutes } from "./creditsPoolRoutes";
 import { createInfraRoutes } from "./infra";
 import { createAgentWebhookRoutes } from "./agentWebhooks/routes";
+import { createAgentReplyRoute } from "./agentWebhooks/replyRoute";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
 
@@ -83,6 +84,16 @@ export function createImpersonationVerifyRoute(): Router {
     }),
   );
   return router;
+}
+
+/**
+ * Public-facing async agent-ask reply receiver — HEL infra PR #8. Mounted
+ * OUTSIDE requireAuth in src/app.ts because external webhook receivers
+ * (Slack, n8n, custom agents) don't have AutoFlow sessions. HMAC against
+ * the original webhook's stored secret replaces session auth.
+ */
+export function createPublicAgentReplyRoute(pool: Pool): Router {
+  return createAgentReplyRoute(pool);
 }
 
 export { createRequirePlatformAdmin } from "./requirePlatformAdmin";

@@ -17,9 +17,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { getMfaPolicy, type MfaPolicy } from "../api/mfaApi";
 import { useAuth } from "../context/AuthContext";
+import {
+  ENROLLMENT_COMPLETED_EVENT,
+  emitEnrollmentRequired,
+} from "./enrollmentEvents";
 
 type PolicyState =
   | { status: "loading" }
@@ -39,9 +43,17 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
   const { user, requireAccessToken } = useAuth();
   const location = useLocation();
   const [state, setState] = useState<PolicyState>({ status: "loading" });
+  const [refreshCounter, setRefreshCounter] = useState(0);
+
+  // Key the fetch effect on user.id (a primitive), NOT the user object
+  // itself. AuthContext memoizes user in production, but defensive callers
+  // (and test mocks) can hand us a fresh object reference per render,
+  // which would cause the effect to re-fire forever and burn the request
+  // budget.
+  const userId = user?.id ?? null;
 
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -57,7 +69,16 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [user, requireAccessToken]);
+  }, [userId, requireAccessToken, refreshCounter]);
+
+  // HEL-281: when the global enrollment sheet completes, re-fetch policy
+  // so the gate flips from "needs enrollment" to "factor present" and
+  // future renders skip the emit.
+  useEffect(() => {
+    const handler = () => setRefreshCounter((n) => n + 1);
+    window.addEventListener(ENROLLMENT_COMPLETED_EVENT, handler);
+    return () => window.removeEventListener(ENROLLMENT_COMPLETED_EVENT, handler);
+  }, []);
 
   // Pages that ARE the enrollment / challenge flow must not be wrapped by
   // the gate or they'd redirect-loop. The router only mounts the gate on
@@ -81,20 +102,42 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
     return <>{children}</>;
   }
 
-  // HEL-280: the server now tells us whether app-side MFA is required
-  // for this session. OAuth users come back with requiresAppMfa=false
-  // (unless their workspace flipped the override flag on), so we skip
-  // the enrollment redirect for them. Password/magic-link users still
-  // hit the gate.
-  if (state.policy.requiresAppMfa && !state.policy.hasAnyFactor) {
-    return (
-      <Navigate
-        to="/onboarding/mfa"
-        replace
-        state={{ from: `${location.pathname}${location.search}${location.hash}` }}
+  // HEL-280 + HEL-281: the server tells us whether app-side MFA is
+  // required for this session. OAuth users come back with
+  // requiresAppMfa=false (unless their workspace flipped the override
+  // flag on), so we skip the prompt. Password/magic-link users without
+  // a factor get the global enrollment sheet (HEL-281) — we emit an
+  // event that <MfaEnrollmentSheet> listens for, then ALWAYS render
+  // children so the dashboard stays visible behind the scrim instead of
+  // <Navigate>-ing to an empty page.
+  return (
+    <>
+      <EnrollmentEmitter
+        shouldEmit={state.policy.requiresAppMfa && !state.policy.hasAnyFactor}
+        from={`${location.pathname}${location.search}${location.hash}`}
       />
-    );
-  }
+      {children}
+    </>
+  );
+}
 
-  return <>{children}</>;
+/**
+ * Emits the enrollment-required event exactly once per "policy says
+ * enrollment needed" transition. Lives in a child component so the
+ * effect's deps depend on `shouldEmit` and re-fire when the policy
+ * flips. Without this split the gate would re-emit on every parent
+ * render.
+ */
+function EnrollmentEmitter({
+  shouldEmit,
+  from,
+}: {
+  shouldEmit: boolean;
+  from: string;
+}) {
+  useEffect(() => {
+    if (!shouldEmit) return;
+    emitEnrollmentRequired({ from });
+  }, [shouldEmit, from]);
+  return null;
 }

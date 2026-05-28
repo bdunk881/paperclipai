@@ -26,6 +26,10 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+// allowlist: process-local TTL cache for workspace_feature_overrides reads.
+// Source of truth is Postgres (the table itself); this is a 60s-bounded
+// memo to skip a query on every requireAAL2 / getPolicy hit. Cache loss
+// at restart is fine — next read re-populates from the DB.
 const cache = new Map<string, CacheEntry>();
 
 function cacheKey(workspaceId: string, flag: string): string {

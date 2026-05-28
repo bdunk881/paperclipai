@@ -17,6 +17,39 @@ jest.mock("../middleware/workspaceResolver", () => ({
   }),
 }));
 
+// HEL-253 / SEC-02: the production X-User-Id header-auth bypass was removed
+// from requireAuth. These integration tests previously relied on it — they
+// now mock requireAuth to preserve the header-driven test semantics while
+// production rejects bare X-User-Id with 401.
+jest.mock("../auth/authMiddleware", () => ({
+  requireAuth: (
+    req: Record<string, unknown>,
+    res: { status: (n: number) => { json: (o: unknown) => void } },
+    next: () => void,
+  ) => {
+    const headers = (req.headers ?? {}) as Record<string, unknown>;
+    const raw = headers["x-user-id"];
+    const userId = typeof raw === "string" ? raw.trim() : "";
+    if (!userId) {
+      res.status(401).json({ error: "Missing or malformed Authorization header." });
+      return;
+    }
+    (req as { auth?: { sub: string } }).auth = { sub: userId };
+    next();
+  },
+  requireAuthOrQaBypass: (
+    req: Record<string, unknown>,
+    _res: unknown,
+    next: () => void,
+  ) => {
+    const headers = (req.headers ?? {}) as Record<string, unknown>;
+    const raw = headers["x-user-id"];
+    const userId = typeof raw === "string" && raw.trim() ? raw.trim() : "test-user";
+    (req as { auth?: { sub: string } }).auth = { sub: userId };
+    next();
+  },
+}));
+
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
 
 import request from "supertest";

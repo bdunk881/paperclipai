@@ -76,7 +76,7 @@ describe("requireAuth", () => {
     process.env = originalEnv;
   });
 
-  it("accepts X-User-Id for /api/memory when Authorization is missing", () => {
+  it("rejects bare X-User-Id for /api/memory — HEL-253 / SEC-02 bypass removed", () => {
     const requireAuth = loadRequireAuth();
     const req = {
       headers: { "x-user-id": "demo-user" },
@@ -88,12 +88,12 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("demo-user");
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("accepts X-User-Id for /api/knowledge routes when Authorization is missing", () => {
+  it("rejects bare X-User-Id for /api/knowledge — HEL-253 / SEC-02 bypass removed", () => {
     const requireAuth = loadRequireAuth();
     const req = {
       headers: { "x-user-id": "qa-test-user" },
@@ -105,12 +105,12 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("qa-test-user");
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("accepts X-User-Id for /api/knowledge/search when Authorization is missing", () => {
+  it("rejects bare X-User-Id for /api/knowledge/search — HEL-253 / SEC-02 bypass removed", () => {
     const requireAuth = loadRequireAuth();
     const req = {
       headers: { "x-user-id": "qa-test-user" },
@@ -122,9 +122,9 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("qa-test-user");
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it("accepts allowlisted QA bypass users for /api/integrations routes when bearer auth is missing", () => {
@@ -148,7 +148,7 @@ describe("requireAuth", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("accepts X-User-Id for GET /api/runs when Authorization is missing", () => {
+  it("rejects bare X-User-Id for GET /api/runs — HEL-253 / SEC-02 bypass removed", () => {
     const requireAuth = loadRequireAuth();
     const req = {
       method: "GET",
@@ -161,12 +161,12 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("preview-user");
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("accepts X-User-Id for GET /api/llm-configs when Authorization is missing", () => {
+  it("rejects bare X-User-Id for GET /api/llm-configs — HEL-253 / SEC-02 bypass removed", () => {
     const requireAuth = loadRequireAuth();
     const req = {
       method: "GET",
@@ -179,9 +179,9 @@ describe("requireAuth", () => {
 
     requireAuth(req, res as never, next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.auth?.sub).toBe("preview-user");
-    expect(res.status).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.auth).toBeUndefined();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it("does not allow QA bypass on protected routes through requireAuth", () => {

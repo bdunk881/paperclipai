@@ -303,16 +303,8 @@ export function requireAuth(
   const authHeader = req.headers.authorization;
   const headerUserId = req.headers["x-user-id"];
   const requestPath = (req.originalUrl || req.path).split("?")[0];
-  const isMemoryRoute = requestPath === "/api/memory" || requestPath.startsWith("/api/memory/");
-  const isKnowledgeRoute = requestPath === "/api/knowledge" || requestPath.startsWith("/api/knowledge/");
   const isIntegrationsRoute =
     requestPath === "/api/integrations" || requestPath.startsWith("/api/integrations/");
-  const isDashboardPreviewReadRoute =
-    req.method === "GET" &&
-    (requestPath === "/api/runs" ||
-      requestPath.startsWith("/api/runs/") ||
-      requestPath === "/api/llm-configs");
-  const allowHeaderAuth = isMemoryRoute || isKnowledgeRoute || isDashboardPreviewReadRoute;
 
   if (!authHeader?.startsWith("Bearer ")) {
     const qaBypassUserId = isIntegrationsRoute ? resolveQaBypassUserId(req) : null;
@@ -333,11 +325,11 @@ export function requireAuth(
       );
     }
 
-    if (allowHeaderAuth && typeof headerUserId === "string" && headerUserId.trim()) {
-      req.auth = { sub: headerUserId.trim() };
-      next();
-      return;
-    }
+    // HEL-253 / SEC-02: the legacy `X-User-Id` header bypass for
+    // /api/memory, /api/knowledge, /api/runs, and /api/llm-configs was
+    // removed. Routes that previously relied on it must pass a verified
+    // Bearer JWT. The QA bypass branch above is preserved as the only
+    // sanctioned no-Bearer path (allowlisted + audited).
 
     res.status(401).json({ error: "Missing or malformed Authorization header." });
     return;

@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchInfraData,
   type PgHotTable,
@@ -7,9 +8,12 @@ import {
   type RedisView,
   type SupabaseView,
 } from "../api/dataApi";
+import { flushRedisPattern, killPostgresQuery } from "../api/dataMutationsApi";
 import { InfraTabs } from "../components/infra/InfraTabs";
 import { MetricCard } from "../components/infra/MetricCard";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
+import { ReasonPrompt } from "../components/ReasonPrompt";
+import { DangerActionPrompt } from "../components/infra/DangerActionPrompt";
 
 function formatBytes(n: number | null): string {
   if (n === null || !Number.isFinite(n)) return "—";
@@ -39,7 +43,7 @@ function formatDuration(seconds: number | null): string {
   return `${Math.floor(seconds / 86400)}d`;
 }
 
-function PostgresSection({ view }: { view: PgInspectorView }) {
+function PostgresSection({ view, onMutated }: { view: PgInspectorView; onMutated: () => void }) {
   if (!view.available) {
     return <div className="banner">Postgres is not configured for this environment.</div>;
   }
@@ -145,24 +149,31 @@ function PostgresSection({ view }: { view: PgInspectorView }) {
                     {q.query_excerpt}
                   </td>
                   <td>
-                    <AskAgentButton
-                      context={{
-                        kind: "postgres_query",
-                        source: "admin.infra.data",
-                        subjectRef: { pid: q.pid, age_seconds: q.age_seconds },
-                        payload: { query: q },
-                        defaultQuestion: `What is this Postgres query doing and is its age (${formatDuration(q.age_seconds)}) concerning?`,
-                      }}
-                    />
+                    <div className="row" style={{ gap: "0.3rem" }}>
+                      <ReasonPrompt
+                        label="Kill"
+                        className="danger"
+                        onConfirm={async (reason) => {
+                          await killPostgresQuery({ pid: q.pid, reason });
+                          onMutated();
+                        }}
+                      />
+                      <AskAgentButton
+                        context={{
+                          kind: "postgres_query",
+                          source: "admin.infra.data",
+                          subjectRef: { pid: q.pid, age_seconds: q.age_seconds },
+                          payload: { query: q },
+                          defaultQuestion: `What is this Postgres query doing and is its age (${formatDuration(q.age_seconds)}) concerning?`,
+                        }}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        <p className="muted" style={{ fontSize: "0.78rem" }}>
-          Kill-query button lands in PR #7.
-        </p>
       </div>
 
       <div className="card">
@@ -209,7 +220,60 @@ function PostgresSection({ view }: { view: PgInspectorView }) {
   );
 }
 
-function RedisSection({ view }: { view: RedisView }) {
+function FlushRedisCard({ onMutated }: { onMutated: () => void }) {
+  const [pattern, setPattern] = useState("");
+  const [open, setOpen] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const canOpen = pattern.trim().length > 0;
+  return (
+    <div style={{ marginTop: "0.5rem" }}>
+      <div className="row" style={{ gap: "0.5rem" }}>
+        <input
+          type="text"
+          value={pattern}
+          onChange={(e) => setPattern(e.target.value)}
+          placeholder="rate-limit:* (deny-list: bull:*, session:*, cache:llm-config:*)"
+          style={{ flex: 1 }}
+        />
+        <button className="danger" disabled={!canOpen} onClick={() => setOpen(true)}>
+          Flush pattern…
+        </button>
+      </div>
+      {result && (
+        <div className="banner" style={{ marginTop: "0.5rem" }}>
+          {result}
+        </div>
+      )}
+      <DangerActionPrompt
+        open={open}
+        title={`Flush Redis keys matching ${pattern.trim() || "—"}`}
+        description={
+          <>
+            SCAN + DEL all keys matching the pattern, in batches of 250. Capped at 10,000
+            deletions per request. Deny-listed prefixes (<code className="code">bull:*</code>,{" "}
+            <code className="code">session:*</code>, <code className="code">cache:llm-config:*</code>) are
+            rejected server-side.
+          </>
+        }
+        typedConfirm="FLUSH"
+        confirmLabel="Flush keys"
+        acknowledgementText="I've checked this pattern doesn't match operational state."
+        onClose={() => setOpen(false)}
+        onConfirm={async ({ reason }) => {
+          const res = await flushRedisPattern({
+            pattern: pattern.trim(),
+            confirm: "FLUSH",
+            reason,
+          });
+          setResult(`Flushed ${res.deleted} key(s)${res.scan_complete ? "" : " (more remain — re-run if needed)"}`);
+          onMutated();
+        }}
+      />
+    </div>
+  );
+}
+
+function RedisSection({ view, onMutated }: { view: RedisView; onMutated: () => void }) {
   if (!view.available) {
     return <div className="banner">Redis is not configured for this environment.</div>;
   }
@@ -276,10 +340,7 @@ function RedisSection({ view }: { view: RedisView }) {
             </tbody>
           </table>
         )}
-        <p className="muted" style={{ fontSize: "0.78rem" }}>
-          Flush-pattern button lands in PR #7 (deny-listed for <code className="code">bull:*</code>,{" "}
-          <code className="code">session:*</code>, <code className="code">cache:llm-config:*</code>).
-        </p>
+        <FlushRedisCard onMutated={onMutated} />
       </div>
     </>
   );
@@ -373,11 +434,15 @@ function SupabaseSection({ view }: { view: SupabaseView }) {
 }
 
 export function InfraDataPage() {
+  const qc = useQueryClient();
   const { data, error, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["infra-data"],
     queryFn: fetchInfraData,
     refetchInterval: 30_000,
   });
+  const onMutated = () => {
+    void qc.invalidateQueries({ queryKey: ["infra-data"] });
+  };
 
   return (
     <>
@@ -396,10 +461,18 @@ export function InfraDataPage() {
       )}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1rem" }}>Postgres</h2>
-      {isLoading || !data ? <p className="muted">Loading…</p> : <PostgresSection view={data.postgres} />}
+      {isLoading || !data ? (
+        <p className="muted">Loading…</p>
+      ) : (
+        <PostgresSection view={data.postgres} onMutated={onMutated} />
+      )}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>Redis</h2>
-      {isLoading || !data ? <p className="muted">Loading…</p> : <RedisSection view={data.redis} />}
+      {isLoading || !data ? (
+        <p className="muted">Loading…</p>
+      ) : (
+        <RedisSection view={data.redis} onMutated={onMutated} />
+      )}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>Supabase</h2>
       {isLoading || !data ? <p className="muted">Loading…</p> : <SupabaseSection view={data.supabase} />}

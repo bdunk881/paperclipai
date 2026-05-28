@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchInfraEdge,
   type CFPagesDeployment,
@@ -8,8 +9,16 @@ import {
   type WorkflowRun,
   type WorkflowRunsView,
 } from "../api/edgeApi";
+import {
+  cancelWorkflowRun,
+  rerunWorkflowRun,
+  retryCfDeploy,
+  rollbackCfDeploy,
+} from "../api/edgeMutationsApi";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
 import { InfraTabs } from "../components/infra/InfraTabs";
+import { ReasonPrompt } from "../components/ReasonPrompt";
+import { DangerActionPrompt } from "../components/infra/DangerActionPrompt";
 
 function shortTimeAgo(value: string | null | undefined): string {
   if (!value) return "—";
@@ -34,11 +43,16 @@ function statusPillClass(status: string | undefined | null): string {
 function CloudflareDeploymentRow({
   projectName,
   d,
+  onMutated,
 }: {
   projectName: string;
   d: CFPagesDeployment;
+  onMutated: () => void;
 }) {
   const status = d.latest_stage_status ?? "unknown";
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const canRollback = d.environment === "production" && status === "success";
+  const canRetry = status === "failure" || status === "failed";
   return (
     <tr>
       <td className="code">{d.short_id ?? d.id.slice(0, 10)}</td>
@@ -62,21 +76,60 @@ function CloudflareDeploymentRow({
         )}
       </td>
       <td>
-        <AskAgentButton
-          context={{
-            kind: "cf_deploy",
-            source: "admin.infra.edge",
-            subjectRef: {
+        <div className="row" style={{ gap: "0.3rem" }}>
+          {canRetry && (
+            <ReasonPrompt
+              label="Retry"
+              onConfirm={async (reason) => {
+                await retryCfDeploy({ project: projectName, deploymentId: d.id, reason });
+                onMutated();
+              }}
+            />
+          )}
+          {canRollback && (
+            <button className="danger" onClick={() => setRollbackOpen(true)}>
+              Rollback
+            </button>
+          )}
+          <AskAgentButton
+            context={{
+              kind: "cf_deploy",
+              source: "admin.infra.edge",
+              subjectRef: {
+                project: projectName,
+                deployment_id: d.id,
+                status,
+                branch: d.source_branch,
+              },
+              payload: { deployment: d },
+              defaultQuestion:
+                status === "failure"
+                  ? "This Cloudflare Pages deploy failed — what's the likely cause from the stages?"
+                  : "Summarize this CF Pages deploy.",
+            }}
+          />
+        </div>
+        <DangerActionPrompt
+          open={rollbackOpen}
+          title={`Rollback ${projectName} to ${d.short_id ?? d.id.slice(0, 8)}`}
+          description={
+            <>
+              Promotes this deployment back to production. Customers will start serving from
+              the rolled-back build within ~60 seconds.
+            </>
+          }
+          typedConfirm="ROLLBACK"
+          confirmLabel="Roll back production"
+          acknowledgementText="I've verified this is the right target deployment."
+          onClose={() => setRollbackOpen(false)}
+          onConfirm={async ({ reason }) => {
+            await rollbackCfDeploy({
               project: projectName,
-              deployment_id: d.id,
-              status,
-              branch: d.source_branch,
-            },
-            payload: { deployment: d },
-            defaultQuestion:
-              status === "failure"
-                ? "This Cloudflare Pages deploy failed — what's the likely cause from the stages?"
-                : "Summarize this CF Pages deploy.",
+              deploymentId: d.id,
+              reason,
+              confirm: "ROLLBACK",
+            });
+            onMutated();
           }}
         />
       </td>
@@ -84,7 +137,13 @@ function CloudflareDeploymentRow({
   );
 }
 
-function CloudflareProject({ view }: { view: CFPagesProjectView }) {
+function CloudflareProject({
+  view,
+  onMutated,
+}: {
+  view: CFPagesProjectView;
+  onMutated: () => void;
+}) {
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -121,7 +180,12 @@ function CloudflareProject({ view }: { view: CFPagesProjectView }) {
           </thead>
           <tbody>
             {view.deployments.map((d) => (
-              <CloudflareDeploymentRow key={d.id} projectName={view.project_name} d={d} />
+              <CloudflareDeploymentRow
+                key={d.id}
+                projectName={view.project_name}
+                d={d}
+                onMutated={onMutated}
+              />
             ))}
           </tbody>
         </table>
@@ -228,8 +292,18 @@ function SentryProject({ rollup }: { rollup: SentryProjectRollup }) {
   );
 }
 
-function WorkflowRunRow({ workflowFile, run }: { workflowFile: string; run: WorkflowRun }) {
+function WorkflowRunRow({
+  workflowFile,
+  run,
+  onMutated,
+}: {
+  workflowFile: string;
+  run: WorkflowRun;
+  onMutated: () => void;
+}) {
   const result = run.conclusion ?? run.status ?? "unknown";
+  const canRerun = result === "failure" || result === "cancelled" || result === "completed";
+  const canCancel = run.status === "in_progress" || run.status === "queued";
   return (
     <tr>
       <td className="code">#{run.run_number}</td>
@@ -252,29 +326,60 @@ function WorkflowRunRow({ workflowFile, run }: { workflowFile: string; run: Work
         </a>
       </td>
       <td>
-        <AskAgentButton
-          context={{
-            kind: "workflow_run",
-            source: "admin.infra.edge",
-            subjectRef: {
-              workflow: workflowFile,
-              run_id: run.id,
-              run_number: run.run_number,
-              conclusion: run.conclusion,
-            },
-            payload: { run },
-            defaultQuestion:
-              run.conclusion === "failure"
-                ? "This workflow run failed — what's the likely cause?"
-                : "Summarize this workflow run.",
-          }}
-        />
+        <div className="row" style={{ gap: "0.3rem" }}>
+          {canRerun && (
+            <ReasonPrompt
+              label={result === "failure" ? "Rerun failed" : "Rerun"}
+              onConfirm={async (reason) => {
+                await rerunWorkflowRun({
+                  runId: run.id,
+                  reason,
+                  onlyFailed: result === "failure",
+                });
+                onMutated();
+              }}
+            />
+          )}
+          {canCancel && (
+            <ReasonPrompt
+              label="Cancel"
+              className="danger"
+              onConfirm={async (reason) => {
+                await cancelWorkflowRun({ runId: run.id, reason });
+                onMutated();
+              }}
+            />
+          )}
+          <AskAgentButton
+            context={{
+              kind: "workflow_run",
+              source: "admin.infra.edge",
+              subjectRef: {
+                workflow: workflowFile,
+                run_id: run.id,
+                run_number: run.run_number,
+                conclusion: run.conclusion,
+              },
+              payload: { run },
+              defaultQuestion:
+                run.conclusion === "failure"
+                  ? "This workflow run failed — what's the likely cause?"
+                  : "Summarize this workflow run.",
+            }}
+          />
+        </div>
       </td>
     </tr>
   );
 }
 
-function WorkflowFile({ view }: { view: WorkflowRunsView }) {
+function WorkflowFile({
+  view,
+  onMutated,
+}: {
+  view: WorkflowRunsView;
+  onMutated: () => void;
+}) {
   return (
     <div className="card">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -309,7 +414,12 @@ function WorkflowFile({ view }: { view: WorkflowRunsView }) {
           </thead>
           <tbody>
             {view.runs.map((r) => (
-              <WorkflowRunRow key={r.id} workflowFile={view.workflow_file} run={r} />
+              <WorkflowRunRow
+                key={r.id}
+                workflowFile={view.workflow_file}
+                run={r}
+                onMutated={onMutated}
+              />
             ))}
           </tbody>
         </table>
@@ -319,11 +429,15 @@ function WorkflowFile({ view }: { view: WorkflowRunsView }) {
 }
 
 export function InfraEdgePage() {
+  const qc = useQueryClient();
   const { data, error, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["infra-edge"],
     queryFn: fetchInfraEdge,
     refetchInterval: 30_000,
   });
+  const onMutated = () => {
+    void qc.invalidateQueries({ queryKey: ["infra-edge"] });
+  };
 
   return (
     <>
@@ -349,7 +463,9 @@ export function InfraEdgePage() {
           CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not configured for this environment.
         </div>
       ) : (
-        data.cloudflare.projects.map((p) => <CloudflareProject key={p.project_name} view={p} />)
+        data.cloudflare.projects.map((p) => (
+          <CloudflareProject key={p.project_name} view={p} onMutated={onMutated} />
+        ))
       )}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1.5rem" }}>Sentry</h2>
@@ -369,12 +485,11 @@ export function InfraEdgePage() {
       ) : !data.github_actions.configured ? (
         <div className="banner">GITHUB_TOKEN not configured for this environment.</div>
       ) : (
-        data.github_actions.workflows.map((w) => <WorkflowFile key={w.workflow_file} view={w} />)
+        data.github_actions.workflows.map((w) => (
+          <WorkflowFile key={w.workflow_file} view={w} onMutated={onMutated} />
+        ))
       )}
 
-      <p className="muted" style={{ fontSize: "0.78rem", marginTop: "0.75rem" }}>
-        Rollback · retry · rerun · cancel buttons land in PR #7.
-      </p>
     </>
   );
 }

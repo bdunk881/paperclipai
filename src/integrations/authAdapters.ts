@@ -104,7 +104,7 @@ export async function completeOAuth2PkceFlow(params: {
   clientId: string;
   clientSecret?: string;
   instanceDomain?: string;
-}): Promise<IntegrationCredentials> {
+}): Promise<{ credentials: IntegrationCredentials; userId: string }> {
   const { code, state, oauth2Config, clientId, clientSecret, instanceDomain } = params;
 
   const saved = pkceStateMap.get(state);
@@ -154,7 +154,7 @@ export async function completeOAuth2PkceFlow(params: {
     credentials.accessTokenExpiresAt = expiresAt;
   }
 
-  return credentials;
+  return { credentials, userId: saved.userId };
 }
 
 /** Refresh an OAuth2 access token using the stored refresh token. */

@@ -17,6 +17,15 @@ interface StatusResponse {
   components: Component[];
 }
 
+interface StatusEvent {
+  id: string;
+  component_id: string;
+  component_name: string;
+  level: Level;
+  message: string | null;
+  recorded_at: string;
+}
+
 export const meta: MetaFunction = () => [
   { title: "AutoFlow · Status" },
   { name: "robots", content: "index, follow" },
@@ -68,6 +77,7 @@ function formatRelative(iso: string): string {
 
 export default function StatusPage() {
   const [data, setData] = useState<StatusResponse | null>(null);
+  const [events, setEvents] = useState<StatusEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -76,14 +86,24 @@ export default function StatusPage() {
 
     async function load() {
       try {
-        const res = await fetch(buildLandingApiUrl("/api/public/status"), {
-          method: "GET",
-          credentials: "omit",
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = (await res.json()) as StatusResponse;
+        const [statusRes, eventsRes] = await Promise.all([
+          fetch(buildLandingApiUrl("/api/public/status"), {
+            method: "GET",
+            credentials: "omit",
+          }),
+          fetch(buildLandingApiUrl("/api/public/status/events?limit=25"), {
+            method: "GET",
+            credentials: "omit",
+          }),
+        ]);
+        if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+        const payload = (await statusRes.json()) as StatusResponse;
+        const eventsPayload = eventsRes.ok
+          ? ((await eventsRes.json()) as { events: StatusEvent[] })
+          : { events: [] };
         if (!cancelled) {
           setData(payload);
+          setEvents(eventsPayload.events ?? []);
           setError(null);
         }
       } catch (err) {
@@ -158,7 +178,7 @@ export default function StatusPage() {
         </div>
       )}
 
-      <section>
+      <section style={{ marginBottom: "2rem" }}>
         <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "0.75rem" }}>
           Components
         </h2>
@@ -205,6 +225,66 @@ export default function StatusPage() {
                     }}
                   >
                     {c.level}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 style={{ fontSize: "1.05rem", marginTop: 0, marginBottom: "0.75rem" }}>
+          Incident timeline
+        </h2>
+        {events.length === 0 ? (
+          <p style={{ color: "#586271" }}>
+            No recent transitions. Components have been at their current levels since the
+            timeline began.
+          </p>
+        ) : (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {events.map((ev) => {
+              const color = LEVEL_COLOR[ev.level];
+              return (
+                <li
+                  key={ev.id}
+                  style={{
+                    display: "flex",
+                    gap: "0.75rem",
+                    padding: "0.5rem 0",
+                    borderBottom: "1px solid #f0f1f3",
+                    fontSize: "0.9rem",
+                  }}
+                >
+                  <span
+                    style={{
+                      color: "#586271",
+                      minWidth: 88,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {formatRelative(ev.recorded_at)}
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                    <StatusDot level={ev.level} />
+                    <strong style={{ marginRight: 8 }}>{ev.component_name}</strong>
+                    <span style={{ color: "#586271" }}>
+                      → {ev.level}
+                      {ev.message ? ` · ${ev.message}` : ""}
+                    </span>
+                  </span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: color.bg,
+                      color: color.fg,
+                      fontSize: "0.7rem",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {ev.level}
                   </span>
                 </li>
               );

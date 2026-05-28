@@ -11,7 +11,11 @@
  * hammered doesn't repeatedly hit Fly / Postgres / Redis / CF.
  */
 
-import { checkPostgresConnection, isPostgresConfigured } from "../db/postgres";
+import {
+  checkPostgresConnection,
+  getPostgresPool,
+  isPostgresConfigured,
+} from "../db/postgres";
 import { checkRedisConnection, isRedisConfigured } from "../queue/redisClient";
 import {
   getAgentPromptQueue,
@@ -151,6 +155,53 @@ function overallLevel(components: PublicComponentStatus[]): PublicStatusLevel {
   return "operational";
 }
 
+interface LastLevelByComponent {
+  [componentId: string]: PublicStatusLevel;
+}
+
+// allowlist: process-local memo of the previous status snapshot, used only to detect transitions for incident-timeline recording (the source of truth is the public_status_events table itself)
+const lastLevelByComponent: LastLevelByComponent = {};
+
+/**
+ * Best-effort writer for the incident timeline. Inserts a row when a
+ * component's level differs from the last snapshot we observed. Swallows
+ * write failures — the status feed must never be blocked by the timeline
+ * table being unavailable.
+ */
+async function recordTransitions(components: PublicComponentStatus[]): Promise<void> {
+  if (!isPostgresConfigured()) return;
+  const newTransitions = components.filter((c) => {
+    const prev = lastLevelByComponent[c.id];
+    if (prev === undefined) {
+      lastLevelByComponent[c.id] = c.level;
+      return false; // first observation — don't generate spurious "transition" rows on cold start
+    }
+    if (prev === c.level) return false;
+    lastLevelByComponent[c.id] = c.level;
+    return true;
+  });
+  if (newTransitions.length === 0) return;
+
+  try {
+    const pool = getPostgresPool();
+    // One INSERT per transition; volume is tiny (only on flip), so the
+    // per-row cost is fine.
+    for (const c of newTransitions) {
+      await pool.query(
+        `INSERT INTO public_status_events (component_id, component_name, level, message)
+           VALUES ($1, $2, $3, $4)`,
+        [c.id, c.name, c.level, c.message ?? null],
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[public-status] failed to record ${newTransitions.length} transition(s): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+}
+
 export async function computePublicStatus(now = Date.now()): Promise<PublicStatusResponse> {
   if (cache && cache.expiresAt > now) return cache.value;
 
@@ -163,6 +214,11 @@ export async function computePublicStatus(now = Date.now()): Promise<PublicStatu
   const components: PublicComponentStatus[] = [...fly, postgres];
   if (redis) components.push(redis);
 
+  // Fire-and-forget the transition writer so the read response doesn't
+  // block on it. The fast path is "no transitions" → the writer is a
+  // no-op.
+  void recordTransitions(components);
+
   const value: PublicStatusResponse = {
     generated_at: new Date(now).toISOString(),
     overall: overallLevel(components),
@@ -173,8 +229,59 @@ export async function computePublicStatus(now = Date.now()): Promise<PublicStatu
   return value;
 }
 
+export interface PublicStatusEvent {
+  id: string;
+  component_id: string;
+  component_name: string;
+  level: PublicStatusLevel;
+  message: string | null;
+  recorded_at: string;
+}
+
+/**
+ * Reads the most recent transitions across all components for the public
+ * incident timeline. Capped at 50 by default — the page shows a window,
+ * not the full history.
+ */
+export async function listRecentStatusEvents(limit = 50): Promise<PublicStatusEvent[]> {
+  if (!isPostgresConfigured()) return [];
+  try {
+    const pool = getPostgresPool();
+    const result = await pool.query<{
+      id: string;
+      component_id: string;
+      component_name: string;
+      level: PublicStatusLevel;
+      message: string | null;
+      recorded_at: Date;
+    }>(
+      `SELECT id, component_id, component_name, level, message, recorded_at
+         FROM public_status_events
+        ORDER BY recorded_at DESC
+        LIMIT $1`,
+      [Math.min(Math.max(1, limit), 200)],
+    );
+    return result.rows.map((r) => ({
+      id: r.id,
+      component_id: r.component_id,
+      component_name: r.component_name,
+      level: r.level,
+      message: r.message,
+      recorded_at: r.recorded_at.toISOString(),
+    }));
+  } catch (err) {
+    console.warn(
+      `[public-status] failed to read events: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return [];
+  }
+}
+
 export function __resetPublicStatusCacheForTests(): void {
   cache = null;
+  for (const k of Object.keys(lastLevelByComponent)) delete lastLevelByComponent[k];
 }
 
 // Touch unused imports to satisfy strict noUnused checks until/unless the

@@ -10,7 +10,10 @@
 
 import { Router, type Request, type Response } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { computePublicStatus } from "./publicStatusService";
+import {
+  computePublicStatus,
+  listRecentStatusEvents,
+} from "./publicStatusService";
 
 const router = Router();
 
@@ -22,6 +25,19 @@ router.get(
     // viewer on a refresh.
     res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
     res.json(payload);
+  }),
+);
+
+// Public incident timeline — the most recent component-level transitions.
+// Cached more aggressively (5min) because transitions are rare; even a
+// minute-old timeline is fine.
+router.get(
+  "/events",
+  asyncHandler<Request>(async (req: Request, res: Response) => {
+    const limit = Math.min(Math.max(1, Number.parseInt(String(req.query.limit ?? "50"), 10) || 50), 200);
+    const events = await listRecentStatusEvents(limit);
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
+    res.json({ events });
   }),
 );
 

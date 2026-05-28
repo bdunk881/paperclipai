@@ -76,8 +76,19 @@ export const ticketSyncConnectionStore = {
       .map((record) => registry.toPublic(record));
   },
 
+  /**
+   * HEL-299: connection-only lookup (no userId) can't pass FORCE RLS on
+   * `connector_credentials` (migration 083) and falls back to the
+   * in-memory bucket. After a process restart the bucket is empty
+   * until something hydrates it via `listStoredByUserAsync(userId)`,
+   * so this method returns null for unknown connection IDs on a fresh
+   * boot. Used by the ticket-sync webhook + system paths in
+   * `service.ts` that don't carry a user context — those paths need a
+   * follow-up to either thread userId through or use a service-role
+   * lookup. Tracked in the HEL-299 audit matrix as a known limitation.
+   */
   async getById(id: string): Promise<TicketSyncConnectionPublic | null> {
-    const record = await registry.getByIdAsync(id);
+    const record = registry.getById(id);
     if (!record || record.revokedAt) {
       return null;
     }
@@ -86,7 +97,7 @@ export const ticketSyncConnectionStore = {
   },
 
   async getByIdForUser(id: string, userId: string): Promise<TicketSyncConnectionPublic | null> {
-    const record = await registry.getByIdAsync(id);
+    const record = await registry.getByIdAsync(id, userId);
     if (!record || record.revokedAt || record.userId !== userId) {
       return null;
     }
@@ -94,11 +105,16 @@ export const ticketSyncConnectionStore = {
     return registry.toPublic(record);
   },
 
+  /**
+   * HEL-299: same caveat as `getById`. Returns null for unknown
+   * connection IDs after a process restart until the bucket is
+   * hydrated by a user-scoped path.
+   */
   async getDecryptedById(id: string): Promise<{
     record: TicketSyncConnectionRecord;
     secrets: TicketSyncConnectionSecrets;
   } | null> {
-    const record = await registry.getByIdAsync(id);
+    const record = registry.getById(id);
     if (!record || record.revokedAt) {
       return null;
     }

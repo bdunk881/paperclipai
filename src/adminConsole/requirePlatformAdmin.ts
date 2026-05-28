@@ -71,6 +71,20 @@ export function createRequirePlatformAdmin(pool: Pool, opts: CreateOpts = {}): R
       client = await pool.connect();
       await client.query("BEGIN");
 
+      // HEL-299: set `app.current_user_id` BEFORE the user_profiles
+      // SELECT. Migration 083 (HEL-273) enabled FORCE RLS on
+      // `user_profiles` with a user-isolation policy keyed on
+      // `app_current_user_id()`. Without this GUC, the lookup below
+      // returned 0 rows for every caller — meaning `is_platform_admin`
+      // could never resolve to true and the only path into the admin
+      // console was the env-var allowlist. The SELECT is intentionally
+      // narrow ("my own profile row"), which the user_isolation policy
+      // allows once the GUC is set. `app.is_platform_admin` stays
+      // unset until AFTER we confirm the caller is allowed — keep
+      // that ordering so the cross-tenant admin_read policy can't be
+      // gated by an unverified flag.
+      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
+
       // Look up the platform-admin flag from user_profiles. Fall back to the
       // env-var allowlist when no profile row exists yet (first sign-in for a
       // brand-new staff member). is_platform_admin flag is the canonical
@@ -89,10 +103,9 @@ export function createRequirePlatformAdmin(pool: Pool, opts: CreateOpts = {}): R
         return;
       }
 
-      // Set the session-scoped GUC. SET LOCAL inside the transaction means
-      // it cannot leak via pool reuse.
+      // Set the platform-admin GUC now that the caller is confirmed.
+      // The current-user GUC was already set above.
       await client.query("SELECT set_config('app.is_platform_admin', 'true', true)");
-      await client.query("SELECT set_config('app.current_user_id', $1, true)", [userId]);
 
       (req as PlatformAdminRequest).platformAdmin = {
         userId,

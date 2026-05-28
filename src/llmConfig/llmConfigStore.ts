@@ -343,7 +343,9 @@ export const llmConfigStore = {
       return undefined;
     }
 
-    const decrypted = await store.getDecryptedAsync(record.id);
+    // HEL-299: pass userId so the SELECT runs inside withUserContext
+    // and passes the FORCE RLS policy on connector_credentials.
+    const decrypted = await store.getDecryptedAsync(record.id, userId);
     if (!decrypted) {
       return undefined;
     }

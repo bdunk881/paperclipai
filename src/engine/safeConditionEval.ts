@@ -1,114 +1,188 @@
 /**
- * Safe condition expression evaluator (HEL-254 / SEC-03).
+ * Safe condition expression evaluator (HEL-254 / SEC-03, HEL-259 / SEC-14).
  *
  * Replaces the prior `new Function(...keys, "return (...)")` pattern in
  * `stepHandlers.ts` and `WorkflowEngine.ts` — a code-injection sink for
  * user- and LLM-generated workflow condition strings.
  *
- * Uses `expr-eval` — a custom parser that does NOT bridge to JavaScript
- * eval. Identifiers like `process`, `global`, `require`, `Function`, or
- * `constructor` are unknown tokens to the parser; `parsed.evaluate(scope)`
- * throws on any identifier not present in `context`, so the worst case
- * is a thrown error (the existing call-site try/catch converts it into
- * a clean "Condition step evaluation failed" message).
+ * Uses `jsep` to parse the expression into an AST and walks it with a
+ * tight allowlist. Unlike a third-party evaluator, the security boundary
+ * is entirely in this file: identifiers must be present as own-properties
+ * of the scope, function calls and member access are rejected at the AST
+ * level, and only a fixed set of operators is honored.
  *
- * Operator-syntax shim: expr-eval natively uses `==`, `!=`, `and`, `or`,
- * `not`. Existing templates + LLM-generated workflows pass JS-style
- * operators (`===`, `!==`, `&&`, `||`). We normalize those into the
- * expr-eval forms before parsing, with a string-literal-aware walker
- * so an operator-looking sequence inside a quoted string is preserved
- * verbatim (e.g. `name == "Bob && Alice"`).
+ * Earlier iteration used `expr-eval`, which was replaced because of two
+ * known-unfixed advisories (GHSA-8gw3-rxh4-v6jx prototype pollution,
+ * GHSA-jc85-fpwf-qm7x function restriction). The current evaluator has no
+ * library code in the security-critical path beyond `jsep`'s
+ * AST-production step (which never executes anything).
  *
- * Membership (`x in arr`) is supported natively. The legacy
- * `arr.includes(x)` JS pattern has been migrated to `x in arr` in the
- * one template that used it (customer-support-bot.ts).
+ * Supported:
+ *   - Comparison: ==, ===, !=, !==, <, <=, >, >=
+ *   - Logical:    &&, ||, !
+ *   - Arithmetic: +, -, *, /, %
+ *   - Membership: `x in arr` (registered as a binary operator since
+ *                 jsep doesn't ship `in` natively)
+ *   - Ternary:    a ? b : c
+ *   - Literals:   number, string, boolean, null
+ *   - Identifiers: must be own-keys of the provided context scope
+ *   - Arrays:     [a, b, c]
+ *
+ * Rejected (throws):
+ *   - CallExpression       — no function calls of any kind
+ *   - MemberExpression     — no `.` or `[]` property access
+ *   - AssignmentExpression — no scope mutation (jsep rejects at parse
+ *                            already; defense in depth)
+ *   - ThisExpression, NewExpression, UpdateExpression, SequenceExpression
+ *   - Any unknown node type
  */
-import { Parser } from "expr-eval";
+import jsepCjs from "jsep";
 
-const parser = new Parser({
-  operators: {
-    // Disable assignment so an attacker can't sneak `x = 1` into a
-    // condition and mutate scope. Keep everything we actually use.
-    assignment: false,
-  },
-});
+// jsep exports default in both CJS and ESM; normalize for our import.
+const jsep = (jsepCjs as unknown as { default?: typeof jsepCjs }).default ?? jsepCjs;
 
-/**
- * Rewrite JS-style operators into expr-eval-supported equivalents.
- * Walks the expression character-by-character so substitutions inside
- * string literals are skipped (quote-aware).
- *
- * Replacements (outside string literals):
- *   `===` → ` == `
- *   `!==` → ` != `
- *   `&&`  → ` and `
- *   `||`  → ` or `
- *
- * Backslash escapes inside string literals are honored, so
- * `"He said \"hi\""` doesn't terminate the string early.
- */
-export function normalizeJsCondition(expression: string): string {
-  let out = "";
-  let inString: '"' | "'" | null = null;
-  let escapeNext = false;
+// Register `in` as a left-associative binary operator. Precedence matches
+// JS's `in`: above comparison (6) but below shift (8). We pick 8 so it
+// parses before `&&`/`||`.
+jsep.addBinaryOp("in", 8);
 
-  for (let i = 0; i < expression.length; i++) {
-    const ch = expression[i];
+interface AstNode {
+  type: string;
+  operator?: string;
+  // BinaryExpression / LogicalExpression / "in"
+  left?: AstNode;
+  right?: AstNode;
+  // UnaryExpression
+  argument?: AstNode;
+  prefix?: boolean;
+  // Identifier
+  name?: string;
+  // Literal
+  value?: unknown;
+  // ConditionalExpression
+  test?: AstNode;
+  consequent?: AstNode;
+  alternate?: AstNode;
+  // ArrayExpression
+  elements?: AstNode[];
+}
 
-    if (inString) {
-      out += ch;
-      if (escapeNext) {
-        escapeNext = false;
-      } else if (ch === "\\") {
-        escapeNext = true;
-      } else if (ch === inString) {
-        inString = null;
+function isOwnKey(scope: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(scope, key);
+}
+
+function evalBinary(op: string, left: unknown, right: unknown): unknown {
+  switch (op) {
+    case "===":
+      return left === right;
+    case "!==":
+      return left !== right;
+    case "==":
+      // intentional ==
+      // eslint-disable-next-line eqeqeq
+      return left == right;
+    case "!=":
+      // eslint-disable-next-line eqeqeq
+      return left != right;
+    case "<":
+      return (left as number) < (right as number);
+    case "<=":
+      return (left as number) <= (right as number);
+    case ">":
+      return (left as number) > (right as number);
+    case ">=":
+      return (left as number) >= (right as number);
+    case "+":
+      return (left as number) + (right as number);
+    case "-":
+      return (left as number) - (right as number);
+    case "*":
+      return (left as number) * (right as number);
+    case "/":
+      return (left as number) / (right as number);
+    case "%":
+      return (left as number) % (right as number);
+    case "&&":
+      return left && right;
+    case "||":
+      return left || right;
+    case "in":
+      // Membership only — require the right side to be an array. Reject
+      // `key in object` so we never accidentally walk the prototype chain.
+      if (!Array.isArray(right)) {
+        throw new Error("`in` right operand must be an array");
       }
-      continue;
-    }
-
-    if (ch === '"' || ch === "'") {
-      inString = ch;
-      out += ch;
-      continue;
-    }
-
-    // Check 3-character ops first (===, !==), then 2-character (&&, ||).
-    if (expression.startsWith("===", i)) { out += " == "; i += 2; continue; }
-    if (expression.startsWith("!==", i)) { out += " != "; i += 2; continue; }
-    if (expression.startsWith("&&", i))  { out += " and "; i += 1; continue; }
-    if (expression.startsWith("||", i))  { out += " or ";  i += 1; continue; }
-
-    out += ch;
+      return right.includes(left);
+    default:
+      throw new Error(`unsupported binary operator: ${op}`);
   }
+}
 
-  return out;
+function evalNode(node: AstNode, scope: Record<string, unknown>): unknown {
+  switch (node.type) {
+    case "Literal":
+      return node.value;
+    case "Identifier": {
+      const name = node.name ?? "";
+      if (!isOwnKey(scope, name)) {
+        throw new Error(`unbound identifier: ${name}`);
+      }
+      return scope[name];
+    }
+    case "BinaryExpression":
+    case "LogicalExpression": {
+      const op = node.operator ?? "";
+      const left = evalNode(node.left!, scope);
+      const right = evalNode(node.right!, scope);
+      return evalBinary(op, left, right);
+    }
+    case "UnaryExpression": {
+      const op = node.operator ?? "";
+      const arg = evalNode(node.argument!, scope);
+      if (op === "!") return !arg;
+      if (op === "-") return -(arg as number);
+      if (op === "+") return +(arg as number);
+      throw new Error(`unsupported unary operator: ${op}`);
+    }
+    case "ConditionalExpression":
+      return evalNode(node.test!, scope)
+        ? evalNode(node.consequent!, scope)
+        : evalNode(node.alternate!, scope);
+    case "ArrayExpression":
+      return (node.elements ?? []).map((el) => evalNode(el, scope));
+    case "CallExpression":
+      throw new Error("function calls are not allowed in conditions");
+    case "MemberExpression":
+      throw new Error("member access is not allowed in conditions");
+    case "AssignmentExpression":
+      throw new Error("assignment is not allowed in conditions");
+    case "Compound":
+      throw new Error("compound expressions are not allowed in conditions");
+    default:
+      throw new Error(`unsupported expression node: ${node.type}`);
+  }
 }
 
 /**
  * Evaluate a workflow condition expression against a context scope.
  *
- * @throws on syntax errors, on identifiers that aren't keys in
- *         `context`, and on operator/type errors at evaluation time.
+ * @throws on parse errors, on identifiers that aren't own-keys of
+ *         `context`, on rejected AST node types (call/member/etc), and
+ *         on operator/type errors at evaluation time.
  *
- * The boolean cast at the end matches the prior `Boolean(fn(...))`
- * semantics so step-routing logic stays identical for valid expressions.
+ * Boolean cast on the result preserves the existing `Boolean(fn(...))`
+ * semantics so edge-routing in the workflow engine stays identical for
+ * valid expressions.
  */
 export function safeEvalCondition(
   expression: string,
   context: Record<string, unknown>,
 ): boolean {
-  const normalized = normalizeJsCondition(expression);
-  const parsed = parser.parse(normalized);
-  // Spread copies in our context keys only; the parser never sees
-  // anything else from the outer scope.
-  //
-  // expr-eval's evaluate() typedefs narrow to a Value union that doesn't
-  // include `unknown` — context values flow in at runtime from upstream
-  // step outputs (typed as unknown), so we cast to the parser's expected
-  // shape. The parser throws on operator/type mismatches at evaluate
-  // time, so invalid value types fail loudly rather than silently.
-  const scope = { ...context } as unknown as Record<string, never>;
-  const result = parsed.evaluate(scope);
-  return Boolean(result);
+  const ast = jsep(expression) as AstNode;
+  // Spread builds a fresh prototype-less-ish object; identifier lookup
+  // additionally guards via Object.prototype.hasOwnProperty so
+  // prototype-chain identifiers (`constructor`, `__proto__`) throw
+  // instead of returning the prototype's value.
+  const scope: Record<string, unknown> = { ...context };
+  return Boolean(evalNode(ast, scope));
 }

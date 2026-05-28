@@ -39,12 +39,12 @@
     "@types/multer": "^2.1.0",
     "bullmq": "^5.76.8",
     "cors": "^2.8.6",
-    "expr-eval": "^2.0.2",
     "express": "^4.22.2",
     "express-rate-limit": "^7.5.1",
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
     "jose": "^5.9.6",
+    "jsep": "^1.4.0",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.2",
     "multer": "^2.1.1",
@@ -59,6 +59,9 @@
     "y-websocket": "^2.0.4",
     "yjs": "^13.6.20",
     "zod": "^4.4.3"
+  },
+  "overrides": {
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",

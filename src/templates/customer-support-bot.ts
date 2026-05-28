@@ -101,7 +101,7 @@ export const customerSupportBot: WorkflowTemplate = {
         "Routes the ticket to auto-respond or escalate based on intent and configuration.",
       inputKeys: ["intent"],
       outputKeys: ["shouldAutoRespond"],
-      condition: "autoRespondCategories.includes(intent)",
+      condition: "intent in autoRespondCategories",
     },
     {
       id: "step_draft_response",

@@ -95,3 +95,26 @@ export async function getPricingOverlays() {
     `*[_type == "pricingTierOverlay"]{tierId, eyebrow, bullets, ctaLabel, priceUnit}`,
   );
 }
+
+/* ── HEL-285: credit pack marketing overlay ───────────────── */
+
+/**
+ * Editorial overlay on top of DB-driven credit_packs. Keyed by `packId`
+ * matching `credit_packs.id`. All fields except `packId` are optional —
+ * when omitted the renderer falls through to the current default
+ * behavior (auto-featured = highest bonusPercent, "Most popular" badge,
+ * "Buy {displayName}" CTA).
+ */
+export interface CreditPackOverlay {
+  packId: string;
+  tagline?: string;
+  isFeatured?: boolean;
+  featuredLabel?: string;
+  ctaLabel?: string;
+}
+
+export async function getCreditPackOverlays() {
+  return sanityFetch<CreditPackOverlay[]>(
+    `*[_type == "creditPackOverlay"]{packId, tagline, isFeatured, featuredLabel, ctaLabel}`,
+  );
+}

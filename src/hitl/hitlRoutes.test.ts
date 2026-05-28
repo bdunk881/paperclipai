@@ -17,7 +17,8 @@ function buildApp() {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: authHeader.slice(7), email: "test@example.com" };
+    const sub = authHeader.slice(7);
+    req.auth = { sub, email: "test@example.com", workspaceId: `${sub}-workspace` };
     next();
   });
   app.use("/api/hitl", hitlRoutes);

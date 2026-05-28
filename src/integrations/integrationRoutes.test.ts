@@ -69,6 +69,7 @@ import request from "supertest";
 import app from "../app";
 import { integrationCredentialStore } from "./integrationCredentialStore";
 import { webhookRelay } from "./webhookRelay";
+import { pkceStateMap } from "./authAdapters";
 
 const USER_ID = "test-user-123";
 // Sent with every authenticated request in tests
@@ -474,5 +475,71 @@ describe("GET /api/integrations/triggers/subscriptions/:id/events", () => {
     expect(eventsRes.status).toBe(200);
     expect(eventsRes.body.total).toBe(1);
     expect(eventsRes.body.events[0].payload.amount).toBe(2000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OAuth2 callback — userId must come from PKCE state, not X-User-Id header
+// ---------------------------------------------------------------------------
+
+describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state", () => {
+  const mockTokenResponse = {
+    ok: true,
+    json: async () => ({ access_token: "gha_test_access_token", token_type: "bearer" }),
+    text: async () => "",
+  } as unknown as Response;
+
+  beforeEach(() => {
+    pkceStateMap.clear();
+  });
+
+  it("uses userId from PKCE state, ignoring X-User-Id header", async () => {
+    const pkceUserId = "pkce-owner-user";
+    const stateKey = "test-state-sec05-a";
+    pkceStateMap.set(stateKey, {
+      integrationSlug: "hubspot",
+      userId: pkceUserId,
+      codeVerifier: "test-verifier",
+      redirectUri: "http://localhost/callback",
+      createdAt: Date.now(),
+    });
+
+    const origFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(mockTokenResponse);
+
+    const res = await request(app)
+      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}&clientId=hs-client`)
+      .set("X-User-Id", "attacker-user");
+
+    global.fetch = origFetch;
+
+    expect(res.status).toBe(201);
+    // Connection must be owned by the PKCE state user, not the forged header
+    expect(res.body.userId).toBe(pkceUserId);
+    expect(res.body.userId).not.toBe("attacker-user");
+  });
+
+  it("normal flow works without X-User-Id header", async () => {
+    const pkceUserId = "legitimate-user";
+    const stateKey = "test-state-sec05-b";
+    pkceStateMap.set(stateKey, {
+      integrationSlug: "hubspot",
+      userId: pkceUserId,
+      codeVerifier: "test-verifier",
+      redirectUri: "http://localhost/callback",
+      createdAt: Date.now(),
+    });
+
+    const origFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(mockTokenResponse);
+
+    const res = await request(app)
+      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}&clientId=hs-client`);
+    // No X-User-Id header — should still succeed
+
+    global.fetch = origFetch;
+
+    expect(res.status).toBe(201);
+    expect(res.body.userId).toBe(pkceUserId);
   });
 });

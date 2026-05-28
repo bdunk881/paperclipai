@@ -114,17 +114,11 @@ catalogRouter.get("/:slug", (req, res) => {
 // OAuth2 callback router — must remain unauthenticated (no auth required).
 // During an OAuth2 PKCE flow the authorization server redirects the browser
 // back to this URL; the browser carries no Bearer token at that point.
-// The userId is read from the X-User-Id header as a known limitation.
-// A future improvement should encode the userId in the PKCE state instead.
+// The authoritative userId is read from the PKCE state stored at authorization
+// start — not from any request header — so stolen code+state pairs cannot be
+// replayed against a different user's account.
 // Mounted at /api/integrations/oauth2 in app.ts (before the protected mount).
 // ---------------------------------------------------------------------------
-
-function resolveUserIdFromHeader(
-  req: { headers: Record<string, string | string[] | undefined> }
-): string | null {
-  const h = req.headers["x-user-id"];
-  return typeof h === "string" && h.trim() ? h.trim() : null;
-}
 
 export const oauthCallbackRouter = Router();
 
@@ -134,9 +128,6 @@ export const oauthCallbackRouter = Router();
  * Returns the new IntegrationConnectionPublic record.
  */
 oauthCallbackRouter.get("/:slug/callback", asyncHandler(async (req, res) => {
-  const userId = resolveUserIdFromHeader(req);
-  if (!userId) { res.status(401).json({ error: "X-User-Id header is required" }); return; }
-
   const manifest = getIntegrationBySlug(req.params.slug);
   if (!manifest) { res.status(404).json({ error: `Integration not found: ${req.params.slug}` }); return; }
   if (!manifest.oauth2Config) { res.status(400).json({ error: `Integration "${manifest.slug}" does not use OAuth2` }); return; }
@@ -147,7 +138,7 @@ oauthCallbackRouter.get("/:slug/callback", asyncHandler(async (req, res) => {
   if (!clientId) { res.status(400).json({ error: "clientId query param is required (forwarded from authorize step)" }); return; }
 
   try {
-    const credentials = await completeOAuth2PkceFlow({
+    const { credentials, userId } = await completeOAuth2PkceFlow({
       code,
       state,
       oauth2Config: manifest.oauth2Config,

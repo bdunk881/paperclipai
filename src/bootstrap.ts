@@ -6,6 +6,7 @@ import {
 } from "./db/postgres";
 import { ensureSqlMigrationsApplied } from "./db/sqlMigrations";
 import { ensureKnowledgeSchema } from "./knowledge/knowledgeStore";
+import { assertProductionSafety } from "./security/qaBypassGuard";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
@@ -35,6 +36,12 @@ export function isProductionRuntime(env: NodeJS.ProcessEnv = process.env): boole
 }
 
 export async function initializePersistence(logger: Logger = console): Promise<void> {
+  // HEL-258 / SEC-07 — fail loudly at boot if production has QA bypass
+  // flags set. Runs before any DB connection so a misconfigured deploy
+  // exits with a clear error instead of accepting traffic with bypasses
+  // silently active.
+  assertProductionSafety();
+
   requirePersistence();
 
   if (isPostgresConfigured()) {

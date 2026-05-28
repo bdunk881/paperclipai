@@ -121,6 +121,45 @@ describe("initializePersistence", () => {
 
     expect(logger.error).toHaveBeenCalledWith("[knowledge] Schema init failed:", "schema failure");
   });
+
+  describe("HEL-258 / SEC-07 — assertProductionSafety wiring", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalBypass = process.env.QA_AUTH_BYPASS_ENABLED;
+
+    afterEach(() => {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+      if (originalBypass === undefined) {
+        delete process.env.QA_AUTH_BYPASS_ENABLED;
+      } else {
+        process.env.QA_AUTH_BYPASS_ENABLED = originalBypass;
+      }
+    });
+
+    it("refuses to boot in production when QA_AUTH_BYPASS_ENABLED is set", async () => {
+      process.env.NODE_ENV = "production";
+      process.env.QA_AUTH_BYPASS_ENABLED = "true";
+      mockIsPostgresConfigured.mockReturnValue(true);
+      mockCheckPostgresConnection.mockResolvedValue(true);
+
+      await expect(initializePersistence(logger)).rejects.toThrow(
+        /Refusing to boot in production with QA bypass flags/,
+      );
+      // Fails BEFORE we even reach the DB connection check.
+      expect(mockCheckPostgresConnection).not.toHaveBeenCalled();
+    });
+
+    it("allows boot in development with QA bypass set (dev convenience)", async () => {
+      process.env.NODE_ENV = "development";
+      process.env.QA_AUTH_BYPASS_ENABLED = "true";
+      mockIsPostgresConfigured.mockReturnValue(false);
+
+      await expect(initializePersistence(logger)).resolves.toBeUndefined();
+    });
+  });
 });
 
 describe("requirePersistence", () => {

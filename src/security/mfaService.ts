@@ -36,6 +36,10 @@ import {
   REQUIRE_APP_MFA_FOR_OAUTH_USERS,
   isWorkspaceFlagEnabled as defaultWorkspaceFlagChecker,
 } from "./workspaceFeatureFlags";
+import {
+  getDefaultMfaChallengeStore,
+  type MfaChallengeStore,
+} from "./mfaChallengeStore";
 
 export type MfaFactorType = "webauthn" | "totp";
 
@@ -238,6 +242,12 @@ export interface MfaServiceDeps {
     userId: string | null | undefined,
     flag: string,
   ) => Promise<boolean>;
+  /**
+   * HEL-303: injectable challenge store. Defaults to a Redis-backed
+   * store (with an in-memory fallback when Redis isn't configured).
+   * Tests can pass an in-memory instance directly.
+   */
+  challengeStore?: MfaChallengeStore;
 }
 
 export interface GetPolicyOptions {
@@ -362,7 +372,10 @@ export class MfaService {
     userId: string | null | undefined,
     flag: string,
   ) => Promise<boolean>;
-  private challengeStore = new Map<string, { challenge: string; createdAt: number }>();
+  // HEL-303: was a per-process Map. Now an injectable store so the
+  // begin → finish round-trip survives Fly machine restarts and
+  // multi-machine routing.
+  private challengeStore: MfaChallengeStore;
 
   constructor(deps: MfaServiceDeps = {}) {
     this.repository = deps.repository ?? getDefaultMfaRepository();
@@ -374,6 +387,7 @@ export class MfaService {
     this.origin =
       deps.origin ?? this.parseOriginEnv(process.env.MFA_ORIGIN ?? "http://localhost:5173");
     this.workspaceFlagChecker = deps.workspaceFlagChecker ?? defaultWorkspaceFlagChecker;
+    this.challengeStore = deps.challengeStore ?? getDefaultMfaChallengeStore();
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -382,23 +396,6 @@ export class MfaService {
       .map((s) => s.trim())
       .filter(Boolean);
     return parts.length === 1 ? parts[0] : parts;
-  }
-
-  private rememberChallenge(key: string, challenge: string): void {
-    // 5-minute TTL.
-    const now = Date.now();
-    for (const [k, v] of this.challengeStore.entries()) {
-      if (now - v.createdAt > 5 * 60 * 1000) this.challengeStore.delete(k);
-    }
-    this.challengeStore.set(key, { challenge, createdAt: now });
-  }
-
-  private consumeChallenge(key: string): string | null {
-    const entry = this.challengeStore.get(key);
-    if (!entry) return null;
-    this.challengeStore.delete(key);
-    if (Date.now() - entry.createdAt > 5 * 60 * 1000) return null;
-    return entry.challenge;
   }
 
   async getPolicy(ctx: MfaServiceContext, options: GetPolicyOptions = {}): Promise<MfaPolicySummary> {
@@ -444,7 +441,7 @@ export class MfaService {
         transports: c.transports,
       })),
     });
-    this.rememberChallenge(`reg:${ctx.userId}`, options.challenge);
+    await this.challengeStore.remember(`reg:${ctx.userId}`, options.challenge);
     return options;
   }
 
@@ -456,7 +453,7 @@ export class MfaService {
     if (!this.webauthn) {
       throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
     }
-    const expectedChallenge = this.consumeChallenge(`reg:${ctx.userId}`);
+    const expectedChallenge = await this.challengeStore.consume(`reg:${ctx.userId}`);
     if (!expectedChallenge) {
       throw new SecurityServiceError("Registration challenge expired or missing", 400, "challenge_missing");
     }
@@ -510,7 +507,7 @@ export class MfaService {
         transports: c.transports,
       })),
     });
-    this.rememberChallenge(`auth:${ctx.userId}`, options.challenge);
+    await this.challengeStore.remember(`auth:${ctx.userId}`, options.challenge);
     return options;
   }
 
@@ -522,7 +519,7 @@ export class MfaService {
     if (!this.webauthn) {
       throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
     }
-    const expectedChallenge = this.consumeChallenge(`auth:${ctx.userId}`);
+    const expectedChallenge = await this.challengeStore.consume(`auth:${ctx.userId}`);
     if (!expectedChallenge) {
       throw new SecurityServiceError("Authentication challenge expired", 400, "challenge_missing");
     }

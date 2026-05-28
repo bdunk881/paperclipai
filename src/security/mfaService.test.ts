@@ -9,6 +9,7 @@ import {
   type WebauthnVerifyRegistrationResult,
 } from "./mfaService";
 import { InMemoryMfaRepository } from "./mfaRepository";
+import { InMemoryMfaChallengeStore } from "./mfaChallengeStore";
 
 const APP_JWT_SECRET = "test-secret-key-at-least-32-bytes-long-please";
 
@@ -166,6 +167,56 @@ describe("MfaService", () => {
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
     await expect(
       service.finishWebauthnRegistration({ userId: "u-1" }, {}),
+    ).rejects.toThrow(/challenge/i);
+  });
+
+  // HEL-303: regression — when the challenge store is shared (Redis in
+  // prod), a different MfaService instance can complete the ceremony
+  // that another instance started. This simulates a Fly machine
+  // restart between begin and finish: same store, fresh service.
+  it("completes registration across service instances when the challenge store is shared", async () => {
+    const sharedStore = new InMemoryMfaChallengeStore();
+    const ctx = { userId: "u-shared" };
+
+    const beginService = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: sharedStore,
+    });
+    const options = await beginService.beginWebauthnRegistration(ctx, "alice@example.com");
+    expect(options.challenge).toBe("REG_CHALLENGE");
+
+    // New service instance — simulates the verify request hitting a
+    // different Fly machine (or the same machine after a restart).
+    const finishService = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: sharedStore,
+    });
+    const result = await finishService.finishWebauthnRegistration(ctx, { mockResponse: true }, "Other machine");
+    expect(result.credentialId).toBe("cred-1");
+  });
+
+  it("a per-instance challenge store fails the cross-instance ceremony (proves the regression test is meaningful)", async () => {
+    const ctx = { userId: "u-isolated" };
+    const beginService = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: new InMemoryMfaChallengeStore(),
+    });
+    await beginService.beginWebauthnRegistration(ctx, "alice@example.com");
+
+    const finishService = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: new InMemoryMfaChallengeStore(),
+    });
+    await expect(
+      finishService.finishWebauthnRegistration(ctx, { mockResponse: true }, "Other machine"),
     ).rejects.toThrow(/challenge/i);
   });
 

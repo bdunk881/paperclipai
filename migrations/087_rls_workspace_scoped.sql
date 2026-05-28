@@ -52,9 +52,9 @@ DROP POLICY IF EXISTS credit_purchase_events_workspace_isolation ON public.credi
 CREATE POLICY credit_purchase_events_workspace_isolation ON public.credit_purchase_events
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS credit_purchase_events_admin_read ON public.credit_purchase_events;
 CREATE POLICY credit_purchase_events_admin_read ON public.credit_purchase_events
@@ -71,9 +71,9 @@ DROP POLICY IF EXISTS approval_tier_policies_workspace_isolation ON public.appro
 CREATE POLICY approval_tier_policies_workspace_isolation ON public.approval_tier_policies
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS approval_tier_policies_admin_read ON public.approval_tier_policies;
 CREATE POLICY approval_tier_policies_admin_read ON public.approval_tier_policies
@@ -90,9 +90,9 @@ DROP POLICY IF EXISTS notification_preferences_workspace_isolation ON public.not
 CREATE POLICY notification_preferences_workspace_isolation ON public.notification_preferences
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS notification_preferences_admin_read ON public.notification_preferences;
 CREATE POLICY notification_preferences_admin_read ON public.notification_preferences
@@ -109,9 +109,9 @@ DROP POLICY IF EXISTS notification_channel_configs_workspace_isolation ON public
 CREATE POLICY notification_channel_configs_workspace_isolation ON public.notification_channel_configs
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS notification_channel_configs_admin_read ON public.notification_channel_configs;
 CREATE POLICY notification_channel_configs_admin_read ON public.notification_channel_configs
@@ -128,9 +128,9 @@ DROP POLICY IF EXISTS notification_events_workspace_isolation ON public.notifica
 CREATE POLICY notification_events_workspace_isolation ON public.notification_events
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS notification_events_admin_read ON public.notification_events;
 CREATE POLICY notification_events_admin_read ON public.notification_events
@@ -147,9 +147,9 @@ DROP POLICY IF EXISTS notification_deliveries_workspace_isolation ON public.noti
 CREATE POLICY notification_deliveries_workspace_isolation ON public.notification_deliveries
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS notification_deliveries_admin_read ON public.notification_deliveries;
 CREATE POLICY notification_deliveries_admin_read ON public.notification_deliveries
@@ -166,9 +166,9 @@ DROP POLICY IF EXISTS agent_memory_events_workspace_isolation ON public.agent_me
 CREATE POLICY agent_memory_events_workspace_isolation ON public.agent_memory_events
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS agent_memory_events_admin_read ON public.agent_memory_events;
 CREATE POLICY agent_memory_events_admin_read ON public.agent_memory_events
@@ -185,9 +185,9 @@ DROP POLICY IF EXISTS agent_heartbeat_logs_workspace_isolation ON public.agent_h
 CREATE POLICY agent_heartbeat_logs_workspace_isolation ON public.agent_heartbeat_logs
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS agent_heartbeat_logs_admin_read ON public.agent_heartbeat_logs;
 CREATE POLICY agent_heartbeat_logs_admin_read ON public.agent_heartbeat_logs
@@ -204,9 +204,9 @@ DROP POLICY IF EXISTS agent_memory_kg_facts_workspace_isolation ON public.agent_
 CREATE POLICY agent_memory_kg_facts_workspace_isolation ON public.agent_memory_kg_facts
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS agent_memory_kg_facts_admin_read ON public.agent_memory_kg_facts;
 CREATE POLICY agent_memory_kg_facts_admin_read ON public.agent_memory_kg_facts
@@ -224,9 +224,9 @@ DROP POLICY IF EXISTS agent_memory_entries_workspace_isolation ON public.agent_m
 CREATE POLICY agent_memory_entries_workspace_isolation ON public.agent_memory_entries
   AS PERMISSIVE FOR ALL TO public
   USING (app_current_workspace_id() IS NOT NULL
-         AND workspace_id = app_current_workspace_id())
+         AND workspace_id::text = app_current_workspace_id()::text)
   WITH CHECK (app_current_workspace_id() IS NOT NULL
-              AND workspace_id = app_current_workspace_id());
+              AND workspace_id::text = app_current_workspace_id()::text);
 
 DROP POLICY IF EXISTS agent_memory_entries_admin_read ON public.agent_memory_entries;
 CREATE POLICY agent_memory_entries_admin_read ON public.agent_memory_entries
@@ -256,13 +256,13 @@ CREATE POLICY hitl_schedules_workspace_via_company ON public.hitl_schedules
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_schedules.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_schedules.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   );
 
 DROP POLICY IF EXISTS hitl_schedules_user_self_access ON public.hitl_schedules;
@@ -289,13 +289,13 @@ CREATE POLICY hitl_checkpoints_workspace_via_company ON public.hitl_checkpoints
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_checkpoints.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_checkpoints.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   );
 
 DROP POLICY IF EXISTS hitl_checkpoints_user_self_access ON public.hitl_checkpoints;
@@ -322,13 +322,13 @@ CREATE POLICY hitl_artifact_comments_workspace_via_company ON public.hitl_artifa
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_artifact_comments.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_artifact_comments.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   );
 
 DROP POLICY IF EXISTS hitl_artifact_comments_user_self_access ON public.hitl_artifact_comments;
@@ -355,13 +355,13 @@ CREATE POLICY hitl_ask_ceo_requests_workspace_via_company ON public.hitl_ask_ceo
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_ask_ceo_requests.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_ask_ceo_requests.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   );
 
 DROP POLICY IF EXISTS hitl_ask_ceo_requests_user_self_access ON public.hitl_ask_ceo_requests;
@@ -388,13 +388,13 @@ CREATE POLICY hitl_notifications_workspace_via_company ON public.hitl_notificati
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_notifications.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     app_current_workspace_id() IS NOT NULL
     AND EXISTS (SELECT 1 FROM companies c
                  WHERE c.id::text = hitl_notifications.company_id
-                   AND c.workspace_id = app_current_workspace_id())
+                   AND c.workspace_id::text = app_current_workspace_id()::text)
   );
 
 DROP POLICY IF EXISTS hitl_notifications_user_self_access ON public.hitl_notifications;

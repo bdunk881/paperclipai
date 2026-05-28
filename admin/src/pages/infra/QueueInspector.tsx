@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchQueueDetail,
   listInspectorQueues,
@@ -7,6 +7,7 @@ import {
   type JobState,
   type QueueDetail,
 } from "../../api/queuesApi";
+import { drainQueue, pauseQueue, resumeQueue } from "../../api/computeMutationsApi";
 import type { FlyMachine } from "../../api/infraApi";
 import { QueueListRail } from "../../components/queues/QueueListRail";
 import { QueueCounterTiles } from "../../components/queues/QueueCounterTiles";
@@ -15,6 +16,8 @@ import { JobsTable } from "../../components/queues/JobsTable";
 import { JobInspectorModal } from "../../components/queues/JobInspectorModal";
 import { WorkerCard } from "../../components/queues/WorkerCard";
 import { AskAgentButton } from "../../components/agent/AskAgentButton";
+import { ReasonPrompt } from "../../components/ReasonPrompt";
+import { DangerActionPrompt } from "../../components/infra/DangerActionPrompt";
 
 export interface QueueInspectorProps {
   /** Optional Fly machines list so worker cards can correlate to the host machine. */
@@ -22,6 +25,27 @@ export interface QueueInspectorProps {
 }
 
 export function QueueInspector({ flyMachines = [] }: QueueInspectorProps) {
+  const qc = useQueryClient();
+  const [drainOpen, setDrainOpen] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  function refreshAll() {
+    void qc.invalidateQueries({ queryKey: ["queue-inspector"] });
+  }
+
+  async function runMutation(label: string, fn: () => Promise<unknown>) {
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      await fn();
+      setActionMessage(`${label} succeeded`);
+      refreshAll();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   const queuesQ = useQuery({
     queryKey: ["queue-inspector", "list"],
     queryFn: listInspectorQueues,
@@ -85,17 +109,63 @@ export function QueueInspector({ flyMachines = [] }: QueueInspectorProps) {
           <>
             <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.5rem" }}>
               <h2 style={{ margin: 0 }}>{detail.name}</h2>
-              <AskAgentButton
-                context={{
-                  kind: "queue_state",
-                  source: "admin.infra.compute.queue-inspector",
-                  subjectRef: { queue: detail.name },
-                  payload: { counters: detail.counters, workers: detail.workers },
-                  defaultQuestion: `What does the current state of ${detail.name} suggest?`,
-                }}
-                label="Ask agent about this queue"
-              />
+              <div className="row" style={{ gap: "0.4rem" }}>
+                {detail.counters.paused > 0 ? (
+                  <ReasonPrompt
+                    label="Resume"
+                    className="primary"
+                    onConfirm={(reason) =>
+                      runMutation("Resume", () => resumeQueue({ queueName: detail.name, reason }))
+                    }
+                  />
+                ) : (
+                  <ReasonPrompt
+                    label="Pause"
+                    onConfirm={(reason) =>
+                      runMutation("Pause", () => pauseQueue({ queueName: detail.name, reason }))
+                    }
+                  />
+                )}
+                <button className="danger" onClick={() => setDrainOpen(true)}>
+                  Drain
+                </button>
+                <AskAgentButton
+                  context={{
+                    kind: "queue_state",
+                    source: "admin.infra.compute.queue-inspector",
+                    subjectRef: { queue: detail.name },
+                    payload: { counters: detail.counters, workers: detail.workers },
+                    defaultQuestion: `What does the current state of ${detail.name} suggest?`,
+                  }}
+                  label="Ask agent"
+                />
+              </div>
             </div>
+
+            {actionMessage && (
+              <div className="banner" style={{ marginBottom: "0.5rem" }}>{actionMessage}</div>
+            )}
+            {actionError && (
+              <div className="banner danger" style={{ marginBottom: "0.5rem" }}>{actionError}</div>
+            )}
+
+            <DangerActionPrompt
+              open={drainOpen}
+              title={`Drain queue ${detail.name}`}
+              description={
+                <>
+                  Drains <strong>all waiting jobs</strong> from this queue. Currently-active
+                  jobs continue to completion. This cannot be undone.
+                </>
+              }
+              typedConfirm="DRAIN"
+              confirmLabel="Drain queue"
+              acknowledgementText="I understand this removes all waiting jobs from this queue."
+              onClose={() => setDrainOpen(false)}
+              onConfirm={async ({ reason }) => {
+                await runMutation("Drain", () => drainQueue({ queueName: detail.name, reason }));
+              }}
+            />
 
             <div style={{ marginBottom: "0.75rem" }}>
               <QueueCounterTiles counters={detail.counters} />
@@ -144,7 +214,7 @@ export function QueueInspector({ flyMachines = [] }: QueueInspectorProps) {
             </div>
 
             <div className="muted" style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
-              Pause · Resume · Drain · Retry-all-failed land in PR #6.
+              Retry-all-failed bulk action stays in bull-board for now.
             </div>
           </>
         )}
@@ -155,6 +225,7 @@ export function QueueInspector({ flyMachines = [] }: QueueInspectorProps) {
           queueName={effectiveSelected}
           jobId={openJobId}
           onClose={() => setOpenJobId(null)}
+          onMutated={refreshAll}
         />
       )}
     </div>

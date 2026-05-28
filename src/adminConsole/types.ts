@@ -82,6 +82,17 @@ export const ADMIN_ACTIONS = [
   // infra data reads (HEL infra PR #5)
   "view_infra_data",
 
+  // infra compute mutations (HEL infra PR #6)
+  "restart_fly_machine",
+  "retry_queue_job",
+  "promote_queue_job",
+  "remove_queue_job",
+  "replay_dlq_job",
+  "pause_queue",
+  "resume_queue",
+  "drain_queue",
+  "trigger_scheduled_job",
+
   // agent webhooks (HEL infra PR #2)
   "create_agent_webhook",
   "update_agent_webhook",

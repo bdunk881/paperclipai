@@ -26,6 +26,7 @@ interface CacheEntry {
   expiresAt: number;
 }
 
+// allowlist: process-local 60s TTL cache for workspace feature flags; cross-process invalidation is unnecessary at the current write velocity (admin-console toggles only)
 const cache = new Map<string, CacheEntry>();
 
 function cacheKey(workspaceId: string, flag: string): string {

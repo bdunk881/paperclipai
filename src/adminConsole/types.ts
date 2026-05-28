@@ -93,6 +93,16 @@ export const ADMIN_ACTIONS = [
   "drain_queue",
   "trigger_scheduled_job",
 
+  // infra edge mutations (HEL infra PR #7)
+  "rollback_cf_pages_deploy",
+  "retry_cf_pages_deploy",
+  "rerun_workflow_run",
+  "cancel_workflow_run",
+
+  // infra data mutations (HEL infra PR #7)
+  "kill_postgres_query",
+  "flush_redis_pattern",
+
   // agent webhooks (HEL infra PR #2)
   "create_agent_webhook",
   "update_agent_webhook",

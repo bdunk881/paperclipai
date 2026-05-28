@@ -51,24 +51,68 @@ function resolveBaseUrl(opts: GithubActionsClientOptions): string {
   return (opts.baseUrl ?? GITHUB_API_BASE).replace(/\/$/, "");
 }
 
-async function githubRequest<T>(path: string, opts: GithubActionsClientOptions): Promise<T> {
+async function githubRequest<T>(
+  path: string,
+  opts: GithubActionsClientOptions,
+  method: "GET" | "POST" = "GET",
+  body?: unknown,
+): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const token = resolveToken(opts);
   const url = `${resolveBaseUrl(opts)}${path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetchImpl(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     const scrubbed = text.split(token).join("<redacted>").slice(0, 500);
     throw new GithubActionsClientError(res.status, scrubbed);
   }
-  return (await res.json()) as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined as T;
+  }
+}
+
+/** Rerun a failed workflow run (or just the failed jobs if onlyFailed=true). */
+export async function rerunWorkflowRun(
+  runId: number,
+  opts: GithubActionsClientOptions = {},
+  onlyFailed = false,
+): Promise<void> {
+  const { owner, repo } = resolveRepo(opts);
+  const suffix = onlyFailed ? "/rerun-failed-jobs" : "/rerun";
+  await githubRequest(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}${suffix}`,
+    opts,
+    "POST",
+    {},
+  );
+}
+
+/** Cancel an in-progress workflow run. */
+export async function cancelWorkflowRun(
+  runId: number,
+  opts: GithubActionsClientOptions = {},
+): Promise<void> {
+  const { owner, repo } = resolveRepo(opts);
+  await githubRequest(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`,
+    opts,
+    "POST",
+    {},
+  );
 }
 
 export interface WorkflowRun {

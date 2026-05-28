@@ -17,7 +17,9 @@ import { createComputeMutationRoutes } from "./computeMutationRoutes";
 import { createBullBoardRouter } from "./bullBoardMount";
 import { createQueueInspectorRoutes } from "./queueInspector/routes";
 import { createEdgeRoutes } from "./edgeRoutes";
+import { createEdgeMutationRoutes } from "./edgeMutationRoutes";
 import { createDataRoutes } from "./dataRoutes";
+import { createDataMutationRoutes } from "./dataMutationRoutes";
 import { requireAAL2 } from "../../middleware/requireAAL2";
 
 export function createInfraRoutes(pool: Pool): Router {
@@ -31,8 +33,10 @@ export function createInfraRoutes(pool: Pool): Router {
   router.use("/queues/_ui", requireAAL2, createBullBoardRouter());
   router.use("/edge", createEdgeRoutes(pool));
   router.use("/data", createDataRoutes(pool));
-  // Compute mutations live on a separate sub-router so requireAAL2 stays
-  // tightly scoped — overview/compute reads stay AAL1.
+  // Mutation sub-routers — each carries requireAAL2 internally so the
+  // read paths above stay AAL1.
   router.use("/compute/actions", createComputeMutationRoutes(pool));
+  router.use("/edge/actions", createEdgeMutationRoutes(pool));
+  router.use("/data/actions", createDataMutationRoutes(pool));
   return router;
 }

@@ -52,6 +52,16 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   resume_queue: { limit: 10, window: "day" },
   drain_queue: { limit: 2, window: "day" },
   trigger_scheduled_job: { limit: 10, window: "hour" },
+
+  // HEL infra dashboard PR #7: Edge + Data mutations.
+  rollback_cf_pages_deploy: { limit: 5, window: "day" },
+  retry_cf_pages_deploy: { limit: 10, window: "day" },
+  rerun_workflow_run: { limit: 20, window: "hour" },
+  cancel_workflow_run: { limit: 20, window: "hour" },
+  kill_postgres_query: { limit: 10, window: "hour" },
+  // Pattern-based key flushes are blast-radius-heavy even with the
+  // deny-list — keep this tight.
+  flush_redis_pattern: { limit: 5, window: "day" },
 };
 
 function envOverride(name: string): number | undefined {

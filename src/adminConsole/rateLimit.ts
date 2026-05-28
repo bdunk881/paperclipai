@@ -62,6 +62,10 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   // Pattern-based key flushes are blast-radius-heavy even with the
   // deny-list — keep this tight.
   flush_redis_pattern: { limit: 5, window: "day" },
+
+  // HEL infra follow-up: platform admin revocation is the highest-blast-
+  // radius action on the dashboard — extremely tight cap.
+  revoke_platform_admin: { limit: 3, window: "day" },
 };
 
 function envOverride(name: string): number | undefined {

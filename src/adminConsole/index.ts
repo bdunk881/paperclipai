@@ -31,6 +31,7 @@ import { createCreditsPoolRoutes } from "./creditsPoolRoutes";
 import { createInfraRoutes } from "./infra";
 import { createAgentWebhookRoutes } from "./agentWebhooks/routes";
 import { createAgentReplyRoute } from "./agentWebhooks/replyRoute";
+import { createPlatformAdminsRoutes } from "./platformAdminsRoutes";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
 
@@ -52,6 +53,7 @@ export function createAdminConsoleRoutes(pool: Pool): Router {
   router.use("/credits/key-sources", createCreditsPoolRoutes(pool));
   router.use("/infra", createInfraRoutes(pool));
   router.use("/agent-webhooks", createAgentWebhookRoutes(pool));
+  router.use("/platform-admins", createPlatformAdminsRoutes(pool));
 
   return router;
 }

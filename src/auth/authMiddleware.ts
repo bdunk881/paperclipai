@@ -274,11 +274,11 @@ function parseAmrClaim(value: unknown): AuthAmrEntry[] | undefined {
   return entries.length > 0 ? entries : undefined;
 }
 
-function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void {
+function supabaseClaimsToAuth(claims: JwtPayload): NonNullable<AuthenticatedRequest["auth"]> {
   const appMetadata = claims.app_metadata as Record<string, unknown> | undefined;
   const userMetadata = claims.user_metadata as Record<string, unknown> | undefined;
 
-  req.auth = {
+  return {
     sub: String(claims.sub),
     email: firstString(claims.email) ?? firstString(claims.phone),
     name:
@@ -293,6 +293,159 @@ function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void
     aal: parseAalClaim(claims["aal"]),
     amr: parseAmrClaim(claims["amr"]),
   };
+}
+
+function attachSupabaseAuth(req: AuthenticatedRequest, claims: JwtPayload): void {
+  req.auth = supabaseClaimsToAuth(claims);
+}
+
+/**
+ * Diagnostic context passed to `verifyBearerToken` so failure logs can identify
+ * the caller (Express request vs. WebSocket upgrade vs. test harness). Keeps
+ * the same DASH-30 forensics that `requireAuth` writes on token failures.
+ */
+export interface VerifyTokenDiagnostics {
+  source: string;
+  request?: ReturnType<typeof describeRequestForAuthLog>;
+}
+
+/**
+ * Tri-state result so callers can distinguish "auth misconfigured" (503) from
+ * "token bad" (401). Lets `requireAuth` and the WebSocket upgrade handler
+ * surface different status codes against the same verification core.
+ */
+export type VerifyBearerTokenResult =
+  | { kind: "ok"; auth: NonNullable<AuthenticatedRequest["auth"]> }
+  | { kind: "invalid" }
+  | { kind: "auth_not_configured" };
+
+/**
+ * Sync App-JWT path. Returns `null` when the configured app issuer can't
+ * recognize the token (so the caller should fall through to Supabase),
+ * otherwise returns a settled result. Kept synchronous so `requireAuth` can
+ * preserve its original "App tokens resolve in the same tick" behavior.
+ */
+function tryVerifyAppJwt(token: string): VerifyBearerTokenResult | null {
+  const appAuthConfig = resolveAppJwtConfig();
+  if (!appAuthConfig) return null;
+
+  const tokenClaims = decodeJwtDiagnosticClaims(token);
+  const looksLikeAppToken =
+    tokenClaims?.iss === appAuthConfig.issuer ||
+    tokenClaims?.aud === appAuthConfig.audience ||
+    (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
+
+  if (looksLikeAppToken && typeof tokenClaims?.exp !== "number") {
+    logAppJwtVerificationFailure(
+      "App token is missing a numeric exp claim.",
+      tokenClaims,
+      appAuthConfig.audience,
+      appAuthConfig.issuer
+    );
+    return { kind: "invalid" };
+  }
+
+  const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
+  if (appClaims?.sub) {
+    return {
+      kind: "ok",
+      auth: {
+        sub: appClaims.sub,
+        email: appClaims.email,
+        name: appClaims.name,
+        provider: appClaims.provider,
+        issuer: appClaims.iss,
+        workspaceId: appClaims.workspaceId,
+      },
+    };
+  }
+
+  if (looksLikeAppToken) {
+    logAppJwtVerificationFailure(
+      errorMessage ?? "Unknown token verification error.",
+      tokenClaims,
+      appAuthConfig.audience,
+      appAuthConfig.issuer
+    );
+    return { kind: "invalid" };
+  }
+
+  return null;
+}
+
+/**
+ * Plain `.then()` chain (not async/await) so the microtask depth matches the
+ * original `requireAuth` Supabase path — tests assume one `await Promise.resolve()`
+ * is enough to settle. Adding an async wrapper layer adds a second hop and
+ * silently breaks downstream awaits.
+ */
+function verifySupabaseJwt(
+  token: string,
+  diagnostics: VerifyTokenDiagnostics,
+): Promise<VerifyBearerTokenResult> {
+  const supabaseAuthConfig = resolveSupabaseAuthConfig();
+  if (!supabaseAuthConfig) {
+    return Promise.resolve({ kind: "auth_not_configured" });
+  }
+
+  const tokenClaims = decodeJwtDiagnosticClaims(token);
+
+  const logFailure = (
+    errName: string | undefined,
+    errMessage: string | undefined,
+  ): void => {
+    console.warn("[auth] Supabase JWT verification failed", {
+      errName,
+      errMessage,
+      source: diagnostics.source,
+      tokenSub: tokenClaims?.sub,
+      tokenEmail: tokenClaims?.email,
+      tokenAud: tokenClaims?.aud,
+      tokenIss: tokenClaims?.iss,
+      tokenIat: tokenClaims?.iat,
+      tokenExp: tokenClaims?.exp,
+      tokenNbf: tokenClaims?.nbf,
+      tokenAgeSeconds: ageSeconds(tokenClaims?.iat),
+      tokenExpiredSecondsAgo: ageSeconds(tokenClaims?.exp),
+      expectedAudiences: supabaseAuthConfig.audiences,
+      expectedIssuer: supabaseAuthConfig.issuer,
+      jwksUri: supabaseAuthConfig.jwksUri,
+      request: diagnostics.request,
+    });
+  };
+
+  return verifySupabaseTokenWithDiagnostics(token).then(
+    ({ claims, errorMessage, errorName }): VerifyBearerTokenResult => {
+      if (!claims?.sub) {
+        logFailure(errorName, errorMessage);
+        return { kind: "invalid" };
+      }
+      return { kind: "ok", auth: supabaseClaimsToAuth(claims) };
+    },
+    (error: unknown): VerifyBearerTokenResult => {
+      logFailure(
+        error instanceof Error ? error.name : "UnknownError",
+        error instanceof Error ? error.message : "Unknown token verification error.",
+      );
+      return { kind: "invalid" };
+    },
+  );
+}
+
+/**
+ * Token-verification core lifted out of `requireAuth` (HEL-286) so the
+ * WebSocket upgrade path can reuse the same app-JWT → Supabase-JWT chain
+ * without rebuilding the Express request shape. `requireAuth` keeps using
+ * the sync App path + async Supabase path directly so its observable timing
+ * stays byte-equivalent; this wrapper is for callers that don't care.
+ */
+export async function verifyBearerToken(
+  token: string,
+  diagnostics: VerifyTokenDiagnostics = { source: "lib" },
+): Promise<VerifyBearerTokenResult> {
+  const appResult = tryVerifyAppJwt(token);
+  if (appResult) return appResult;
+  return verifySupabaseJwt(token, diagnostics);
 }
 
 export function requireAuth(
@@ -336,111 +489,51 @@ export function requireAuth(
   }
 
   const token = authHeader.slice(7);
-  const appAuthConfig = resolveAppJwtConfig();
-  const supabaseAuthConfig = resolveSupabaseAuthConfig();
-  const tokenClaims = decodeJwtDiagnosticClaims(token);
 
-  if (appAuthConfig) {
-    const looksLikeAppToken =
-      tokenClaims?.iss === appAuthConfig.issuer ||
-      tokenClaims?.aud === appAuthConfig.audience ||
-      (Array.isArray(tokenClaims?.aud) && tokenClaims.aud.includes(appAuthConfig.audience));
-
-    if (looksLikeAppToken && typeof tokenClaims?.exp !== "number") {
-      logAppJwtVerificationFailure(
-        "App token is missing a numeric exp claim.",
-        tokenClaims,
-        appAuthConfig.audience,
-        appAuthConfig.issuer
-      );
-      res.status(401).json({ error: "Invalid or expired token." });
-      return;
-    }
-
-    const { claims: appClaims, errorMessage } = verifyAppUserTokenWithDiagnostics(token);
-    if (appClaims?.sub) {
-      req.auth = {
-        sub: appClaims.sub,
-        email: appClaims.email,
-        name: appClaims.name,
-        provider: appClaims.provider,
-        issuer: appClaims.iss,
-        workspaceId: appClaims.workspaceId,
-      };
-
+  // Sync App-JWT fast path — preserves original requireAuth timing so
+  // callers/tests that assert immediately after requireAuth(...) still see
+  // 401/200 from this branch.
+  const appResult = tryVerifyAppJwt(token);
+  if (appResult) {
+    if (appResult.kind === "ok") {
+      req.auth = appResult.auth;
       next();
       return;
     }
-
-    if (looksLikeAppToken) {
-      logAppJwtVerificationFailure(
-        errorMessage ?? "Unknown token verification error.",
-        tokenClaims,
-        appAuthConfig.audience,
-        appAuthConfig.issuer
-      );
-      res.status(401).json({ error: "Invalid or expired token." });
-      return;
-    }
+    res.status(401).json({ error: "Invalid or expired token." });
+    return;
   }
 
-  if (!supabaseAuthConfig) {
+  // Sync 503 fast path — original requireAuth raised this in the same tick
+  // before kicking off Supabase verification. Tests assert immediately.
+  if (!resolveSupabaseAuthConfig()) {
     res.status(503).json({ error: "Auth service not configured." });
     return;
   }
 
-  // DASH-30: capture request context BEFORE the async verify so it's
-  // bound to whichever failure branch fires below. Without this, every
-  // JWTExpired log looks identical and we can't identify the source.
+  // DASH-30: capture request context BEFORE the async verify so it's bound
+  // to whichever failure branch fires below.
   const requestContext = describeRequestForAuthLog(req);
 
-  void verifySupabaseTokenWithDiagnostics(token)
-    .then(({ claims, errorMessage, errorName }) => {
-      if (!claims?.sub) {
-        console.warn("[auth] Supabase JWT verification failed", {
-          errName: errorName,
-          errMessage: errorMessage,
-          // Decoded-but-unverified claims (for forensics only)
-          tokenSub: tokenClaims?.sub,
-          tokenEmail: tokenClaims?.email,
-          tokenAud: tokenClaims?.aud,
-          tokenIss: tokenClaims?.iss,
-          tokenIat: tokenClaims?.iat,
-          tokenExp: tokenClaims?.exp,
-          tokenNbf: tokenClaims?.nbf,
-          tokenAgeSeconds: ageSeconds(tokenClaims?.iat),
-          tokenExpiredSecondsAgo: ageSeconds(tokenClaims?.exp),
-          expectedAudiences: supabaseAuthConfig.audiences,
-          expectedIssuer: supabaseAuthConfig.issuer,
-          jwksUri: supabaseAuthConfig.jwksUri,
-          // Request fingerprint — answers "who sent this?"
-          request: requestContext,
-        });
+  void verifySupabaseJwt(token, { source: "express", request: requestContext })
+    .then((result) => {
+      if (result.kind === "auth_not_configured") {
+        // Belt-and-suspenders: covered by the sync pre-check above.
+        res.status(503).json({ error: "Auth service not configured." });
+        return;
+      }
+      if (result.kind === "invalid") {
         res.status(401).json({ error: "Invalid or expired token." });
         return;
       }
-
-      attachSupabaseAuth(req, claims);
+      req.auth = result.auth;
       next();
     })
     .catch((error: unknown) => {
-      console.warn("[auth] Supabase JWT verification failed", {
-        errName: error instanceof Error ? error.name : "UnknownError",
-        errMessage: error instanceof Error ? error.message : "Unknown token verification error.",
-        tokenSub: tokenClaims?.sub,
-        tokenEmail: tokenClaims?.email,
-        tokenAud: tokenClaims?.aud,
-        tokenIss: tokenClaims?.iss,
-        tokenIat: tokenClaims?.iat,
-        tokenExp: tokenClaims?.exp,
-        tokenNbf: tokenClaims?.nbf,
-        tokenAgeSeconds: ageSeconds(tokenClaims?.iat),
-        tokenExpiredSecondsAgo: ageSeconds(tokenClaims?.exp),
-        expectedAudiences: supabaseAuthConfig.audiences,
-        expectedIssuer: supabaseAuthConfig.issuer,
-        jwksUri: supabaseAuthConfig.jwksUri,
-        request: requestContext,
-      });
+      console.warn(
+        "[auth] Bearer verification threw",
+        error instanceof Error ? error.message : String(error),
+      );
       res.status(401).json({ error: "Invalid or expired token." });
     });
 }

@@ -67,7 +67,7 @@ function readExplicitWorkspaceHeader(req: Request): string | null {
  * header MUST land in the null branch — the membership predicate gates
  * downstream queries from ever running with the wrong workspace_id.
  */
-async function resolveWorkspaceRole(
+export async function resolveWorkspaceRole(
   pool: Pool,
   workspaceId: string,
   userId: string,

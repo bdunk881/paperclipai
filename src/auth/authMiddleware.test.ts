@@ -32,6 +32,9 @@ function loadRequireAuthOrQaBypass() {
 }
 
 async function flushMicrotasks(): Promise<void> {
+  // HEL-286: requireAuth's Supabase path now goes through verifySupabaseJwt,
+  // adding one extra `.then` hop. Two flushes is enough to settle the chain.
+  await Promise.resolve();
   await Promise.resolve();
 }
 

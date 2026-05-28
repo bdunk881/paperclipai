@@ -4,6 +4,7 @@ const TABS = [
   { to: "/infra/overview", label: "Overview" },
   { to: "/infra/compute", label: "Compute" },
   { to: "/infra/edge", label: "Edge" },
+  { to: "/infra/data", label: "Data" },
 ];
 
 export function InfraTabs() {

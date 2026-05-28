@@ -79,6 +79,8 @@ export const ADMIN_ACTIONS = [
   "view_infra_compute",
   // infra edge reads (HEL infra PR #4)
   "view_infra_edge",
+  // infra data reads (HEL infra PR #5)
+  "view_infra_data",
 
   // agent webhooks (HEL infra PR #2)
   "create_agent_webhook",

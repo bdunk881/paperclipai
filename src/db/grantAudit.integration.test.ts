@@ -1,12 +1,15 @@
 /**
- * HEL-302 regression guard.
+ * HEL-302 / HEL-306 regression guards.
  *
- * Migration 089 revokes `SELECT` from the `anon` + `authenticated`
+ * HEL-302: Migration 089 revokes `SELECT` from the `anon` + `authenticated`
  * roles on every `public.*` table EXCEPT a small allowlist (today:
- * just `public_status_events`). This test runs against the live
- * Postgres connection in CI and fails loudly if a future migration
- * — or a manual `GRANT` in the Supabase Studio — re-grants SELECT
- * to either role.
+ * just `public_status_events`). Fails loudly if a future migration — or a
+ * manual `GRANT` in the Supabase Studio — re-grants SELECT to either role.
+ *
+ * HEL-306: Migration 092 enables RLS on the last 10 `public.*` tables that
+ * previously had it disabled. Asserts that no `public.*` table has
+ * `relrowsecurity = false`, catching any future `CREATE TABLE` that lands
+ * without an accompanying `ENABLE ROW LEVEL SECURITY`.
  *
  * Mirrors the gating pattern from `rls.integration.test.ts`: skips
  * silently when `DATABASE_URL` isn't set so unit-test runs aren't
@@ -168,6 +171,49 @@ describe("public.* anon/authenticated SELECT grant audit (HEL-302)", () => {
           `inherited via the PUBLIC parent role. Add a migration that runs ` +
           `\`REVOKE EXECUTE ON FUNCTION public.<name>(<args>) FROM PUBLIC, anon, authenticated\` ` +
           `for each:\n${summary}`,
+      );
+    }
+  }, 60_000);
+
+  // HEL-306 regression: every public.* BASE TABLE must have RLS enabled.
+  // Migration 092 enabled it on the last 10 offenders. This catches any future
+  // CREATE TABLE that lands without ENABLE ROW LEVEL SECURITY. If a table
+  // genuinely needs to be RLS-exempt (extremely rare), add it to the allowlist
+  // below with a "why:" comment explaining why.
+  it("no public.* table has relrowsecurity = false (HEL-306)", async () => {
+    if (!canRunIntegration) return;
+
+    /**
+     * Tables we INTENTIONALLY permit to have RLS disabled. This list should
+     * remain empty — add only with a "why:" comment and a matching Linear
+     * ticket, per the HEL-306 acceptance criteria.
+     */
+    const RLS_DISABLED_ALLOWLIST = new Set<string>([
+      // (none — all public.* tables have RLS enabled as of migration 092)
+    ]);
+
+    const result = await pgPool.query<{ table_name: string }>(
+      `SELECT c.relname AS table_name
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relrowsecurity = false
+        ORDER BY c.relname`,
+    );
+
+    const offenders = result.rows
+      .map((r) => r.table_name)
+      .filter((t) => !RLS_DISABLED_ALLOWLIST.has(t));
+
+    if (offenders.length > 0) {
+      throw new Error(
+        `HEL-306 regression: ${offenders.length} public.* table(s) have RLS ` +
+          `disabled. Add \`ENABLE ROW LEVEL SECURITY\` (+ policies) in a new ` +
+          `migration, or add to RLS_DISABLED_ALLOWLIST in ` +
+          `grantAudit.integration.test.ts with a "why:" comment and a Linear ` +
+          `ticket if truly intentional:\n` +
+          offenders.map((t) => `  - ${t}`).join("\n"),
       );
     }
   }, 60_000);

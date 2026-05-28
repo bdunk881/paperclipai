@@ -76,8 +76,16 @@ export class SharedCredentialStore<TMetadata extends object, TSecrets extends ob
     return this.registry.getById(id);
   }
 
-  async getByIdAsync(id: string): Promise<SharedCredentialRecord<TMetadata> | null> {
-    return this.registry.getByIdAsync(id);
+  /**
+   * HEL-299: `userId` required so the underlying SELECT runs inside
+   * `withUserContext` and passes the FORCE RLS policy on
+   * `connector_credentials` (migration 083).
+   */
+  async getByIdAsync(
+    id: string,
+    userId: string,
+  ): Promise<SharedCredentialRecord<TMetadata> | null> {
+    return this.registry.getByIdAsync(id, userId);
   }
 
   findLatest(
@@ -106,8 +114,11 @@ export class SharedCredentialStore<TMetadata extends object, TSecrets extends ob
     };
   }
 
-  async getDecryptedAsync(id: string): Promise<SharedCredentialDecrypted<TMetadata, TSecrets> | null> {
-    const record = await this.registry.getByIdAsync(id);
+  async getDecryptedAsync(
+    id: string,
+    userId: string,
+  ): Promise<SharedCredentialDecrypted<TMetadata, TSecrets> | null> {
+    const record = await this.registry.getByIdAsync(id, userId);
     if (!record) {
       return null;
     }

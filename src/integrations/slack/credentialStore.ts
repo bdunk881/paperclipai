@@ -144,7 +144,7 @@ export const slackCredentialStore = {
   },
 
   async getByIdAsync(id: string, userId: string): Promise<SlackCredential | null> {
-    const credential = await registry.getByIdAsync(id);
+    const credential = await registry.getByIdAsync(id, userId);
     if (!credential || credential.userId !== userId || credential.revokedAt) {
       return null;
     }
@@ -205,7 +205,7 @@ export const slackCredentialStore = {
   },
 
   async revokeAsync(credentialId: string, userId: string): Promise<boolean> {
-    const existing = await registry.getByIdAsync(credentialId);
+    const existing = await registry.getByIdAsync(credentialId, userId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }

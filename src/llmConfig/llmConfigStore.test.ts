@@ -1,21 +1,57 @@
+/**
+ * HEL-298 → HEL-299: the credential registry under llmConfigStore now
+ * reads/writes via `withUserContext`, so the test mocks `getPostgresPool`
+ * instead of `queryPostgres`. The cold-lookup hydration path now goes
+ * through `listStoredByUserAsync(userId)` (the cross-tenant
+ * `listStoredAsync` is bucket-only after HEL-299), so the staged SELECT
+ * is the user-scoped variant.
+ */
+
+const clientQueryMock = jest.fn();
+const releaseMock = jest.fn();
+const connectMock = jest.fn(async () => ({
+  query: clientQueryMock,
+  release: releaseMock,
+}));
+
 jest.mock("../db/postgres", () => ({
   inMemoryAllowed: jest.fn(() => true),
   isPostgresConfigured: jest.fn(),
-  queryPostgres: jest.fn(),
+  getPostgresPool: () => ({ connect: connectMock }),
 }));
 
-import { isPostgresConfigured, queryPostgres } from "../db/postgres";
+import { isPostgresConfigured } from "../db/postgres";
 import { llmConfigStore } from "./llmConfigStore";
 
 const mockIsPostgresConfigured = jest.mocked(isPostgresConfigured);
-const mockQueryPostgres = jest.mocked(queryPostgres);
+
+function stageSelectRows(rows: Array<Record<string, unknown>>): void {
+  clientQueryMock.mockImplementation(async (sql: string) => {
+    if (sql.startsWith("SELECT") && sql.includes("connector_credentials")) {
+      return { rows, rowCount: rows.length, command: "SELECT", oid: 0, fields: [] };
+    }
+    return { rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] };
+  });
+}
+
+function findCall(predicate: (sql: string) => boolean): unknown[] | undefined {
+  const call = clientQueryMock.mock.calls.find(([sql]) => predicate(sql as string));
+  return call?.[1] as unknown[] | undefined;
+}
+
+function findInsertParams(): unknown[] | undefined {
+  return findCall((sql) => sql.startsWith("INSERT INTO connector_credentials"));
+}
 
 describe("llmConfigStore async persistence", () => {
   beforeEach(() => {
     llmConfigStore.clear();
     mockIsPostgresConfigured.mockReset();
-    mockQueryPostgres.mockReset();
+    clientQueryMock.mockReset();
+    releaseMock.mockReset();
+    connectMock.mockClear();
     mockIsPostgresConfigured.mockReturnValue(false);
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
   });
 
   async function createConfig(params: {
@@ -32,19 +68,13 @@ describe("llmConfigStore async persistence", () => {
       model: params.model,
       credentials: { apiKey: params.apiKey },
     });
-    await Promise.resolve();
+    // Fire-and-forget persist runs on the next tick.
+    await new Promise((resolve) => setImmediate(resolve));
     return created;
   }
 
-  it("persists created configs when Postgres is enabled", async () => {
+  it("persists created configs inside withUserContext when Postgres is enabled", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
-    mockQueryPostgres.mockResolvedValue({
-      rows: [],
-      rowCount: 1,
-      command: "INSERT",
-      oid: 0,
-      fields: [],
-    });
 
     const created = await createConfig({
       userId: "user-a",
@@ -55,25 +85,19 @@ describe("llmConfigStore async persistence", () => {
     });
 
     expect(created.apiKeyMasked).toBe("****1234");
-    expect(mockQueryPostgres).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO connector_credentials"),
-      expect.arrayContaining([
-        "llm-config",
-        created.id,
-        "user-a",
-      ])
+
+    // HEL-299: persist runs in withUserContext bound to the record owner.
+    const setConfigParams = findCall((sql) => sql.includes("set_config('app.current_user_id'"));
+    expect(setConfigParams?.[0]).toBe("user-a");
+
+    const insertParams = findInsertParams();
+    expect(insertParams).toEqual(
+      expect.arrayContaining(["llm-config", created.id, "user-a"]),
     );
   });
 
   it("hydrates and decrypts the default config from Postgres on cold lookup", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
-    mockQueryPostgres.mockResolvedValue({
-      rows: [],
-      rowCount: 1,
-      command: "INSERT",
-      oid: 0,
-      fields: [],
-    });
 
     const created = await createConfig({
       userId: "user-a",
@@ -82,43 +106,44 @@ describe("llmConfigStore async persistence", () => {
       model: "claude-3-5-sonnet-20241022",
       apiKey: "sk-ant-coldlookup",
     });
-    const persistedRecordJson = mockQueryPostgres.mock.calls[0]?.[1]?.[5] as string | undefined;
+    const insertParams = findInsertParams();
+    const persistedRecordJson = insertParams?.[5] as string | undefined;
     const persistedRecord = persistedRecordJson
       ? (JSON.parse(persistedRecordJson) as Record<string, unknown>)
       : undefined;
 
     expect(persistedRecord?.["secretPayloadEncrypted"]).toBeDefined();
 
+    // Clear the local bucket and reset the mock to simulate a cold restart.
     llmConfigStore.clear();
-    mockQueryPostgres.mockReset();
-    mockQueryPostgres.mockResolvedValue({
-      rows: [
-        {
+    clientQueryMock.mockReset();
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
+
+    // HEL-299: cold lookup goes through listStoredByUserAsync(userId)
+    // now (cross-tenant listStoredAsync is bucket-only). Stage the
+    // hydrate response on the user-scoped SELECT.
+    stageSelectRows([
+      {
+        id: created.id,
+        user_id: "user-a",
+        record_data: {
+          ...(persistedRecord ?? {}),
           id: created.id,
-          user_id: "user-a",
-          record_data: {
-            ...(persistedRecord ?? {}),
-            id: created.id,
-            userId: "user-a",
-            authMethod: "anthropic",
-            label: "Claude",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            metadata: {
-              provider: "anthropic",
-              model: "claude-3-5-sonnet-20241022",
-              credentialSummary: { apiKeyMasked: "****okup" },
-              apiKeyMasked: "****okup",
-              isDefault: true,
-            },
+          userId: "user-a",
+          authMethod: "anthropic",
+          label: "Claude",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+            credentialSummary: { apiKeyMasked: "****okup" },
+            apiKeyMasked: "****okup",
+            isDefault: true,
           },
         },
-      ],
-      rowCount: 1,
-      command: "SELECT",
-      oid: 0,
-      fields: [],
-    });
+      },
+    ]);
 
     const resolved = await llmConfigStore.getDecryptedDefaultAsync("user-a");
 
@@ -130,12 +155,12 @@ describe("llmConfigStore async persistence", () => {
           userId: "user-a",
           isDefault: true,
         }),
-      })
+      }),
     );
-    expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
-      ["llm-config"]
-    );
+
+    // Confirm the SELECT ran inside withUserContext for user-a.
+    const setConfigParams = findCall((sql) => sql.includes("set_config('app.current_user_id'"));
+    expect(setConfigParams?.[0]).toBe("user-a");
   });
 
   it("promotes the latest persisted config when a legacy record has no default", async () => {
@@ -149,41 +174,38 @@ describe("llmConfigStore async persistence", () => {
       model: "claude-3-5-sonnet-20241022",
       apiKey: "sk-ant-legacy1234",
     });
-    const persistedRecordJson = mockQueryPostgres.mock.calls[0]?.[1]?.[5] as string | undefined;
+    const insertParams = findInsertParams();
+    const persistedRecordJson = insertParams?.[5] as string | undefined;
     const persistedRecord = persistedRecordJson
       ? (JSON.parse(persistedRecordJson) as Record<string, unknown>)
       : undefined;
 
     llmConfigStore.clear();
-    mockQueryPostgres.mockReset();
-    mockQueryPostgres.mockResolvedValue({
-      rows: [
-        {
+    clientQueryMock.mockReset();
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
+
+    stageSelectRows([
+      {
+        id: created.id,
+        user_id: "user-a",
+        record_data: {
+          ...(persistedRecord ?? {}),
           id: created.id,
-          user_id: "user-a",
-          record_data: {
-            ...(persistedRecord ?? {}),
-            id: created.id,
-            userId: "user-a",
-            authMethod: "anthropic",
-            label: "Claude",
-            createdAt,
-            updatedAt,
-            metadata: {
-              provider: "anthropic",
-              model: "claude-3-5-sonnet-20241022",
-              credentialSummary: { apiKeyMasked: "****1234" },
-              apiKeyMasked: "****1234",
-              isDefault: false,
-            },
+          userId: "user-a",
+          authMethod: "anthropic",
+          label: "Claude",
+          createdAt,
+          updatedAt,
+          metadata: {
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+            credentialSummary: { apiKeyMasked: "****1234" },
+            apiKeyMasked: "****1234",
+            isDefault: false,
           },
         },
-      ],
-      rowCount: 1,
-      command: "SELECT",
-      oid: 0,
-      fields: [],
-    });
+      },
+    ]);
 
     const resolved = await llmConfigStore.getDecryptedDefaultAsync("user-a");
 
@@ -194,23 +216,19 @@ describe("llmConfigStore async persistence", () => {
           id: created.id,
           isDefault: true,
         }),
-      })
+      }),
     );
-    expect(mockQueryPostgres).toHaveBeenCalledWith(
-      expect.stringContaining("INSERT INTO connector_credentials"),
-      expect.arrayContaining(["llm-config", created.id, "user-a"])
-    );
+
+    // The promotion path persists an update — it should also go through
+    // withUserContext bound to user-a.
+    const setConfigCalls = clientQueryMock.mock.calls
+      .filter(([sql]) => (sql as string).includes("set_config('app.current_user_id'"))
+      .map(([, params]) => (params as unknown[])[0] as string);
+    expect(setConfigCalls).toContain("user-a");
   });
 
   it("merges persisted configs into a warm cache during async list", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
-    mockQueryPostgres.mockResolvedValue({
-      rows: [],
-      rowCount: 1,
-      command: "INSERT",
-      oid: 0,
-      fields: [],
-    });
 
     const local = await createConfig({
       userId: "user-a",
@@ -220,35 +238,30 @@ describe("llmConfigStore async persistence", () => {
       apiKey: "sk-test-local1234",
     });
 
-    mockQueryPostgres.mockReset();
-    mockQueryPostgres.mockResolvedValue({
-      rows: [
-        {
+    clientQueryMock.mockReset();
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
+    stageSelectRows([
+      {
+        id: "persisted-config",
+        user_id: "user-a",
+        record_data: {
           id: "persisted-config",
-          user_id: "user-a",
-          record_data: {
-            id: "persisted-config",
-            userId: "user-a",
-            authMethod: "anthropic",
-            label: "Persisted",
-            createdAt: "2026-04-20T00:00:00.000Z",
-            updatedAt: "2026-04-20T00:00:00.000Z",
-            metadata: {
-              provider: "anthropic",
-              model: "claude-3-5-sonnet-20241022",
-              credentialSummary: { apiKeyMasked: "****5678" },
-              apiKeyMasked: "****5678",
-              isDefault: false,
-            },
-            secretPayloadEncrypted: "persisted-encrypted",
+          userId: "user-a",
+          authMethod: "anthropic",
+          label: "Persisted",
+          createdAt: "2026-04-20T00:00:00.000Z",
+          updatedAt: "2026-04-20T00:00:00.000Z",
+          metadata: {
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+            credentialSummary: { apiKeyMasked: "****5678" },
+            apiKeyMasked: "****5678",
+            isDefault: false,
           },
+          secretPayloadEncrypted: "persisted-encrypted",
         },
-      ],
-      rowCount: 1,
-      command: "SELECT",
-      oid: 0,
-      fields: [],
-    });
+      },
+    ]);
 
     const listed = await llmConfigStore.listAsync("user-a");
 
@@ -256,12 +269,17 @@ describe("llmConfigStore async persistence", () => {
       expect.arrayContaining([
         expect.objectContaining({ id: local.id, label: "Warm cache" }),
         expect.objectContaining({ id: "persisted-config", label: "Persisted" }),
-      ])
+      ]),
     );
     expect(listed).toHaveLength(2);
-    expect(mockQueryPostgres).toHaveBeenCalledWith(
-      "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 ORDER BY created_at DESC",
-      ["llm-config"]
+
+    // HEL-299: the SELECT filters at SQL layer AND runs inside withUserContext.
+    const setConfigParams = findCall((sql) => sql.includes("set_config('app.current_user_id'"));
+    expect(setConfigParams?.[0]).toBe("user-a");
+
+    const selectParams = findCall(
+      (sql) => sql.startsWith("SELECT") && sql.includes("FROM connector_credentials"),
     );
+    expect(selectParams).toEqual(["llm-config", "user-a"]);
   });
 });

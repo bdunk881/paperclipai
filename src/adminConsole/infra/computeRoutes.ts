@@ -120,7 +120,7 @@ export function createComputeRoutes(_pool: Pool): Router {
 
       const [queues, jobRuns, redisOk] = await Promise.all([
         readQueueCounters(),
-        listRecentJobRuns(SCHEDULED_JOBS, 10),
+        listRecentJobRuns(client, SCHEDULED_JOBS, 10),
         isRedisConfigured() ? checkRedisConnection() : Promise.resolve(false),
       ]);
 

@@ -114,10 +114,16 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
     "/policy",
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
       try {
-        // HEL-280: pass the Supabase provider claim through so the
-        // service can derive signInMethod + requiresAppMfa.
+        // HEL-280 / HEL-305: thread the provider hint AND the session
+        // amr so the service can decide OAuth-vs-password from the
+        // per-session signal. Provider alone is the signup IdP and
+        // would misclassify users who signed up via email and later
+        // linked Google.
         res.json(
-          await service.getPolicy(buildContext(req), { provider: req.auth?.provider }),
+          await service.getPolicy(buildContext(req), {
+            provider: req.auth?.provider,
+            amr: req.auth?.amr,
+          }),
         );
       } catch (error) {
         sendError(res, error);

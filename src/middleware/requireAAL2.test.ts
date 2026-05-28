@@ -212,15 +212,16 @@ describe("requireAAL2", () => {
     expect(typeof minted.token).toBe("string");
   });
 
-  // HEL-280 --------------------------------------------------------------
+  // HEL-280 / HEL-305 ----------------------------------------------------
 
-  it("treats a google-provider session as AAL2 when the workspace flag is off", async () => {
+  it("treats a session with amr=oauth as AAL2 when the workspace flag is off", async () => {
     // No override row → workspace shortcut allows OAuth.
     flagRowQueue.length = 0;
     const req = makeReq({
       sub: "user-1",
       aal: "aal1",
       provider: "google",
+      amr: [{ method: "oauth", timestamp: nowSeconds() }],
       workspaceId: "ws-1",
     });
     const res = createResponse();
@@ -232,8 +233,13 @@ describe("requireAAL2", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it("treats a github-provider session as AAL2 with no workspace bound", async () => {
-    const req = makeReq({ sub: "user-1", aal: "aal1", provider: "github" });
+  it("treats a session with amr=oauth as AAL2 with no workspace bound", async () => {
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "github",
+      amr: [{ method: "oauth", timestamp: nowSeconds() }],
+    });
     const res = createResponse();
     const next = jest.fn() as NextFunction;
 
@@ -249,6 +255,7 @@ describe("requireAAL2", () => {
       sub: "user-1",
       aal: "aal1",
       provider: "google",
+      amr: [{ method: "oauth", timestamp: nowSeconds() }],
       workspaceId: "ws-ent",
     });
     const res = createResponse();
@@ -260,11 +267,12 @@ describe("requireAAL2", () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("does NOT shortcut for non-OAuth providers", async () => {
+  it("does NOT shortcut when the session has no oauth amr entry (password sign-in)", async () => {
     const req = makeReq({
       sub: "user-1",
       aal: "aal1",
       provider: "email",
+      amr: [{ method: "password", timestamp: nowSeconds() }],
       workspaceId: "ws-1",
     });
     const res = createResponse();
@@ -275,6 +283,48 @@ describe("requireAAL2", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(connectMock).not.toHaveBeenCalled();
+  });
+
+  // HEL-305: the bug we just fixed — a user who signed up via email and
+  // later linked Google still has app_metadata.provider="email" even
+  // when their current session is OAuth. The shortcut must fire on the
+  // session AMR, not the signup provider.
+  it("HEL-305: shortcuts when amr says oauth even if provider is the signup email IdP", async () => {
+    flagRowQueue.length = 0;
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "email",
+      amr: [{ method: "oauth", timestamp: nowSeconds() }],
+      workspaceId: "ws-1",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  // HEL-305: paired negative — a stale `provider: "google"` claim without
+  // an `oauth` amr entry MUST NOT shortcut. Proves the test moved off the
+  // wrong signal.
+  it("HEL-305: does NOT shortcut when provider says google but amr lacks oauth", async () => {
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "google",
+      amr: [{ method: "password", timestamp: nowSeconds() }],
+      workspaceId: "ws-1",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   // HEL-298: prove async rejections from the workspace-flag check reach
@@ -292,6 +342,7 @@ describe("requireAAL2", () => {
       sub: "user-1",
       aal: "aal1",
       provider: "google",
+      amr: [{ method: "oauth", timestamp: nowSeconds() }],
       workspaceId: "ws-1",
     });
     const res = createResponse();

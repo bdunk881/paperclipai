@@ -107,7 +107,7 @@ describe("MfaService", () => {
     });
     const policy = await service.getPolicy(
       { userId: "u-1", workspaceId: "ws-1" },
-      { provider: "email" },
+      { provider: "email", amr: [{ method: "password", timestamp: 1 }] },
     );
     expect(policy.signInMethod).toBe("password");
     expect(policy.requiresAppMfa).toBe(true);
@@ -125,7 +125,7 @@ describe("MfaService", () => {
     });
     const policy = await service.getPolicy(
       { userId: "u-1", workspaceId: "ws-1" },
-      { provider: "google" },
+      { provider: "google", amr: [{ method: "oauth", timestamp: 1 }] },
     );
     expect(policy.signInMethod).toBe("oauth_google");
     expect(policy.requiresAppMfa).toBe(false);
@@ -142,10 +142,30 @@ describe("MfaService", () => {
     });
     const policy = await service.getPolicy(
       { userId: "u-1", workspaceId: "ws-ent" },
-      { provider: "github" },
+      { provider: "github", amr: [{ method: "oauth", timestamp: 1 }] },
     );
     expect(policy.signInMethod).toBe("oauth_github");
     expect(policy.requiresAppMfa).toBe(true);
+  });
+
+  // HEL-305: the bug we just fixed — a user who signed up via email
+  // and later linked Google still has `app_metadata.provider="email"`
+  // forever, but the current session's amr says oauth. The policy
+  // must treat them as OAuth based on the per-session signal.
+  it("treats a session with amr=oauth as OAuth even when provider is the signup email IdP (HEL-305)", async () => {
+    const flagChecker = jest.fn().mockResolvedValue(false);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      workspaceFlagChecker: flagChecker,
+    });
+    const policy = await service.getPolicy(
+      { userId: "u-1", workspaceId: "ws-1" },
+      { provider: "email", amr: [{ method: "oauth", timestamp: 1 }] },
+    );
+    expect(policy.signInMethod).toBe("oauth_google");
+    expect(policy.requiresAppMfa).toBe(false);
   });
 
   it("enrolls a webauthn credential end-to-end", async () => {

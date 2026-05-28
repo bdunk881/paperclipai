@@ -16,6 +16,7 @@ import { createComputeRoutes } from "./computeRoutes";
 import { createBullBoardRouter } from "./bullBoardMount";
 import { createQueueInspectorRoutes } from "./queueInspector/routes";
 import { createEdgeRoutes } from "./edgeRoutes";
+import { createDataRoutes } from "./dataRoutes";
 
 export function createInfraRoutes(pool: Pool): Router {
   const router = Router();
@@ -24,5 +25,6 @@ export function createInfraRoutes(pool: Pool): Router {
   router.use("/queues/inspector", createQueueInspectorRoutes(pool));
   router.use("/queues/_ui", createBullBoardRouter());
   router.use("/edge", createEdgeRoutes(pool));
+  router.use("/data", createDataRoutes(pool));
   return router;
 }

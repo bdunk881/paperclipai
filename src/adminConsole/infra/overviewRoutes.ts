@@ -48,6 +48,7 @@ const INFRA_AUDIT_ACTIONS = [
   "view_infra_overview",
   "view_infra_compute",
   "view_infra_edge",
+  "view_infra_data",
   "create_agent_webhook",
   "update_agent_webhook",
   "disable_agent_webhook",

@@ -54,6 +54,8 @@ describe("MfaEnforcementGate", () => {
       hasWebauthn: true,
       hasTotp: false,
       hasRecoveryCodes: true,
+      signInMethod: "password",
+      requiresAppMfa: true,
       webauthnDevices: [],
       enrollmentCompletedAt: null,
       lastVerifiedAt: null,
@@ -70,6 +72,8 @@ describe("MfaEnforcementGate", () => {
       hasWebauthn: false,
       hasTotp: false,
       hasRecoveryCodes: false,
+      signInMethod: "password",
+      requiresAppMfa: true,
       webauthnDevices: [],
       enrollmentCompletedAt: null,
       lastVerifiedAt: null,
@@ -95,6 +99,8 @@ describe("MfaEnforcementGate", () => {
       hasWebauthn: false,
       hasTotp: false,
       hasRecoveryCodes: false,
+      signInMethod: "password",
+      requiresAppMfa: true,
       webauthnDevices: [],
       enrollmentCompletedAt: null,
       lastVerifiedAt: null,
@@ -105,12 +111,53 @@ describe("MfaEnforcementGate", () => {
     await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
   });
 
+  // HEL-280 ----------------------------------------------------------------
+
+  it("renders children when an OAuth user has no factors but requiresAppMfa=false", async () => {
+    getMfaPolicyMock.mockResolvedValue({
+      hasAnyFactor: false,
+      hasWebauthn: false,
+      hasTotp: false,
+      hasRecoveryCodes: false,
+      signInMethod: "oauth_google",
+      requiresAppMfa: false,
+      webauthnDevices: [],
+      enrollmentCompletedAt: null,
+      lastVerifiedAt: null,
+      lastVerifiedMethod: null,
+      recoveryCodesIssuedAt: null,
+    });
+    renderGate();
+    await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
+    expect(screen.queryByText("enrollment-wizard")).not.toBeInTheDocument();
+  });
+
+  it("still redirects an OAuth user when requiresAppMfa=true (enterprise override)", async () => {
+    getMfaPolicyMock.mockResolvedValue({
+      hasAnyFactor: false,
+      hasWebauthn: false,
+      hasTotp: false,
+      hasRecoveryCodes: false,
+      signInMethod: "oauth_google",
+      requiresAppMfa: true,
+      webauthnDevices: [],
+      enrollmentCompletedAt: null,
+      lastVerifiedAt: null,
+      lastVerifiedMethod: null,
+      recoveryCodesIssuedAt: null,
+    });
+    renderGate();
+    await waitFor(() => expect(screen.getByText("enrollment-wizard")).toBeInTheDocument());
+  });
+
   it("does not gate the onboarding route itself (no redirect loop)", async () => {
     getMfaPolicyMock.mockResolvedValue({
       hasAnyFactor: false,
       hasWebauthn: false,
       hasTotp: false,
       hasRecoveryCodes: false,
+      signInMethod: "password",
+      requiresAppMfa: true,
       webauthnDevices: [],
       enrollmentCompletedAt: null,
       lastVerifiedAt: null,

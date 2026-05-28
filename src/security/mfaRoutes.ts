@@ -114,7 +114,11 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
     "/policy",
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
       try {
-        res.json(await service.getPolicy(buildContext(req)));
+        // HEL-280: pass the Supabase provider claim through so the
+        // service can derive signInMethod + requiresAppMfa.
+        res.json(
+          await service.getPolicy(buildContext(req), { provider: req.auth?.provider }),
+        );
       } catch (error) {
         sendError(res, error);
       }

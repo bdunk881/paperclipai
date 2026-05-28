@@ -1,8 +1,36 @@
-import { useQuery } from "@tanstack/react-query";
-import { fetchInfraCost, type InfraCost } from "../api/costApi";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createCostThreshold,
+  disableCostThreshold,
+  fetchInfraCost,
+  type BreachStatus,
+  type CostBucket,
+  type CostThreshold,
+  type InfraCost,
+} from "../api/costApi";
 import { InfraTabs } from "../components/infra/InfraTabs";
 import { MetricCard } from "../components/infra/MetricCard";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
+import { ReasonPrompt } from "../components/ReasonPrompt";
+
+const BUCKET_LABEL: Record<CostBucket, string> = {
+  trailing_24h: "Trailing 24h",
+  trailing_7d: "Trailing 7d",
+  trailing_30d: "Trailing 30d",
+  projected_daily: "Projected daily",
+  projected_monthly: "Projected monthly",
+  balance_runway_days: "Runway (days)",
+};
+
+const BUCKET_OPTIONS: CostBucket[] = [
+  "projected_daily",
+  "projected_monthly",
+  "trailing_24h",
+  "trailing_7d",
+  "trailing_30d",
+  "balance_runway_days",
+];
 
 function fmtUsd(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
@@ -20,6 +48,195 @@ function fmtRelative(iso: string | null): string {
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
   return `${Math.floor(secs / 86400)}d ago`;
+}
+
+function fmtObserved(b: BreachStatus): string {
+  if (b.observed_value === null) return "n/a";
+  return b.bucket === "balance_runway_days"
+    ? `${b.observed_value.toFixed(1)} days`
+    : fmtUsd(b.observed_value);
+}
+
+function fmtCeiling(b: BreachStatus): string {
+  return b.bucket === "balance_runway_days"
+    ? `${b.ceiling_value.toFixed(1)} days`
+    : fmtUsd(b.ceiling_value);
+}
+
+function BreachBanner({ breaches }: { breaches: BreachStatus[] }) {
+  const fired = breaches.filter((b) => b.breached);
+  if (fired.length === 0) return null;
+  return (
+    <div className="banner danger" style={{ marginBottom: "1rem" }}>
+      <strong>
+        {fired.length} cost threshold{fired.length === 1 ? "" : "s"} breached
+      </strong>
+      <ul style={{ margin: "0.5rem 0 0 1rem", padding: 0 }}>
+        {fired.map((b) => (
+          <li key={b.threshold_id}>
+            {BUCKET_LABEL[b.bucket]}: {fmtObserved(b)}{" "}
+            {b.direction === "above_ceiling_breaches" ? "is above" : "is below"} ceiling{" "}
+            {fmtCeiling(b)}
+            {b.note ? ` — ${b.note}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ThresholdsCard({
+  thresholds,
+  breaches,
+  onMutated,
+}: {
+  thresholds: CostThreshold[];
+  breaches: BreachStatus[];
+  onMutated: () => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [bucket, setBucket] = useState<CostBucket>("projected_daily");
+  const [ceiling, setCeiling] = useState("");
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const usedBuckets = new Set(thresholds.map((t) => t.bucket));
+  const availableBuckets = BUCKET_OPTIONS.filter((b) => !usedBuckets.has(b));
+
+  async function handleCreate(reason: string) {
+    setError(null);
+    const value = Number.parseFloat(ceiling);
+    if (!Number.isFinite(value) || value < 0) {
+      setError("ceiling must be a non-negative number");
+      throw new Error("invalid ceiling");
+    }
+    try {
+      await createCostThreshold({
+        metric: "openrouter",
+        bucket,
+        ceilingValue: value,
+        note: note.trim() || null,
+        reason,
+      });
+      setShowCreate(false);
+      setCeiling("");
+      setNote("");
+      onMutated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      throw err;
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h3 style={{ margin: 0 }}>Cost thresholds</h3>
+        {!showCreate && availableBuckets.length > 0 && (
+          <button onClick={() => setShowCreate(true)}>Add threshold</button>
+        )}
+      </div>
+
+      {error && <div className="banner danger" style={{ marginTop: "0.5rem" }}>{error}</div>}
+
+      {showCreate && (
+        <div style={{ marginTop: "0.5rem", marginBottom: "0.75rem" }}>
+          <div className="field">
+            <label>Bucket</label>
+            <select value={bucket} onChange={(e) => setBucket(e.target.value as CostBucket)}>
+              {availableBuckets.map((b) => (
+                <option key={b} value={b}>
+                  {BUCKET_LABEL[b]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>
+              Ceiling {bucket === "balance_runway_days" ? "(days; breaches BELOW)" : "($USD; breaches ABOVE)"}
+            </label>
+            <input
+              type="number"
+              min="0"
+              step={bucket === "balance_runway_days" ? "0.5" : "0.01"}
+              value={ceiling}
+              onChange={(e) => setCeiling(e.target.value)}
+              placeholder={bucket === "balance_runway_days" ? "7" : "50.00"}
+            />
+          </div>
+          <div className="field">
+            <label>Note (optional)</label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Q3 LLM budget guardrail"
+              maxLength={200}
+            />
+          </div>
+          <div className="row">
+            <ReasonPrompt
+              label="Save"
+              className="primary"
+              onConfirm={(reason) => handleCreate(reason)}
+            />
+            <button onClick={() => setShowCreate(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {thresholds.length === 0 ? (
+        <p className="muted">
+          No thresholds set. Click <strong>Add threshold</strong> to alert when projected spend
+          crosses a ceiling.
+        </p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Bucket</th>
+              <th>Ceiling</th>
+              <th>Currently</th>
+              <th>State</th>
+              <th>Note</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {thresholds.map((t) => {
+              const b = breaches.find((x) => x.threshold_id === t.id);
+              return (
+                <tr key={t.id}>
+                  <td>{BUCKET_LABEL[t.bucket]}</td>
+                  <td>{b ? fmtCeiling(b) : fmtUsd(t.ceiling_value)}</td>
+                  <td>{b ? fmtObserved(b) : "—"}</td>
+                  <td>
+                    {b?.breached ? (
+                      <span className="pill danger">breached</span>
+                    ) : (
+                      <span className="pill success">ok</span>
+                    )}
+                  </td>
+                  <td className="muted" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {t.note ?? ""}
+                  </td>
+                  <td>
+                    <ReasonPrompt
+                      label="Disable"
+                      onConfirm={async (reason) => {
+                        await disableCostThreshold({ id: t.id, reason });
+                        onMutated();
+                      }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
 }
 
 function OpenRouterSection({ data }: { data: InfraCost["openrouter"] }) {
@@ -184,11 +401,15 @@ function SupabaseSection({ data }: { data: InfraCost["supabase"] }) {
 }
 
 export function InfraCostPage() {
+  const qc = useQueryClient();
   const { data, error, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["infra-cost"],
     queryFn: fetchInfraCost,
     refetchInterval: 60_000,
   });
+  const onMutated = () => {
+    void qc.invalidateQueries({ queryKey: ["infra-cost"] });
+  };
 
   return (
     <>
@@ -204,6 +425,16 @@ export function InfraCostPage() {
         <div className="banner danger">
           {error instanceof Error ? error.message : "Failed to load cost view"}
         </div>
+      )}
+
+      {data && <BreachBanner breaches={data.breaches} />}
+
+      {data && (
+        <ThresholdsCard
+          thresholds={data.thresholds}
+          breaches={data.breaches}
+          onMutated={onMutated}
+        />
       )}
 
       <h2 style={{ fontSize: "1.05rem", marginTop: "1rem" }}>OpenRouter (LLM spend)</h2>

@@ -22,6 +22,7 @@
 import { Router } from "express";
 import type { Pool } from "pg";
 import { asyncHandler } from "../../middleware/asyncHandler";
+import { requireAAL2 } from "../../middleware/requireAAL2";
 import { recordAdminAction } from "../auditLog";
 import { extractAuditContext, type PlatformAdminRequest } from "../types";
 import {
@@ -32,6 +33,19 @@ import {
   getConfiguredCloudflareProjects,
   listProjectViews,
 } from "./clients/cloudflareClient";
+import {
+  COST_BUCKETS,
+  COST_METRICS,
+  createThreshold,
+  disableThreshold,
+  evaluateBreaches,
+  listActiveThresholds,
+  updateThreshold,
+  type BreachStatus,
+  type CostBucket,
+  type CostMetric,
+  type CostThreshold,
+} from "./costThresholdsStore";
 
 export interface SpendWindow {
   hours: number;
@@ -73,6 +87,8 @@ export interface InfraCostResponse {
   fly: FlySpendSummary;
   cloudflare: CloudflareActivitySummary;
   supabase: SupabaseLinks;
+  thresholds: CostThreshold[];
+  breaches: BreachStatus[];
 }
 
 async function openrouterSpend(
@@ -188,17 +204,159 @@ export function createCostRoutes(_pool: Pool): Router {
         context: extractAuditContext(req),
       });
 
-      const [openrouter, fly, cloudflare] = await Promise.all([
+      const [openrouter, fly, cloudflare, thresholds] = await Promise.all([
         openrouterSpend(client),
         flyActivity(),
         cloudflareActivity(),
+        listActiveThresholds(client),
       ]);
       const supabase = supabaseLinks();
+      const partialPayload = { openrouter, fly, cloudflare, supabase };
+      const breaches = evaluateBreaches(
+        thresholds,
+        partialPayload as unknown as Record<string, unknown>,
+      );
 
-      const payload: InfraCostResponse = { openrouter, fly, cloudflare, supabase };
+      const payload: InfraCostResponse = {
+        ...partialPayload,
+        thresholds,
+        breaches,
+      };
       res.json(payload);
     }),
   );
 
+  // ---- Threshold CRUD (under requireAAL2; same pattern as the rest of
+  // the infra mutation routes) ---------------------------------------------
+  const mutations = Router();
+  mutations.use(requireAAL2);
+
+  function validateMetric(value: unknown): CostMetric | null {
+    return typeof value === "string" && (COST_METRICS as string[]).includes(value)
+      ? (value as CostMetric)
+      : null;
+  }
+  function validateBucket(value: unknown): CostBucket | null {
+    return typeof value === "string" && (COST_BUCKETS as string[]).includes(value)
+      ? (value as CostBucket)
+      : null;
+  }
+  function validateCeiling(value: unknown): number | null {
+    const n = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n;
+  }
+  function requireReason(body: unknown): string | null {
+    const reason = body && typeof body === "object" ? (body as { reason?: unknown }).reason ?? "" : "";
+    if (typeof reason !== "string") return null;
+    const t = reason.trim();
+    return t.length >= 4 ? t : null;
+  }
+
+  mutations.post(
+    "/thresholds",
+    asyncHandler(async (req, res) => {
+      const reason = requireReason(req.body);
+      if (!reason) return res.status(400).json({ error: "reason_required_min_4_chars" });
+      const metric = validateMetric((req.body as Record<string, unknown> | undefined)?.metric);
+      if (!metric) return res.status(400).json({ error: "invalid_metric" });
+      const bucket = validateBucket((req.body as Record<string, unknown> | undefined)?.bucket);
+      if (!bucket) return res.status(400).json({ error: "invalid_bucket" });
+      const ceiling = validateCeiling((req.body as Record<string, unknown> | undefined)?.ceiling_value);
+      if (ceiling === null) return res.status(400).json({ error: "invalid_ceiling_value" });
+      const noteRaw = (req.body as Record<string, unknown> | undefined)?.note;
+      const note = typeof noteRaw === "string" && noteRaw.trim().length > 0 ? noteRaw.trim() : null;
+
+      const r = req as PlatformAdminRequest;
+      const client = r.platformAdminDb!;
+      const adminId = r.platformAdmin.userId;
+      await recordAdminAction(client, {
+        adminUserId: adminId,
+        action: "create_cost_threshold",
+        reason,
+        payload: { metric, bucket, ceiling_value: ceiling, note },
+        context: extractAuditContext(req),
+      });
+
+      try {
+        const threshold = await createThreshold(client, {
+          metric,
+          bucket,
+          ceilingValue: ceiling,
+          note,
+          createdBy: adminId,
+        });
+        res.status(201).json({ threshold });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("admin_cost_thresholds_unique_active")) {
+          return res.status(409).json({
+            error: "active_threshold_exists",
+            hint: "Disable the existing threshold first, then create a replacement.",
+          });
+        }
+        throw err;
+      }
+    }),
+  );
+
+  mutations.patch(
+    "/thresholds/:id",
+    asyncHandler(async (req, res) => {
+      const id = String(req.params.id ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(id)) return res.status(400).json({ error: "invalid_id" });
+      const reason = requireReason(req.body);
+      if (!reason) return res.status(400).json({ error: "reason_required_min_4_chars" });
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      let ceilingValue: number | undefined;
+      if (body.ceiling_value !== undefined) {
+        const v = validateCeiling(body.ceiling_value);
+        if (v === null) return res.status(400).json({ error: "invalid_ceiling_value" });
+        ceilingValue = v;
+      }
+      let note: string | null | undefined;
+      if (body.note !== undefined) {
+        note = typeof body.note === "string" && body.note.trim().length > 0 ? body.note.trim() : null;
+      }
+
+      const r = req as PlatformAdminRequest;
+      const client = r.platformAdminDb!;
+      await recordAdminAction(client, {
+        adminUserId: r.platformAdmin.userId,
+        action: "update_cost_threshold",
+        reason,
+        payload: { id, ceiling_value: ceilingValue, note },
+        context: extractAuditContext(req),
+      });
+      const updated = await updateThreshold(client, { id, ceilingValue, note });
+      if (!updated) return res.status(404).json({ error: "not_found" });
+      res.json({ threshold: updated });
+    }),
+  );
+
+  mutations.delete(
+    "/thresholds/:id",
+    asyncHandler(async (req, res) => {
+      const id = String(req.params.id ?? "");
+      if (!/^[0-9a-f-]{36}$/.test(id)) return res.status(400).json({ error: "invalid_id" });
+      const reason = requireReason(req.body);
+      if (!reason) return res.status(400).json({ error: "reason_required_min_4_chars" });
+
+      const r = req as PlatformAdminRequest;
+      const client = r.platformAdminDb!;
+      await recordAdminAction(client, {
+        adminUserId: r.platformAdmin.userId,
+        action: "disable_cost_threshold",
+        reason,
+        payload: { id },
+        context: extractAuditContext(req),
+      });
+      const ok = await disableThreshold(client, id);
+      if (!ok) return res.status(404).json({ error: "not_found_or_already_disabled" });
+      res.status(204).end();
+    }),
+  );
+
+  router.use("/", mutations);
   return router;
 }

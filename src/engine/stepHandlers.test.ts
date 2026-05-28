@@ -9,6 +9,16 @@ jest.mock("./llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// HEL-255 — the SSRF guard in src/mcp/mcpUrlSecurity.ts does a real DNS
+// lookup. Mock it here with a default resolution to a public IP so the
+// existing handleMcp tests (which use https://mcp.example.com) keep
+// passing; SSRF-rejection tests override the return value below.
+jest.mock("node:dns/promises", () => ({
+  lookup: jest.fn().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]),
+}));
+
+import { lookup } from "node:dns/promises";
+
 import {
   handleTrigger,
   handleLlm,
@@ -21,6 +31,8 @@ import {
   handleAgent,
   StepContext,
 } from "./stepHandlers";
+
+const lookupMock = lookup as jest.MockedFunction<typeof lookup>;
 import { WorkflowStep } from "../types/workflow";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
@@ -874,5 +886,92 @@ describe("handleAgent", () => {
     const tasks = await controlPlaneStore.listTasks("user-1", team.id);
     expect(tasks).toHaveLength(1);
     expect(tasks[0].title).toBe("Work TKT-42");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HEL-255 — SSRF guards on outbound fetch sites
+// ---------------------------------------------------------------------------
+
+describe("SSRF guard wiring (HEL-255)", () => {
+  beforeEach(() => {
+    // Reset to the default public-IP resolution; individual tests below
+    // override via mockResolvedValueOnce or skip lookup by using IP literals.
+    lookupMock.mockResolvedValue(
+      [{ address: "93.184.216.34", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>,
+    );
+  });
+
+  it("handleMcp rejects an mcpServerUrl whose hostname resolves to a private IP and does NOT call fetch", async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    lookupMock.mockResolvedValueOnce(
+      [{ address: "10.0.4.5", family: 4 }] as unknown as Awaited<ReturnType<typeof lookup>>,
+    );
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "https://internal-mcp.example.com",
+      mcpTool: "search",
+      outputKeys: ["result"],
+    });
+    await expect(handleMcp(step, {})).rejects.toThrow(/private or internal/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("handleMcp rejects an http:// mcpServerUrl (strict https-only for MCP)", async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const step = makeStep({
+      kind: "mcp",
+      mcpServerUrl: "http://mcp.example.com",
+      mcpTool: "search",
+      outputKeys: ["result"],
+    });
+    await expect(handleMcp(step, {})).rejects.toThrow(/https/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("webhook.send rejects a URL targeting the cloud-metadata IP and does NOT call fetch", async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const step = makeStep({
+      kind: "action",
+      action: "webhook.send",
+      config: { url: "http://169.254.169.254/latest/meta-data/" },
+      outputKeys: ["sent"],
+    });
+    await expect(handleAction(step, {})).rejects.toThrow(/private or internal/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("webhook.send rejects a URL targeting loopback and does NOT call fetch", async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const step = makeStep({
+      kind: "action",
+      action: "webhook.send",
+      config: { url: "http://127.0.0.1:3000/internal-health" },
+      outputKeys: ["sent"],
+    });
+    await expect(handleAction(step, {})).rejects.toThrow(/private or internal/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("webhook.send allows a public http:// URL (TLS not required for arbitrary webhook destinations)", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const step = makeStep({
+      kind: "action",
+      action: "webhook.send",
+      config: { url: "http://hook.example.com/in", event: "test.event" },
+      outputKeys: ["sent"],
+    });
+    const result = await handleAction(step, {});
+    expect(result.output["sent"]).toBe(true);
+    expect(result.output["status"]).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

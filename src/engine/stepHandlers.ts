@@ -9,6 +9,7 @@
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
 import { signOutboundBody } from "../webhooks/verifySignature";
+import { assertSafeMcpUrl, assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import {
   buildResolvedFromHostedFree,
@@ -568,6 +569,9 @@ export async function handleAction(
     if (secret) {
       headers["X-AutoFlow-Signature"] = signOutboundBody(secret, bodyPayload);
     }
+    // HEL-255 — SSRF guard. Reject URLs targeting loopback / RFC-1918 /
+    // link-local / cloud-metadata before issuing the outbound request.
+    await assertSafeOutboundUrl(url);
     const response = await fetch(url, { method: "POST", headers, body: bodyPayload });
     return { output: { sent: true, status: response.status } };
   }
@@ -678,6 +682,9 @@ export async function handleMcp(
     params: { name: toolName, arguments: toolArgs },
   });
 
+  // HEL-255 — SSRF guard. MCP carries credentials, so the strict variant
+  // (https-only) is correct here.
+  await assertSafeMcpUrl(resolvedUrl);
   const response = await fetch(resolvedUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

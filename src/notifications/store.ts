@@ -1,6 +1,12 @@
 import { randomUUID } from "crypto";
 import { parseJsonColumn, serializeJson } from "../db/json";
-import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
+import {
+  getPostgresPool,
+  inMemoryAllowed,
+  isPostgresConfigured,
+  queryPostgres,
+} from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   NotificationCadence,
   NotificationChannel,
@@ -132,7 +138,7 @@ function fromPreferenceRow(row: {
 }
 
 export const notificationStore = {
-  async listPreferences(workspaceId: string): Promise<NotificationPreference[]> {
+  async listPreferences(workspaceId: string, userId: string): Promise<NotificationPreference[]> {
     if (!postgresPersistenceAvailable()) {
       const preferences = ALL_CHANNELS.flatMap((channel) =>
         ALL_KINDS.map((kind) => {
@@ -150,20 +156,25 @@ export const notificationStore = {
       return preferences.sort((a, b) => `${a.channel}:${a.kind}`.localeCompare(`${b.channel}:${b.kind}`));
     }
 
-    const result = await queryPostgres<{
-      id: string;
-      workspace_id: string;
-      channel: NotificationChannel;
-      kind: NotificationKind;
-      cadence: NotificationCadence;
-      enabled: boolean;
-      muted_until: string | null;
-      last_digest_sent_at: string | null;
-      created_at: string;
-      updated_at: string;
-    }>(
-      "SELECT * FROM notification_preferences WHERE workspace_id = $1 ORDER BY channel, kind",
-      [workspaceId],
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      (client) =>
+        client.query<{
+          id: string;
+          workspace_id: string;
+          channel: NotificationChannel;
+          kind: NotificationKind;
+          cadence: NotificationCadence;
+          enabled: boolean;
+          muted_until: string | null;
+          last_digest_sent_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }>(
+          "SELECT * FROM notification_preferences WHERE workspace_id = $1 ORDER BY channel, kind",
+          [workspaceId],
+        ),
     );
 
     const existing = result.rows.map(fromPreferenceRow);
@@ -178,13 +189,13 @@ export const notificationStore = {
         if (existingKeys.has(key)) {
           continue;
         }
-        await this.upsertPreference(defaultPreference(workspaceId, channel, kind));
+        await this.upsertPreference(defaultPreference(workspaceId, channel, kind), userId);
       }
     }
-    return this.listPreferences(workspaceId);
+    return this.listPreferences(workspaceId, userId);
   },
 
-  async upsertPreference(input: NotificationPreference): Promise<NotificationPreference> {
+  async upsertPreference(input: NotificationPreference, userId: string): Promise<NotificationPreference> {
     const next: NotificationPreference = {
       ...input,
       updatedAt: new Date().toISOString(),
@@ -196,27 +207,32 @@ export const notificationStore = {
       return clonePreference(next);
     }
 
-    await queryPostgres(
-      `
-        INSERT INTO notification_preferences (
-          id, workspace_id, channel, kind, cadence, enabled,
-          muted_until, last_digest_sent_at, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT (workspace_id, channel, kind)
-        DO UPDATE SET
-          cadence = EXCLUDED.cadence,
-          enabled = EXCLUDED.enabled,
-          muted_until = EXCLUDED.muted_until,
-          last_digest_sent_at = EXCLUDED.last_digest_sent_at,
-          updated_at = EXCLUDED.updated_at
-      `,
-      toPreferenceRow(next),
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: next.workspaceId, userId },
+      (client) =>
+        client.query(
+          `
+            INSERT INTO notification_preferences (
+              id, workspace_id, channel, kind, cadence, enabled,
+              muted_until, last_digest_sent_at, created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+            ON CONFLICT (workspace_id, channel, kind)
+            DO UPDATE SET
+              cadence = EXCLUDED.cadence,
+              enabled = EXCLUDED.enabled,
+              muted_until = EXCLUDED.muted_until,
+              last_digest_sent_at = EXCLUDED.last_digest_sent_at,
+              updated_at = EXCLUDED.updated_at
+          `,
+          toPreferenceRow(next),
+        ),
     );
 
     return clonePreference(next);
   },
 
-  async listTransportConfigs(workspaceId: string): Promise<NotificationTransportConfig[]> {
+  async listTransportConfigs(workspaceId: string, userId: string): Promise<NotificationTransportConfig[]> {
     if (!postgresPersistenceAvailable()) {
       return Array.from(transportStore.values())
         .filter((config) => config.workspaceId === workspaceId)
@@ -224,19 +240,24 @@ export const notificationStore = {
         .map(cloneTransport);
     }
 
-    const result = await queryPostgres<{
-      id: string;
-      workspace_id: string;
-      channel: NotificationChannel;
-      owner_user_id: string;
-      connection_id: string | null;
-      enabled: boolean;
-      config_json: unknown;
-      created_at: string;
-      updated_at: string;
-    }>(
-      "SELECT * FROM notification_channel_configs WHERE workspace_id = $1 ORDER BY channel",
-      [workspaceId],
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      (client) =>
+        client.query<{
+          id: string;
+          workspace_id: string;
+          channel: NotificationChannel;
+          owner_user_id: string;
+          connection_id: string | null;
+          enabled: boolean;
+          config_json: unknown;
+          created_at: string;
+          updated_at: string;
+        }>(
+          "SELECT * FROM notification_channel_configs WHERE workspace_id = $1 ORDER BY channel",
+          [workspaceId],
+        ),
     );
 
     return result.rows.map((row) => ({
@@ -252,7 +273,7 @@ export const notificationStore = {
     }));
   },
 
-  async upsertTransportConfig(input: NotificationTransportConfig): Promise<NotificationTransportConfig> {
+  async upsertTransportConfig(input: NotificationTransportConfig, userId: string): Promise<NotificationTransportConfig> {
     const next: NotificationTransportConfig = {
       ...input,
       config: { ...input.config },
@@ -264,31 +285,36 @@ export const notificationStore = {
       return cloneTransport(next);
     }
 
-    await queryPostgres(
-      `
-        INSERT INTO notification_channel_configs (
-          id, workspace_id, channel, owner_user_id, connection_id,
-          enabled, config_json, created_at, updated_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)
-        ON CONFLICT (workspace_id, channel)
-        DO UPDATE SET
-          owner_user_id = EXCLUDED.owner_user_id,
-          connection_id = EXCLUDED.connection_id,
-          enabled = EXCLUDED.enabled,
-          config_json = EXCLUDED.config_json,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [
-        next.id,
-        next.workspaceId,
-        next.channel,
-        next.ownerUserId,
-        next.connectionId ?? null,
-        next.enabled,
-        serializeJson(next.config),
-        next.createdAt,
-        next.updatedAt,
-      ],
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: next.workspaceId, userId },
+      (client) =>
+        client.query(
+          `
+            INSERT INTO notification_channel_configs (
+              id, workspace_id, channel, owner_user_id, connection_id,
+              enabled, config_json, created_at, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)
+            ON CONFLICT (workspace_id, channel)
+            DO UPDATE SET
+              owner_user_id = EXCLUDED.owner_user_id,
+              connection_id = EXCLUDED.connection_id,
+              enabled = EXCLUDED.enabled,
+              config_json = EXCLUDED.config_json,
+              updated_at = EXCLUDED.updated_at
+          `,
+          [
+            next.id,
+            next.workspaceId,
+            next.channel,
+            next.ownerUserId,
+            next.connectionId ?? null,
+            next.enabled,
+            serializeJson(next.config),
+            next.createdAt,
+            next.updatedAt,
+          ],
+        ),
     );
 
     return cloneTransport(next);
@@ -296,6 +322,7 @@ export const notificationStore = {
 
   async appendEvent(input: {
     workspaceId: string;
+    userId: string;
     kind: NotificationKind;
     title: string;
     summary: string;
@@ -322,30 +349,39 @@ export const notificationStore = {
       return cloneEvent(event);
     }
 
-    await queryPostgres(
-      `
-        INSERT INTO notification_events (
-          id, workspace_id, kind, title, summary, severity, source,
-          metadata_json, occurred_at, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
-      `,
-      [
-        event.id,
-        event.workspaceId,
-        event.kind,
-        event.title,
-        event.summary,
-        event.severity,
-        event.source ?? null,
-        serializeJson(event.metadata),
-        event.occurredAt,
-        event.createdAt,
-      ],
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: event.workspaceId, userId: input.userId },
+      (client) =>
+        client.query(
+          `
+            INSERT INTO notification_events (
+              id, workspace_id, kind, title, summary, severity, source,
+              metadata_json, occurred_at, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10)
+          `,
+          [
+            event.id,
+            event.workspaceId,
+            event.kind,
+            event.title,
+            event.summary,
+            event.severity,
+            event.source ?? null,
+            serializeJson(event.metadata),
+            event.occurredAt,
+            event.createdAt,
+          ],
+        ),
     );
     return cloneEvent(event);
   },
 
-  async listEvents(workspaceId: string, kind?: NotificationKind): Promise<NotificationEventRecord[]> {
+  async listEvents(
+    workspaceId: string,
+    userId: string,
+    kind?: NotificationKind,
+  ): Promise<NotificationEventRecord[]> {
     if (!postgresPersistenceAvailable()) {
       return Array.from(eventStore.values())
         .filter((event) => event.workspaceId === workspaceId)
@@ -354,25 +390,30 @@ export const notificationStore = {
         .map(cloneEvent);
     }
 
-    const result = await queryPostgres<{
-      id: string;
-      workspace_id: string;
-      kind: NotificationKind;
-      title: string;
-      summary: string;
-      severity: NotificationSeverity;
-      source: string | null;
-      metadata_json: unknown;
-      occurred_at: string;
-      created_at: string;
-    }>(
-      `
-        SELECT * FROM notification_events
-        WHERE workspace_id = $1
-          AND ($2::text IS NULL OR kind = $2)
-        ORDER BY occurred_at ASC
-      `,
-      [workspaceId, kind ?? null],
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      (client) =>
+        client.query<{
+          id: string;
+          workspace_id: string;
+          kind: NotificationKind;
+          title: string;
+          summary: string;
+          severity: NotificationSeverity;
+          source: string | null;
+          metadata_json: unknown;
+          occurred_at: string;
+          created_at: string;
+        }>(
+          `
+            SELECT * FROM notification_events
+            WHERE workspace_id = $1
+              AND ($2::text IS NULL OR kind = $2)
+            ORDER BY occurred_at ASC
+          `,
+          [workspaceId, kind ?? null],
+        ),
     );
 
     return result.rows.map((row) => ({
@@ -391,13 +432,19 @@ export const notificationStore = {
 
   async listUndeliveredEvents(input: {
     workspaceId: string;
+    userId: string;
     kind: NotificationKind;
     channel: NotificationChannel;
     cadence: Exclude<NotificationCadence, "off">;
     after?: string;
   }): Promise<NotificationEventRecord[]> {
-    const events = await this.listEvents(input.workspaceId, input.kind);
-    const deliveries = await this.listDeliveries(input.workspaceId, input.channel, input.cadence);
+    const events = await this.listEvents(input.workspaceId, input.userId, input.kind);
+    const deliveries = await this.listDeliveries(
+      input.workspaceId,
+      input.userId,
+      input.channel,
+      input.cadence,
+    );
     const deliveredEventIds = new Set(deliveries.filter((item) => item.status === "sent").map((item) => item.eventId));
 
     return events
@@ -405,7 +452,10 @@ export const notificationStore = {
       .filter((event) => (input.after ? event.occurredAt > input.after : true));
   },
 
-  async saveDelivery(input: Omit<NotificationDeliveryRecord, "id" | "createdAt">): Promise<NotificationDeliveryRecord> {
+  async saveDelivery(
+    input: Omit<NotificationDeliveryRecord, "id" | "createdAt">,
+    userId: string,
+  ): Promise<NotificationDeliveryRecord> {
     const delivery: NotificationDeliveryRecord = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
@@ -417,30 +467,36 @@ export const notificationStore = {
       return cloneDelivery(delivery);
     }
 
-    await queryPostgres(
-      `
-        INSERT INTO notification_deliveries (
-          id, workspace_id, event_id, channel, cadence,
-          delivered_at, status, error, created_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-      `,
-      [
-        delivery.id,
-        delivery.workspaceId,
-        delivery.eventId,
-        delivery.channel,
-        delivery.cadence,
-        delivery.deliveredAt ?? null,
-        delivery.status,
-        delivery.error ?? null,
-        delivery.createdAt,
-      ],
+    await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId: delivery.workspaceId, userId },
+      (client) =>
+        client.query(
+          `
+            INSERT INTO notification_deliveries (
+              id, workspace_id, event_id, channel, cadence,
+              delivered_at, status, error, created_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          `,
+          [
+            delivery.id,
+            delivery.workspaceId,
+            delivery.eventId,
+            delivery.channel,
+            delivery.cadence,
+            delivery.deliveredAt ?? null,
+            delivery.status,
+            delivery.error ?? null,
+            delivery.createdAt,
+          ],
+        ),
     );
     return cloneDelivery(delivery);
   },
 
   async listDeliveries(
     workspaceId: string,
+    userId: string,
     channel?: NotificationChannel,
     cadence?: Exclude<NotificationCadence, "off">,
   ): Promise<NotificationDeliveryRecord[]> {
@@ -452,24 +508,29 @@ export const notificationStore = {
         .map(cloneDelivery);
     }
 
-    const result = await queryPostgres<{
-      id: string;
-      workspace_id: string;
-      event_id: string;
-      channel: NotificationChannel;
-      cadence: Exclude<NotificationCadence, "off">;
-      delivered_at: string | null;
-      status: "sent" | "failed";
-      error: string | null;
-      created_at: string;
-    }>(
-      `
-        SELECT * FROM notification_deliveries
-        WHERE workspace_id = $1
-          AND ($2::text IS NULL OR channel = $2)
-          AND ($3::text IS NULL OR cadence = $3)
-      `,
-      [workspaceId, channel ?? null, cadence ?? null],
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      (client) =>
+        client.query<{
+          id: string;
+          workspace_id: string;
+          event_id: string;
+          channel: NotificationChannel;
+          cadence: Exclude<NotificationCadence, "off">;
+          delivered_at: string | null;
+          status: "sent" | "failed";
+          error: string | null;
+          created_at: string;
+        }>(
+          `
+            SELECT * FROM notification_deliveries
+            WHERE workspace_id = $1
+              AND ($2::text IS NULL OR channel = $2)
+              AND ($3::text IS NULL OR cadence = $3)
+          `,
+          [workspaceId, channel ?? null, cadence ?? null],
+        ),
     );
 
     return result.rows.map((row) => ({
@@ -495,6 +556,7 @@ export const notificationStore = {
       return;
     }
 
+    // Cross-workspace cleanup (test/dev only). Runs as service-role bypass.
     await queryPostgres("DELETE FROM notification_deliveries");
     await queryPostgres("DELETE FROM notification_events");
     await queryPostgres("DELETE FROM notification_channel_configs");

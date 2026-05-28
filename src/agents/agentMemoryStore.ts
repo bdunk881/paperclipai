@@ -1,7 +1,25 @@
 import { randomUUID } from "node:crypto";
+import type { QueryResult, QueryResultRow } from "pg";
 import { parseJsonColumn } from "../db/json";
-import { inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
+import {
+  getPostgresPool,
+  inMemoryAllowed,
+  isPostgresConfigured,
+  queryPostgres,
+} from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { cosineSimilarity, embedText } from "../knowledge/embeddings";
+
+function workspaceQuery<T extends QueryResultRow = QueryResultRow>(
+  workspaceId: string,
+  userId: string,
+  text: string,
+  params?: unknown[],
+): Promise<QueryResult<T>> {
+  return withWorkspaceContext(getPostgresPool(), { workspaceId, userId }, (client) =>
+    client.query<T>(text, params),
+  );
+}
 
 export type AgentMemoryTier = "explore" | "flow" | "automate" | "scale";
 export type AgentMemoryScope = "private" | "shared";
@@ -763,7 +781,7 @@ async function ensureSchema(): Promise<void> {
   schemaEnsured = true;
 }
 
-async function purgeExpiredForUser(userId: string): Promise<void> {
+async function purgeExpiredForUser(workspaceId: string, userId: string): Promise<void> {
   for (const [id, entry] of memoryEntries.entries()) {
     if (entry.userId === userId && isExpired(entry.expiresAt)) {
       memoryEntries.delete(id);
@@ -785,9 +803,24 @@ async function purgeExpiredForUser(userId: string): Promise<void> {
   }
 
   await ensureSchema();
-  await queryPostgres("DELETE FROM agent_memory_entries WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()", [userId]);
-  await queryPostgres("DELETE FROM agent_memory_kg_facts WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()", [userId]);
-  await queryPostgres("DELETE FROM agent_heartbeat_logs WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()", [userId]);
+  await workspaceQuery(
+    workspaceId,
+    userId,
+    "DELETE FROM agent_memory_entries WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()",
+    [userId],
+  );
+  await workspaceQuery(
+    workspaceId,
+    userId,
+    "DELETE FROM agent_memory_kg_facts WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()",
+    [userId],
+  );
+  await workspaceQuery(
+    workspaceId,
+    userId,
+    "DELETE FROM agent_heartbeat_logs WHERE user_id = $1 AND expires_at IS NOT NULL AND expires_at <= NOW()",
+    [userId],
+  );
 }
 
 function isEntryVisible(
@@ -853,7 +886,9 @@ async function appendEvent(input: {
 
   if (postgresPersistenceAvailable()) {
     await ensureSchema();
-    await queryPostgres(
+    await workspaceQuery(
+      event.workspaceId,
+      event.userId,
       `INSERT INTO agent_memory_events (
         id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, entity_type, event_type, entity_id, payload, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)`,
@@ -880,7 +915,7 @@ async function appendEvent(input: {
 export const agentMemoryStore = {
   async createEntry(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     runId?: string;
     scope?: AgentMemoryScope;
@@ -895,13 +930,13 @@ export const agentMemoryStore = {
     tier: AgentMemoryTier;
     openAiApiKey?: string;
   }): Promise<AgentMemoryEntry> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const timestamp = nowIso();
     const metadata = sanitizeMetadata(input.metadata);
     const entryType = input.entryType ?? normalizeEntryType(metadata["entryType"]);
     const memoryLayer = input.memoryLayer ?? normalizeMemoryLayer(metadata["memoryLayer"]);
-    const workspaceId = input.workspaceId?.trim() || input.userId;
+    const workspaceId = input.workspaceId;
     const entry: StoredAgentMemoryEntry = {
       id: randomUUID(),
       userId: input.userId,
@@ -944,7 +979,9 @@ export const agentMemoryStore = {
 
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      await queryPostgres(
+      await workspaceQuery(
+        entry.workspaceId,
+        entry.userId,
         `INSERT INTO agent_memory_entries (
           id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, mission_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15, $16, $17, $18)`,
@@ -976,7 +1013,7 @@ export const agentMemoryStore = {
 
   async createTicketCloseEntry(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     runId?: string;
     scope?: AgentMemoryScope;
@@ -1016,7 +1053,7 @@ export const agentMemoryStore = {
 
   async searchEntries(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     teamId?: string;
     // HEL-207: optional mission-scope filter. When set, only entries tagged
@@ -1032,14 +1069,16 @@ export const agentMemoryStore = {
     tags?: string[];
     openAiApiKey?: string;
   }): Promise<AgentMemorySearchResult[]> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
-    const workspaceId = input.workspaceId?.trim() || input.userId;
+    const workspaceId = input.workspaceId;
     const missionId = input.missionId?.trim() || null;
     let candidates: StoredAgentMemoryEntry[];
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const rows = await queryPostgres<PersistedEntryRow>(
+      const rows = await workspaceQuery<PersistedEntryRow>(
+        workspaceId,
+        input.userId,
         `SELECT id, user_id, workspace_id, agent_id, run_id, scope, entry_type, memory_layer, team_id, mission_id, key, text_value, metadata, embedding, created_at, updated_at, expires_at, archived_at
            FROM agent_memory_entries
           WHERE user_id = $1
@@ -1121,7 +1160,7 @@ export const agentMemoryStore = {
 
   async addKnowledgeFact(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     runId?: string;
     scope?: AgentMemoryScope;
@@ -1134,12 +1173,12 @@ export const agentMemoryStore = {
     metadata?: Record<string, unknown>;
     tier: AgentMemoryTier;
   }): Promise<AgentKnowledgeFact> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const fact: StoredKnowledgeFact = {
       id: randomUUID(),
       userId: input.userId,
-      workspaceId: input.workspaceId?.trim() || input.userId,
+      workspaceId: input.workspaceId,
       agentId: input.agentId,
       runId: input.runId,
       scope: input.scope ?? "private",
@@ -1177,7 +1216,9 @@ export const agentMemoryStore = {
       // kg_facts/heartbeat tables stay unchanged so the insert column list
       // hasn't grown. missionId on AgentKnowledgeFact is carried in-memory and
       // surfaced via the public type for callers that need provenance.
-      await queryPostgres(
+      await workspaceQuery(
+        fact.workspaceId,
+        fact.userId,
         `INSERT INTO agent_memory_kg_facts (
           id, user_id, workspace_id, agent_id, run_id, scope, memory_layer, team_id, subject, predicate, object, metadata, created_at, expires_at, archived_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15)`,
@@ -1206,7 +1247,7 @@ export const agentMemoryStore = {
 
   async queryKnowledgeFacts(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     teamId?: string;
     // HEL-207: mission filter applied in-memory only — kg_facts table does not
@@ -1221,13 +1262,15 @@ export const agentMemoryStore = {
     limit?: number;
     memoryLayer?: AgentMemoryLayer;
   }): Promise<AgentKnowledgeFact[]> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
-    const workspaceId = input.workspaceId?.trim() || input.userId;
+    const workspaceId = input.workspaceId;
     let facts: StoredKnowledgeFact[];
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const rows = await queryPostgres<PersistedFactRow>(
+      const rows = await workspaceQuery<PersistedFactRow>(
+        workspaceId,
+        input.userId,
         `SELECT id, user_id, workspace_id, agent_id, run_id, scope, memory_layer, team_id, subject, predicate, object, metadata, created_at, expires_at, archived_at
            FROM agent_memory_kg_facts
           WHERE user_id = $1
@@ -1280,7 +1323,7 @@ export const agentMemoryStore = {
 
   async appendHeartbeatLog(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     runId: string;
     memoryLayer?: AgentMemoryLayer;
@@ -1291,12 +1334,12 @@ export const agentMemoryStore = {
     metadata?: Record<string, unknown>;
     tier: AgentMemoryTier;
   }): Promise<AgentHeartbeatLog> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const log: StoredHeartbeatLog = {
       id: randomUUID(),
       userId: input.userId,
-      workspaceId: input.workspaceId?.trim() || input.userId,
+      workspaceId: input.workspaceId,
       agentId: input.agentId,
       runId: input.runId,
       memoryLayer: input.memoryLayer ?? "agent",
@@ -1327,7 +1370,9 @@ export const agentMemoryStore = {
 
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      await queryPostgres(
+      await workspaceQuery(
+        log.workspaceId,
+        log.userId,
         `INSERT INTO agent_heartbeat_logs (
           id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, status, summary, metadata, created_at, expires_at, archived_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)`,
@@ -1354,7 +1399,7 @@ export const agentMemoryStore = {
 
   async listHeartbeatLogs(input: {
     userId: string;
-    workspaceId?: string;
+    workspaceId: string;
     agentId: string;
     teamId?: string;
     // HEL-207: applied in-memory only (see queryKnowledgeFacts comment).
@@ -1363,14 +1408,16 @@ export const agentMemoryStore = {
     limit?: number;
     memoryLayer?: AgentMemoryLayer;
   }): Promise<AgentHeartbeatLog[]> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const limit = Math.min(Math.max(input.limit ?? 100, 1), 100);
-    const workspaceId = input.workspaceId?.trim() || input.userId;
+    const workspaceId = input.workspaceId;
 
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const rows = await queryPostgres<PersistedHeartbeatRow>(
+      const rows = await workspaceQuery<PersistedHeartbeatRow>(
+        workspaceId,
+        input.userId,
         `SELECT id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, status, summary, metadata, created_at, expires_at, archived_at
            FROM agent_heartbeat_logs
           WHERE user_id = $1
@@ -1412,35 +1459,37 @@ export const agentMemoryStore = {
       .slice(0, limit);
   },
 
-  async countKnowledgeFacts(userId: string, workspaceId?: string): Promise<number> {
-    await purgeExpiredForUser(userId);
+  async countKnowledgeFacts(userId: string, workspaceId: string): Promise<number> {
+    await purgeExpiredForUser(workspaceId, userId);
 
-    const tenantWorkspaceId = workspaceId?.trim();
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const result = await queryPostgres<{ count: string }>(
+      const result = await workspaceQuery<{ count: string }>(
+        workspaceId,
+        userId,
         `SELECT COUNT(*)::text AS count
            FROM agent_memory_kg_facts
           WHERE user_id = $1
-            AND ($2::text IS NULL OR workspace_id = $2)
+            AND workspace_id = $2
             AND archived_at IS NULL`,
-        [userId, tenantWorkspaceId ?? null]
+        [userId, workspaceId],
       );
       return Number(result.rows[0]?.count ?? "0");
     }
 
     return Array.from(knowledgeFacts.values()).filter(
-      (fact) => fact.userId === userId && !fact.archivedAt && (!tenantWorkspaceId || fact.workspaceId === tenantWorkspaceId)
+      (fact) => fact.userId === userId && !fact.archivedAt && fact.workspaceId === workspaceId,
     ).length;
   },
 
-  async getApproximateMemoryUsageBytes(userId: string, workspaceId?: string): Promise<number> {
-    await purgeExpiredForUser(userId);
+  async getApproximateMemoryUsageBytes(userId: string, workspaceId: string): Promise<number> {
+    await purgeExpiredForUser(workspaceId, userId);
 
-    const tenantWorkspaceId = workspaceId?.trim();
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const result = await queryPostgres<{ total_bytes: string }>(
+      const result = await workspaceQuery<{ total_bytes: string }>(
+        workspaceId,
+        userId,
         `SELECT COALESCE(SUM(
           OCTET_LENGTH(key) +
           OCTET_LENGTH(text_value) +
@@ -1448,9 +1497,9 @@ export const agentMemoryStore = {
         ), 0)::text AS total_bytes
         FROM agent_memory_entries
         WHERE user_id = $1
-          AND ($2::text IS NULL OR workspace_id = $2)
+          AND workspace_id = $2
           AND archived_at IS NULL`,
-        [userId, tenantWorkspaceId ?? null]
+        [userId, workspaceId],
       );
       return Number(result.rows[0]?.total_bytes ?? "0");
     }
@@ -1460,12 +1509,12 @@ export const agentMemoryStore = {
         (entry) =>
           entry.userId === userId &&
           !entry.archivedAt &&
-          (!tenantWorkspaceId || entry.workspaceId === tenantWorkspaceId)
+          entry.workspaceId === workspaceId,
       )
       .reduce(
         (total, entry) =>
           total + entry.key.length + entry.text.length + JSON.stringify(entry.metadata).length,
-        0
+        0,
       );
   },
 
@@ -1474,12 +1523,14 @@ export const agentMemoryStore = {
     workspaceId: string;
     limit?: number;
   }): Promise<AgentMemoryEvent[]> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const limit = Math.min(Math.max(input.limit ?? 500, 1), 2000);
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      const rows = await queryPostgres<PersistedEventRow>(
+      const rows = await workspaceQuery<PersistedEventRow>(
+        input.workspaceId,
+        input.userId,
         `SELECT id, user_id, workspace_id, agent_id, run_id, memory_layer, team_id, entity_type, event_type, entity_id, payload, created_at
            FROM agent_memory_events
           WHERE user_id = $1 AND workspace_id = $2
@@ -1588,7 +1639,7 @@ export const agentMemoryStore = {
     olderThan: string;
     runId?: string;
   }): Promise<{ archivedEntries: number; archivedFacts: number; archivedHeartbeatLogs: number }> {
-    await purgeExpiredForUser(input.userId);
+    await purgeExpiredForUser(input.workspaceId, input.userId);
 
     const cutoff = new Date(input.olderThan).toISOString();
     const markArchived = async <T extends AgentMemoryEntry | AgentKnowledgeFact | AgentHeartbeatLog>(
@@ -1625,19 +1676,25 @@ export const agentMemoryStore = {
 
     if (postgresPersistenceAvailable()) {
       await ensureSchema();
-      await queryPostgres(
+      await workspaceQuery(
+        input.workspaceId,
+        input.userId,
         `UPDATE agent_memory_entries
             SET archived_at = COALESCE(archived_at, NOW())
           WHERE user_id = $1 AND workspace_id = $2 AND created_at < $3::timestamptz`,
         [input.userId, input.workspaceId, cutoff]
       );
-      await queryPostgres(
+      await workspaceQuery(
+        input.workspaceId,
+        input.userId,
         `UPDATE agent_memory_kg_facts
             SET archived_at = COALESCE(archived_at, NOW())
           WHERE user_id = $1 AND workspace_id = $2 AND created_at < $3::timestamptz`,
         [input.userId, input.workspaceId, cutoff]
       );
-      await queryPostgres(
+      await workspaceQuery(
+        input.workspaceId,
+        input.userId,
         `UPDATE agent_heartbeat_logs
             SET archived_at = COALESCE(archived_at, NOW())
           WHERE user_id = $1 AND workspace_id = $2 AND created_at < $3::timestamptz`,

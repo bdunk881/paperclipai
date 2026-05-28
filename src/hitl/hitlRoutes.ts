@@ -166,13 +166,23 @@ function readCompanyId(req: AuthenticatedRequest, res: Response): string | null 
   return companyId;
 }
 
+function requireWorkspaceId(req: AuthenticatedRequest, res: Response): string | null {
+  const workspaceId = req.auth?.workspaceId?.trim();
+  if (!workspaceId) {
+    res.status(400).json({ error: "Workspace context required" });
+    return null;
+  }
+  return workspaceId;
+}
+
 // DASH-45: every handler is async because hitlStore went Postgres-backed.
 
 router.get("/companies/:companyId/checkpoint-schedule", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) return;
-  res.json({ schedule: await hitlStore.getSchedule(userId, companyId) });
+  const workspaceId = requireWorkspaceId(req, res);
+  if (!userId || !companyId || !workspaceId) return;
+  res.json({ schedule: await hitlStore.getSchedule(workspaceId, userId, companyId) });
 }));
 
 router.put(
@@ -181,20 +191,23 @@ router.put(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
     const parsed = parseBody(scheduleUpdateSchema, req, res);
     if (!parsed) return;
-    res.json({ schedule: await hitlStore.upsertSchedule(userId, companyId, parsed) });
+    res.json({ schedule: await hitlStore.upsertSchedule(workspaceId, userId, companyId, parsed) });
   })
 );
 
 router.get("/companies/:companyId/checkpoints", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) return;
+  const workspaceId = requireWorkspaceId(req, res);
+  if (!userId || !companyId || !workspaceId) return;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
   res.json({
     checkpoints: await hitlStore.listCheckpoints(
+      workspaceId,
       userId,
       companyId,
       checkpointStatusSchema.safeParse(status).success ? (status as HitlCheckpointStatus) : undefined
@@ -208,10 +221,12 @@ router.post(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
     const parsed = parseBody(manualCheckpointSchema, req, res);
     if (!parsed) return;
     const checkpoint = await hitlStore.createCheckpoint({
+      workspaceId,
       userId,
       companyId,
       triggerType: parsed.triggerType as HitlCheckpointTriggerType,
@@ -234,10 +249,12 @@ router.post(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
     const parsed = parseBody(triggerEvaluationSchema, req, res);
     if (!parsed) return;
     const evaluation = await hitlStore.evaluateDefaultTrigger({
+      workspaceId,
       userId,
       companyId,
       triggerType: parsed.triggerType,
@@ -252,10 +269,11 @@ router.post(
 router.get("/companies/:companyId/artifact-comments", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) return;
+  const workspaceId = requireWorkspaceId(req, res);
+  if (!userId || !companyId || !workspaceId) return;
   const artifactId = typeof req.query.artifactId === "string" ? req.query.artifactId : undefined;
   const status = typeof req.query.status === "string" ? req.query.status : undefined;
-  const all = await hitlStore.listArtifactComments(userId, companyId, artifactId);
+  const all = await hitlStore.listArtifactComments(workspaceId, userId, companyId, artifactId);
   const comments = all.filter((comment) =>
     commentStatusSchema.safeParse(status).success ? comment.status === (status as HitlCommentStatus) : true
   );
@@ -268,10 +286,12 @@ router.post(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
     const parsed = parseBody(artifactCommentSchema, req, res);
     if (!parsed) return;
     const comment = await hitlStore.createArtifactComment({
+      workspaceId,
       userId,
       companyId,
       artifact: parsed.artifact,
@@ -289,10 +309,12 @@ router.post(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
     const parsed = parseBody(askCeoRequestSchema, req, res);
     if (!parsed) return;
     const requestRecord = await hitlStore.createAskCeoRequest({
+      workspaceId,
       userId,
       companyId,
       question: parsed.question,
@@ -307,8 +329,9 @@ router.get(
   asyncHandler<AuthenticatedRequest>(async (req, res) => {
     const userId = requireUserId(req, res);
     const companyId = readCompanyId(req, res);
-    if (!userId || !companyId) return;
-    const requestRecord = await hitlStore.getAskCeoRequest(userId, companyId, req.params.requestId);
+    const workspaceId = requireWorkspaceId(req, res);
+    if (!userId || !companyId || !workspaceId) return;
+    const requestRecord = await hitlStore.getAskCeoRequest(workspaceId, userId, companyId, req.params.requestId);
     if (!requestRecord) {
       res.status(404).json({ error: "Ask the CEO request not found" });
       return;
@@ -320,18 +343,21 @@ router.get(
 router.get("/companies/:companyId/state", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) return;
-  res.json(await hitlStore.getCompanyState(userId, companyId));
+  const workspaceId = requireWorkspaceId(req, res);
+  if (!userId || !companyId || !workspaceId) return;
+  res.json(await hitlStore.getCompanyState(workspaceId, userId, companyId));
 }));
 
 router.get("/companies/:companyId/notifications", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = requireUserId(req, res);
   const companyId = readCompanyId(req, res);
-  if (!userId || !companyId) return;
+  const workspaceId = requireWorkspaceId(req, res);
+  if (!userId || !companyId || !workspaceId) return;
   const recipientType = typeof req.query.recipientType === "string" ? req.query.recipientType : undefined;
   const recipientId = typeof req.query.recipientId === "string" ? req.query.recipientId : undefined;
   const kind = typeof req.query.kind === "string" ? req.query.kind : undefined;
   const notifications = await hitlStore.listNotifications({
+    workspaceId,
     userId,
     companyId,
     recipientType: recipientTypeSchema.safeParse(recipientType).success

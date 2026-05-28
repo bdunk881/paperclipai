@@ -12,16 +12,18 @@
  * First writer wins. Second writer sees the ON CONFLICT and skips.
  */
 import {
+  getPostgresPool,
   inMemoryAllowed,
   isPostgresPersistenceEnabled,
-  queryPostgres,
 } from "../../db/postgres";
+import { withWorkspaceContext } from "../../middleware/workspaceContext";
 
 export type GrantedVia = "confirm_endpoint" | "webhook";
 
 export interface RecordPurchaseArgs {
   sessionId: string;
   workspaceId: string;
+  userId: string;
   packId: string;
   creditsGranted: bigint;
   amountUsdCents: number;
@@ -63,20 +65,25 @@ export async function claimSessionForGrant(args: RecordPurchaseArgs): Promise<bo
     return true;
   }
 
-  const result = await queryPostgres<{ stripe_session_id: string }>(
-    `INSERT INTO credit_purchase_events
-       (stripe_session_id, workspace_id, pack_id, credits_granted, amount_usd_cents, granted_via)
-     VALUES ($1, $2, $3, $4::bigint, $5, $6)
-     ON CONFLICT (stripe_session_id) DO NOTHING
-     RETURNING stripe_session_id`,
-    [
-      args.sessionId,
-      args.workspaceId,
-      args.packId,
-      args.creditsGranted.toString(),
-      args.amountUsdCents,
-      args.grantedVia,
-    ],
+  const result = await withWorkspaceContext(
+    getPostgresPool(),
+    { workspaceId: args.workspaceId, userId: args.userId },
+    (client) =>
+      client.query<{ stripe_session_id: string }>(
+        `INSERT INTO credit_purchase_events
+           (stripe_session_id, workspace_id, pack_id, credits_granted, amount_usd_cents, granted_via)
+         VALUES ($1, $2, $3, $4::bigint, $5, $6)
+         ON CONFLICT (stripe_session_id) DO NOTHING
+         RETURNING stripe_session_id`,
+        [
+          args.sessionId,
+          args.workspaceId,
+          args.packId,
+          args.creditsGranted.toString(),
+          args.amountUsdCents,
+          args.grantedVia,
+        ],
+      ),
   );
   return result.rowCount === 1;
 }

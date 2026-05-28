@@ -57,7 +57,10 @@ describe("notification routes", () => {
     const res = await request(app).get("/api/notifications/preferences").set(auth("user-1"));
 
     expect(res.status).toBe(200);
-    expect(listPreferencesSpy).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222");
+    expect(listPreferencesSpy).toHaveBeenCalledWith(
+      "22222222-2222-4222-8222-222222222222",
+      "user-1",
+    );
   });
 
   it("ignores a mismatched workspaceId payload when updating preferences", async () => {
@@ -87,6 +90,7 @@ describe("notification routes", () => {
     expect(res.status).toBe(200);
     expect(updatePreferenceSpy).toHaveBeenCalledWith({
       workspaceId: "22222222-2222-4222-8222-222222222222",
+      userId: "user-1",
       channel: "slack",
       kind: "approvals",
       cadence: "daily",

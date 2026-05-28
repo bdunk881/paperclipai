@@ -18,7 +18,20 @@
 import { randomUUID } from "crypto";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { parseJsonValue, serializeJson } from "../db/json";
+import type { QueryResult, QueryResultRow } from "pg";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
+
+function hitlQuery<T extends QueryResultRow = QueryResultRow>(
+  workspaceId: string,
+  userId: string,
+  text: string,
+  params?: unknown[],
+): Promise<QueryResult<T>> {
+  return withWorkspaceContext(getPostgresPool(), { workspaceId, userId }, (client) =>
+    client.query<T>(text, params),
+  );
+}
 
 export type HitlNotificationChannel = "inbox" | "email" | "agent_wake";
 export type HitlNotificationStatus = "pending" | "sent" | "failed";
@@ -427,6 +440,7 @@ function mapNotificationRow(row: NotificationRow): HitlNotification {
 // ---------------------------------------------------------------------------
 
 async function createNotificationRecords(input: {
+  workspaceId: string;
   companyId: string;
   userId: string;
   kind: HitlNotification["kind"];
@@ -456,27 +470,32 @@ async function createNotificationRecords(input: {
     return records;
   }
 
-  const pool = getPostgresPool();
-  for (const n of records) {
-    await pool.query(
-      `INSERT INTO hitl_notifications (
-         id, user_id, company_id, kind, channel, recipient_type, recipient_id,
-         status, payload, created_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)`,
-      [
-        n.id,
-        n.userId,
-        n.companyId,
-        n.kind,
-        n.channel,
-        n.recipientType,
-        n.recipientId,
-        n.status,
-        serializeJson(n.payload),
-        n.createdAt,
-      ],
-    );
-  }
+  await withWorkspaceContext(
+    getPostgresPool(),
+    { workspaceId: input.workspaceId, userId: input.userId },
+    async (client) => {
+      for (const n of records) {
+        await client.query(
+          `INSERT INTO hitl_notifications (
+             id, user_id, company_id, kind, channel, recipient_type, recipient_id,
+             status, payload, created_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)`,
+          [
+            n.id,
+            n.userId,
+            n.companyId,
+            n.kind,
+            n.channel,
+            n.recipientType,
+            n.recipientId,
+            n.status,
+            serializeJson(n.payload),
+            n.createdAt,
+          ],
+        );
+      }
+    },
+  );
   return records;
 }
 
@@ -500,6 +519,7 @@ function compareThreshold(
 }
 
 async function buildCompanyStateSummary(
+  workspaceId: string,
   userId: string,
   companyId: string,
 ): Promise<CompanyStateSummary> {
@@ -511,9 +531,9 @@ async function buildCompanyStateSummary(
   const teamExecutions = team ? await controlPlaneStore.listExecutions(userId, team.id) : [];
   // DASH-64.1: listTasks is now async (repository-backed).
   const teamTasks = team ? await controlPlaneStore.listTasks(userId, team.id) : [];
-  const companyCheckpoints = await hitlStore.listCheckpoints(userId, companyId);
-  const companyComments = await hitlStore.listArtifactComments(userId, companyId);
-  const companyAskCeo = await hitlStore.listAskCeoRequests(userId, companyId);
+  const companyCheckpoints = await hitlStore.listCheckpoints(workspaceId, userId, companyId);
+  const companyComments = await hitlStore.listArtifactComments(workspaceId, userId, companyId);
+  const companyAskCeo = await hitlStore.listAskCeoRequests(workspaceId, userId, companyId);
 
   return {
     companyId,
@@ -546,7 +566,11 @@ async function buildCompanyStateSummary(
 // ---------------------------------------------------------------------------
 
 export const hitlStore = {
-  async getSchedule(userId: string, companyId: string): Promise<HitlCheckpointSchedule> {
+  async getSchedule(
+    workspaceId: string,
+    userId: string,
+    companyId: string,
+  ): Promise<HitlCheckpointSchedule> {
     if (!postgresAvailable()) {
       const key = scheduleKey(userId, companyId);
       const existing = schedules.get(key);
@@ -556,44 +580,50 @@ export const hitlStore = {
       return created;
     }
 
-    const pool = getPostgresPool();
-    const result = await pool.query<ScheduleRow>(
-      `SELECT * FROM hitl_schedules WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
-      [userId, companyId],
+    return withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      async (client) => {
+        const result = await client.query<ScheduleRow>(
+          `SELECT * FROM hitl_schedules WHERE user_id = $1 AND company_id = $2 LIMIT 1`,
+          [userId, companyId],
+        );
+        if (result.rowCount && result.rowCount > 0) {
+          return mapScheduleRow(result.rows[0]);
+        }
+        const created = defaultSchedule(userId, companyId);
+        await client.query(
+          `INSERT INTO hitl_schedules (
+             id, user_id, company_id, enabled, timezone,
+             notification_channels, weekly_review_json, milestone_gate_json,
+             kpi_deviation_json, created_at, updated_at
+           ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)`,
+          [
+            created.id,
+            created.userId,
+            created.companyId,
+            created.enabled,
+            created.timezone,
+            serializeJson(created.notificationChannels),
+            serializeJson(created.weeklyReview),
+            serializeJson(created.milestoneGate),
+            serializeJson(created.kpiDeviation),
+            created.createdAt,
+            created.updatedAt,
+          ],
+        );
+        return created;
+      },
     );
-    if (result.rowCount && result.rowCount > 0) {
-      return mapScheduleRow(result.rows[0]);
-    }
-    const created = defaultSchedule(userId, companyId);
-    await pool.query(
-      `INSERT INTO hitl_schedules (
-         id, user_id, company_id, enabled, timezone,
-         notification_channels, weekly_review_json, milestone_gate_json,
-         kpi_deviation_json, created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11)`,
-      [
-        created.id,
-        created.userId,
-        created.companyId,
-        created.enabled,
-        created.timezone,
-        serializeJson(created.notificationChannels),
-        serializeJson(created.weeklyReview),
-        serializeJson(created.milestoneGate),
-        serializeJson(created.kpiDeviation),
-        created.createdAt,
-        created.updatedAt,
-      ],
-    );
-    return created;
   },
 
   async upsertSchedule(
+    workspaceId: string,
     userId: string,
     companyId: string,
     input: HitlCheckpointScheduleUpdate,
   ): Promise<HitlCheckpointSchedule> {
-    const current = await this.getSchedule(userId, companyId);
+    const current = await this.getSchedule(workspaceId, userId, companyId);
     const updated: HitlCheckpointSchedule = {
       ...current,
       ...input,
@@ -613,8 +643,9 @@ export const hitlStore = {
       return updated;
     }
 
-    const pool = getPostgresPool();
-    await pool.query(
+    await hitlQuery(
+      workspaceId,
+      userId,
       `UPDATE hitl_schedules
           SET enabled = $1,
               timezone = $2,
@@ -640,6 +671,7 @@ export const hitlStore = {
   },
 
   async listCheckpoints(
+    workspaceId: string,
     userId: string,
     companyId: string,
     status?: HitlCheckpointStatus,
@@ -651,14 +683,15 @@ export const hitlStore = {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
 
-    const pool = getPostgresPool();
     const params: unknown[] = [userId, companyId];
     let where = `user_id = $1 AND company_id = $2`;
     if (status) {
       params.push(status);
       where += ` AND status = $${params.length}`;
     }
-    const result = await pool.query<CheckpointRow>(
+    const result = await hitlQuery<CheckpointRow>(
+      workspaceId,
+      userId,
       `SELECT * FROM hitl_checkpoints WHERE ${where} ORDER BY created_at DESC`,
       params,
     );
@@ -666,6 +699,7 @@ export const hitlStore = {
   },
 
   async createCheckpoint(input: {
+    workspaceId: string;
     userId: string;
     companyId: string;
     triggerType: HitlCheckpointTriggerType;
@@ -679,8 +713,9 @@ export const hitlStore = {
     recipientId: string;
   }): Promise<HitlCheckpoint> {
     const timestamp = nowIso();
-    const schedule = await this.getSchedule(input.userId, input.companyId);
+    const schedule = await this.getSchedule(input.workspaceId, input.userId, input.companyId);
     const notificationRecords = await createNotificationRecords({
+      workspaceId: input.workspaceId,
       companyId: input.companyId,
       userId: input.userId,
       kind: "checkpoint",
@@ -711,8 +746,9 @@ export const hitlStore = {
       return checkpoint;
     }
 
-    const pool = getPostgresPool();
-    await pool.query(
+    await hitlQuery(
+      input.workspaceId,
+      input.userId,
       `INSERT INTO hitl_checkpoints (
          id, user_id, company_id, trigger_type, source, title, description,
          status, due_at, artifact_refs, metadata, notification_ids,
@@ -739,6 +775,7 @@ export const hitlStore = {
   },
 
   async evaluateDefaultTrigger(input: {
+    workspaceId: string;
     userId: string;
     companyId: string;
     recipientType: HitlRecipientType;
@@ -746,7 +783,7 @@ export const hitlStore = {
     triggerType: Exclude<HitlCheckpointTriggerType, "manual">;
     event: Record<string, unknown>;
   }): Promise<{ matched: boolean; reason: string; checkpoint?: HitlCheckpoint }> {
-    const schedule = await this.getSchedule(input.userId, input.companyId);
+    const schedule = await this.getSchedule(input.workspaceId, input.userId, input.companyId);
     if (!schedule.enabled) {
       return { matched: false, reason: "company checkpoint schedule is disabled" };
     }
@@ -769,6 +806,7 @@ export const hitlStore = {
         };
       }
       const checkpoint = await this.createCheckpoint({
+        workspaceId: input.workspaceId,
         userId: input.userId,
         companyId: input.companyId,
         triggerType: input.triggerType,
@@ -798,6 +836,7 @@ export const hitlStore = {
           ? input.event["label"].trim()
           : "Milestone";
       const checkpoint = await this.createCheckpoint({
+        workspaceId: input.workspaceId,
         userId: input.userId,
         companyId: input.companyId,
         triggerType: input.triggerType,
@@ -835,6 +874,7 @@ export const hitlStore = {
       return { matched: false, reason: "observedValue did not breach the configured KPI threshold" };
     }
     const checkpoint = await this.createCheckpoint({
+      workspaceId: input.workspaceId,
       userId: input.userId,
       companyId: input.companyId,
       triggerType: input.triggerType,
@@ -854,6 +894,7 @@ export const hitlStore = {
   },
 
   async listArtifactComments(
+    workspaceId: string,
     userId: string,
     companyId: string,
     artifactId?: string,
@@ -865,14 +906,15 @@ export const hitlStore = {
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
 
-    const pool = getPostgresPool();
     const params: unknown[] = [userId, companyId];
     let where = `user_id = $1 AND company_id = $2`;
     if (artifactId) {
       params.push(artifactId);
       where += ` AND artifact_id = $${params.length}`;
     }
-    const result = await pool.query<CommentRow>(
+    const result = await hitlQuery<CommentRow>(
+      workspaceId,
+      userId,
       `SELECT * FROM hitl_artifact_comments WHERE ${where} ORDER BY created_at DESC`,
       params,
     );
@@ -880,6 +922,7 @@ export const hitlStore = {
   },
 
   async createArtifactComment(input: {
+    workspaceId: string;
     userId: string;
     companyId: string;
     artifact: HitlArtifactRef;
@@ -888,8 +931,9 @@ export const hitlStore = {
     routing: HitlArtifactComment["routing"];
   }): Promise<HitlArtifactComment> {
     const timestamp = nowIso();
-    const schedule = await this.getSchedule(input.userId, input.companyId);
+    const schedule = await this.getSchedule(input.workspaceId, input.userId, input.companyId);
     const notificationRecords = await createNotificationRecords({
+      workspaceId: input.workspaceId,
       companyId: input.companyId,
       userId: input.userId,
       kind: "artifact_comment",
@@ -922,8 +966,9 @@ export const hitlStore = {
       return comment;
     }
 
-    const pool = getPostgresPool();
-    await pool.query(
+    await hitlQuery(
+      input.workspaceId,
+      input.userId,
       `INSERT INTO hitl_artifact_comments (
          id, user_id, company_id,
          artifact_kind, artifact_id, artifact_title, artifact_path, artifact_version,
@@ -952,18 +997,19 @@ export const hitlStore = {
   },
 
   async createAskCeoRequest(input: {
+    workspaceId: string;
     userId: string;
     companyId: string;
     question: string;
     context?: AskCeoRequest["context"];
   }): Promise<AskCeoRequest> {
     const createdAt = nowIso();
-    const summary = await buildCompanyStateSummary(input.userId, input.companyId);
+    const summary = await buildCompanyStateSummary(input.workspaceId, input.userId, input.companyId);
     const citedEntities: AskCeoRequest["response"]["citedEntities"] = [];
     if (summary.team) {
       citedEntities.push({ type: "team", id: summary.team.id, label: summary.team.name });
     }
-    const latestCheckpoint = (await this.listCheckpoints(input.userId, input.companyId))[0];
+    const latestCheckpoint = (await this.listCheckpoints(input.workspaceId, input.userId, input.companyId))[0];
     if (latestCheckpoint) {
       citedEntities.push({
         type: "checkpoint",
@@ -971,7 +1017,7 @@ export const hitlStore = {
         label: latestCheckpoint.title,
       });
     }
-    const latestComment = (await this.listArtifactComments(input.userId, input.companyId))[0];
+    const latestComment = (await this.listArtifactComments(input.workspaceId, input.userId, input.companyId))[0];
     if (latestComment) {
       citedEntities.push({
         type: "artifact_comment",
@@ -1004,8 +1050,9 @@ export const hitlStore = {
     if (!postgresAvailable()) {
       askCeoRequests.set(request.id, request);
     } else {
-      const pool = getPostgresPool();
-      await pool.query(
+      await hitlQuery(
+        input.workspaceId,
+        input.userId,
         `INSERT INTO hitl_ask_ceo_requests (
            id, user_id, company_id, question, context_json, status, response_json, created_at
          ) VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7::jsonb,$8)`,
@@ -1023,6 +1070,7 @@ export const hitlStore = {
     }
 
     await createNotificationRecords({
+      workspaceId: input.workspaceId,
       companyId: input.companyId,
       userId: input.userId,
       kind: "ask_ceo_response",
@@ -1035,6 +1083,7 @@ export const hitlStore = {
   },
 
   async getAskCeoRequest(
+    workspaceId: string,
     userId: string,
     companyId: string,
     requestId: string,
@@ -1045,23 +1094,29 @@ export const hitlStore = {
       return request;
     }
 
-    const pool = getPostgresPool();
-    const result = await pool.query<AskCeoRow>(
+    const result = await hitlQuery<AskCeoRow>(
+      workspaceId,
+      userId,
       `SELECT * FROM hitl_ask_ceo_requests WHERE id = $1 AND user_id = $2 AND company_id = $3`,
       [requestId, userId, companyId],
     );
     return result.rows[0] ? mapAskCeoRow(result.rows[0]) : undefined;
   },
 
-  async listAskCeoRequests(userId: string, companyId: string): Promise<AskCeoRequest[]> {
+  async listAskCeoRequests(
+    workspaceId: string,
+    userId: string,
+    companyId: string,
+  ): Promise<AskCeoRequest[]> {
     if (!postgresAvailable()) {
       return Array.from(askCeoRequests.values())
         .filter((r) => r.userId === userId && r.companyId === companyId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
 
-    const pool = getPostgresPool();
-    const result = await pool.query<AskCeoRow>(
+    const result = await hitlQuery<AskCeoRow>(
+      workspaceId,
+      userId,
       `SELECT * FROM hitl_ask_ceo_requests
         WHERE user_id = $1 AND company_id = $2
         ORDER BY created_at DESC`,
@@ -1071,6 +1126,7 @@ export const hitlStore = {
   },
 
   async listNotifications(input: {
+    workspaceId: string;
     userId: string;
     companyId: string;
     recipientType?: HitlRecipientType;
@@ -1100,25 +1156,26 @@ export const hitlStore = {
       params.push(input.kind);
       where += ` AND kind = $${params.length}`;
     }
-    const pool = getPostgresPool();
-    const result = await pool.query<NotificationRow>(
+    const result = await hitlQuery<NotificationRow>(
+      input.workspaceId,
+      input.userId,
       `SELECT * FROM hitl_notifications WHERE ${where} ORDER BY created_at DESC`,
       params,
     );
     return result.rows.map(mapNotificationRow);
   },
 
-  async getCompanyState(userId: string, companyId: string) {
-    const summary = await buildCompanyStateSummary(userId, companyId);
-    const schedule = await this.getSchedule(userId, companyId);
+  async getCompanyState(workspaceId: string, userId: string, companyId: string) {
+    const summary = await buildCompanyStateSummary(workspaceId, userId, companyId);
+    const schedule = await this.getSchedule(workspaceId, userId, companyId);
     return {
       companyId,
       version: summary.version,
       summary,
       checkpointSchedule: schedule,
-      checkpoints: await this.listCheckpoints(userId, companyId),
-      artifactComments: await this.listArtifactComments(userId, companyId),
-      askCeoRequests: await this.listAskCeoRequests(userId, companyId),
+      checkpoints: await this.listCheckpoints(workspaceId, userId, companyId),
+      artifactComments: await this.listArtifactComments(workspaceId, userId, companyId),
+      askCeoRequests: await this.listAskCeoRequests(workspaceId, userId, companyId),
     };
   },
 
@@ -1129,6 +1186,8 @@ export const hitlStore = {
     askCeoRequests.clear();
     notifications.clear();
     if (!postgresAvailable()) return;
+    // Cross-workspace test cleanup. Runs as service-role bypass outside any
+    // workspace context.
     const pool = getPostgresPool();
     await pool.query(`DELETE FROM hitl_notifications`);
     await pool.query(`DELETE FROM hitl_ask_ceo_requests`);

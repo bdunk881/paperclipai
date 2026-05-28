@@ -431,6 +431,7 @@ async function handleCreditPackCheckout(
   const claimed = await claimSessionForGrant({
     sessionId: session.id,
     workspaceId,
+    userId: meta.userId ?? "",
     packId,
     creditsGranted: pack.creditsGranted,
     amountUsdCents: pack.priceUsdCents,

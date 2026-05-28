@@ -642,6 +642,7 @@ describe("WorkflowEngine — approval tier governance", () => {
 
     await approvalPolicyStore.upsert({
       workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       actionType: "public_posts",
       mode: "require_approval",
     });
@@ -678,6 +679,7 @@ describe("WorkflowEngine — approval tier governance", () => {
 
     await approvalPolicyStore.upsert({
       workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      userId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       actionType: "public_posts",
       mode: "notify_only",
     });

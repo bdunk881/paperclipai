@@ -39,6 +39,7 @@ import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes
 import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
 import mfaRoutes from "./security/mfaRoutes";
+import sentryTestRoutes from "./debug/sentryTestRoute";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
 import memoryRoutes from "./memory/memoryRoutes";
@@ -604,6 +605,7 @@ app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, re
 // it's analogous to the subscription tier read, not a billing action.
 app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
+app.use("/api/debug/sentry-test", sentryTestRoutes);
 
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials

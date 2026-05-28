@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   ApprovalTierActionType,
   ApprovalTierPolicy,
@@ -49,38 +50,43 @@ function mapRow(row: ApprovalTierPolicyRow): ApprovalTierPolicy {
   };
 }
 
-async function persistPolicy(policy: ApprovalTierPolicy): Promise<void> {
+async function persistPolicy(policy: ApprovalTierPolicy, userId: string): Promise<void> {
   if (!postgresPersistenceAvailable()) {
     memoryPolicies.set(policyKey(policy.workspaceId, policy.actionType), clonePolicy(policy));
     return;
   }
 
-  await getPostgresPool().query(
-    `
-      INSERT INTO approval_tier_policies (
-        id, workspace_id, action_type, mode, spend_threshold_cents, created_at, updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (workspace_id, action_type) DO UPDATE
-      SET mode = EXCLUDED.mode,
-          spend_threshold_cents = EXCLUDED.spend_threshold_cents,
-          updated_at = EXCLUDED.updated_at
-    `,
-    [
-      policy.id,
-      policy.workspaceId,
-      policy.actionType,
-      policy.mode,
-      policy.spendThresholdCents ?? null,
-      policy.createdAt,
-      policy.updatedAt,
-    ],
+  await withWorkspaceContext(
+    getPostgresPool(),
+    { workspaceId: policy.workspaceId, userId },
+    (client) =>
+      client.query(
+        `
+          INSERT INTO approval_tier_policies (
+            id, workspace_id, action_type, mode, spend_threshold_cents, created_at, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (workspace_id, action_type) DO UPDATE
+          SET mode = EXCLUDED.mode,
+              spend_threshold_cents = EXCLUDED.spend_threshold_cents,
+              updated_at = EXCLUDED.updated_at
+        `,
+        [
+          policy.id,
+          policy.workspaceId,
+          policy.actionType,
+          policy.mode,
+          policy.spendThresholdCents ?? null,
+          policy.createdAt,
+          policy.updatedAt,
+        ],
+      ),
   );
 }
 
 export const approvalPolicyStore = {
-  async ensureDefaults(workspaceId: string): Promise<ApprovalTierPolicy[]> {
-    const existing = await this.listByWorkspace(workspaceId);
+  async ensureDefaults(workspaceId: string, userId: string): Promise<ApprovalTierPolicy[]> {
+    const existing = await this.listByWorkspace(workspaceId, userId);
     if (existing.length === defaultApprovalTierPoliciesForWorkspace(workspaceId).length) {
       return existing;
     }
@@ -88,14 +94,14 @@ export const approvalPolicyStore = {
     const existingActionTypes = new Set(existing.map((policy) => policy.actionType));
     for (const policy of defaultApprovalTierPoliciesForWorkspace(workspaceId)) {
       if (!existingActionTypes.has(policy.actionType)) {
-        await persistPolicy(policy);
+        await persistPolicy(policy, userId);
       }
     }
 
-    return this.listByWorkspace(workspaceId);
+    return this.listByWorkspace(workspaceId, userId);
   },
 
-  async listByWorkspace(workspaceId: string): Promise<ApprovalTierPolicy[]> {
+  async listByWorkspace(workspaceId: string, userId: string): Promise<ApprovalTierPolicy[]> {
     if (!postgresPersistenceAvailable()) {
       return Array.from(memoryPolicies.values())
         .filter((policy) => policy.workspaceId === workspaceId)
@@ -103,14 +109,19 @@ export const approvalPolicyStore = {
         .map(clonePolicy);
     }
 
-    const result = await getPostgresPool().query<ApprovalTierPolicyRow>(
-      `
-        SELECT *
-        FROM approval_tier_policies
-        WHERE workspace_id = $1
-        ORDER BY action_type ASC
-      `,
-      [workspaceId],
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      { workspaceId, userId },
+      (client) =>
+        client.query<ApprovalTierPolicyRow>(
+          `
+            SELECT *
+            FROM approval_tier_policies
+            WHERE workspace_id = $1
+            ORDER BY action_type ASC
+          `,
+          [workspaceId],
+        ),
     );
 
     return result.rows.map(mapRow);
@@ -118,19 +129,21 @@ export const approvalPolicyStore = {
 
   async get(
     workspaceId: string,
+    userId: string,
     actionType: ApprovalTierActionType,
   ): Promise<ApprovalTierPolicy | undefined> {
-    const policies = await this.ensureDefaults(workspaceId);
+    const policies = await this.ensureDefaults(workspaceId, userId);
     return policies.find((policy) => policy.actionType === actionType);
   },
 
   async upsert(input: {
     workspaceId: string;
+    userId: string;
     actionType: ApprovalTierActionType;
     mode: ApprovalTierPolicy["mode"];
     spendThresholdCents?: number;
   }): Promise<ApprovalTierPolicy> {
-    const existing = await this.get(input.workspaceId, input.actionType);
+    const existing = await this.get(input.workspaceId, input.userId, input.actionType);
     const now = new Date().toISOString();
     const next: ApprovalTierPolicy = {
       id: existing?.id ?? randomUUID(),
@@ -150,7 +163,7 @@ export const approvalPolicyStore = {
       updatedAt: now,
     };
 
-    await persistPolicy(next);
+    await persistPolicy(next, input.userId);
     return clonePolicy(next);
   },
 
@@ -160,6 +173,8 @@ export const approvalPolicyStore = {
       return;
     }
 
+    // Cross-workspace cleanup (test/dev only). Runs as service-role bypass,
+    // outside any workspace context.
     await getPostgresPool().query("DELETE FROM approval_tier_policies");
   },
 };

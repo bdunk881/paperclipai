@@ -1,14 +1,15 @@
 import { approvalPolicyStore } from "./policyStore";
 
+const TEST_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TEST_USER_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
 describe("approvalPolicyStore", () => {
   beforeEach(() => {
     void approvalPolicyStore.clear();
   });
 
   it("creates conservative defaults for every governed action type", async () => {
-    const policies = await approvalPolicyStore.ensureDefaults(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    );
+    const policies = await approvalPolicyStore.ensureDefaults(TEST_WORKSPACE_ID, TEST_USER_ID);
 
     expect(policies).toHaveLength(5);
     expect(policies.every((policy) => policy.mode === "require_approval")).toBe(true);
@@ -23,7 +24,8 @@ describe("approvalPolicyStore", () => {
 
   it("upserts a workspace-specific override", async () => {
     const policy = await approvalPolicyStore.upsert({
-      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: TEST_WORKSPACE_ID,
+      userId: TEST_USER_ID,
       actionType: "public_posts",
       mode: "notify_only",
     });
@@ -31,7 +33,8 @@ describe("approvalPolicyStore", () => {
     expect(policy.mode).toBe("notify_only");
 
     const fetched = await approvalPolicyStore.get(
-      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      TEST_WORKSPACE_ID,
+      TEST_USER_ID,
       "public_posts",
     );
     expect(fetched?.mode).toBe("notify_only");

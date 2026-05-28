@@ -785,7 +785,7 @@ export class WorkflowEngine {
     }
 
     const policy = workspaceId
-      ? await approvalPolicyStore.get(workspaceId, actionType)
+      ? await approvalPolicyStore.get(workspaceId, params.userId ?? "", actionType)
       : defaultApprovalTierPolicyForAction("workspace-default", actionType);
 
     if (!policy) {

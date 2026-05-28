@@ -29,6 +29,15 @@ function requireWorkspaceId(req: WorkspaceAwareRequest, res: express.Response): 
   return workspaceId;
 }
 
+function requireUserId(req: WorkspaceAwareRequest, res: express.Response): string | null {
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  return userId;
+}
+
 router.get(
   "/",
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
@@ -36,8 +45,12 @@ router.get(
     if (!workspaceId) {
       return;
     }
+    const userId = requireUserId(req, res);
+    if (!userId) {
+      return;
+    }
 
-    const policies = await approvalPolicyStore.ensureDefaults(workspaceId);
+    const policies = await approvalPolicyStore.ensureDefaults(workspaceId, userId);
     res.json({
       actionTypes: APPROVAL_TIER_ACTION_TYPES,
       modes: APPROVAL_TIER_MODES,
@@ -59,6 +72,10 @@ router.put(
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const workspaceId = requireWorkspaceId(req, res);
     if (!workspaceId) {
+      return;
+    }
+    const userId = requireUserId(req, res);
+    if (!userId) {
       return;
     }
 
@@ -92,6 +109,7 @@ router.put(
 
     const policy = await approvalPolicyStore.upsert({
       workspaceId,
+      userId,
       actionType,
       mode,
       spendThresholdCents:

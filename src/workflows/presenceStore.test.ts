@@ -72,6 +72,90 @@ describe("createPresenceStore", () => {
     expect(store.peers("wf-1")).toEqual([]);
     expect(store.peers("wf-2")).toHaveLength(1);
   });
+
+  it("preserves cursor coordinates round-trip (HEL-241C v2)", () => {
+    const store = createPresenceStore();
+    store.upsert(
+      "wf-1",
+      state({ userId: "u1", cursor: { x: 120.5, y: -42 } }),
+    );
+    const [peer] = store.peers("wf-1");
+    expect(peer.cursor).toEqual({ x: 120.5, y: -42 });
+  });
+});
+
+describe("createPresenceStore.subscribe (HEL-241C v2)", () => {
+  it("notifies listeners with the full snapshot on upsert", () => {
+    const store = createPresenceStore();
+    const seen: string[][] = [];
+    store.subscribe("wf-1", (peers) => {
+      seen.push(peers.map((p) => p.userId).sort());
+    });
+
+    store.upsert("wf-1", state({ userId: "u1" }));
+    store.upsert("wf-1", state({ userId: "u2" }));
+
+    expect(seen).toEqual([["u1"], ["u1", "u2"]]);
+  });
+
+  it("notifies on remove and only when the entry actually existed", () => {
+    const store = createPresenceStore();
+    store.upsert("wf-1", state({ userId: "u1" }));
+
+    let calls = 0;
+    store.subscribe("wf-1", () => {
+      calls += 1;
+    });
+
+    store.remove("wf-1", "u1");
+    expect(calls).toBe(1);
+    // Remove of a missing user is a no-op — must not re-notify.
+    store.remove("wf-1", "u-missing");
+    expect(calls).toBe(1);
+  });
+
+  it("scopes listeners to one workflow", () => {
+    const store = createPresenceStore();
+    let wf1Calls = 0;
+    let wf2Calls = 0;
+    store.subscribe("wf-1", () => {
+      wf1Calls += 1;
+    });
+    store.subscribe("wf-2", () => {
+      wf2Calls += 1;
+    });
+
+    store.upsert("wf-1", state({ userId: "u1" }));
+    expect(wf1Calls).toBe(1);
+    expect(wf2Calls).toBe(0);
+  });
+
+  it("unsubscribe stops further notifications and is idempotent", () => {
+    const store = createPresenceStore();
+    let calls = 0;
+    const off = store.subscribe("wf-1", () => {
+      calls += 1;
+    });
+
+    store.upsert("wf-1", state({ userId: "u1" }));
+    off();
+    off();
+    store.upsert("wf-1", state({ userId: "u2" }));
+    expect(calls).toBe(1);
+  });
+
+  it("swallows listener errors so one bad subscriber doesn't break others", () => {
+    const store = createPresenceStore();
+    store.subscribe("wf-1", () => {
+      throw new Error("boom");
+    });
+    let healthy = 0;
+    store.subscribe("wf-1", () => {
+      healthy += 1;
+    });
+    store.upsert("wf-1", state({ userId: "u1" }));
+    expect(healthy).toBe(1);
+  });
 });
 
 describe("colorForUser", () => {

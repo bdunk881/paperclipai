@@ -254,4 +254,115 @@ describe("POST /api/workflows/:workflowId/presence", () => {
     const self = store.peers(goodWorkflowId).find((p) => p.userId === "user-1")!;
     expect(self.name).toBe("Teammate");
   });
+
+  // HEL-241C v2 — cursor coords flow through and get rejected when malformed.
+  it("accepts valid cursor coordinates and stores them on the peer", async () => {
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    await request(app)
+      .post(`/api/workflows/${goodWorkflowId}/presence`)
+      .send({ cursor: { x: 42.5, y: -10 } });
+    const self = store.peers(goodWorkflowId).find((p) => p.userId === "user-1")!;
+    expect(self.cursor).toEqual({ x: 42.5, y: -10 });
+  });
+
+  it.each([
+    ["non-finite x", { x: Infinity, y: 0 }],
+    ["string x", { x: "12", y: 0 }],
+    ["missing y", { x: 0 }],
+    ["null body", null],
+  ])("normalizes invalid cursor input (%s) to null", async (_label, bad) => {
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    await request(app)
+      .post(`/api/workflows/${goodWorkflowId}/presence`)
+      .send({ cursor: bad });
+    const self = store.peers(goodWorkflowId).find((p) => p.userId === "user-1")!;
+    expect(self.cursor).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HEL-241C v2 — GET /api/workflows/:workflowId/presence/stream (SSE)
+// ---------------------------------------------------------------------------
+//
+// We can't easily exercise a full SSE roundtrip via supertest (the response
+// never ends), so coverage here focuses on the auth + validation reject paths
+// plus the initial snapshot frame. The handler streams further updates by
+// re-using presenceStore.subscribe, which is independently covered in
+// presenceStore.test.ts.
+
+describe("GET /api/workflows/:workflowId/presence/stream", () => {
+  const goodWorkflowId = "22222222-2222-4222-8222-222222222222";
+  const workspaceId = "11111111-1111-4111-8111-111111111111";
+
+  it("returns 401 when unauthed", async () => {
+    const { app } = buildPresenceApp({ workspaceId });
+    const res = await request(app).get(
+      `/api/workflows/${goodWorkflowId}/presence/stream`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 on malformed workflow id", async () => {
+    const { app } = buildPresenceApp({ sub: "user-1", workspaceId });
+    const res = await request(app).get(`/api/workflows/not-a-uuid/presence/stream`);
+    expect(res.status).toBe(400);
+  });
+
+  it("sends an initial presence snapshot frame on connect and pushes updates", async () => {
+    // Use a started HTTP server so we can open a raw SSE connection that we
+    // abort cleanly after reading the frames we care about. supertest can't
+    // do this — its response wrapper buffers + waits for the stream to end.
+    const { app, store } = buildPresenceApp({ sub: "user-1", workspaceId });
+    store.upsert(goodWorkflowId, {
+      userId: "user-2",
+      name: "Other",
+      color: "#000",
+      selectedStepId: null,
+      cursor: { x: 10, y: 20 },
+      lastSeen: Date.now(),
+    });
+
+    const http = await import("node:http");
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
+
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = http.request(
+        {
+          host: "127.0.0.1",
+          port,
+          path: `/api/workflows/${goodWorkflowId}/presence/stream`,
+          method: "GET",
+        },
+        (res) => {
+          let buf = "";
+          res.on("data", (chunk: Buffer) => {
+            buf += chunk.toString("utf8");
+            // SSE frames terminate on a blank line ("\n\n"). Wait for the
+            // full snapshot frame before aborting — the event line and the
+            // data line arrive in separate writes.
+            if (buf.includes("event: presence") && buf.includes("\n\n")) {
+              req.destroy();
+              resolve(buf);
+            }
+          });
+          res.on("error", reject);
+        },
+      );
+      req.on("error", (err) => {
+        // ECONNRESET is the expected outcome of req.destroy() — only
+        // bubble up other failures.
+        if ((err as NodeJS.ErrnoException).code !== "ECONNRESET") reject(err);
+      });
+      req.end();
+    });
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    expect(body).toContain("event: presence");
+    expect(body).toContain('"userId":"user-2"');
+    // Caller is excluded from their own peer list.
+    expect(body).not.toContain('"userId":"user-1"');
+  });
 });

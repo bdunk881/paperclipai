@@ -717,6 +717,10 @@ function promoteSseAccessToken(req: import("express").Request, _res: import("exp
 app.use("/api/routines", promoteSseAccessToken);
 app.use("/api/tickets", promoteSseAccessToken);
 app.use("/api/activity-events", promoteSseAccessToken);
+// HEL-241C v2: presence/stream SSE channel. Same shim — EventSource
+// can't set the Authorization header so the dashboard passes its
+// bearer via ?access_token=…
+app.use("/api/workflows", promoteSseAccessToken);
 app.use(
   "/api/agents/runs",
   requireAuth,

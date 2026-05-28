@@ -229,8 +229,15 @@ export interface MfaServiceDeps {
   /**
    * HEL-280: injectable workspace-flag checker. Defaults to the real
    * `isWorkspaceFlagEnabled` reader; tests stub it to avoid the DB.
+   * HEL-298: signature takes `userId` so the reader can run inside
+   * `withWorkspaceContext` and pass the RLS self-read policy added in
+   * migration 086.
    */
-  workspaceFlagChecker?: (workspaceId: string | null | undefined, flag: string) => Promise<boolean>;
+  workspaceFlagChecker?: (
+    workspaceId: string | null | undefined,
+    userId: string | null | undefined,
+    flag: string,
+  ) => Promise<boolean>;
 }
 
 export interface GetPolicyOptions {
@@ -350,7 +357,11 @@ export class MfaService {
   private rpName: string;
   private rpId: string;
   private origin: string | string[];
-  private workspaceFlagChecker: (workspaceId: string | null | undefined, flag: string) => Promise<boolean>;
+  private workspaceFlagChecker: (
+    workspaceId: string | null | undefined,
+    userId: string | null | undefined,
+    flag: string,
+  ) => Promise<boolean>;
   private challengeStore = new Map<string, { challenge: string; createdAt: number }>();
 
   constructor(deps: MfaServiceDeps = {}) {
@@ -399,7 +410,7 @@ export class MfaService {
       this.repository.listWebauthnCredentials(ctx.userId),
       this.repository.countActiveRecoveryCodes(ctx.userId),
       isOauth
-        ? this.workspaceFlagChecker(ctx.workspaceId, REQUIRE_APP_MFA_FOR_OAUTH_USERS)
+        ? this.workspaceFlagChecker(ctx.workspaceId, ctx.userId, REQUIRE_APP_MFA_FOR_OAUTH_USERS)
         : Promise.resolve(false),
     ]);
 
@@ -515,7 +526,7 @@ export class MfaService {
     if (!expectedChallenge) {
       throw new SecurityServiceError("Authentication challenge expired", 400, "challenge_missing");
     }
-    const credential = await this.repository.findWebauthnCredentialById(rawCredentialId);
+    const credential = await this.repository.findWebauthnCredentialById(ctx.userId, rawCredentialId);
     if (!credential || credential.userId !== ctx.userId) {
       await recordAudit(ctx, "mfa.verify.failure", {
         method: "webauthn",
@@ -542,7 +553,7 @@ export class MfaService {
       throw new SecurityServiceError("Passkey verification failed", 401, "verification_failed");
     }
     const now = new Date();
-    await this.repository.updateWebauthnSignCount(credential.credentialId, verification.newSignCount, now);
+    await this.repository.updateWebauthnSignCount(ctx.userId, credential.credentialId, verification.newSignCount, now);
     await this.repository.upsertPolicy(ctx.userId, {
       lastVerifiedAt: now,
       lastVerifiedMethod: "webauthn",

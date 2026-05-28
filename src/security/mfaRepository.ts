@@ -17,7 +17,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { queryPostgres, isPostgresPersistenceEnabled } from "../db/postgres";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withUserContext } from "../middleware/workspaceContext";
 
 export interface WebauthnCredentialRow {
   id: string;
@@ -66,9 +67,28 @@ export interface InsertWebauthnCredentialInput {
 
 export interface MfaRepository {
   listWebauthnCredentials(userId: string): Promise<WebauthnCredentialRow[]>;
-  findWebauthnCredentialById(credentialId: string): Promise<WebauthnCredentialRow | null>;
+  /**
+   * HEL-298: takes `userId` so the postgres impl can scope the lookup
+   * inside `withUserContext` — required after migration 083 turned on
+   * FORCE RLS on `mfa_webauthn_credentials`. The signature was previously
+   * just `(credentialId)`; the caller already had `ctx.userId` in hand so
+   * threading it through was free.
+   */
+  findWebauthnCredentialById(
+    userId: string,
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null>;
   insertWebauthnCredential(input: InsertWebauthnCredentialInput): Promise<WebauthnCredentialRow>;
-  updateWebauthnSignCount(credentialId: string, signCount: bigint, lastUsedAt: Date): Promise<void>;
+  /**
+   * HEL-298: takes `userId` so the postgres impl can scope the UPDATE
+   * inside `withUserContext`. The caller already has it in `ctx.userId`.
+   */
+  updateWebauthnSignCount(
+    userId: string,
+    credentialId: string,
+    signCount: bigint,
+    lastUsedAt: Date,
+  ): Promise<void>;
   deleteWebauthnCredential(userId: string, credentialId: string): Promise<boolean>;
 
   replaceRecoveryCodes(userId: string, hashes: string[]): Promise<void>;
@@ -113,153 +133,193 @@ function rowToPolicy(row: Record<string, unknown>): UserMfaPolicyRow {
   };
 }
 
+/**
+ * HEL-298: every method runs inside `withUserContext(pool, userId, ...)`
+ * so the `app.current_user_id` GUC is set per-transaction. Migration 083
+ * (HEL-273) put `FORCE ROW LEVEL SECURITY` on `mfa_webauthn_credentials`,
+ * `mfa_recovery_codes`, and `user_mfa_policy` with policies of the shape
+ * `app_current_user_id() IS NOT NULL AND user_id::text = app_current_user_id()`.
+ * Without the wrapper, every SELECT silently returns 0 rows and every
+ * INSERT/UPDATE throws `new row violates row-level security policy`.
+ *
+ * HEL-272 listed this file as a refactor target but the PR shipped without
+ * touching it. This module finishes that work.
+ */
 export class PostgresMfaRepository implements MfaRepository {
   async listWebauthnCredentials(userId: string): Promise<WebauthnCredentialRow[]> {
-    const result = await queryPostgres(
-      `SELECT id, user_id, credential_id, public_key, sign_count, transports,
-              device_name, aaguid, backed_up, created_at, last_used_at
-         FROM mfa_webauthn_credentials
-        WHERE user_id = $1
-        ORDER BY created_at DESC`,
-      [userId],
-    );
-    return result.rows.map((r) => rowToWebauthn(r as Record<string, unknown>));
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `SELECT id, user_id, credential_id, public_key, sign_count, transports,
+                device_name, aaguid, backed_up, created_at, last_used_at
+           FROM mfa_webauthn_credentials
+          WHERE user_id = $1
+          ORDER BY created_at DESC`,
+        [userId],
+      );
+      return result.rows.map((r) => rowToWebauthn(r as Record<string, unknown>));
+    });
   }
 
-  async findWebauthnCredentialById(credentialId: string): Promise<WebauthnCredentialRow | null> {
-    const result = await queryPostgres(
-      `SELECT id, user_id, credential_id, public_key, sign_count, transports,
-              device_name, aaguid, backed_up, created_at, last_used_at
-         FROM mfa_webauthn_credentials
-        WHERE credential_id = $1
-        LIMIT 1`,
-      [credentialId],
-    );
-    if (result.rows.length === 0) return null;
-    return rowToWebauthn(result.rows[0] as Record<string, unknown>);
+  async findWebauthnCredentialById(
+    userId: string,
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null> {
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `SELECT id, user_id, credential_id, public_key, sign_count, transports,
+                device_name, aaguid, backed_up, created_at, last_used_at
+           FROM mfa_webauthn_credentials
+          WHERE credential_id = $1 AND user_id = $2
+          LIMIT 1`,
+        [credentialId, userId],
+      );
+      if (result.rows.length === 0) return null;
+      return rowToWebauthn(result.rows[0] as Record<string, unknown>);
+    });
   }
 
   async insertWebauthnCredential(input: InsertWebauthnCredentialInput): Promise<WebauthnCredentialRow> {
-    const result = await queryPostgres(
-      `INSERT INTO mfa_webauthn_credentials
-         (user_id, credential_id, public_key, sign_count, transports, device_name, aaguid, backed_up)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, user_id, credential_id, public_key, sign_count, transports,
-                 device_name, aaguid, backed_up, created_at, last_used_at`,
-      [
-        input.userId,
-        input.credentialId,
-        input.publicKey,
-        input.signCount.toString(),
-        input.transports,
-        input.deviceName ?? null,
-        input.aaguid ?? null,
-        input.backedUp ?? false,
-      ],
-    );
-    return rowToWebauthn(result.rows[0] as Record<string, unknown>);
+    return withUserContext(getPostgresPool(), input.userId, async (client) => {
+      const result = await client.query(
+        `INSERT INTO mfa_webauthn_credentials
+           (user_id, credential_id, public_key, sign_count, transports, device_name, aaguid, backed_up)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, user_id, credential_id, public_key, sign_count, transports,
+                   device_name, aaguid, backed_up, created_at, last_used_at`,
+        [
+          input.userId,
+          input.credentialId,
+          input.publicKey,
+          input.signCount.toString(),
+          input.transports,
+          input.deviceName ?? null,
+          input.aaguid ?? null,
+          input.backedUp ?? false,
+        ],
+      );
+      return rowToWebauthn(result.rows[0] as Record<string, unknown>);
+    });
   }
 
-  async updateWebauthnSignCount(credentialId: string, signCount: bigint, lastUsedAt: Date): Promise<void> {
-    await queryPostgres(
-      `UPDATE mfa_webauthn_credentials
-          SET sign_count = $2, last_used_at = $3
-        WHERE credential_id = $1`,
-      [credentialId, signCount.toString(), lastUsedAt],
-    );
+  async updateWebauthnSignCount(
+    userId: string,
+    credentialId: string,
+    signCount: bigint,
+    lastUsedAt: Date,
+  ): Promise<void> {
+    await withUserContext(getPostgresPool(), userId, async (client) => {
+      await client.query(
+        `UPDATE mfa_webauthn_credentials
+            SET sign_count = $2, last_used_at = $3
+          WHERE credential_id = $1 AND user_id = $4`,
+        [credentialId, signCount.toString(), lastUsedAt, userId],
+      );
+    });
   }
 
   async deleteWebauthnCredential(userId: string, credentialId: string): Promise<boolean> {
-    const result = await queryPostgres(
-      `DELETE FROM mfa_webauthn_credentials WHERE user_id = $1 AND credential_id = $2`,
-      [userId, credentialId],
-    );
-    return (result.rowCount ?? 0) > 0;
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `DELETE FROM mfa_webauthn_credentials WHERE user_id = $1 AND credential_id = $2`,
+        [userId, credentialId],
+      );
+      return (result.rowCount ?? 0) > 0;
+    });
   }
 
   async replaceRecoveryCodes(userId: string, hashes: string[]): Promise<void> {
-    await queryPostgres(`DELETE FROM mfa_recovery_codes WHERE user_id = $1`, [userId]);
-    for (const hash of hashes) {
-      await queryPostgres(
-        `INSERT INTO mfa_recovery_codes (user_id, code_hash) VALUES ($1, $2)`,
-        [userId, hash],
-      );
-    }
+    await withUserContext(getPostgresPool(), userId, async (client) => {
+      await client.query(`DELETE FROM mfa_recovery_codes WHERE user_id = $1`, [userId]);
+      for (const hash of hashes) {
+        await client.query(
+          `INSERT INTO mfa_recovery_codes (user_id, code_hash) VALUES ($1, $2)`,
+          [userId, hash],
+        );
+      }
+    });
   }
 
   async countActiveRecoveryCodes(userId: string): Promise<number> {
-    const result = await queryPostgres<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
-         FROM mfa_recovery_codes
-        WHERE user_id = $1 AND used_at IS NULL`,
-      [userId],
-    );
-    return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+           FROM mfa_recovery_codes
+          WHERE user_id = $1 AND used_at IS NULL`,
+        [userId],
+      );
+      return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+    });
   }
 
   async consumeRecoveryCode(
     userId: string,
     predicate: (hash: string) => Promise<boolean>,
   ): Promise<boolean> {
-    const result = await queryPostgres<{ id: string; code_hash: string }>(
-      `SELECT id, code_hash
-         FROM mfa_recovery_codes
-        WHERE user_id = $1 AND used_at IS NULL
-        ORDER BY created_at ASC`,
-      [userId],
-    );
-    for (const row of result.rows) {
-      if (await predicate(row.code_hash)) {
-        await queryPostgres(`UPDATE mfa_recovery_codes SET used_at = now() WHERE id = $1`, [row.id]);
-        return true;
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<{ id: string; code_hash: string }>(
+        `SELECT id, code_hash
+           FROM mfa_recovery_codes
+          WHERE user_id = $1 AND used_at IS NULL
+          ORDER BY created_at ASC`,
+        [userId],
+      );
+      for (const row of result.rows) {
+        if (await predicate(row.code_hash)) {
+          await client.query(`UPDATE mfa_recovery_codes SET used_at = now() WHERE id = $1`, [row.id]);
+          return true;
+        }
       }
-    }
-    return false;
+      return false;
+    });
   }
 
   async getPolicy(userId: string): Promise<UserMfaPolicyRow | null> {
-    const result = await queryPostgres(
-      `SELECT user_id, has_webauthn, has_totp, recovery_codes_issued_at,
-              enrollment_completed_at, last_verified_at, last_verified_method,
-              created_at, updated_at
-         FROM user_mfa_policy
-        WHERE user_id = $1`,
-      [userId],
-    );
-    if (result.rows.length === 0) return null;
-    return rowToPolicy(result.rows[0] as Record<string, unknown>);
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `SELECT user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+                enrollment_completed_at, last_verified_at, last_verified_method,
+                created_at, updated_at
+           FROM user_mfa_policy
+          WHERE user_id = $1`,
+        [userId],
+      );
+      if (result.rows.length === 0) return null;
+      return rowToPolicy(result.rows[0] as Record<string, unknown>);
+    });
   }
 
   async upsertPolicy(
     userId: string,
     patch: Partial<Omit<UserMfaPolicyRow, "userId" | "createdAt" | "updatedAt">>,
   ): Promise<UserMfaPolicyRow> {
-    const result = await queryPostgres(
-      `INSERT INTO user_mfa_policy
-         (user_id, has_webauthn, has_totp, recovery_codes_issued_at,
-          enrollment_completed_at, last_verified_at, last_verified_method)
-       VALUES ($1, COALESCE($2, FALSE), COALESCE($3, FALSE), $4, $5, $6, $7)
-       ON CONFLICT (user_id) DO UPDATE
-         SET has_webauthn             = COALESCE($2, user_mfa_policy.has_webauthn),
-             has_totp                 = COALESCE($3, user_mfa_policy.has_totp),
-             recovery_codes_issued_at = COALESCE($4, user_mfa_policy.recovery_codes_issued_at),
-             enrollment_completed_at  = COALESCE($5, user_mfa_policy.enrollment_completed_at),
-             last_verified_at         = COALESCE($6, user_mfa_policy.last_verified_at),
-             last_verified_method     = COALESCE($7, user_mfa_policy.last_verified_method)
-       RETURNING user_id, has_webauthn, has_totp, recovery_codes_issued_at,
-                 enrollment_completed_at, last_verified_at, last_verified_method,
-                 created_at, updated_at`,
-      [
-        userId,
-        patch.hasWebauthn ?? null,
-        patch.hasTotp ?? null,
-        patch.recoveryCodesIssuedAt ?? null,
-        patch.enrollmentCompletedAt ?? null,
-        patch.lastVerifiedAt ?? null,
-        patch.lastVerifiedMethod ?? null,
-      ],
-    );
-    return rowToPolicy(result.rows[0] as Record<string, unknown>);
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `INSERT INTO user_mfa_policy
+           (user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+            enrollment_completed_at, last_verified_at, last_verified_method)
+         VALUES ($1, COALESCE($2, FALSE), COALESCE($3, FALSE), $4, $5, $6, $7)
+         ON CONFLICT (user_id) DO UPDATE
+           SET has_webauthn             = COALESCE($2, user_mfa_policy.has_webauthn),
+               has_totp                 = COALESCE($3, user_mfa_policy.has_totp),
+               recovery_codes_issued_at = COALESCE($4, user_mfa_policy.recovery_codes_issued_at),
+               enrollment_completed_at  = COALESCE($5, user_mfa_policy.enrollment_completed_at),
+               last_verified_at         = COALESCE($6, user_mfa_policy.last_verified_at),
+               last_verified_method     = COALESCE($7, user_mfa_policy.last_verified_method)
+         RETURNING user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+                   enrollment_completed_at, last_verified_at, last_verified_method,
+                   created_at, updated_at`,
+        [
+          userId,
+          patch.hasWebauthn ?? null,
+          patch.hasTotp ?? null,
+          patch.recoveryCodesIssuedAt ?? null,
+          patch.enrollmentCompletedAt ?? null,
+          patch.lastVerifiedAt ?? null,
+          patch.lastVerifiedMethod ?? null,
+        ],
+      );
+      return rowToPolicy(result.rows[0] as Record<string, unknown>);
+    });
   }
 }
 
@@ -284,8 +344,12 @@ export class InMemoryMfaRepository implements MfaRepository {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async findWebauthnCredentialById(credentialId: string): Promise<WebauthnCredentialRow | null> {
-    return this.credentials.get(credentialId) ?? null;
+  async findWebauthnCredentialById(
+    userId: string,
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null> {
+    const row = this.credentials.get(credentialId);
+    return row && row.userId === userId ? row : null;
   }
 
   async insertWebauthnCredential(input: InsertWebauthnCredentialInput): Promise<WebauthnCredentialRow> {
@@ -306,9 +370,14 @@ export class InMemoryMfaRepository implements MfaRepository {
     return row;
   }
 
-  async updateWebauthnSignCount(credentialId: string, signCount: bigint, lastUsedAt: Date): Promise<void> {
+  async updateWebauthnSignCount(
+    userId: string,
+    credentialId: string,
+    signCount: bigint,
+    lastUsedAt: Date,
+  ): Promise<void> {
     const existing = this.credentials.get(credentialId);
-    if (!existing) return;
+    if (!existing || existing.userId !== userId) return;
     existing.signCount = signCount;
     existing.lastUsedAt = lastUsedAt;
   }

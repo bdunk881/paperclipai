@@ -32,6 +32,15 @@ primary_region = "ord"
   INFISICAL_ENV = "dev"
   PORT = "8080"
   NODE_ENV = "production"
+  # HEL-298: WebAuthn relying-party config. RP ID is the eTLD+1 so a
+  # passkey enrolled on dev.helloautoflow.com is usable on
+  # dev.app.helloautoflow.com (and any other subdomain). Origin list
+  # MUST mirror ALLOWED_ORIGINS — SimpleWebAuthn rejects assertions whose
+  # origin isn't in this set. Default before HEL-298 was "localhost",
+  # which the browser refuses on any non-localhost page.
+  MFA_RP_ID = "helloautoflow.com"
+  MFA_RP_NAME = "AutoFlow"
+  MFA_ORIGIN = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
   # DASH-38: Sentry tags every event with this value. Without it,
   # instrument.ts falls back to NODE_ENV — which is "production" on Fly
   # (Node prod-mode bundling) — so dev events landed in Sentry's prod

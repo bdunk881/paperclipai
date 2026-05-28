@@ -9,11 +9,28 @@ import {
 } from "./requireAAL2";
 import { __resetWorkspaceFlagCacheForTests } from "../security/workspaceFeatureFlags";
 
-const queryPostgresMock = jest.fn();
+// HEL-298: workspaceFeatureFlags now reads through withWorkspaceContext,
+// so the test simulates the BEGIN / set_config / SELECT / COMMIT sequence
+// against the pool client. `flagRowQueue` is the next row(s) the SELECT
+// inside the transaction should return; tests push a row to enable the
+// override or leave the queue empty for "no override".
+const flagRowQueue: Array<{ enabled: boolean; expires_at: Date | null } | null> = [];
+const clientQueryMock = jest.fn(async (sql: string) => {
+  if (sql.includes("FROM workspace_feature_overrides")) {
+    const next = flagRowQueue.shift();
+    return { rows: next ? [next] : [] };
+  }
+  // BEGIN, set_config(...), COMMIT, ROLLBACK
+  return { rows: [] };
+});
+const connectMock = jest.fn(async () => ({
+  query: clientQueryMock,
+  release: jest.fn(),
+}));
 
 jest.mock("../db/postgres", () => ({
   isPostgresPersistenceEnabled: () => true,
-  queryPostgres: (sql: string, params: unknown[]) => queryPostgresMock(sql, params),
+  getPostgresPool: () => ({ connect: connectMock }),
 }));
 
 function createResponse() {
@@ -65,7 +82,16 @@ describe("requireAAL2", () => {
     // tests don't have to stub this middleware. Delete it here so the
     // real gate behavior is verified by these tests.
     delete process.env.MFA_DISABLE_AAL2_ENFORCEMENT;
-    queryPostgresMock.mockReset();
+    clientQueryMock.mockReset();
+    clientQueryMock.mockImplementation(async (sql: string) => {
+      if (sql.includes("FROM workspace_feature_overrides")) {
+        const next = flagRowQueue.shift();
+        return { rows: next ? [next] : [] };
+      }
+      return { rows: [] };
+    });
+    connectMock.mockClear();
+    flagRowQueue.length = 0;
     __resetWorkspaceFlagCacheForTests();
   });
 
@@ -189,7 +215,8 @@ describe("requireAAL2", () => {
   // HEL-280 --------------------------------------------------------------
 
   it("treats a google-provider session as AAL2 when the workspace flag is off", async () => {
-    queryPostgresMock.mockResolvedValue({ rows: [] });
+    // No override row → workspace shortcut allows OAuth.
+    flagRowQueue.length = 0;
     const req = makeReq({
       sub: "user-1",
       aal: "aal1",
@@ -213,13 +240,11 @@ describe("requireAAL2", () => {
     await requireAAL2(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(queryPostgresMock).not.toHaveBeenCalled();
+    expect(connectMock).not.toHaveBeenCalled();
   });
 
   it("requires app MFA for OAuth users when require_app_mfa_for_oauth_users is on", async () => {
-    queryPostgresMock.mockResolvedValue({
-      rows: [{ enabled: true, expires_at: null }],
-    });
+    flagRowQueue.push({ enabled: true, expires_at: null });
     const req = makeReq({
       sub: "user-1",
       aal: "aal1",
@@ -249,7 +274,34 @@ describe("requireAAL2", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(queryPostgresMock).not.toHaveBeenCalled();
+    expect(connectMock).not.toHaveBeenCalled();
+  });
+
+  // HEL-298: prove async rejections from the workspace-flag check reach
+  // next(err) instead of becoming an unhandled rejection.
+  it("routes async rejections through next(err) instead of hanging", async () => {
+    flagRowQueue.length = 0;
+    // First call returns BEGIN OK, then trips an error on the next query
+    // so the rejection surfaces from inside withWorkspaceContext.
+    const originalImpl = clientQueryMock.getMockImplementation();
+    clientQueryMock.mockImplementationOnce(async () => ({ rows: [] })); // BEGIN
+    clientQueryMock.mockImplementationOnce(async () => {
+      throw new Error("simulated postgres failure");
+    });
+    const req = makeReq({
+      sub: "user-1",
+      aal: "aal1",
+      provider: "google",
+      workspaceId: "ws-1",
+    });
+    const res = createResponse();
+    const next = jest.fn() as NextFunction;
+
+    await requireAAL2(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: "simulated postgres failure" }));
+    if (originalImpl) clientQueryMock.mockImplementation(originalImpl);
   });
 
   it("emits a Set-Cookie value with the correct flags", () => {

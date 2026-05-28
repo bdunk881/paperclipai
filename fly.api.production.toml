@@ -20,6 +20,12 @@ primary_region = "ord"
   INFISICAL_ENV = "production"
   PORT = "8080"
   NODE_ENV = "production"
+  # HEL-298: WebAuthn relying-party config. See fly.api.dev.toml for the
+  # rationale on using helloautoflow.com (eTLD+1) as the RP ID. Origin
+  # list mirrors ALLOWED_ORIGINS.
+  MFA_RP_ID = "helloautoflow.com"
+  MFA_RP_NAME = "AutoFlow"
+  MFA_ORIGIN = "https://app.helloautoflow.com,https://helloautoflow.com,https://www.helloautoflow.com"
   # AUTOFLOW_ALLOW_INMEMORY intentionally unset — HEL-80 enforces double-locked
   # production safety. The server will fail-fast if Postgres is unreachable.
 

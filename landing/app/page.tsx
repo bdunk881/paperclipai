@@ -11,7 +11,12 @@ import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
-import { getPricingOverlays, type PricingTierOverlay } from "@/lib/sanity";
+import {
+  getCreditPackOverlays,
+  getPricingOverlays,
+  type CreditPackOverlay,
+  type PricingTierOverlay,
+} from "@/lib/sanity";
 
 export function meta() {
   return [
@@ -137,6 +142,16 @@ interface Pack {
   creditsGranted: number;
   bonusPercent: number;
   sortOrder: number;
+  /**
+   * Optional editorial overrides (HEL-285) from a Sanity
+   * `creditPackOverlay` document. All undefined → renderer falls through
+   * to the current default behavior (auto-featured = highest
+   * bonusPercent, "Most popular" badge, "Buy {displayName}" CTA).
+   */
+  tagline?: string;
+  isFeaturedOverride?: boolean;
+  featuredLabel?: string;
+  ctaLabel?: string;
 }
 
 interface PricingLoaderData {
@@ -259,6 +274,31 @@ function mergeOverlays(
   });
 }
 
+/**
+ * Apply Sanity overlays to API credit packs (HEL-285). Per-pack overrides
+ * land on optional `Pack` fields the renderer consults; the "Most
+ * popular" override is intentionally tri-state (true / false / undefined)
+ * so editors can both promote AND demote individual packs.
+ */
+function mergeCreditPackOverlays(
+  packs: Pack[],
+  overlays: CreditPackOverlay[] | null,
+): Pack[] {
+  if (!overlays || overlays.length === 0) return packs;
+  const byId = new Map(overlays.map((o) => [o.packId, o]));
+  return packs.map((pack) => {
+    const overlay = byId.get(pack.id);
+    if (!overlay) return pack;
+    return {
+      ...pack,
+      tagline: overlay.tagline ?? pack.tagline,
+      isFeaturedOverride: overlay.isFeatured ?? pack.isFeaturedOverride,
+      featuredLabel: overlay.featuredLabel ?? pack.featuredLabel,
+      ctaLabel: overlay.ctaLabel ?? pack.ctaLabel,
+    };
+  });
+}
+
 export async function loader(): Promise<PricingLoaderData> {
   // Pricing API + Sanity overlays in parallel. Sanity overlay failures
   // (missing creds, GROQ errors) return null inside sanityFetch — they
@@ -278,14 +318,15 @@ export async function loader(): Promise<PricingLoaderData> {
     }
   })();
 
-  const [apiData, overlays] = await Promise.all([
+  const [apiData, tierOverlays, packOverlays] = await Promise.all([
     apiPromise,
     getPricingOverlays(),
+    getCreditPackOverlays(),
   ]);
 
   return {
-    tiers: mergeOverlays(apiData.tiers, overlays),
-    packs: apiData.packs,
+    tiers: mergeOverlays(apiData.tiers, tierOverlays),
+    packs: mergeCreditPackOverlays(apiData.packs, packOverlays),
   };
 }
 
@@ -1044,32 +1085,56 @@ export default function Home() {
         </p>
 
         <div className="lp-packs">
-          {packs.map((p) => {
-            const featured = p.bonusPercent === Math.max(...packs.map((x) => x.bonusPercent), 0) && p.bonusPercent > 0;
-            return (
-              <div key={p.id} className={`lp-pack${featured ? " featured" : ""}`}>
-                {featured ? <span className="lp-pack-popular">Most popular</span> : null}
-                <h3>{p.displayName}</h3>
-                <div className="lp-price">
-                  ${Math.round(p.priceUsdCents / 100)}
-                  <small>one-time</small>
+          {(() => {
+            // Auto "Most popular" target = pack with the highest bonusPercent.
+            // Overlay can override this per-pack (tri-state: true / false /
+            // undefined) — see mergeCreditPackOverlays.
+            const maxBonus = Math.max(...packs.map((x) => x.bonusPercent), 0);
+            const autoFeaturedId = packs.find(
+              (x) => x.bonusPercent === maxBonus && maxBonus > 0,
+            )?.id;
+            return packs.map((p) => {
+              const featured =
+                p.isFeaturedOverride ?? p.id === autoFeaturedId;
+              const ctaLabel = p.ctaLabel ?? `Buy ${p.displayName}`;
+              const featuredLabel = p.featuredLabel ?? "Most popular";
+              return (
+                <div key={p.id} className={`lp-pack${featured ? " featured" : ""}`}>
+                  {featured ? <span className="lp-pack-popular">{featuredLabel}</span> : null}
+                  <h3>{p.displayName}</h3>
+                  {p.tagline ? (
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        color: "var(--af2-ink-3)",
+                        marginTop: -2,
+                        marginBottom: 6,
+                      }}
+                    >
+                      {p.tagline}
+                    </div>
+                  ) : null}
+                  <div className="lp-price">
+                    ${Math.round(p.priceUsdCents / 100)}
+                    <small>one-time</small>
+                  </div>
+                  <div className="lp-pack-credits">
+                    {p.creditsGranted.toLocaleString("en-US")} credits
+                  </div>
+                  {p.bonusPercent > 0 ? (
+                    <span className="lp-pack-bonus">+{p.bonusPercent}% bonus</span>
+                  ) : null}
+                  <Link
+                    to={`/signup?next=/billing&pack=${p.id}`}
+                    className={featured ? "af2-btn af2-btn-clay" : "af2-btn"}
+                    style={{ width: "100%", textAlign: "center", marginTop: 20 }}
+                  >
+                    {ctaLabel}
+                  </Link>
                 </div>
-                <div className="lp-pack-credits">
-                  {p.creditsGranted.toLocaleString("en-US")} credits
-                </div>
-                {p.bonusPercent > 0 ? (
-                  <span className="lp-pack-bonus">+{p.bonusPercent}% bonus</span>
-                ) : null}
-                <Link
-                  to={`/signup?next=/billing&pack=${p.id}`}
-                  className={featured ? "af2-btn af2-btn-clay" : "af2-btn"}
-                  style={{ width: "100%", textAlign: "center", marginTop: 20 }}
-                >
-                  Buy {p.displayName}
-                </Link>
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
 
         <p

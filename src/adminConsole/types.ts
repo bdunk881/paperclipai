@@ -84,6 +84,10 @@ export const ADMIN_ACTIONS = [
 
   // infra cost reads (HEL infra follow-up)
   "view_infra_cost",
+  // cost threshold management (HEL infra follow-up)
+  "create_cost_threshold",
+  "update_cost_threshold",
+  "disable_cost_threshold",
 
   // infra compute mutations (HEL infra PR #6)
   "restart_fly_machine",

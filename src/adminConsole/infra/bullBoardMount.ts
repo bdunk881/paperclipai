@@ -44,10 +44,12 @@ export function createBullBoardRouter(): Router {
   }
 
   const serverAdapter = new ExpressAdapter();
-  // PR #2 ships read-only; flipped to false in PR #6 when mutation routes
-  // land alongside our custom queue inspector.
+  // PR #6 flipped these to allow retry/promote/clean from bull-board.
+  // requirePlatformAdmin + requireAAL2 gates the parent route, so only
+  // step-up-authenticated platform admins reach this UI; the readOnlyMode
+  // flag is only the second line of defense.
   createBullBoard({
-    queues: queues.map((q) => new BullMQAdapter(q, { readOnlyMode: true, allowRetries: false })),
+    queues: queues.map((q) => new BullMQAdapter(q, { readOnlyMode: false, allowRetries: true })),
     serverAdapter,
   });
 

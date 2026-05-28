@@ -37,6 +37,21 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   // Test-fire from the Settings page; lower than ask_agent so a careless
   // admin can't loop on it.
   test_agent_webhook: { limit: 10, window: "hour" },
+
+  // HEL infra dashboard PR #6: Compute mutations. Production-side blast
+  // radius governs the limit; reads-first means we tune these down further
+  // after observing real usage.
+  restart_fly_machine: { limit: 10, window: "hour" },
+  retry_queue_job: { limit: 30, window: "hour" },
+  promote_queue_job: { limit: 30, window: "hour" },
+  remove_queue_job: { limit: 20, window: "hour" },
+  replay_dlq_job: { limit: 30, window: "hour" },
+  // Pause/drain are coarser controls — keep their limits low so an admin
+  // can't accidentally pause every queue at once.
+  pause_queue: { limit: 5, window: "day" },
+  resume_queue: { limit: 10, window: "day" },
+  drain_queue: { limit: 2, window: "day" },
+  trigger_scheduled_job: { limit: 10, window: "hour" },
 };
 
 function envOverride(name: string): number | undefined {

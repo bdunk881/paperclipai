@@ -1,15 +1,22 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchInfraCompute,
   type FlyAppView,
   type FlyMachine,
   type JobRunRow,
 } from "../api/infraApi";
+import { restartFlyMachine, triggerScheduledJob } from "../api/computeMutationsApi";
 import { MetricCard } from "../components/infra/MetricCard";
 import { InfraTabs } from "../components/infra/InfraTabs";
 import { AskAgentButton } from "../components/agent/AskAgentButton";
+import { ReasonPrompt } from "../components/ReasonPrompt";
+import { DangerActionPrompt } from "../components/infra/DangerActionPrompt";
 import { QueueInspector } from "./infra/QueueInspector";
+
+function isProductionApp(appName: string): boolean {
+  return /production|prod\b/i.test(appName);
+}
 
 function shortTimeAgo(value: string | null): string {
   if (!value) return "—";
@@ -22,32 +29,96 @@ function shortTimeAgo(value: string | null): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
-function MachineRow({ appName, m }: { appName: string; m: FlyMachine }) {
+function MachineRow({
+  appName,
+  m,
+  onRestarted,
+}: {
+  appName: string;
+  m: FlyMachine;
+  onRestarted: () => void;
+}) {
   const stateOk = m.state === "started";
+  const prod = isProductionApp(appName);
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
   return (
-    <tr>
-      <td className="code">{m.id.slice(0, 10)}…</td>
-      <td>{m.region}</td>
-      <td>
-        <span className={`pill ${stateOk ? "success" : "warning"}`}>{m.state}</span>
-      </td>
-      <td>{m.image_ref?.tag ?? m.image_ref?.digest?.slice(0, 12) ?? "—"}</td>
-      <td>{shortTimeAgo(m.updated_at ?? m.created_at ?? null)}</td>
-      <td>
-        <AskAgentButton
-          context={{
-            kind: "fly_machine",
-            source: "admin.infra.compute",
-            subjectRef: { app: appName, machine_id: m.id, state: m.state, region: m.region },
-            payload: { machine: m },
-          }}
-        />
-      </td>
-    </tr>
+    <>
+      <tr>
+        <td className="code">{m.id.slice(0, 10)}…</td>
+        <td>{m.region}</td>
+        <td>
+          <span className={`pill ${stateOk ? "success" : "warning"}`}>{m.state}</span>
+        </td>
+        <td>{m.image_ref?.tag ?? m.image_ref?.digest?.slice(0, 12) ?? "—"}</td>
+        <td>{shortTimeAgo(m.updated_at ?? m.created_at ?? null)}</td>
+        <td>
+          <div className="row" style={{ gap: "0.4rem" }}>
+            {prod ? (
+              <button className="danger" onClick={() => setOpen(true)}>
+                Restart
+              </button>
+            ) : (
+              <ReasonPrompt
+                label="Restart"
+                onConfirm={async (reason) => {
+                  try {
+                    await restartFlyMachine({ app: appName, machineId: m.id, reason });
+                    setMessage("Restart requested");
+                    onRestarted();
+                  } catch (err) {
+                    setMessage(err instanceof Error ? err.message : String(err));
+                    throw err;
+                  }
+                }}
+              />
+            )}
+            <AskAgentButton
+              context={{
+                kind: "fly_machine",
+                source: "admin.infra.compute",
+                subjectRef: { app: appName, machine_id: m.id, state: m.state, region: m.region },
+                payload: { machine: m },
+              }}
+            />
+          </div>
+          {message && (
+            <div className="muted" style={{ marginTop: "0.25rem" }}>
+              {message}
+            </div>
+          )}
+        </td>
+      </tr>
+      <DangerActionPrompt
+        open={open}
+        title={`Restart ${appName} machine ${m.id.slice(0, 8)}`}
+        description={
+          <>
+            This will restart a <strong>production</strong> Fly machine. Customer requests
+            currently served by this machine will see a brief disruption.
+          </>
+        }
+        typedConfirm="RESTART"
+        confirmLabel={`Restart ${m.id.slice(0, 8)}`}
+        acknowledgementText="I've checked the surrounding machines are healthy and this restart is safe."
+        onClose={() => setOpen(false)}
+        onConfirm={async ({ reason }) => {
+          await restartFlyMachine({
+            app: appName,
+            machineId: m.id,
+            reason,
+            confirm: "RESTART",
+          });
+          setMessage("Production restart requested");
+          onRestarted();
+        }}
+      />
+    </>
   );
 }
 
-function FlyApp({ view }: { view: FlyAppView }) {
+function FlyApp({ view, onMutated }: { view: FlyAppView; onMutated: () => void }) {
   return (
     <div style={{ marginBottom: "1rem" }}>
       <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.4rem" }}>
@@ -80,7 +151,7 @@ function FlyApp({ view }: { view: FlyAppView }) {
           </thead>
           <tbody>
             {view.machines.map((m) => (
-              <MachineRow key={m.id} appName={view.appName} m={m} />
+              <MachineRow key={m.id} appName={view.appName} m={m} onRestarted={onMutated} />
             ))}
           </tbody>
         </table>
@@ -166,11 +237,15 @@ function JobOutcomePill({ row }: { row: JobRunRow }) {
 }
 
 export function InfraComputePage() {
+  const qc = useQueryClient();
   const { data, error, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["infra-compute"],
     queryFn: fetchInfraCompute,
     refetchInterval: 30_000,
   });
+  const refreshData = () => {
+    void qc.invalidateQueries({ queryKey: ["infra-compute"] });
+  };
 
   return (
     <>
@@ -193,7 +268,7 @@ export function InfraComputePage() {
         {isLoading || !data ? (
           <span className="muted">Loading…</span>
         ) : (
-          data.fly.map((view) => <FlyApp key={view.appName} view={view} />)
+          data.fly.map((view) => <FlyApp key={view.appName} view={view} onMutated={refreshData} />)
         )}
       </div>
 
@@ -213,14 +288,23 @@ export function InfraComputePage() {
             <div key={jobName} style={{ marginBottom: "1rem" }}>
               <div className="row" style={{ justifyContent: "space-between" }}>
                 <strong>{jobName}</strong>
-                <AskAgentButton
-                  context={{
-                    kind: "scheduled_job",
-                    source: "admin.infra.compute",
-                    subjectRef: { job: jobName, recent_runs: runs.length },
-                    payload: { runs },
-                  }}
-                />
+                <div className="row" style={{ gap: "0.4rem" }}>
+                  <ReasonPrompt
+                    label="Run now"
+                    onConfirm={async (reason) => {
+                      await triggerScheduledJob({ jobName, reason });
+                      refreshData();
+                    }}
+                  />
+                  <AskAgentButton
+                    context={{
+                      kind: "scheduled_job",
+                      source: "admin.infra.compute",
+                      subjectRef: { job: jobName, recent_runs: runs.length },
+                      payload: { runs },
+                    }}
+                  />
+                </div>
               </div>
               {runs.length === 0 ? (
                 <p className="muted">No runs recorded yet.</p>

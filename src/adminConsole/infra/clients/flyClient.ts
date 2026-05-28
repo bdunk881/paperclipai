@@ -67,16 +67,21 @@ function resolveBaseUrl(opts: FlyClientOptions): string {
 async function flyRequest<T>(
   path: string,
   opts: FlyClientOptions,
+  method: "GET" | "POST" = "GET",
+  body?: unknown,
 ): Promise<T> {
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   const token = resolveToken(opts);
   const url = `${resolveBaseUrl(opts)}${path}`;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetchImpl(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -84,7 +89,14 @@ async function flyRequest<T>(
     const scrubbed = text.split(token).join("<redacted>").slice(0, 500);
     throw new FlyClientError(res.status, scrubbed);
   }
-  return (await res.json()) as T;
+  // Some Fly responses (like restart) are JSON-empty 200s; tolerate non-JSON.
+  const text = await res.text();
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return undefined as T;
+  }
 }
 
 export interface FlyAppMachinesView {
@@ -136,6 +148,26 @@ export async function listMachinesForApps(
           : String(r.reason),
     };
   });
+}
+
+/**
+ * Restarts a single Fly machine. Returns the machine's new state shape
+ * (Fly returns the updated machine doc on success). Throws FlyClientError
+ * on 4xx/5xx — the routes layer translates to HTTP status.
+ *
+ * Docs: https://fly.io/docs/machines/api/machines-resource/#restart-a-machine
+ */
+export async function restartMachine(
+  appName: string,
+  machineId: string,
+  opts: FlyClientOptions = {},
+): Promise<FlyMachine | undefined> {
+  return flyRequest<FlyMachine>(
+    `/v1/apps/${encodeURIComponent(appName)}/machines/${encodeURIComponent(machineId)}/restart`,
+    opts,
+    "POST",
+    {},
+  );
 }
 
 /**

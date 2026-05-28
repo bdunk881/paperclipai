@@ -10,6 +10,7 @@ import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
 import { signOutboundBody } from "../webhooks/verifySignature";
 import { assertSafeMcpUrl, assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
+import { safeEvalCondition } from "./safeConditionEval";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import {
   buildResolvedFromHostedFree,
@@ -491,16 +492,11 @@ export async function handleCondition(
     return { output: { _conditionResult: true } };
   }
 
-  // Safe expression evaluation: allow simple comparisons and logical ops.
-  // For production, replace with a sandboxed evaluator (e.g. vm2, expr-eval).
+  // HEL-254 — safe condition evaluation. Uses expr-eval (custom parser,
+  // no JS eval). `process`, `global`, `require`, etc. aren't reachable.
   let result = false;
   try {
-    // Build a tiny scope from the context, then evaluate.
-    const keys = Object.keys(ctx);
-    const vals = Object.values(ctx);
-    // eslint-disable-next-line no-new-func
-    const fn = new Function(...keys, `return (${step.condition});`);
-    result = Boolean(fn(...vals));
+    result = safeEvalCondition(step.condition, ctx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(

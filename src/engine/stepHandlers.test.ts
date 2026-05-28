@@ -463,7 +463,7 @@ describe("handleCondition", () => {
   it("evaluates array.includes() expressions", async () => {
     const step = makeStep({
       kind: "condition",
-      condition: "autoRespondCategories.includes(intent)",
+      condition: "intent in autoRespondCategories",
       outputKeys: ["shouldAutoRespond"],
     });
     const ctx: StepContext = { autoRespondCategories: ["general", "billing"], intent: "general" };

@@ -26,6 +26,7 @@ import {
   resolveSpendAmountCents,
 } from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
+import { safeEvalCondition } from "./safeConditionEval";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -113,17 +114,13 @@ function interpolate(template: string, context: Record<string, unknown>): string
 }
 
 // ---------------------------------------------------------------------------
-// Condition evaluator — uses Function constructor with scoped variables.
-// Only template-defined condition strings are evaluated; no user input reaches here.
+// Condition evaluator — HEL-254 / SEC-03: uses expr-eval (custom parser, no
+// JS eval). Errors fall back to false so workflow edge-routing stays safe.
 // ---------------------------------------------------------------------------
 
 function evalCondition(expression: string, context: Record<string, unknown>): boolean {
   try {
-    const keys = Object.keys(context);
-    const values = Object.values(context);
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const fn = new Function(...keys, `return Boolean(${expression});`);
-    return fn(...values);
+    return safeEvalCondition(expression, context);
   } catch {
     return false;
   }

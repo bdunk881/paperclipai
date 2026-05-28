@@ -1,6 +1,7 @@
 import { PortableText } from "@portabletext/react";
 import type { MetaFunction } from "react-router";
 import { Link, useLoaderData } from "react-router";
+import sanitizeHtml from "sanitize-html";
 import { getBlogPost, urlFor } from "@/lib/sanity";
 import { getArticle } from "@/lib/articles";
 
@@ -144,6 +145,18 @@ export default function BlogPostPage() {
   );
 }
 
+/**
+ * HEL-257 / SEC-06 — sanitization allowlist for the regex-built local-
+ * article HTML. Only the tags the MarkdownRenderer emits are permitted;
+ * `class` is the only allowed attribute (the renderer attaches Tailwind
+ * utility classes for typography). Anything outside this list (img,
+ * script, event handlers, data: URLs, etc.) gets stripped.
+ */
+const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: ["p", "h2", "h3", "strong", "em", "li", "br"],
+  allowedAttributes: { "*": ["class"] },
+};
+
 /** Minimal markdown-to-HTML renderer for the local article fallback. */
 function MarkdownRenderer({ content }: { content: string }) {
   const html = content
@@ -156,10 +169,15 @@ function MarkdownRenderer({ content }: { content: string }) {
     .replace(/\n\n/g, '</p><p class="mt-4">')
     .replace(/\n/g, "<br/>");
 
+  // HEL-257 / SEC-06 — sanitize before injection so any inline script /
+  // event-handler attribute / disallowed tag (e.g. `<img onerror=…>`) is
+  // stripped instead of executing in the reader's browser.
+  const safeHtml = sanitizeHtml(`<p class="mt-4">${html}</p>`, SANITIZE_OPTIONS);
+
   return (
     <div
       className="[&>p]:mt-4 [&>h2]:text-2xl [&>h2]:font-bold [&>h3]:text-xl [&>h3]:font-semibold"
-      dangerouslySetInnerHTML={{ __html: `<p class="mt-4">${html}</p>` }}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   );
 }

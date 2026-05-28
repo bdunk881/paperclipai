@@ -32,14 +32,40 @@ import {
   mintAal2Attestation,
   type MintedAal2Attestation,
 } from "../middleware/requireAAL2";
+import {
+  REQUIRE_APP_MFA_FOR_OAUTH_USERS,
+  isWorkspaceFlagEnabled as defaultWorkspaceFlagChecker,
+} from "./workspaceFeatureFlags";
 
 export type MfaFactorType = "webauthn" | "totp";
+
+/**
+ * HEL-280: how the user authenticated their current session. Derived
+ * from the Supabase JWT's `app_metadata.provider` claim (already extracted
+ * onto `req.auth.provider` by `attachSupabaseAuth`). OAuth providers
+ * carry their own phish-resistant 2FA at the IdP, so the enrollment gate
+ * treats them as satisfied unless the workspace flag flips it on.
+ */
+export type SignInMethod =
+  | "password"
+  | "magic_link"
+  | "oauth_google"
+  | "oauth_github"
+  | "unknown";
 
 export interface MfaPolicySummary {
   hasWebauthn: boolean;
   hasTotp: boolean;
   hasAnyFactor: boolean;
   hasRecoveryCodes: boolean;
+  /** HEL-280: how the active session authenticated. */
+  signInMethod: SignInMethod;
+  /**
+   * HEL-280: whether the enforcement gate should require an app-side
+   * factor. False for OAuth users by default; the workspace flag
+   * `require_app_mfa_for_oauth_users` flips it back to true.
+   */
+  requiresAppMfa: boolean;
   enrollmentCompletedAt: string | null;
   lastVerifiedAt: string | null;
   lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;
@@ -200,6 +226,39 @@ export interface MfaServiceDeps {
   rpName?: string;
   rpId?: string;
   origin?: string | string[];
+  /**
+   * HEL-280: injectable workspace-flag checker. Defaults to the real
+   * `isWorkspaceFlagEnabled` reader; tests stub it to avoid the DB.
+   */
+  workspaceFlagChecker?: (workspaceId: string | null | undefined, flag: string) => Promise<boolean>;
+}
+
+export interface GetPolicyOptions {
+  /** Supabase `app_metadata.provider` claim. Used to derive `signInMethod`. */
+  provider?: string;
+}
+
+/**
+ * HEL-280: Supabase exposes the IdP via `app_metadata.provider`. Map the
+ * raw provider name into our typed `SignInMethod`. Unknown providers
+ * fall through to `"unknown"` so we always require app-side MFA for
+ * anything we don't explicitly trust.
+ */
+function deriveSignInMethod(provider: string | undefined): SignInMethod {
+  switch (provider) {
+    case "google":
+      return "oauth_google";
+    case "github":
+      return "oauth_github";
+    case "email":
+    case "supabase":
+      // Supabase reports `email` for password+OTP+magic-link sign-ins.
+      // We can't disambiguate password vs magic-link from the JWT alone,
+      // so default to `password` — both require app-side MFA anyway.
+      return "password";
+    default:
+      return provider ? "unknown" : "unknown";
+  }
 }
 
 const DEFAULT_RECOVERY_CODE_COUNT = 10;
@@ -208,12 +267,16 @@ function formatPolicy(
   policy: UserMfaPolicyRow | null,
   credentials: WebauthnCredentialRow[],
   activeRecoveryCodes: number,
+  signInMethod: SignInMethod,
+  requiresAppMfa: boolean,
 ): MfaPolicySummary {
   return {
     hasWebauthn: credentials.length > 0,
     hasTotp: policy?.hasTotp ?? false,
     hasAnyFactor: credentials.length > 0 || (policy?.hasTotp ?? false),
     hasRecoveryCodes: activeRecoveryCodes > 0,
+    signInMethod,
+    requiresAppMfa,
     enrollmentCompletedAt: policy?.enrollmentCompletedAt?.toISOString() ?? null,
     lastVerifiedAt: policy?.lastVerifiedAt?.toISOString() ?? null,
     lastVerifiedMethod: policy?.lastVerifiedMethod ?? null,
@@ -287,6 +350,7 @@ export class MfaService {
   private rpName: string;
   private rpId: string;
   private origin: string | string[];
+  private workspaceFlagChecker: (workspaceId: string | null | undefined, flag: string) => Promise<boolean>;
   private challengeStore = new Map<string, { challenge: string; createdAt: number }>();
 
   constructor(deps: MfaServiceDeps = {}) {
@@ -298,6 +362,7 @@ export class MfaService {
     this.rpId = deps.rpId ?? process.env.MFA_RP_ID ?? "localhost";
     this.origin =
       deps.origin ?? this.parseOriginEnv(process.env.MFA_ORIGIN ?? "http://localhost:5173");
+    this.workspaceFlagChecker = deps.workspaceFlagChecker ?? defaultWorkspaceFlagChecker;
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -325,13 +390,25 @@ export class MfaService {
     return entry.challenge;
   }
 
-  async getPolicy(ctx: MfaServiceContext): Promise<MfaPolicySummary> {
-    const [policy, credentials, activeRecoveryCodes] = await Promise.all([
+  async getPolicy(ctx: MfaServiceContext, options: GetPolicyOptions = {}): Promise<MfaPolicySummary> {
+    const signInMethod = deriveSignInMethod(options.provider);
+    const isOauth = signInMethod === "oauth_google" || signInMethod === "oauth_github";
+
+    const [policy, credentials, activeRecoveryCodes, oauthOverrideOn] = await Promise.all([
       this.repository.getPolicy(ctx.userId),
       this.repository.listWebauthnCredentials(ctx.userId),
       this.repository.countActiveRecoveryCodes(ctx.userId),
+      isOauth
+        ? this.workspaceFlagChecker(ctx.workspaceId, REQUIRE_APP_MFA_FOR_OAUTH_USERS)
+        : Promise.resolve(false),
     ]);
-    return formatPolicy(policy, credentials, activeRecoveryCodes);
+
+    // HEL-280: OAuth users are MFA-satisfied by the IdP unless the
+    // workspace explicitly opts back in via the override flag. All
+    // other sign-in methods always require an app-side factor.
+    const requiresAppMfa = isOauth ? oauthOverrideOn : true;
+
+    return formatPolicy(policy, credentials, activeRecoveryCodes, signInMethod, requiresAppMfa);
   }
 
   // ---- WebAuthn (passkey) ---------------------------------------------------

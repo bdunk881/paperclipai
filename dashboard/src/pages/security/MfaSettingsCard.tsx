@@ -156,7 +156,11 @@ export function MfaSettingsCard() {
         </div>
       )}
 
-      {!policy.hasAnyFactor && (
+      {/* HEL-280: split the no-factors banner by whether app MFA is
+          required. Password users see urgent red; OAuth users (who are
+          already 2FA-satisfied via the IdP) see a softer suggestion to
+          add a passkey as a backup. */}
+      {!policy.hasAnyFactor && policy.requiresAppMfa && (
         <div className="mb-4 rounded-lg border border-af2-clay/40 bg-af2-clay-soft/30 px-3 py-2 text-sm text-af2-clay">
           You don't have any factors enrolled.{" "}
           <button
@@ -169,6 +173,26 @@ export function MfaSettingsCard() {
           .
         </div>
       )}
+      {!policy.hasAnyFactor &&
+        !policy.requiresAppMfa &&
+        (policy.signInMethod === "oauth_google" || policy.signInMethod === "oauth_github") && (
+          <div className="mb-4 rounded-lg border border-af2-sage/40 bg-af2-sage/10 px-3 py-2 text-sm text-af2-ink-2">
+            Your account is secured by{" "}
+            <span className="font-medium">
+              {policy.signInMethod === "oauth_google" ? "Google" : "GitHub"}
+            </span>
+            's two-factor authentication. Add a passkey to keep access if you lose your{" "}
+            {policy.signInMethod === "oauth_google" ? "Google" : "GitHub"} account.{" "}
+            <button
+              type="button"
+              className="underline"
+              onClick={() => navigate("/onboarding/mfa")}
+            >
+              Add a passkey
+            </button>
+            .
+          </div>
+        )}
 
       {/* Passkeys */}
       <div className="mb-6">

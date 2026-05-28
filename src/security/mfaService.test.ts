@@ -88,6 +88,63 @@ describe("MfaService", () => {
     expect(policy.hasTotp).toBe(false);
     expect(policy.hasAnyFactor).toBe(false);
     expect(policy.webauthnDevices).toHaveLength(0);
+    // HEL-280: with no provider passed, signInMethod is "unknown" and
+    // requiresAppMfa defaults to true (most-conservative).
+    expect(policy.signInMethod).toBe("unknown");
+    expect(policy.requiresAppMfa).toBe(true);
+  });
+
+  // HEL-280 ----------------------------------------------------------------
+
+  it("derives signInMethod and requires app MFA for password sign-ins", async () => {
+    const flagChecker = jest.fn().mockResolvedValue(false);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      workspaceFlagChecker: flagChecker,
+    });
+    const policy = await service.getPolicy(
+      { userId: "u-1", workspaceId: "ws-1" },
+      { provider: "email" },
+    );
+    expect(policy.signInMethod).toBe("password");
+    expect(policy.requiresAppMfa).toBe(true);
+    // No flag check for non-OAuth sign-ins — they always require app MFA.
+    expect(flagChecker).not.toHaveBeenCalled();
+  });
+
+  it("skips app MFA enforcement for OAuth users by default", async () => {
+    const flagChecker = jest.fn().mockResolvedValue(false);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      workspaceFlagChecker: flagChecker,
+    });
+    const policy = await service.getPolicy(
+      { userId: "u-1", workspaceId: "ws-1" },
+      { provider: "google" },
+    );
+    expect(policy.signInMethod).toBe("oauth_google");
+    expect(policy.requiresAppMfa).toBe(false);
+    expect(flagChecker).toHaveBeenCalledWith("ws-1", "require_app_mfa_for_oauth_users");
+  });
+
+  it("re-requires app MFA for OAuth users when the workspace override flag is on", async () => {
+    const flagChecker = jest.fn().mockResolvedValue(true);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      workspaceFlagChecker: flagChecker,
+    });
+    const policy = await service.getPolicy(
+      { userId: "u-1", workspaceId: "ws-ent" },
+      { provider: "github" },
+    );
+    expect(policy.signInMethod).toBe("oauth_github");
+    expect(policy.requiresAppMfa).toBe(true);
   });
 
   it("enrolls a webauthn credential end-to-end", async () => {

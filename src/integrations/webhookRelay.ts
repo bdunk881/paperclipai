@@ -152,7 +152,7 @@ export interface WebhookSubscription {
   active: boolean;
   createdAt: string;
   lastFiredAt?: string;
-  /** Signature verification scheme (default: "none"). */
+  /** Signature verification scheme (default: "hmac-sha256"). */
   signatureScheme: WebhookSignatureScheme;
   /** HMAC signing secret supplied by the third-party service (stored in memory only). */
   signingSecret?: string;
@@ -413,10 +413,15 @@ export const webhookRelay = {
       label: params.label,
       active: true,
       createdAt: new Date().toISOString(),
-      signatureScheme: params.signatureScheme ?? "none",
+      signatureScheme: params.signatureScheme ?? "hmac-sha256",
       signingSecret: params.signingSecret,
       signatureHeaderKey: params.signatureHeaderKey,
     };
+    if (subscription.signatureScheme === "none") {
+      console.warn(
+        `[webhookRelay] Subscription ${subscription.id} (integration: ${subscription.integrationSlug}) registered with scheme "none" — all inbound payloads will be accepted without signature verification. Set a signatureScheme and signingSecret for production use.`,
+      );
+    }
     subscriptions.set(subscription.id, subscription);
     events.set(subscription.id, []);
     await persistSubscription(subscription);

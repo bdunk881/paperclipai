@@ -497,6 +497,7 @@ router.post("/triggers/subscriptions", asyncHandler(async (req, res) => {
   if (signatureScheme && signatureScheme !== "none" && !signingSecret) {
     res.status(400).json({ error: "signingSecret is required when signatureScheme is set" }); return;
   }
+  const schemeIsNone = signatureScheme === "none";
 
   const manifest = getIntegrationBySlug(integrationSlug);
   if (!manifest) { res.status(400).json({ error: `Unknown integration: ${integrationSlug}` }); return; }
@@ -513,17 +514,22 @@ router.post("/triggers/subscriptions", asyncHandler(async (req, res) => {
     label: typeof label === "string" ? label : `${manifest.name} / ${trigger.name}`,
     signatureScheme: typeof signatureScheme === "string"
       ? (signatureScheme as WebhookSignatureScheme)
-      : "none",
+      : undefined,
     signingSecret: typeof signingSecret === "string" ? signingSecret : undefined,
     signatureHeaderKey: typeof signatureHeaderKey === "string" ? signatureHeaderKey : undefined,
   });
 
   // Return the subscription without exposing the signing secret
   const { signingSecret: _secret, ...subPublic } = sub;
-  res.status(201).json({
+  const responseBody: Record<string, unknown> = {
     subscription: subPublic,
     relayUrl: `/api/webhooks/relay/${sub.id}`,
-  });
+  };
+  if (schemeIsNone) {
+    responseBody.warning =
+      'Subscription created with scheme "none". All inbound payloads will be accepted without signature verification. Provide a signatureScheme and signingSecret for production use.';
+  }
+  res.status(201).json(responseBody);
 }));
 
 /** DELETE /api/integrations/triggers/subscriptions/:id */

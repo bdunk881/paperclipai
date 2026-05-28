@@ -42,19 +42,20 @@ function digestDue(preference: NotificationPreference): preference is Notificati
 }
 
 export class NotificationService {
-  async listPreferences(workspaceId: string): Promise<NotificationPreference[]> {
-    return notificationStore.listPreferences(workspaceId);
+  async listPreferences(workspaceId: string, userId: string): Promise<NotificationPreference[]> {
+    return notificationStore.listPreferences(workspaceId, userId);
   }
 
   async updatePreference(input: {
     workspaceId: string;
+    userId: string;
     channel: NotificationChannel;
     kind: NotificationKind;
     cadence: NotificationCadence;
     enabled?: boolean;
     mutedUntil?: string | null;
   }): Promise<NotificationPreference> {
-    const existing = (await notificationStore.listPreferences(input.workspaceId)).find(
+    const existing = (await notificationStore.listPreferences(input.workspaceId, input.userId)).find(
       (item) => item.channel === input.channel && item.kind === input.kind,
     );
     const now = nowIso();
@@ -70,40 +71,45 @@ export class NotificationService {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
-    return notificationStore.upsertPreference(next);
+    return notificationStore.upsertPreference(next, input.userId);
   }
 
-  async listTransportConfigs(workspaceId: string): Promise<NotificationTransportConfig[]> {
-    return notificationStore.listTransportConfigs(workspaceId);
+  async listTransportConfigs(workspaceId: string, userId: string): Promise<NotificationTransportConfig[]> {
+    return notificationStore.listTransportConfigs(workspaceId, userId);
   }
 
   async upsertTransportConfig(input: {
     workspaceId: string;
+    userId: string;
     channel: NotificationChannel;
     ownerUserId: string;
     connectionId?: string;
     enabled: boolean;
     config: NotificationTransportConfig["config"];
   }): Promise<NotificationTransportConfig> {
-    const existing = (await notificationStore.listTransportConfigs(input.workspaceId)).find(
+    const existing = (await notificationStore.listTransportConfigs(input.workspaceId, input.userId)).find(
       (item) => item.channel === input.channel,
     );
     const now = nowIso();
-    return notificationStore.upsertTransportConfig({
-      id: existing?.id ?? randomUUID(),
-      workspaceId: input.workspaceId,
-      channel: input.channel,
-      ownerUserId: input.ownerUserId,
-      connectionId: input.connectionId,
-      enabled: input.enabled,
-      config: { ...input.config },
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    });
+    return notificationStore.upsertTransportConfig(
+      {
+        id: existing?.id ?? randomUUID(),
+        workspaceId: input.workspaceId,
+        channel: input.channel,
+        ownerUserId: input.ownerUserId,
+        connectionId: input.connectionId,
+        enabled: input.enabled,
+        config: { ...input.config },
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      },
+      input.userId,
+    );
   }
 
   async recordEvent(input: {
     workspaceId: string;
+    userId: string;
     kind: NotificationKind;
     title: string;
     summary: string;
@@ -115,8 +121,8 @@ export class NotificationService {
     return notificationStore.appendEvent(input);
   }
 
-  async health(workspaceId: string): Promise<NotificationHealth> {
-    const transports = await notificationStore.listTransportConfigs(workspaceId);
+  async health(workspaceId: string, userId: string): Promise<NotificationHealth> {
+    const transports = await notificationStore.listTransportConfigs(workspaceId, userId);
     const checkedAt = nowIso();
     return {
       workspaceId,
@@ -143,6 +149,7 @@ export class NotificationService {
 
   async sendTestEvent(input: {
     workspaceId: string;
+    userId: string;
     kind: NotificationKind;
     title?: string;
     summary?: string;
@@ -150,19 +157,20 @@ export class NotificationService {
   }) {
     const event = await this.recordEvent({
       workspaceId: input.workspaceId,
+      userId: input.userId,
       kind: input.kind,
       title: input.title ?? "Test notification",
       summary: input.summary ?? `Test delivery for ${input.kind}`,
       severity: input.severity ?? "info",
       source: "manual-test",
     });
-    await this.runSweepForWorkspace(input.workspaceId);
+    await this.runSweepForWorkspace(input.workspaceId, input.userId);
     return event;
   }
 
-  async runSweepForWorkspace(workspaceId: string): Promise<{ delivered: number; failed: number }> {
-    const preferences = await notificationStore.listPreferences(workspaceId);
-    const transports = await notificationStore.listTransportConfigs(workspaceId);
+  async runSweepForWorkspace(workspaceId: string, userId: string): Promise<{ delivered: number; failed: number }> {
+    const preferences = await notificationStore.listPreferences(workspaceId, userId);
+    const transports = await notificationStore.listTransportConfigs(workspaceId, userId);
     let delivered = 0;
     let failed = 0;
 
@@ -179,6 +187,7 @@ export class NotificationService {
       if (preference.cadence === "immediate") {
         const pending = await notificationStore.listUndeliveredEvents({
           workspaceId,
+          userId,
           kind: preference.kind,
           channel: preference.channel,
           cadence: "immediate",
@@ -193,24 +202,30 @@ export class NotificationService {
               workspaceId,
               kind: preference.kind,
             });
-            await notificationStore.saveDelivery({
-              workspaceId,
-              eventId: event.id,
-              channel: preference.channel,
-              cadence: "immediate",
-              deliveredAt: nowIso(),
-              status: "sent",
-            });
+            await notificationStore.saveDelivery(
+              {
+                workspaceId,
+                eventId: event.id,
+                channel: preference.channel,
+                cadence: "immediate",
+                deliveredAt: nowIso(),
+                status: "sent",
+              },
+              userId,
+            );
             delivered += 1;
           } catch (error) {
-            await notificationStore.saveDelivery({
-              workspaceId,
-              eventId: event.id,
-              channel: preference.channel,
-              cadence: "immediate",
-              status: "failed",
-              error: error instanceof Error ? error.message : String(error),
-            });
+            await notificationStore.saveDelivery(
+              {
+                workspaceId,
+                eventId: event.id,
+                channel: preference.channel,
+                cadence: "immediate",
+                status: "failed",
+                error: error instanceof Error ? error.message : String(error),
+              },
+              userId,
+            );
             failed += 1;
           }
         }
@@ -223,6 +238,7 @@ export class NotificationService {
 
       const pending = await notificationStore.listUndeliveredEvents({
         workspaceId,
+        userId,
         kind: preference.kind,
         channel: preference.channel,
         cadence: preference.cadence,
@@ -242,30 +258,39 @@ export class NotificationService {
         });
 
         for (const event of pending) {
-          await notificationStore.saveDelivery({
-            workspaceId,
-            eventId: event.id,
-            channel: preference.channel,
-            cadence: preference.cadence,
-            deliveredAt: nowIso(),
-            status: "sent",
-          });
+          await notificationStore.saveDelivery(
+            {
+              workspaceId,
+              eventId: event.id,
+              channel: preference.channel,
+              cadence: preference.cadence,
+              deliveredAt: nowIso(),
+              status: "sent",
+            },
+            userId,
+          );
         }
-        await notificationStore.upsertPreference({
-          ...preference,
-          lastDigestSentAt: nowIso(),
-        });
+        await notificationStore.upsertPreference(
+          {
+            ...preference,
+            lastDigestSentAt: nowIso(),
+          },
+          userId,
+        );
         delivered += pending.length;
       } catch (error) {
         for (const event of pending) {
-          await notificationStore.saveDelivery({
-            workspaceId,
-            eventId: event.id,
-            channel: preference.channel,
-            cadence: preference.cadence,
-            status: "failed",
-            error: error instanceof Error ? error.message : String(error),
-          });
+          await notificationStore.saveDelivery(
+            {
+              workspaceId,
+              eventId: event.id,
+              channel: preference.channel,
+              cadence: preference.cadence,
+              status: "failed",
+              error: error instanceof Error ? error.message : String(error),
+            },
+            userId,
+          );
         }
         failed += pending.length;
       }

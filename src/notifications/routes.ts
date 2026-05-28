@@ -16,6 +16,15 @@ function getUserId(req: AuthenticatedRequest): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function requireUserId(req: AuthenticatedRequest, res: express.Response): string | null {
+  const userId = getUserId(req);
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return null;
+  }
+  return userId;
+}
+
 function requireWorkspaceId(req: WorkspaceAwareRequest, res: express.Response): string | null {
   const resolvedValue = req.workspaceId?.trim() ?? "";
   const queryValue = typeof req.query.workspaceId === "string" ? req.query.workspaceId.trim() : "";
@@ -36,14 +45,22 @@ router.get("/preferences", requireAuth, asyncHandler<WorkspaceAwareRequest>(asyn
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
-  const preferences = await notificationService.listPreferences(workspaceId);
+  const preferences = await notificationService.listPreferences(workspaceId, userId);
   res.json({ preferences, total: preferences.length });
 }));
 
 router.put("/preferences", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const workspaceId = requireWorkspaceId(req, res);
   if (!workspaceId) {
+    return;
+  }
+  const userId = requireUserId(req, res);
+  if (!userId) {
     return;
   }
 
@@ -70,6 +87,7 @@ router.put("/preferences", requireAuth, asyncHandler<WorkspaceAwareRequest>(asyn
 
   const preference = await notificationService.updatePreference({
     workspaceId,
+    userId,
     channel,
     kind,
     cadence,
@@ -84,8 +102,12 @@ router.get("/transports", requireAuth, asyncHandler<WorkspaceAwareRequest>(async
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
-  const transports = await notificationService.listTransportConfigs(workspaceId);
+  const transports = await notificationService.listTransportConfigs(workspaceId, userId);
   res.json({ transports, total: transports.length });
 }));
 
@@ -95,9 +117,8 @@ router.put("/transports/:channel", requireAuth, asyncHandler<WorkspaceAwareReque
     return;
   }
 
-  const userId = getUserId(req);
+  const userId = requireUserId(req, res);
   if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
@@ -115,6 +136,7 @@ router.put("/transports/:channel", requireAuth, asyncHandler<WorkspaceAwareReque
 
   const transport = await notificationService.upsertTransportConfig({
     workspaceId,
+    userId,
     channel,
     ownerUserId: userId,
     connectionId: connectionId?.trim() || undefined,
@@ -138,6 +160,10 @@ router.post("/events", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (r
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
   const { kind, title, summary, severity, source, metadata } = req.body as {
     kind?: NotificationKind;
@@ -159,6 +185,7 @@ router.post("/events", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (r
 
   const event = await notificationService.recordEvent({
     workspaceId,
+    userId,
     kind,
     title: title.trim(),
     summary: summary.trim(),
@@ -174,6 +201,10 @@ router.post("/test-send", requireAuth, asyncHandler<WorkspaceAwareRequest>(async
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
   const kind = req.body.kind as NotificationKind | undefined;
   if (!kind || !KINDS.includes(kind)) {
@@ -183,6 +214,7 @@ router.post("/test-send", requireAuth, asyncHandler<WorkspaceAwareRequest>(async
 
   const event = await notificationService.sendTestEvent({
     workspaceId,
+    userId,
     kind,
     title: typeof req.body.title === "string" ? req.body.title : undefined,
     summary: typeof req.body.summary === "string" ? req.body.summary : undefined,
@@ -195,8 +227,12 @@ router.post("/sweep", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (re
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
-  const result = await notificationService.runSweepForWorkspace(workspaceId);
+  const result = await notificationService.runSweepForWorkspace(workspaceId, userId);
   res.json(result);
 }));
 
@@ -205,8 +241,12 @@ router.get("/health", requireAuth, asyncHandler<WorkspaceAwareRequest>(async (re
   if (!workspaceId) {
     return;
   }
+  const userId = requireUserId(req, res);
+  if (!userId) {
+    return;
+  }
 
-  const health = await notificationService.health(workspaceId);
+  const health = await notificationService.health(workspaceId, userId);
   const ok = health.channels.every((item) => !item.enabled || item.configured);
   res.status(ok ? 200 : 206).json(health);
 }));

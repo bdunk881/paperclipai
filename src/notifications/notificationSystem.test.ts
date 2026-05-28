@@ -3,6 +3,9 @@ import { notificationStore } from "./store";
 import { integrationCredentialStore } from "../integrations/integrationCredentialStore";
 import { slackCredentialStore } from "../integrations/slack/credentialStore";
 
+const TEST_WORKSPACE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const TEST_USER_ID = "user-1";
+
 describe("notification system", () => {
   beforeEach(async () => {
     jest.restoreAllMocks();
@@ -12,11 +15,12 @@ describe("notification system", () => {
   });
 
   it("lists default workspace preferences and persists updates", async () => {
-    const initial = await notificationService.listPreferences("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const initial = await notificationService.listPreferences(TEST_WORKSPACE_ID, TEST_USER_ID);
     expect(initial).toHaveLength(15);
 
     const updated = await notificationService.updatePreference({
-      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: TEST_WORKSPACE_ID,
+      userId: TEST_USER_ID,
       channel: "email",
       kind: "milestones",
       cadence: "daily",
@@ -28,23 +32,25 @@ describe("notification system", () => {
 
   it("sends an immediate Slack notification for a configured workspace", async () => {
     await slackCredentialStore.saveApiKey({
-      userId: "user-1",
+      userId: TEST_USER_ID,
       botToken: "xoxb-slack-token",
       teamId: "T123",
       teamName: "AutoFlow",
     });
 
-    const [slackConnection] = await slackCredentialStore.getPublicByUserAsync("user-1");
+    const [slackConnection] = await slackCredentialStore.getPublicByUserAsync(TEST_USER_ID);
     await notificationService.upsertTransportConfig({
-      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: TEST_WORKSPACE_ID,
+      userId: TEST_USER_ID,
       channel: "slack",
-      ownerUserId: "user-1",
+      ownerUserId: TEST_USER_ID,
       connectionId: slackConnection?.id,
       enabled: true,
       config: { slackChannelId: "C-alerts", slackChannelName: "alerts" },
     });
     await notificationService.updatePreference({
-      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: TEST_WORKSPACE_ID,
+      userId: TEST_USER_ID,
       channel: "slack",
       kind: "kill_switch",
       cadence: "immediate",
@@ -59,13 +65,14 @@ describe("notification system", () => {
     );
 
     await notificationService.recordEvent({
-      workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      workspaceId: TEST_WORKSPACE_ID,
+      userId: TEST_USER_ID,
       kind: "kill_switch",
       title: "Kill switch triggered",
       summary: "All outbound runs paused.",
       severity: "critical",
     });
-    const result = await notificationService.runSweepForWorkspace("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    const result = await notificationService.runSweepForWorkspace(TEST_WORKSPACE_ID, TEST_USER_ID);
 
     expect(result.delivered).toBe(1);
     expect(fetchMock).toHaveBeenCalled();

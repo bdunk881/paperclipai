@@ -1,5 +1,5 @@
 /**
- * Workspace feature-override reader (HEL-280).
+ * Workspace feature-override reader (HEL-280, RLS-aware after HEL-298).
  *
  * The `workspace_feature_overrides` table (migration 068) is the surface
  * support uses to flip per-workspace booleans without changing the plan
@@ -8,6 +8,13 @@
  * caller would have written its own SELECT. This module is the single
  * read surface so flag semantics live in one place.
  *
+ * HEL-298: the table has `FORCE RLS` and the only original SELECT policy
+ * was admin-only, so a normal user request silently saw zero rows. We now
+ * read inside `withWorkspaceContext`, and migration 086 adds a permissive
+ * SELECT policy `workspace_feature_overrides_workspace_self_read` that
+ * matches `workspace_id = app_current_workspace_id()`. Writes stay
+ * admin-only.
+ *
  * In-memory cache: 60s TTL keyed by `${workspaceId}:${flag}`. Negative
  * results are cached too so an absent row doesn't trigger a DB hit on
  * every request. Cache invalidates on TTL only — the admin write path is
@@ -15,7 +22,8 @@
  * invalidation; if that becomes a problem, swap to Redis pub/sub.
  */
 
-import { isPostgresPersistenceEnabled, queryPostgres } from "../db/postgres";
+import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
+import { withWorkspaceContext } from "../middleware/workspaceContext";
 
 export const REQUIRE_APP_MFA_FOR_OAUTH_USERS = "require_app_mfa_for_oauth_users";
 
@@ -33,11 +41,19 @@ function cacheKey(workspaceId: string, flag: string): string {
   return `${workspaceId}:${flag}`;
 }
 
+/**
+ * HEL-298: `userId` is now required because the read runs inside
+ * `withWorkspaceContext`, which sets both `app.current_workspace_id` and
+ * `app.current_user_id`. The user GUC isn't consulted by the new
+ * self-read policy, but the workspace-context transaction shape requires
+ * it and existing RLS integration tests assert both are set together.
+ */
 export async function isWorkspaceFlagEnabled(
   workspaceId: string | null | undefined,
+  userId: string | null | undefined,
   flag: string,
 ): Promise<boolean> {
-  if (!workspaceId) return false;
+  if (!workspaceId || !userId) return false;
 
   const key = cacheKey(workspaceId, flag);
   const cached = cache.get(key);
@@ -50,15 +66,21 @@ export async function isWorkspaceFlagEnabled(
     return false;
   }
 
-  const result = await queryPostgres<{ enabled: boolean; expires_at: Date | null }>(
-    `SELECT enabled, expires_at
-       FROM workspace_feature_overrides
-      WHERE workspace_id = $1 AND flag = $2
-      LIMIT 1`,
-    [workspaceId, flag],
+  const row = await withWorkspaceContext(
+    getPostgresPool(),
+    { workspaceId, userId },
+    async (client) => {
+      const result = await client.query<{ enabled: boolean; expires_at: Date | null }>(
+        `SELECT enabled, expires_at
+           FROM workspace_feature_overrides
+          WHERE workspace_id = $1 AND flag = $2
+          LIMIT 1`,
+        [workspaceId, flag],
+      );
+      return result.rows[0] ?? null;
+    },
   );
 
-  const row = result.rows[0];
   const enabled = Boolean(
     row?.enabled && (row.expires_at === null || row.expires_at.getTime() > Date.now()),
   );

@@ -159,12 +159,13 @@ async function checkOauthShortcut(req: AuthenticatedRequest): Promise<boolean> {
   if (!workspaceId) return true;
   const overrideOn = await isWorkspaceFlagEnabled(
     workspaceId,
+    req.auth?.sub,
     REQUIRE_APP_MFA_FOR_OAUTH_USERS,
   );
   return !overrideOn;
 }
 
-export async function requireAAL2(
+async function requireAAL2Impl(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction,
@@ -209,6 +210,30 @@ export async function requireAAL2(
     reason: supabaseCheck.reason ?? "step_up_required",
   });
 }
+
+/**
+ * HEL-298: `requireAAL2Impl` is async because HEL-280 introduced an
+ * await on `isWorkspaceFlagEnabled`. Express 4 doesn't route rejections
+ * from a raw async middleware through the error handler — the request
+ * hangs until the client times out (same class of bug as HEL-183/184).
+ * Wrapping at the export keeps every callsite (`app.use(..., requireAAL2, ...)`)
+ * unchanged while routing rejections through `next(err)`. After the
+ * Express 5 upgrade this wrapper becomes a no-op — keep it anyway for
+ * stable shape.
+ *
+ * The wrapper returns the underlying Promise so test code can still
+ * `await requireAAL2(...)`. Express ignores the return value; the
+ * `.catch(next)` is what guarantees rejections reach error middleware.
+ */
+export const requireAAL2: (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => Promise<void> = (req, res, next) => {
+  return requireAAL2Impl(req, res, next).catch((err) => {
+    next(err);
+  });
+};
 
 export interface MintAal2AttestationInput {
   userId: string;

@@ -128,7 +128,7 @@ describe("MfaService", () => {
     );
     expect(policy.signInMethod).toBe("oauth_google");
     expect(policy.requiresAppMfa).toBe(false);
-    expect(flagChecker).toHaveBeenCalledWith("ws-1", "require_app_mfa_for_oauth_users");
+    expect(flagChecker).toHaveBeenCalledWith("ws-1", "u-1", "require_app_mfa_for_oauth_users");
   });
 
   it("re-requires app MFA for OAuth users when the workspace override flag is on", async () => {

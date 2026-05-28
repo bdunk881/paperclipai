@@ -1,8 +1,10 @@
 import { __resetPublicStatusCacheForTests, computePublicStatus } from "./publicStatusService";
 
+const queryMock = jest.fn();
 jest.mock("../db/postgres", () => ({
   checkPostgresConnection: jest.fn().mockResolvedValue(true),
   isPostgresConfigured: jest.fn().mockReturnValue(true),
+  getPostgresPool: () => ({ query: queryMock }),
 }));
 
 jest.mock("../queue/redisClient", () => ({
@@ -25,8 +27,16 @@ jest.mock("../adminConsole/infra/clients/flyClient", () => ({
 beforeEach(() => {
   __resetPublicStatusCacheForTests();
   listMachinesForApps.mockReset();
+  queryMock.mockReset();
+  queryMock.mockResolvedValue({ rows: [] });
   delete process.env.FLY_API_TOKEN;
 });
+
+// Test helper: wait one microtask tick so the fire-and-forget transition
+// writer inside computePublicStatus settles before assertions.
+async function flushTransitionsWriter() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
 describe("computePublicStatus", () => {
   it("marks API operational when all production machines are started", async () => {
@@ -88,5 +98,53 @@ describe("computePublicStatus", () => {
     await computePublicStatus();
     await computePublicStatus();
     expect(listMachinesForApps).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a transition row when a component flips level", async () => {
+    process.env.FLY_API_TOKEN = "test";
+    // First snapshot: all up.
+    listMachinesForApps.mockResolvedValueOnce([
+      { appName: "autoflow-api-production", machines: [
+        { id: "abc", state: "started", region: "iad" },
+      ] },
+    ]);
+    await computePublicStatus(1000);
+    await flushTransitionsWriter();
+    // First observation should NOT write — the cold-start contract is
+    // "establish baseline silently."
+    const firstInserts = queryMock.mock.calls.filter((c) =>
+      String(c[0]).includes("INSERT INTO public_status_events"),
+    );
+    expect(firstInserts).toHaveLength(0);
+
+    // Second snapshot: machine stopped → component flips to down.
+    listMachinesForApps.mockResolvedValueOnce([
+      { appName: "autoflow-api-production", machines: [
+        { id: "abc", state: "stopped", region: "iad" },
+      ] },
+    ]);
+    await computePublicStatus(60_000);
+    await flushTransitionsWriter();
+
+    const inserts = queryMock.mock.calls.filter((c) =>
+      String(c[0]).includes("INSERT INTO public_status_events"),
+    );
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(["api", "Core API", "down", null]);
+  });
+
+  it("does not write transitions when the level stays the same", async () => {
+    process.env.FLY_API_TOKEN = "test";
+    const machines = [{ id: "abc", state: "started", region: "iad" }];
+    listMachinesForApps.mockResolvedValue([
+      { appName: "autoflow-api-production", machines },
+    ]);
+    await computePublicStatus(1000);
+    await computePublicStatus(60_000);
+    await flushTransitionsWriter();
+    const inserts = queryMock.mock.calls.filter((c) =>
+      String(c[0]).includes("INSERT INTO public_status_events"),
+    );
+    expect(inserts).toHaveLength(0);
   });
 });

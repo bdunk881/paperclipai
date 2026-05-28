@@ -221,6 +221,7 @@ router.post(
       const claimed = await claimSessionForGrant({
         sessionId: session.id,
         workspaceId,
+        userId,
         packId: pack.id,
         creditsGranted: pack.creditsGranted,
         amountUsdCents: pack.priceUsdCents,

@@ -82,6 +82,9 @@ export const ADMIN_ACTIONS = [
   // infra data reads (HEL infra PR #5)
   "view_infra_data",
 
+  // infra cost reads (HEL infra follow-up)
+  "view_infra_cost",
+
   // infra compute mutations (HEL infra PR #6)
   "restart_fly_machine",
   "retry_queue_job",

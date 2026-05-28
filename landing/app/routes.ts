@@ -8,6 +8,7 @@ export default [
   route("signup", "signup/page.tsx"),
   route("privacy", "privacy/page.tsx"),
   route("terms", "terms/page.tsx"),
+  route("status", "status/page.tsx"),
   route("robots.txt", "robots.ts"),
   route("sitemap.xml", "sitemap.ts"),
   // API endpoints (waitlist-signup, subscribe, beta-signup, checkout, stripe webhook)

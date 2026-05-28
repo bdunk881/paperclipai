@@ -156,6 +156,7 @@ import {
   parsePortableWorkflowBundle,
 } from "./workflows/portableSchema";
 import landingPublicApiRoutes from "./landing/publicApiRoutes";
+import publicStatusRoutes from "./landing/publicStatusRoute";
 import { requirePersistence } from "./bootstrap";
 import { randomUUID } from "crypto";
 import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
@@ -609,6 +610,10 @@ app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, re
 // it's analogous to the subscription tier read, not a billing action.
 app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
 app.use("/api/public/landing", landingPublicApiRoutes);
+// Public status feed for status.helloautoflow.com (HEL infra follow-up).
+// Sanitized component-level status with 30s in-process cache + CDN cache
+// headers — no auth required, no internal identifiers in the response.
+app.use("/api/public/status", publicStatusRoutes);
 app.use("/api/debug/sentry-test", sentryTestRoutes);
 
 // ---------------------------------------------------------------------------

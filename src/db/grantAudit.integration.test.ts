@@ -122,4 +122,53 @@ describe("public.* anon/authenticated SELECT grant audit (HEL-302)", () => {
     const stale = Array.from(PUBLIC_SELECT_ALLOWLIST).filter((t) => !present.has(t));
     expect(stale).toEqual([]);
   }, 30_000);
+
+  // HEL-304 regression: SECURITY DEFINER functions must not be
+  // EXECUTE-able by anon or authenticated, directly OR via the PUBLIC
+  // parent role. Uses `has_function_privilege` (which resolves role
+  // inheritance) rather than `role_routine_grants` so a future PUBLIC
+  // grant leak — exactly the bug migration 092 fixed — gets caught.
+  it("no public.* SECURITY DEFINER function is EXECUTE-able by anon or authenticated (HEL-304)", async () => {
+    if (!canRunIntegration) return;
+
+    const result = await pgPool.query<{
+      function_signature: string;
+      anon_can_execute: boolean;
+      authenticated_can_execute: boolean;
+    }>(
+      `SELECT
+         p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS function_signature,
+         has_function_privilege('anon', p.oid, 'EXECUTE') AS anon_can_execute,
+         has_function_privilege('authenticated', p.oid, 'EXECUTE') AS authenticated_can_execute
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.prosecdef = true
+       ORDER BY p.proname`,
+    );
+
+    const offenders = result.rows.filter(
+      (row) => row.anon_can_execute || row.authenticated_can_execute,
+    );
+
+    if (offenders.length > 0) {
+      const summary = offenders
+        .map((row) => {
+          const grantees = [
+            row.anon_can_execute ? "anon" : null,
+            row.authenticated_can_execute ? "authenticated" : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
+          return `  - ${row.function_signature}: ${grantees}`;
+        })
+        .join("\n");
+      throw new Error(
+        `HEL-304 regression: ${offenders.length} SECURITY DEFINER function(s) ` +
+          `are EXECUTE-able by anon/authenticated. The grant may be DIRECT or ` +
+          `inherited via the PUBLIC parent role. Add a migration that runs ` +
+          `\`REVOKE EXECUTE ON FUNCTION public.<name>(<args>) FROM PUBLIC, anon, authenticated\` ` +
+          `for each:\n${summary}`,
+      );
+    }
+  }, 60_000);
 });

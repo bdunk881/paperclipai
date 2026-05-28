@@ -89,6 +89,12 @@ export const ADMIN_ACTIONS = [
   "update_cost_threshold",
   "disable_cost_threshold",
 
+  // platform admin lifecycle (HEL infra follow-up)
+  // Grant is intentionally NOT a verb — granting happens out-of-band
+  // via SQL / env var to prevent privilege escalation from the dashboard.
+  "list_platform_admins",
+  "revoke_platform_admin",
+
   // infra compute mutations (HEL infra PR #6)
   "restart_fly_machine",
   "retry_queue_job",

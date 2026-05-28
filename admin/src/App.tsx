@@ -9,6 +9,7 @@ import { PendingActionsPage } from "./pages/PendingActionsPage";
 import { CreditsPoolPage } from "./pages/CreditsPoolPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AgentWebhooksPage } from "./pages/settings/AgentWebhooksPage";
+import { PlatformAdminsPage } from "./pages/security/PlatformAdminsPage";
 import { InfraOverviewPage } from "./pages/InfraOverview";
 import { InfraComputePage } from "./pages/InfraCompute";
 import { InfraEdgePage } from "./pages/InfraEdge";
@@ -50,6 +51,7 @@ function Shell() {
           <Route path="/audit" element={<AuditLogPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/agent-webhooks" element={<AgentWebhooksPage />} />
+          <Route path="/settings/platform-admins" element={<PlatformAdminsPage />} />
           <Route path="/infra" element={<Navigate to="/infra/overview" replace />} />
           <Route path="/infra/overview" element={<InfraOverviewPage />} />
           <Route path="/infra/compute" element={<InfraComputePage />} />

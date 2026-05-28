@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-28T04:11:15.490Z",
+  "generatedAt": "2026-05-28T04:43:44.344Z",
   "entries": {
     "pdf": {
       "ref": "anthropics/skills@pdf",
@@ -66437,6 +66437,121 @@
           "severity": "warning",
           "code": "untrusted_origin",
           "message": "Origin github.com/belumume/claude-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "pptx-posters": {
+      "ref": "k-dense-ai/claude-scientific-skills@pptx-posters",
+      "skillKey": "pptx-posters",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-28T04:35:20.693Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "scripts/generate_schematic_ai.py",
+          "excerpt": "rary not found. Install with: pip install requests\") sys.exit(1) #"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/k-dense-ai/claude-scientific-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "matlab": {
+      "ref": "k-dense-ai/claude-scientific-skills@matlab",
+      "skillKey": "matlab",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-28T04:35:20.695Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "SKILL.md",
+          "excerpt": "stall octave # Ubuntu/Debian sudo apt install octave # Windows"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "SKILL.md",
+          "excerpt": "octave # Ubuntu/Debian sudo apt install octave # Windows - download"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/octave-compatibility.md",
+          "excerpt": "stall octave # Ubuntu/Debian sudo apt install octave # Fedora"
+        },
+        {
+          "severity": "info",
+          "code": "sudo_invocation",
+          "message": "Uses sudo — review what privileged action it needs.",
+          "file": "references/octave-compatibility.md",
+          "excerpt": "apt install octave # Fedora sudo dnf install octave # Windows"
+        },
+        {
+          "severity": "info",
+          "code": "apt_install",
+          "message": "Installs system packages via apt.",
+          "file": "references/octave-compatibility.md",
+          "excerpt": "octave # Ubuntu/Debian sudo apt install octave # Fedora sudo dnf ins"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/k-dense-ai/claude-scientific-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "iso-13485-certification": {
+      "ref": "k-dense-ai/claude-scientific-skills@iso-13485-certification",
+      "skillKey": "iso-13485-certification",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-28T04:35:20.700Z",
+      "findings": [
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/k-dense-ai/claude-scientific-skills is not on the trusted-org allowlist; review the maintainer."
+        }
+      ]
+    },
+    "rowan": {
+      "ref": "k-dense-ai/claude-scientific-skills@rowan",
+      "skillKey": "rowan",
+      "verdict": "needs_review",
+      "scannedAt": "2026-05-28T04:35:20.701Z",
+      "findings": [
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "| ## Quick start ```bash uv pip install rowan-python ``` ```python i"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "## Installation ```bash uv pip install rowan-python # or: pip instal"
+        },
+        {
+          "severity": "info",
+          "code": "pip_install",
+          "message": "Installs Python packages via pip.",
+          "file": "SKILL.md",
+          "excerpt": "ip install rowan-python # or: pip install rowan-python ``` ## User and"
+        },
+        {
+          "severity": "warning",
+          "code": "untrusted_origin",
+          "message": "Origin github.com/k-dense-ai/claude-scientific-skills is not on the trusted-org allowlist; review the maintainer."
         }
       ]
     }

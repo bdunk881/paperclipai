@@ -113,3 +113,19 @@ export async function sendAsk(input: AskInput): Promise<{
     body: input,
   });
 }
+
+export interface AgentReply {
+  id: string;
+  ask_id: string;
+  body: string;
+  metadata: Record<string, unknown>;
+  received_at: string;
+  signature_verified: boolean;
+}
+
+export async function listAgentReplies(askId: string): Promise<AgentReply[]> {
+  const res = await apiRequest<{ replies: AgentReply[] }>(
+    `/api/admin-console/agent-webhooks/asks/${encodeURIComponent(askId)}/replies`,
+  );
+  return res.replies;
+}

@@ -279,3 +279,53 @@ export async function listRecentAsksForWebhook(
   );
   return result.rows;
 }
+
+export async function getAskById(
+  conn: Pool | PoolClient,
+  askId: string,
+): Promise<AskRow | null> {
+  const result = await conn.query<AskRow>(
+    `SELECT * FROM admin_agent_asks WHERE id = $1`,
+    [askId],
+  );
+  return result.rows[0] ?? null;
+}
+
+// ---- admin_agent_replies ---------------------------------------------------
+
+export interface ReplyRow {
+  id: string;
+  ask_id: string;
+  body: string;
+  metadata: Record<string, unknown>;
+  received_at: string;
+  signature_verified: boolean;
+}
+
+export async function insertReply(
+  conn: Pool | PoolClient,
+  input: { askId: string; body: string; metadata?: Record<string, unknown> },
+): Promise<ReplyRow> {
+  const result = await conn.query<ReplyRow>(
+    `INSERT INTO admin_agent_replies (ask_id, body, metadata)
+       VALUES ($1, $2, $3::jsonb)
+       RETURNING *`,
+    [input.askId, input.body, JSON.stringify(input.metadata ?? {})],
+  );
+  return result.rows[0];
+}
+
+export async function listRepliesForAsk(
+  conn: Pool | PoolClient,
+  askId: string,
+  limit = 50,
+): Promise<ReplyRow[]> {
+  const result = await conn.query<ReplyRow>(
+    `SELECT * FROM admin_agent_replies
+      WHERE ask_id = $1
+      ORDER BY received_at DESC
+      LIMIT $2`,
+    [askId, limit],
+  );
+  return result.rows;
+}

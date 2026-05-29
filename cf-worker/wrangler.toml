@@ -31,7 +31,7 @@ new_classes = ["HealthCheckDO"]
 
 [[migrations]]
 tag = "v2"
-new_classes = ["RateLimiterDO"]
+new_sqlite_classes = ["RateLimiterDO"]
 
 # --- Environments ---
 

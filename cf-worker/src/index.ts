@@ -35,7 +35,7 @@ interface RateLimiterHttpRequest {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-  return Number.isInteger(value) && value > 0;
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 function parseRateLimiterBody(body: unknown): RateLimiterHttpRequest | null {

@@ -21,7 +21,10 @@ export interface RateLimiterRefundResponse {
   refunded: boolean;
 }
 
+export interface RateLimiterEnv {}
+
 interface HitRow {
+  [key: string]: SqlStorageValue;
   ts: number;
 }
 
@@ -29,10 +32,10 @@ interface NewestHitRow extends HitRow {
   rowid: number;
 }
 
-export class RateLimiterDO extends DurableObject {
+export class RateLimiterDO extends DurableObject<RateLimiterEnv> {
   private hits: number[] | null = null;
 
-  constructor(ctx: DurableObjectState, env: unknown) {
+  constructor(ctx: DurableObjectState, env: RateLimiterEnv) {
     super(ctx, env);
     this.ctx.blockConcurrencyWhile(async () => {
       this.ctx.storage.sql.exec(`

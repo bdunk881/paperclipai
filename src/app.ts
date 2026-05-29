@@ -394,6 +394,12 @@ function parsePositiveIntegerEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function getAuthenticatedUserId(req: express.Request): string | null {
+  const authReq = req as AuthenticatedRequest;
+  const userId = authReq.auth?.sub;
+  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
+}
+
 const generalApiRateLimiter = createDurableObjectRateLimiter({
   scope: "api",
   windowMs: 60 * 1000,

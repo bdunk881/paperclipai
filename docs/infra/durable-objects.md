@@ -189,7 +189,7 @@ The server-side helper looks at `process.env.CF_WORKER_BASE_URL`. For local API 
 
 1. Add the class under `cf-worker/src/durable-objects/<Name>.ts`. Mirror `HealthCheck.ts`.
 2. Register the binding in `wrangler.toml` — both at the top level and inside each `[env.*]` block.
-3. Append a new `[[migrations]]` block to `wrangler.toml` with a new `tag` and `new_classes = ["<Name>DO"]`. Never modify an existing migration block.
+3. Append a new `[[migrations]]` block to `wrangler.toml` with a new `tag`. Use `new_classes = ["<Name>DO"]` for non-SQL DOs and `new_sqlite_classes = ["<Name>DO"]` for DOs that call `ctx.storage.sql`. Never modify an existing migration block.
 4. Add a route entry in `cf-worker/src/index.ts:route()`.
 5. Write a vitest test that mirrors `cf-worker/src/__tests__/healthCheck.test.ts`.
 6. On the server side, add a typed wrapper in `src/lib/cfWorker/<feature>.ts` that calls `callWorker(...)` — never call `callWorker` directly from feature code.

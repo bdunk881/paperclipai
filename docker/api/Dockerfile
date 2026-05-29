@@ -51,6 +51,13 @@ FROM node:${NODE_VERSION}-slim AS runtime
 
 ARG BUILD_SHA=unknown
 ARG BUILD_DATE=unknown
+ARG TARGETARCH
+
+# Infisical CLI is installed from a pinned GitHub release instead of the
+# artifacts-cli setup script so Docker builds fail if the package digest drifts.
+ARG INFISICAL_VERSION=0.43.88
+ARG INFISICAL_LINUX_AMD64_SHA256=5c7b1ef15a2406d14127874b766054d2ee15304d776b1d239bf2d9fbd745aef9
+ARG INFISICAL_LINUX_ARM64_SHA256=f0916aa3f16cf4ff235f9fede13b1d41b96f65162766e0c85b39beb40b2af87c
 
 LABEL org.opencontainers.image.title="autoflow-api" \
       org.opencontainers.image.description="AutoFlow TS Express backend (src/app.ts)" \
@@ -64,13 +71,21 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 # Install Infisical CLI (used by entrypoint when INFISICAL_TOKEN is set).
-# Matches the install pattern in docker/backend/Dockerfile so Fly machines
-# can pull dev/staging/prod secrets the same way regardless of runtime.
+# Version and SHA-256 are pinned above; update both from the Infisical CLI
+# GitHub release assets when intentionally upgrading.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl \
-    && curl -1sLf 'https://artifacts-cli.infisical.com/setup.deb.sh' | bash \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends infisical \
+    && infisical_arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$infisical_arch" in \
+        amd64) infisical_sha256="${INFISICAL_LINUX_AMD64_SHA256}" ;; \
+        arm64) infisical_sha256="${INFISICAL_LINUX_ARM64_SHA256}" ;; \
+        *) echo "Unsupported Infisical CLI architecture: ${infisical_arch}" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o /tmp/infisical.deb "https://github.com/Infisical/cli/releases/download/v${INFISICAL_VERSION}/infisical_${INFISICAL_VERSION}_linux_${infisical_arch}.deb" \
+    && echo "${infisical_sha256}  /tmp/infisical.deb" | sha256sum -c - \
+    && apt-get install -y --no-install-recommends /tmp/infisical.deb \
+    && test "$(infisical --version)" = "infisical version ${INFISICAL_VERSION}" \
+    && rm -f /tmp/infisical.deb \
     && rm -rf /var/lib/apt/lists/*
 
 # Production deps only (drops jest, ts-node, @types/*, etc.)

@@ -1,0 +1,18 @@
+# Line-ending normalization (HEL-330).
+#
+# Git stores text as LF in the repo. These rules make the working-tree
+# contract explicit and platform-independent, instead of leaving it to each
+# machine's `core.autocrlf` setting.
+#
+# Why `eol=lf` on shell scripts specifically: with `core.autocrlf=true` (the
+# default on the Windows dev setup), tracked LF scripts are smudged to CRLF on
+# checkout. That corrupts the shebang (e.g. `#!/usr/bin/env sh` -> `sh\r`), and
+# because the docker/api build COPYs entrypoint.sh from the working tree, a
+# local `fly deploy` from Windows ships a broken entrypoint:
+#   /usr/bin/env: 'sh\r': No such file or directory   (exit 127)
+
+# Let Git auto-detect text vs binary, and store all text as LF.
+* text=auto
+
+# Shell scripts must always be checked out as LF — the executable shebang depends on it.
+*.sh text eol=lf

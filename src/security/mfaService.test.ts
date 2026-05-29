@@ -346,6 +346,38 @@ describe("MfaService", () => {
     const policy = await service.getPolicy(ctx);
     expect(policy.hasTotp).toBe(true);
   });
+
+  it("clears stale unverified TOTP factors before re-enrolling (HEL-327 follow-up)", async () => {
+    const totp = makeTotpStub();
+    (totp.listFactors as jest.Mock).mockResolvedValueOnce([
+      { id: "stale-unverified", type: "totp", status: "unverified" },
+      { id: "verified-keep", type: "totp", status: "verified" },
+    ]);
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+    const ctx = { userId: "u-1" };
+
+    await service.beginTotpEnrollment(ctx, "token", "AutoFlow Admin authenticator");
+
+    expect(totp.listFactors).toHaveBeenCalledWith("token");
+    // Only the unverified factor is removed; the verified one is preserved.
+    expect(totp.unenrollTotp).toHaveBeenCalledWith("token", "stale-unverified");
+    expect(totp.unenrollTotp).not.toHaveBeenCalledWith("token", "verified-keep");
+    // Enrollment still proceeds after the cleanup.
+    expect(totp.enrollTotp).toHaveBeenCalledWith("token", "AutoFlow Admin authenticator");
+  });
+
+  it("still enrolls TOTP when listing existing factors fails", async () => {
+    const totp = makeTotpStub();
+    (totp.listFactors as jest.Mock).mockRejectedValueOnce(new Error("supabase down"));
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+    const ctx = { userId: "u-1" };
+
+    const result = await service.beginTotpEnrollment(ctx, "token", "iPhone");
+
+    expect(result.factorId).toBe("factor-1");
+    expect(totp.unenrollTotp).not.toHaveBeenCalled();
+    expect(totp.enrollTotp).toHaveBeenCalledWith("token", "iPhone");
+  });
 });
 
 describe("DefaultRecoveryCodeHasher", () => {

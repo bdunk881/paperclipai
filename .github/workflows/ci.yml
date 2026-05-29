@@ -241,23 +241,39 @@ jobs:
             attempt=$((attempt + 1))
           done
           exit 1
-      # On failure, surface a focused tail of the log inline so the failing
-      # test name is visible in the GH Actions UI without needing to
-      # download the artifact below.
+      # On failure, surface failing-test names OUTSIDE any ::group:: so they
+      # are visible without expanding collapsed sections, and emit them as
+      # ::error:: annotations so they float to the top of the job summary.
       - name: Surface failed-test diagnostics on failure
         if: failure() && steps.test-run.conclusion == 'failure'
         shell: bash
         run: |
           set +e
-          echo "::group::Failed test files (grep '^FAIL ')"
-          grep -E '^FAIL ' jest-output.log | head -30 || echo '(no FAIL lines found)'
-          echo "::endgroup::"
-          echo "::group::Failed assertions (grep '●')"
-          grep -E '● ' jest-output.log | head -50 || echo '(no ● lines found)'
-          echo "::endgroup::"
-          echo "::group::Last 120 lines of jest output"
+          echo ""
+          echo "================================================================"
+          echo "  HEL-235: failing tests from jest-output.log (un-grouped view)"
+          echo "================================================================"
+          fail_files=$(grep -E '^FAIL ' jest-output.log | head -30)
+          if [ -n "$fail_files" ]; then
+            echo "$fail_files"
+            while IFS= read -r line; do
+              echo "::error::$line"
+            done <<< "$fail_files"
+          else
+            echo "(no '^FAIL ' lines in jest-output.log — jest may have crashed before running tests)"
+          fi
+          echo ""
+          echo "---- Failed assertions (jest '●' bullets) ----"
+          fail_assertions=$(grep -E '● ' jest-output.log | head -50)
+          if [ -n "$fail_assertions" ]; then
+            echo "$fail_assertions"
+          else
+            echo "(no '●' assertion lines found)"
+          fi
+          echo ""
+          echo "---- Last 120 lines of jest output (un-grouped) ----"
           tail -120 jest-output.log
-          echo "::endgroup::"
+          echo "================================================================"
       # Always upload the full log so the user can download it from the
       # workflow run page even when the inline groups are too short to
       # show the full context.

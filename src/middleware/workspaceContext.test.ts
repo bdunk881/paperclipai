@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { withUserContext } from "./workspaceContext";
+import { withSystemAdminContext, withUserContext } from "./workspaceContext";
 
 function makeClient(overrides: Partial<{ query: jest.Mock; release: jest.Mock }> = {}): PoolClient {
   const query = overrides.query ?? jest.fn().mockResolvedValue({ rows: [], rowCount: 0 });
@@ -94,5 +94,70 @@ describe("withUserContext", () => {
     const configParam2 = (user2Calls[1] as [string, string[]])[1][0];
     expect(configParam1).toBe("user-1");
     expect(configParam2).toBe("user-2");
+  });
+});
+
+describe("withSystemAdminContext", () => {
+  it("sets app.is_platform_admin to 'true', commits, and returns the fn result", async () => {
+    const client = makeClient();
+    const pool = makePool(client);
+
+    const result = await withSystemAdminContext(pool, async (c) => {
+      await c.query("INSERT INTO admin_infra_job_runs VALUES ($1)", ["x"]);
+      return 42;
+    });
+
+    expect(result).toBe(42);
+    const calls = (client.query as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
+    expect(calls[0]).toBe("BEGIN");
+    expect(calls[1]).toMatch(/set_config.*app\.is_platform_admin.*'true'/);
+    expect(calls[2]).toBe("INSERT INTO admin_infra_job_runs VALUES ($1)");
+    expect(calls[3]).toBe("COMMIT");
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back and releases the connection on fn error", async () => {
+    const client = makeClient();
+    const pool = makePool(client);
+    const boom = new Error("write failed");
+
+    await expect(
+      withSystemAdminContext(pool, async () => {
+        throw boom;
+      }),
+    ).rejects.toBe(boom);
+
+    const calls = (client.query as jest.Mock).mock.calls.map((c: unknown[]) => c[0]);
+    expect(calls).toContain("ROLLBACK");
+    expect(calls).not.toContain("COMMIT");
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases the connection even when ROLLBACK itself throws", async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce(undefined) // BEGIN
+      .mockResolvedValueOnce(undefined) // set_config
+      .mockRejectedValueOnce(new Error("fn error")) // fn body
+      .mockRejectedValueOnce(new Error("rollback error")); // ROLLBACK
+    const client = makeClient({ query });
+    const pool = makePool(client);
+
+    await expect(
+      withSystemAdminContext(pool, async (c) => c.query("boom")),
+    ).rejects.toThrow("fn error");
+
+    expect(client.release).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not set app.current_user_id (no userId is associated with cron writes)", async () => {
+    const client = makeClient();
+    const pool = makePool(client);
+
+    await withSystemAdminContext(pool, async () => undefined);
+
+    const calls = (client.query as jest.Mock).mock.calls.map((c: unknown[]) => c[0] as string);
+    const userIdCall = calls.find((q) => q.includes("app.current_user_id"));
+    expect(userIdCall).toBeUndefined();
   });
 });

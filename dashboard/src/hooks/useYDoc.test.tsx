@@ -5,45 +5,59 @@ import { useYDoc, type UseYDocResult } from "./useYDoc";
 
 type Handler = (...args: unknown[]) => void;
 
-const mocks = vi.hoisted(() => ({
-  activeWorkspaceId: "workspace-1" as string | null,
-  getAccessToken: vi.fn<() => Promise<string | null>>(),
-  providers: [] as FakeProvider[],
-}));
-
-class FakeProvider {
-  handlers = new Map<string, Set<Handler>>();
-  destroyed = false;
-
-  constructor(
-    public serverUrl: string,
-    public roomName: string,
-    public doc: unknown,
-    public options: { params?: Record<string, string>; connect?: boolean },
-  ) {
-    mocks.providers.push(this);
-  }
-
-  on(event: string, handler: Handler): void {
-    const handlers = this.handlers.get(event) ?? new Set<Handler>();
-    handlers.add(handler);
-    this.handlers.set(event, handlers);
-  }
-
-  off(event: string, handler: Handler): void {
-    this.handlers.get(event)?.delete(handler);
-  }
-
-  emit(event: string, ...args: unknown[]): void {
-    this.handlers.get(event)?.forEach((handler) => handler(...args));
-  }
-
-  destroy(): void {
-    this.destroyed = true;
-  }
+interface FakeProviderInstance {
+  serverUrl: string;
+  roomName: string;
+  doc: unknown;
+  options: { params?: Record<string, string>; connect?: boolean };
+  destroyed: boolean;
+  emit(event: string, ...args: unknown[]): void;
 }
 
-vi.mock("y-websocket", () => ({ WebsocketProvider: FakeProvider }));
+const mocks = vi.hoisted(() => {
+  const providers: FakeProviderInstance[] = [];
+
+  class FakeProvider implements FakeProviderInstance {
+    handlers = new Map<string, Set<Handler>>();
+    destroyed = false;
+
+    constructor(
+      public serverUrl: string,
+      public roomName: string,
+      public doc: unknown,
+      public options: { params?: Record<string, string>; connect?: boolean },
+    ) {
+      providers.push(this);
+    }
+
+    on(event: string, handler: Handler): void {
+      const handlers = this.handlers.get(event) ?? new Set<Handler>();
+      handlers.add(handler);
+      this.handlers.set(event, handlers);
+    }
+
+    off(event: string, handler: Handler): void {
+      this.handlers.get(event)?.delete(handler);
+    }
+
+    emit(event: string, ...args: unknown[]): void {
+      this.handlers.get(event)?.forEach((handler) => handler(...args));
+    }
+
+    destroy(): void {
+      this.destroyed = true;
+    }
+  }
+
+  return {
+    activeWorkspaceId: "workspace-1" as string | null,
+    getAccessToken: vi.fn<() => Promise<string | null>>(),
+    providers,
+    FakeProvider,
+  };
+});
+
+vi.mock("y-websocket", () => ({ WebsocketProvider: mocks.FakeProvider }));
 
 vi.mock("../context/AuthContext", () => ({
   useAuth: () => ({ getAccessToken: mocks.getAccessToken }),

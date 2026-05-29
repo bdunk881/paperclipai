@@ -19,7 +19,7 @@ export interface UseYDocResult {
 }
 
 type WebsocketStatusEvent = {
-  status?: "connected" | "disconnected";
+  status?: "connecting" | "connected" | "disconnected";
 };
 
 /**
@@ -87,7 +87,13 @@ export function useYDoc(workflowId: string | null): UseYDocResult {
     );
 
     const handleStatus = (event: WebsocketStatusEvent): void => {
-      setStatus(event.status === "connected" ? "connected" : "disconnected");
+      if (event.status === "connected") {
+        setStatus("connected");
+      } else if (event.status === "connecting") {
+        setStatus("connecting");
+      } else {
+        setStatus("disconnected");
+      }
     };
     const handleSync = (isSynced: boolean): void => {
       setSynced(isSynced);

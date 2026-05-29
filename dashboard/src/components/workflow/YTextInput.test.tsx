@@ -76,6 +76,40 @@ describe("YTextInput", () => {
     expect(input.selectionEnd).toBe(5);
   });
 
+  it("round-trips edits between two inputs bound to the same Y.Text", () => {
+    const doc = new Y.Doc();
+    const yText = doc.getText("name");
+    const firstChange = vi.fn();
+    const secondChange = vi.fn();
+
+    render(
+      <div>
+        <YTextInput
+          aria-label="First step name"
+          yText={yText}
+          value=""
+          onChangeValue={firstChange}
+        />
+        <YTextInput
+          aria-label="Second step name"
+          yText={yText}
+          value=""
+          onChangeValue={secondChange}
+        />
+      </div>,
+    );
+
+    const first = screen.getByLabelText("First step name") as HTMLInputElement;
+    const second = screen.getByLabelText("Second step name") as HTMLInputElement;
+
+    fireEvent.change(first, { target: { value: "A" } });
+    expect(second).toHaveValue("A");
+
+    fireEvent.change(second, { target: { value: "AB" } });
+    expect(first).toHaveValue("AB");
+    expect(yText.toString()).toBe("AB");
+  });
+
   it("falls back to a normal controlled input when no Y.Text is available", () => {
     const onChangeValue = vi.fn();
     const { input } = renderInput({ yText: null, value: "Draft", onChangeValue });

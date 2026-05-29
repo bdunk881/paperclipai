@@ -736,7 +736,9 @@ export default function WorkflowBuilder() {
   }, [selectedStep, workflowYDoc, workflowYDocSynced]);
 
   const selectedStepNameYText =
-    selectedStepNameYTextBinding?.stepId === selectedStep?.id
+    selectedStepNameYTextBinding &&
+    selectedStep &&
+    selectedStepNameYTextBinding.stepId === selectedStep.id
       ? selectedStepNameYTextBinding.yText
       : null;
 

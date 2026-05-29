@@ -18,8 +18,15 @@ import {
   InMemoryMfaChallengeStore,
   MFA_CHALLENGE_TTL_SECONDS,
   RedisMfaChallengeStore,
+  getDefaultMfaChallengeStore,
+  setMfaChallengeStoreForTests,
   type RedisLike,
 } from "./mfaChallengeStore";
+import { isRedisConfigured, getRedisClient } from "../queue/redisClient";
+
+jest.mock("../queue/redisClient");
+const mockIsRedisConfigured = isRedisConfigured as jest.Mock;
+const mockGetRedisClient = getRedisClient as jest.Mock;
 
 describe("InMemoryMfaChallengeStore", () => {
   it("remembers then consumes a challenge atomically (single-use)", async () => {
@@ -133,5 +140,88 @@ describe("RedisMfaChallengeStore", () => {
     const store = new RedisMfaChallengeStore(client);
     expect(await store.consume("reg:u-4")).toBeNull();
     expect(client.del).not.toHaveBeenCalled();
+  });
+
+  // HEL-326 diagnostics ------------------------------------------------------
+
+  it("warns when the SET did not persist (TTL read-back is negative)", async () => {
+    const client = makeMockClient();
+    client.ttl = jest.fn(async () => -2);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await new RedisMfaChallengeStore(client).remember("reg:u-5", "c");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("did not persist"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("surfaces a GETDEL NOPERM error (not swallowed) and falls back to GET+DEL", async () => {
+    const client = makeMockClient();
+    client.call.mockRejectedValueOnce(new Error("NOPERM this user has no permissions to run the 'getdel' command"));
+    client.get.mockResolvedValueOnce("chal-after-noperm");
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await new RedisMfaChallengeStore(client).consume("reg:u-6")).toBe("chal-after-noperm");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("GETDEL unavailable"));
+      expect(client.del).toHaveBeenCalledWith("mfa:challenge:reg:u-6");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("logs miss forensics when consume returns null", async () => {
+    const client = makeMockClient();
+    client.call.mockResolvedValueOnce(null); // GETDEL → miss
+    client.exists = jest.fn(async () => 0);
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await new RedisMfaChallengeStore(client).consume("reg:u-7")).toBeNull();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("consume MISS"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe("getDefaultMfaChallengeStore (HEL-326 fail-loud)", () => {
+  const origNodeEnv = process.env.NODE_ENV;
+  const origAllow = process.env.AUTOFLOW_ALLOW_INMEMORY;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    setMfaChallengeStoreForTests(null);
+  });
+  afterEach(() => {
+    setMfaChallengeStoreForTests(null);
+    process.env.NODE_ENV = origNodeEnv;
+    if (origAllow === undefined) delete process.env.AUTOFLOW_ALLOW_INMEMORY;
+    else process.env.AUTOFLOW_ALLOW_INMEMORY = origAllow;
+  });
+
+  it("returns the Redis-backed store when Redis is configured", () => {
+    mockIsRedisConfigured.mockReturnValue(true);
+    mockGetRedisClient.mockReturnValue({ set: jest.fn(), get: jest.fn(), del: jest.fn() });
+    expect(getDefaultMfaChallengeStore()).toBeInstanceOf(RedisMfaChallengeStore);
+  });
+
+  it("THROWS in production when Redis is unconfigured (no silent in-memory fallback)", () => {
+    mockIsRedisConfigured.mockReturnValue(false);
+    process.env.NODE_ENV = "production";
+    delete process.env.AUTOFLOW_ALLOW_INMEMORY;
+    expect(() => getDefaultMfaChallengeStore()).toThrow(/requires Redis/i);
+  });
+
+  it("permits in-memory in production only when AUTOFLOW_ALLOW_INMEMORY=true", () => {
+    mockIsRedisConfigured.mockReturnValue(false);
+    process.env.NODE_ENV = "production";
+    process.env.AUTOFLOW_ALLOW_INMEMORY = "true";
+    expect(getDefaultMfaChallengeStore()).toBeInstanceOf(InMemoryMfaChallengeStore);
+  });
+
+  it("falls back to in-memory outside production (local dev / test)", () => {
+    mockIsRedisConfigured.mockReturnValue(false);
+    process.env.NODE_ENV = "test";
+    expect(getDefaultMfaChallengeStore()).toBeInstanceOf(InMemoryMfaChallengeStore);
   });
 });

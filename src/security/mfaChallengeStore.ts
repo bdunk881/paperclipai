@@ -40,6 +40,10 @@ export const MFA_CHALLENGE_TTL_SECONDS = 5 * 60;
 
 const KEY_PREFIX = "mfa:challenge:";
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export interface MfaChallengeStore {
   /** Persist a challenge for `key`. TTL is `MFA_CHALLENGE_TTL_SECONDS`. */
   remember(key: string, challenge: string): Promise<void>;
@@ -67,34 +71,111 @@ export interface RedisLike {
   get(key: string): Promise<string | null>;
   del(key: string): Promise<number>;
   call?(command: string, ...args: unknown[]): Promise<unknown>;
+  // HEL-326 diagnostics (optional — used for read-back + miss forensics).
+  ttl?(key: string): Promise<number>;
+  exists?(key: string): Promise<number>;
 }
 
 export class RedisMfaChallengeStore implements MfaChallengeStore {
   constructor(private readonly client: RedisLike) {}
 
   async remember(key: string, challenge: string): Promise<void> {
-    await this.client.set(`${KEY_PREFIX}${key}`, challenge, "EX", MFA_CHALLENGE_TTL_SECONDS);
+    const fullKey = `${KEY_PREFIX}${key}`;
+    await this.client.set(fullKey, challenge, "EX", MFA_CHALLENGE_TTL_SECONDS);
+    // HEL-326 diagnostic: read TTL straight back after SET. If the write
+    // didn't actually persist to the same Redis this client reads from
+    // (ACL gap, wrong DB, replica), TTL will be -2 (missing) / -1 (no
+    // expiry) right here — the cleanest signal for the "challenge expired
+    // or missing" mystery. Logged at info so it surfaces in `fly logs`.
+    if (typeof this.client.ttl === "function") {
+      try {
+        const ttl = await this.client.ttl(fullKey);
+        if (ttl < 0) {
+          console.warn(
+            `[mfa] challenge SET did not persist (ttl=${ttl}) key=${fullKey} — write/ACL/instance problem`,
+          );
+        } else {
+          console.info(`[mfa] challenge stored key=${fullKey} ttl=${ttl}`);
+        }
+      } catch (err) {
+        console.warn(`[mfa] challenge TTL read-back failed key=${fullKey}: ${errMsg(err)}`);
+      }
+    }
   }
 
   async consume(key: string): Promise<string | null> {
     const fullKey = `${KEY_PREFIX}${key}`;
-    // Prefer atomic GETDEL (Redis 6.2+). If the deployed Redis is older
-    // or returns a "not implemented" error, fall back to GET + DEL.
-    // ioredis exposes arbitrary commands via `.call`, which keeps this
-    // module independent of the ioredis client version.
+    let value: string | null = null;
+    let usedFallback = false;
+
+    // Prefer atomic GETDEL (Redis 6.2+). If the deployed Redis is older,
+    // or the connection's ACL forbids GETDEL, fall back to GET + DEL.
     if (typeof this.client.call === "function") {
       try {
         const result = (await this.client.call("GETDEL", fullKey)) as string | null;
-        return result ?? null;
-      } catch {
-        // Fall through to non-atomic path below.
+        value = result ?? null;
+      } catch (err) {
+        // HEL-326: do NOT swallow silently — an ACL `NOPERM` on GETDEL
+        // would otherwise hide here and make this look like a missing
+        // challenge. Surface it, then fall back.
+        console.warn(`[mfa] GETDEL unavailable key=${fullKey}: ${errMsg(err)} — using GET+DEL`);
+        usedFallback = true;
+      }
+    } else {
+      usedFallback = true;
+    }
+
+    if (usedFallback) {
+      value = await this.client.get(fullKey);
+      if (value !== null) {
+        try {
+          await this.client.del(fullKey);
+        } catch (err) {
+          console.warn(`[mfa] DEL failed key=${fullKey}: ${errMsg(err)}`);
+        }
       }
     }
-    const value = await this.client.get(fullKey);
-    if (value !== null) {
-      await this.client.del(fullKey);
+
+    if (value === null) {
+      await this.logConsumeMiss(fullKey);
     }
     return value;
+  }
+
+  /**
+   * HEL-326: a consume MISS within the TTL window should be impossible
+   * once `remember` persisted the key. Dump what Redis actually holds so
+   * the cause (key absent vs present-under-different-name vs empty DB /
+   * wrong instance) is visible in `fly logs` on the next failed attempt.
+   */
+  private async logConsumeMiss(fullKey: string): Promise<void> {
+    let exists: number | string = "unknown";
+    let liveKeys: number | string = "unknown";
+    try {
+      if (typeof this.client.exists === "function") {
+        exists = await this.client.exists(fullKey);
+      }
+    } catch (err) {
+      exists = `err:${errMsg(err)}`;
+    }
+    try {
+      if (typeof this.client.call === "function") {
+        const res = (await this.client.call(
+          "SCAN",
+          "0",
+          "MATCH",
+          `${KEY_PREFIX}*`,
+          "COUNT",
+          "100",
+        )) as [string, string[]] | null;
+        liveKeys = Array.isArray(res?.[1]) ? res[1].length : "unknown";
+      }
+    } catch (err) {
+      liveKeys = `err:${errMsg(err)}`;
+    }
+    console.warn(
+      `[mfa] consume MISS key=${fullKey} exists=${exists} liveChallengeKeys=${liveKeys}`,
+    );
   }
 }
 
@@ -158,10 +239,27 @@ export function getDefaultMfaChallengeStore(): MfaChallengeStore {
     const client = getRedisClient();
     if (client) {
       defaultStore = new RedisMfaChallengeStore(client as unknown as RedisLike);
+      console.info("[mfa] challenge store backend: redis");
       return defaultStore;
     }
   }
+  // HEL-326: in-memory is process-local — a WebAuthn/step-up ceremony that
+  // spans two HTTP requests breaks if they land on different processes,
+  // and silently swapping in this backend is what made cross-process
+  // failures look like "challenge expired or missing". In a deployed
+  // environment (NODE_ENV=production on Fly) refuse it and fail loud, so a
+  // missing Redis URL crashes at startup/first-use instead of degrading.
+  const redisRequired =
+    process.env.NODE_ENV === "production" && process.env.AUTOFLOW_ALLOW_INMEMORY !== "true";
+  if (redisRequired) {
+    throw new Error(
+      "[mfa] challenge store requires Redis (REDIS_URL or UPSTASH_REDIS_URL) in production. " +
+        "Refusing the in-memory fallback — it loses challenges across processes/restarts. " +
+        "Set AUTOFLOW_ALLOW_INMEMORY=true only for single-process local dev.",
+    );
+  }
   defaultStore = new InMemoryMfaChallengeStore();
+  console.info("[mfa] challenge store backend: in-memory (dev/test fallback)");
   return defaultStore;
 }
 

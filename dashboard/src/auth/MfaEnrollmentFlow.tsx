@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   ClipboardCopy,
   KeyRound,
+  Link2,
+  Mail,
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
@@ -23,15 +25,25 @@ import { Af2Button, Af2Card, Af2H1 } from "../components/af2";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import {
+  beginEmailOtpEnrollment,
+  beginMagicLinkEnrollment,
   enrollTotp,
+  getMfaPolicy,
   regenerateRecoveryCodes,
+  verifyEmailOtpEnrollment,
   verifyTotpEnrollment,
   type TotpEnrollmentResponse,
 } from "../api/mfaApi";
 import { isWebauthnAvailable, platformAuthenticatorAvailable, registerPasskey } from "./mfa";
 
-type Step = "choose" | "enroll-passkey" | "enroll-totp" | "recovery-codes";
-type FactorChoice = "passkey" | "totp";
+type Step =
+  | "choose"
+  | "enroll-passkey"
+  | "enroll-totp"
+  | "enroll-email-otp"
+  | "enroll-magic-link"
+  | "recovery-codes";
+type FactorChoice = "passkey" | "totp" | "email-otp" | "magic-link";
 
 export interface MfaEnrollmentFlowProps {
   /**
@@ -54,6 +66,7 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
   const [platformAvailable, setPlatformAvailable] = useState(false);
   const [totpEnrollment, setTotpEnrollment] = useState<TotpEnrollmentResponse | null>(null);
   const [totpCode, setTotpCode] = useState("");
+  const [emailOtpCode, setEmailOtpCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
 
@@ -76,15 +89,110 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
       setStep("enroll-passkey");
       return;
     }
-    setStep("enroll-totp");
+    if (choice === "totp") {
+      setStep("enroll-totp");
+      setBusy(true);
+      try {
+        const token = await requireAccessToken();
+        const enrolled = await enrollTotp(token, "AutoFlow authenticator");
+        setTotpEnrollment(enrolled);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not start TOTP enrollment.");
+        setStep("choose");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (choice === "email-otp") {
+      setEmailOtpCode("");
+      setStep("enroll-email-otp");
+      setBusy(true);
+      try {
+        const token = await requireAccessToken();
+        await beginEmailOtpEnrollment(token);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not send a verification code.");
+        setStep("choose");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // magic-link
+    setStep("enroll-magic-link");
     setBusy(true);
     try {
       const token = await requireAccessToken();
-      const enrolled = await enrollTotp(token, "AutoFlow authenticator");
-      setTotpEnrollment(enrolled);
+      await beginMagicLinkEnrollment(token);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start TOTP enrollment.");
+      setError(err instanceof Error ? err.message : "Could not send a verification link.");
       setStep("choose");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerifyEmailOtp() {
+    clearError();
+    if (!/^\d{6}$/.test(emailOtpCode.trim())) {
+      setError("Enter the 6-digit code we emailed you.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const token = await requireAccessToken();
+      await verifyEmailOtpEnrollment(token, emailOtpCode.trim());
+      await issueAndShowRecoveryCodes(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Code verification failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendEmailOtp() {
+    clearError();
+    setBusy(true);
+    try {
+      const token = await requireAccessToken();
+      await beginEmailOtpEnrollment(token);
+      toast.success("We sent a new code to your email.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend the code.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMagicLinkContinue() {
+    clearError();
+    setBusy(true);
+    try {
+      const token = await requireAccessToken();
+      // The link click verifies out-of-band; re-fetch policy to confirm.
+      const policy = await getMfaPolicy(token);
+      if (!policy.hasMagicLink) {
+        setError("We haven't seen the link clicked yet. Open the email and click the link, then try again.");
+        return;
+      }
+      await issueAndShowRecoveryCodes(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not confirm verification.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendMagicLink() {
+    clearError();
+    setBusy(true);
+    try {
+      const token = await requireAccessToken();
+      await beginMagicLinkEnrollment(token);
+      toast.success("We sent a new link to your email.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend the link.");
     } finally {
       setBusy(false);
     }
@@ -248,6 +356,60 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
         </Af2Card>
       )}
 
+      {step === "enroll-email-otp" && (
+        <Af2Card>
+          <Af2H1 className="mb-2">Enter your email code</Af2H1>
+          <p className="text-af2-ink-4 mb-4">
+            We emailed you a 6-digit code. It expires in 5 minutes. Enter it below to finish setting
+            up email codes as your second factor.
+          </p>
+          <label className="block mb-4">
+            <span className="block text-sm font-medium mb-1">6-digit code</span>
+            <input
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={emailOtpCode}
+              onChange={(e) => setEmailOtpCode(e.target.value.replace(/\D/g, ""))}
+              className="af2-input w-32 text-center font-mono tracking-widest"
+              placeholder="000000"
+            />
+          </label>
+          <div className="flex gap-2">
+            <Af2Button variant="primary" onClick={handleVerifyEmailOtp} disabled={busy}>
+              {busy ? "Verifying…" : "Verify & continue"}
+            </Af2Button>
+            <Af2Button variant="ghost" onClick={handleResendEmailOtp} disabled={busy}>
+              Resend code
+            </Af2Button>
+            <Af2Button variant="ghost" onClick={() => setStep("choose")} disabled={busy}>
+              Back
+            </Af2Button>
+          </div>
+        </Af2Card>
+      )}
+
+      {step === "enroll-magic-link" && (
+        <Af2Card>
+          <Af2H1 className="mb-2">Check your email</Af2H1>
+          <p className="text-af2-ink-4 mb-4">
+            We emailed you a one-click verification link. It expires in 5 minutes and can be used
+            once. Open it on this device, then come back and continue.
+          </p>
+          <div className="flex gap-2">
+            <Af2Button variant="primary" onClick={handleMagicLinkContinue} disabled={busy}>
+              {busy ? "Checking…" : "I've clicked the link — continue"}
+            </Af2Button>
+            <Af2Button variant="ghost" onClick={handleResendMagicLink} disabled={busy}>
+              Resend link
+            </Af2Button>
+            <Af2Button variant="ghost" onClick={() => setStep("choose")} disabled={busy}>
+              Back
+            </Af2Button>
+          </div>
+        </Af2Card>
+      )}
+
       {step === "recovery-codes" && (
         <Af2Card>
           <div className="flex items-center gap-2 mb-2">
@@ -256,8 +418,12 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
           </div>
           <p className="text-af2-ink-4 mb-4">
             Each code can be used <strong>once</strong> if you lose access to your{" "}
-            {factor === "passkey" ? "passkey" : "authenticator app"}. Store them somewhere safe —
-            we won't show them again.
+            {factor === "passkey"
+              ? "passkey"
+              : factor === "totp"
+                ? "authenticator app"
+                : "email"}
+            . Store them somewhere safe — we won't show them again.
           </p>
           <div className="grid grid-cols-2 gap-2 font-mono text-sm bg-af2-paper-2 p-4 rounded mb-4">
             {recoveryCodes.map((code) => (
@@ -341,6 +507,44 @@ function ChooseFactor({ webauthnAvailable, platformAvailable, onChoose }: Choose
         <p className="text-sm text-af2-ink-4">
           Pair AutoFlow with 1Password, Authy, Google Authenticator, etc. Less phish-resistant than
           a passkey — use only if you can't use a passkey.
+        </p>
+        <div className="flex items-center gap-1 mt-2 text-xs text-af2-ink-3">
+          <KeyRound size={14} />
+          Allowed for end-users, not for AutoFlow staff.
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onChoose("email-otp")}
+        className="af2-card text-left cursor-pointer transition hover:border-af2-ink-3"
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Mail size={20} className="text-af2-ink-4" />
+          <h2 className="text-lg font-semibold">Email code (OTP)</h2>
+        </div>
+        <p className="text-sm text-af2-ink-4">
+          We'll email a 6-digit code each time we need to verify it's you. Less phish-resistant than
+          a passkey — use only if you can't use a passkey.
+        </p>
+        <div className="flex items-center gap-1 mt-2 text-xs text-af2-ink-3">
+          <KeyRound size={14} />
+          Allowed for end-users, not for AutoFlow staff.
+        </div>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onChoose("magic-link")}
+        className="af2-card text-left cursor-pointer transition hover:border-af2-ink-3"
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Link2 size={20} className="text-af2-ink-4" />
+          <h2 className="text-lg font-semibold">Magic link</h2>
+        </div>
+        <p className="text-sm text-af2-ink-4">
+          We'll email a one-click verification link each time we need to verify it's you. Less
+          phish-resistant than a passkey — use only if you can't use a passkey.
         </p>
         <div className="flex items-center gap-1 mt-2 text-xs text-af2-ink-3">
           <KeyRound size={14} />

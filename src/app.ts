@@ -39,6 +39,7 @@ import { createConnectorGrantsRoutes } from "./connections/connectorGrantsRoutes
 import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
 import mfaRoutes from "./security/mfaRoutes";
+import { getMfaService } from "./security/mfaService";
 import sentryTestRoutes from "./debug/sentryTestRoute";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
@@ -69,7 +70,7 @@ import {
   listClassificationDecisions,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
-import { requireAAL2 } from "./middleware/requireAAL2";
+import { requireAAL2, buildAal2AttestationCookieHeader } from "./middleware/requireAAL2";
 import { requireCfAccess } from "./admin/cfAccessAuth";
 import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
@@ -974,6 +975,44 @@ app.use(
   workspaceResolver,
   requireRole(...ALL_MEMBER_ROLES),
   securityRoutes,
+);
+// HEL-282: magic-link verification is clicked from an email (top-level GET,
+// no bearer token), so it MUST be registered as a PUBLIC route BEFORE the
+// requireAuth-gated /api/mfa mount below — the token itself binds the user.
+// On success it mints the AAL2 attestation cookie and 302-redirects back to
+// the dashboard; otherwise it redirects with ?mfa=link_invalid.
+app.get(
+  "/api/mfa/magic-link/verify",
+  asyncHandler(async (req, res) => {
+    const dashboard = (
+      process.env.DASHBOARD_APP_URL ??
+      process.env.APP_BASE_URL ??
+      "http://localhost:5173"
+    ).replace(/\/$/, "");
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (!token) {
+      res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+      return;
+    }
+    try {
+      const result = await getMfaService().consumeMagicLinkToken(token);
+      if (!result) {
+        res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+        return;
+      }
+      res.setHeader(
+        "Set-Cookie",
+        buildAal2AttestationCookieHeader(result.attestation.token, result.attestation.maxAgeSeconds),
+      );
+      res.redirect(302, `${dashboard}/?mfa=verified`);
+    } catch (error) {
+      console.warn(
+        "[app] magic-link verify failed",
+        error instanceof Error ? error.message : error,
+      );
+      res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+    }
+  }),
 );
 // HEL-mfa: MFA enrollment + step-up. User-scoped (no workspace requirement)
 // because a brand-new user must be able to enroll a passkey before they've

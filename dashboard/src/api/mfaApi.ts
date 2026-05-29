@@ -25,16 +25,26 @@ export type MfaSignInMethod =
   | "oauth_github"
   | "unknown";
 
+export type MfaVerifiedMethod =
+  | "webauthn"
+  | "totp"
+  | "recovery_code"
+  | "email_otp"
+  | "magic_link";
+
 export interface MfaPolicy {
   hasWebauthn: boolean;
   hasTotp: boolean;
+  /** HEL-282: app-owned email second factors. */
+  hasEmailOtp: boolean;
+  hasMagicLink: boolean;
   hasAnyFactor: boolean;
   hasRecoveryCodes: boolean;
   signInMethod: MfaSignInMethod;
   requiresAppMfa: boolean;
   enrollmentCompletedAt: string | null;
   lastVerifiedAt: string | null;
-  lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;
+  lastVerifiedMethod: MfaVerifiedMethod | null;
   recoveryCodesIssuedAt: string | null;
   webauthnDevices: MfaWebauthnDevice[];
 }
@@ -210,4 +220,103 @@ export async function consumeRecoveryCode(
   });
   if (!res.ok) throw new Error(await readError(res, "Recovery code rejected"));
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+// ---- Email OTP (HEL-282) ----------------------------------------------------
+
+/** Send the enrollment code to the user's verified email. */
+export async function beginEmailOtpEnrollment(accessToken: string): Promise<{ sent: true }> {
+  const res = await trackedFetch(`${BASE}/email-otp/enroll/begin`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification code"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+export async function verifyEmailOtpEnrollment(
+  accessToken: string,
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await trackedFetch(`${BASE}/email-otp/enroll/verify`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+/** Step-up: send a fresh code to the user's verified email. */
+export async function challengeEmailOtp(accessToken: string): Promise<{ sent: true }> {
+  const res = await trackedFetch(`${BASE}/email-otp/challenge`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification code"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+export async function verifyEmailOtp(
+  accessToken: string,
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await trackedFetch(`${BASE}/email-otp/verify`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+export async function removeEmailOtp(accessToken: string): Promise<void> {
+  const res = await trackedFetch(`${BASE}/email-otp`, {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+    credentials: "include",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readError(res, "Could not disable email codes"));
+  }
+}
+
+// ---- Magic link (HEL-282) ---------------------------------------------------
+// Verification happens by clicking the emailed link (a public GET on the API
+// that sets the AAL2 cookie and redirects back), so there is no client-side
+// verify call — only "send the link" begin/challenge + disable.
+
+export async function beginMagicLinkEnrollment(accessToken: string): Promise<{ sent: true }> {
+  const res = await trackedFetch(`${BASE}/magic-link/enroll/begin`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+export async function challengeMagicLink(accessToken: string): Promise<{ sent: true }> {
+  const res = await trackedFetch(`${BASE}/magic-link/challenge`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+export async function removeMagicLink(accessToken: string): Promise<void> {
+  const res = await trackedFetch(`${BASE}/magic-link`, {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+    credentials: "include",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readError(res, "Could not disable magic link"));
+  }
 }

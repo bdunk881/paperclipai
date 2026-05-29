@@ -54,7 +54,17 @@ export interface SecurityService {
 }
 
 export class SecurityServiceError extends Error {
-  constructor(message: string, readonly statusCode = 500, readonly code = "security_error") {
+  constructor(
+    message: string,
+    readonly statusCode = 500,
+    readonly code = "security_error",
+    /**
+     * HEL-282: optional structured fields merged into the JSON error body
+     * by route serializers (e.g. `retryAfterSeconds` on a 429). Backward
+     * compatible — existing callers omit it.
+     */
+    readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "SecurityServiceError";
   }

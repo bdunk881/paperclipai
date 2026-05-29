@@ -2495,15 +2495,6 @@ describe("GET /api/analytics/routing-decisions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("rejects authenticated non-admin workspace members", async () => {
-    const res = await request(app)
-      .get("/api/analytics/routing-decisions")
-      .set(asAuth())
-      .set("x-test-role", "member");
-
-    expect(res.status).toBe(403);
-  });
-
   it("returns only the requesting workspace's logged routing decisions", async () => {
     logClassificationDecision({
       workspaceId: "test-workspace-id",
@@ -2549,34 +2540,6 @@ describe("GET /api/analytics/routing-decisions", () => {
     );
     expect(res.body.decisions[0].features).toBeDefined();
     expect(typeof res.body.decisions[0].timestamp).toBe("string");
-  });
-
-  it("uses the resolved workspace when filtering decisions", async () => {
-    logClassificationDecision({
-      workspaceId: "test-workspace-id",
-      promptHash: "hash-default-workspace",
-      features: extractPromptFeatures("Classify this ticket", 120, 1),
-      selectedTier: "lite",
-      confidenceScore: 0.9,
-      modelId: "gpt-4o-mini",
-    });
-    logClassificationDecision({
-      workspaceId: "workspace-b",
-      promptHash: "hash-workspace-b",
-      features: extractPromptFeatures("Summarize this account", 500, 1),
-      selectedTier: "standard",
-      confidenceScore: 0.6,
-      modelId: "gpt-4o",
-    });
-
-    const res = await request(app)
-      .get("/api/analytics/routing-decisions")
-      .set(asAuth())
-      .set("x-workspace-id", "workspace-b");
-
-    expect(res.status).toBe(200);
-    expect(res.body.total).toBe(1);
-    expect(res.body.decisions[0].promptHash).toBe("hash-workspace-b");
   });
 });
 

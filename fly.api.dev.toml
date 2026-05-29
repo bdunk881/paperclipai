@@ -27,7 +27,11 @@ primary_region = "ord"
   worker = "node --require ./dist/instrument.js dist/worker.js"
 
 [env]
-  ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
+  # HEL-313: admin console (admin.helloautoflow.com + admin-dev.helloautoflow.com)
+  # CNAMEs to the dev Pages build and calls dev-api.helloautoflow.com. Without
+  # these origins the strict CORS check in src/app.ts rejects the preflight, the
+  # admin MfaEnforcementGate's policy fetch throws, and the gate fails open.
+  ALLOWED_ORIGINS = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com,https://admin-dev.helloautoflow.com,https://admin.helloautoflow.com"
   APP_ENV = "dev"
   INFISICAL_ENV = "dev"
   PORT = "8080"
@@ -40,7 +44,7 @@ primary_region = "ord"
   # which the browser refuses on any non-localhost page.
   MFA_RP_ID = "helloautoflow.com"
   MFA_RP_NAME = "AutoFlow"
-  MFA_ORIGIN = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com"
+  MFA_ORIGIN = "https://dev.helloautoflow.com,https://dev.app.helloautoflow.com,https://admin-dev.helloautoflow.com,https://admin.helloautoflow.com"
   # DASH-38: Sentry tags every event with this value. Without it,
   # instrument.ts falls back to NODE_ENV — which is "production" on Fly
   # (Node prod-mode bundling) — so dev events landed in Sentry's prod

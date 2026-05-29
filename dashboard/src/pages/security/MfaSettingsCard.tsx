@@ -20,6 +20,10 @@ import {
   type MfaPolicy,
 } from "../../api/mfaApi";
 import { registerPasskey } from "../../auth/mfa";
+import {
+  registerSupabasePasskey,
+  supabasePasskeysEnabled,
+} from "../../auth/supabaseAuth";
 import { useAuth } from "../../context/AuthContext";
 
 function formatDate(value: string | null): string {
@@ -41,6 +45,10 @@ export function MfaSettingsCard() {
   const [busy, setBusy] = useState(false);
   const [newPasskeyName, setNewPasskeyName] = useState("");
   const [regeneratedCodes, setRegeneratedCodes] = useState<string[] | null>(null);
+  // HEL-311 spike: dev-only Supabase native passkey registration.
+  const [supabasePasskeyBusy, setSupabasePasskeyBusy] = useState(false);
+  const [supabasePasskeyNotice, setSupabasePasskeyNotice] = useState<string | null>(null);
+  const passkeysSpikeEnabled = supabasePasskeysEnabled();
 
   const refresh = useCallback(async () => {
     try {
@@ -68,6 +76,26 @@ export function MfaSettingsCard() {
       setError(err instanceof Error ? err.message : "Passkey enrollment failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // HEL-311 spike: register a Supabase *native* passkey (separate from our
+  // app-side WebAuthn stack). Requires an authenticated session, which we
+  // have here. Surfaces the AAGUID-derived friendly name on success.
+  async function handleRegisterSupabasePasskey() {
+    setError(null);
+    setSupabasePasskeyNotice(null);
+    setSupabasePasskeyBusy(true);
+    try {
+      const result = await registerSupabasePasskey();
+      setSupabasePasskeyNotice(
+        `Registered Supabase passkey "${result.friendlyName ?? "unnamed"}" (id ${result.id.slice(0, 8)}…). ` +
+          `Sign out and use "Sign in with passkey" on the login page to test it.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Supabase passkey registration failed.");
+    } finally {
+      setSupabasePasskeyBusy(false);
     }
   }
 
@@ -307,6 +335,33 @@ export function MfaSettingsCard() {
           </div>
         )}
       </div>
+
+      {/* HEL-311 spike: dev-only Supabase native passkey registration.
+          Hidden unless VITE_AUTOFLOW_SUPABASE_PASSKEYS is set. */}
+      {passkeysSpikeEnabled && (
+        <div className="mt-6 border-t border-dashed border-af2-line pt-4">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-af2-ink mb-2">
+            <KeyRound size={14} /> Supabase passkey (experimental)
+          </h3>
+          <p className="text-sm text-af2-ink-3 mb-2">
+            HEL-311 spike — registers a Supabase <em>native</em> passkey, separate from the
+            app-side passkeys above. Lets us compare Supabase's flow against ours.
+          </p>
+          <button
+            type="button"
+            onClick={handleRegisterSupabasePasskey}
+            disabled={supabasePasskeyBusy}
+            className="rounded-lg border border-af2-line-2 px-3 py-2 text-sm hover:bg-af2-paper-2 disabled:opacity-50"
+          >
+            {supabasePasskeyBusy ? "Waiting for device…" : "Register Supabase passkey"}
+          </button>
+          {supabasePasskeyNotice && (
+            <div className="mt-2 rounded-lg border border-af2-sage/30 bg-af2-sage/10 px-3 py-2 text-sm text-af2-ink-2">
+              {supabasePasskeyNotice}
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

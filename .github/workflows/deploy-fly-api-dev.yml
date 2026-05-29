@@ -166,6 +166,12 @@ jobs:
           [[ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ]] && args+=( "UPSTASH_REDIS_REST_TOKEN=${UPSTASH_REDIS_REST_TOKEN}" )
           [[ -n "${UPSTASH_REDIS_URL:-}" ]] && args+=( "UPSTASH_REDIS_URL=${UPSTASH_REDIS_URL}" )
           [[ -n "${REDIS_URL:-}" ]] && args+=( "REDIS_URL=${REDIS_URL}" )
+          # HEL-320: CF_WORKER_SHARED_SECRET — HS256 secret the cf-worker uses to
+          # mint JWTs to /api/internal/*; requireCfWorker verifies with the same
+          # value. Prod injects this automatically via runtime `infisical run`, but
+          # dev has no runtime wrapping, so it must be forwarded here or
+          # requireCfWorker returns 503 ("CF_WORKER_SHARED_SECRET is not configured").
+          [[ -n "${CF_WORKER_SHARED_SECRET:-}" ]] && args+=( "CF_WORKER_SHARED_SECRET=${CF_WORKER_SHARED_SECRET}" )
 
           flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 

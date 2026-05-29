@@ -99,11 +99,14 @@ The server-side helper looks at `process.env.CF_WORKER_BASE_URL`. For local API 
 `.github/workflows/cf-worker.yml`:
 
 - **PR**: typecheck + tests. No deploy. No Cloudflare credentials needed.
-- **Push to `dev`**: deploys to `autoflow-api-worker-dev` (`.workers.dev` URL).
-- **Push to `master`**: deploys to `autoflow-api-worker` (production).
+- **Push to `dev`**: deploys to `autoflow-api-worker-dev`, reachable at `https://autoflow-api-worker-dev.<cf-subdomain>.workers.dev`.
+- **Push to `master`**: deploys to `autoflow-api-worker` (production), reachable at the custom domain `https://worker.helloautoflow.com` (configured via `wrangler.toml` `[[env.production.routes]]` with `custom_domain = true`; Cloudflare auto-provisions the DNS record + TLS cert on first prod deploy). Dev stays on its `.workers.dev` URL.
 - Secrets via Infisical (`auto-flow-va-pt` project) — same pattern as `dashboard-cloudflare-pages.yml`.
 
-`CF_WORKER_SHARED_SECRET` is set on the Worker via `wrangler secret put --env <env> CF_WORKER_SHARED_SECRET` outside of CI (one-time setup per env, rotated as needed). It's also injected into the API runtime via Infisical so `requireCfWorker` can verify tokens minted by the Worker.
+`CF_WORKER_SHARED_SECRET` is set on the Worker via `wrangler secret put --env <env> CF_WORKER_SHARED_SECRET` outside of CI (one-time setup per env, rotated as needed). On the API side, how the secret reaches the Fly runtime differs by env:
+
+- **production** API (`autoflow-api-production`) runs under runtime `infisical run` wrapping (the deploy sets `INFISICAL_PROJECT_ID` + `INFISICAL_TOKEN` on the machine), so every Infisical production secret — including `CF_WORKER_SHARED_SECRET` — is injected automatically. No allowlist edit needed.
+- **dev** API (`autoflow-api-dev`) does *not* use runtime Infisical wrapping; the deploy workflow copies an explicit allowlist of vars onto the Fly machine via `flyctl secrets set`. `CF_WORKER_SHARED_SECRET` must therefore be listed in `.github/workflows/deploy-fly-api-dev.yml`'s sync step, or `requireCfWorker` returns **503** ("CF_WORKER_SHARED_SECRET is not configured").
 
 ## Adding a new Durable Object
 

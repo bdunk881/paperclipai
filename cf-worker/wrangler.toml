@@ -50,3 +50,13 @@ CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
 [[env.production.durable_objects.bindings]]
 name = "HEALTH_CHECK"
 class_name = "HealthCheckDO"
+
+# Production custom domain. The Worker IS the origin for worker.helloautoflow.com,
+# so `custom_domain = true` makes Cloudflare auto-provision the proxied DNS record
+# + edge TLS cert on the first `wrangler deploy --env production` — no manual CNAME
+# and no zone_id needed (Cloudflare infers the zone from the hostname). A custom
+# domain pattern is a bare hostname, never a `/*` glob. Dev intentionally has no
+# route and stays on autoflow-api-worker-dev.<cf-subdomain>.workers.dev.
+[[env.production.routes]]
+pattern = "worker.helloautoflow.com"
+custom_domain = true

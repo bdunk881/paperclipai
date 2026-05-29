@@ -64,19 +64,18 @@ describe("ThemeProvider", () => {
     });
   });
 
-  it("hydrates from localStorage without applying dark mode when the beta flag is off", () => {
+  it("hydrates from localStorage and applies dark mode with beta visibility on by default", () => {
     window.localStorage.setItem("autoflow.themeMode", "dark");
 
     renderTheme();
 
     expect(screen.getByTestId("mode")).toHaveTextContent("dark");
     expect(screen.getByTestId("resolved")).toHaveTextContent("dark");
-    expect(screen.getByTestId("feature")).toHaveTextContent("off");
-    expect(document.documentElement).not.toHaveAttribute("data-theme");
+    expect(screen.getByTestId("feature")).toHaveTextContent("on");
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   });
 
-  it("syncs server preference payloads and applies dark system theme behind the flag", async () => {
-    window.localStorage.setItem("autoflow.themeToggleBeta", "true");
+  it("syncs server preference payloads and applies dark system theme", async () => {
     trackedFetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ preferences: { themeMode: "system" } }),

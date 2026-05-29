@@ -2,6 +2,7 @@ import {
   clearClassificationDecisionsForTests,
   getClassificationDecisionLogCapacity,
   listClassificationDecisions,
+  listClassificationDecisionsForWorkspace,
   logClassificationDecision,
 } from "./classificationLog";
 import { extractPromptFeatures } from "./promptFeatures";
@@ -19,6 +20,7 @@ describe("classificationLog", () => {
     const features = extractPromptFeatures("Classify this", 80, 1);
 
     const logged = logClassificationDecision({
+      workspaceId: "workspace-a",
       promptHash: "abc123",
       features,
       selectedTier: "lite",
@@ -28,6 +30,7 @@ describe("classificationLog", () => {
 
     expect(typeof logged.timestamp).toBe("string");
     expect(new Date(logged.timestamp).getTime()).not.toBeNaN();
+    expect(logged.workspaceId).toBe("workspace-a");
     expect(logged.promptHash).toBe("abc123");
     expect(logged.selectedTier).toBe("lite");
     expect(logged.confidenceScore).toBe(0.8);
@@ -87,6 +90,36 @@ describe("classificationLog", () => {
     expect(fresh).toHaveLength(1);
     expect(fresh[0].promptHash).toBe("only");
     expect(fresh).not.toBe(snapshot);
+  });
+
+  it("can return only decisions logged for a workspace", () => {
+    const features = extractPromptFeatures("Classify this", 80, 1);
+    logClassificationDecision({
+      workspaceId: "workspace-a",
+      promptHash: "a-1",
+      features,
+      selectedTier: "lite",
+      confidenceScore: 0.8,
+      modelId: "gpt-4o-mini",
+    });
+    logClassificationDecision({
+      workspaceId: "workspace-b",
+      promptHash: "b-1",
+      features,
+      selectedTier: "standard",
+      confidenceScore: 0.6,
+      modelId: "gpt-4o",
+    });
+    logClassificationDecision({
+      promptHash: "unscoped",
+      features,
+      selectedTier: "lite",
+      confidenceScore: 0.5,
+      modelId: "gpt-4o-mini",
+    });
+
+    expect(listClassificationDecisionsForWorkspace("workspace-a").map((entry) => entry.promptHash)).toEqual(["a-1"]);
+    expect(listClassificationDecisionsForWorkspace("workspace-b").map((entry) => entry.promptHash)).toEqual(["b-1"]);
   });
 
   it("clearClassificationDecisionsForTests() empties the buffer", () => {

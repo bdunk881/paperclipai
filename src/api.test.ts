@@ -63,9 +63,11 @@ jest.mock("./auth/authMiddleware", () => ({
 }));
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: () =>
-    (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-      req.workspace = { id: "test-workspace-id", role: "owner" };
-      req.workspaceId = "test-workspace-id";
+    (req: { headers?: Record<string, string | undefined>; workspaceId?: string; workspace?: { id: string; role: string } }, _res: unknown, next: () => void) => {
+      const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      const role = req.headers?.["x-test-role"]?.trim() || "owner";
+      req.workspaceId = explicitWorkspaceId ?? "test-workspace-id";
+      req.workspace = { id: req.workspaceId, role };
       next();
     },
   createExplicitWorkspaceHeaderResolver: () =>
@@ -73,10 +75,11 @@ jest.mock("./middleware/workspaceResolver", () => ({
       // Preserve original workspaceId scoping: only set from header when present.
       // Always set req.workspace so requireRole() can check the role.
       const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      const role = req.headers?.["x-test-role"]?.trim() || "owner";
       if (explicitWorkspaceId) {
         req.workspaceId = explicitWorkspaceId;
       }
-      req.workspace = { id: explicitWorkspaceId ?? "test-workspace-id", role: "owner" };
+      req.workspace = { id: explicitWorkspaceId ?? "test-workspace-id", role };
       next();
     },
 }));
@@ -2492,12 +2495,28 @@ describe("GET /api/analytics/routing-decisions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns logged routing decisions for dashboard consumption", async () => {
+  it("returns only the requesting workspace's logged routing decisions", async () => {
     logClassificationDecision({
+      workspaceId: "test-workspace-id",
       promptHash: "hash-1",
       features: extractPromptFeatures("Classify this ticket", 120, 1),
       selectedTier: "lite",
       confidenceScore: 0.9,
+      modelId: "gpt-4o-mini",
+    });
+    logClassificationDecision({
+      workspaceId: "other-workspace-id",
+      promptHash: "hash-foreign",
+      features: extractPromptFeatures("Draft a competitor analysis", 9000, 5),
+      selectedTier: "power",
+      confidenceScore: 0.7,
+      modelId: "gpt-4o",
+    });
+    logClassificationDecision({
+      promptHash: "hash-unscoped",
+      features: extractPromptFeatures("Classify this ticket", 120, 1),
+      selectedTier: "lite",
+      confidenceScore: 0.5,
       modelId: "gpt-4o-mini",
     });
 
@@ -2509,8 +2528,10 @@ describe("GET /api/analytics/routing-decisions", () => {
     expect(Array.isArray(res.body.decisions)).toBe(true);
     expect(res.body.total).toBe(1);
     expect(typeof res.body.capacity).toBe("number");
+    expect(res.body.decisions.map((entry: { promptHash: string }) => entry.promptHash)).toEqual(["hash-1"]);
     expect(res.body.decisions[0]).toEqual(
       expect.objectContaining({
+        workspaceId: "test-workspace-id",
         promptHash: "hash-1",
         selectedTier: "lite",
         confidenceScore: 0.9,

@@ -127,6 +127,16 @@ describe("workspace resolver route mounting", () => {
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("gates routing analytics behind the workspace resolver (HEL-261)", async () => {
+    const res = await request(app)
+      .get("/api/analytics/routing-decisions")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("gates mcp/servers routes behind the workspace resolver (HEL-68)", async () => {
     const res = await request(app)
       .get("/api/mcp/servers")

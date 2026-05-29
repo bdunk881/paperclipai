@@ -70,18 +70,23 @@ function readSystemTheme(): ResolvedTheme {
 }
 
 function readFeatureFlag(): boolean {
-  const envEnabled =
-    typeof import.meta !== "undefined" &&
-    (import.meta as unknown as { env?: { VITE_AF2_THEME_TOGGLE_BETA?: string } }).env
-      ?.VITE_AF2_THEME_TOGGLE_BETA === "true";
-  if (envEnabled) return true;
+  const envValue =
+    typeof import.meta !== "undefined"
+      ? (import.meta as unknown as { env?: { VITE_AF2_THEME_TOGGLE_BETA?: string } }).env
+          ?.VITE_AF2_THEME_TOGGLE_BETA
+      : undefined;
+  if (envValue === "false") return false;
+  if (envValue === "true") return true;
 
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
-    return window.localStorage.getItem(THEME_TOGGLE_FEATURE_STORAGE_KEY) === "true";
+    const stored = window.localStorage.getItem(THEME_TOGGLE_FEATURE_STORAGE_KEY);
+    if (stored === "false") return false;
+    if (stored === "true") return true;
   } catch {
-    return false;
+    // Fall through to default-on beta visibility.
   }
+  return true;
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {

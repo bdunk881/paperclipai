@@ -1,13 +1,13 @@
 # HEL-238 theme audit checklist
 
-This audit covers `dashboard/src/` before re-enabling the v2 dashboard light / dark / system toggle. The toggle remains beta-gated until the page QA list stays clean.
+This audit covers `dashboard/src/` before re-enabling the v2 dashboard light / dark / system toggle. The toggle is visible in the user menu with a Beta badge until the page QA list stays clean.
 
-## Feature flag
+## Beta switcher
 
-The dashboard applies dark mode only when one of these is true:
+The dashboard shows the Light / Dark / System switcher in the user menu by default with a Beta badge. It can be explicitly disabled with either:
 
-- Build-time: `VITE_AF2_THEME_TOGGLE_BETA=true`
-- Manual local flag: `localStorage.setItem("autoflow.themeToggleBeta", "true")`, then reload
+- Build-time: `VITE_AF2_THEME_TOGGLE_BETA=false`
+- Manual local flag: `localStorage.setItem("autoflow.themeToggleBeta", "false")`, then reload
 
 User preference is stored locally as `autoflow.themeMode` and synced to `/api/user-profile/preferences` as `preferences.themeMode`.
 

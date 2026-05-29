@@ -90,6 +90,19 @@ export class SupabaseAuthTotpAdapter implements SupabaseTotpAdapter {
       id: string;
       totp?: { qr_code?: string; secret?: string; uri?: string };
     };
+    // HEL-327 diagnostic: a blank QR + blank secret means gotrue returned
+    // no usable `totp` block (e.g. re-enroll over an existing factor, or a
+    // response-shape change). Log the SHAPE only — never the secret value —
+    // so the cause is visible in `fly logs` without leaking material. The
+    // qr_code prefix reveals data-URL vs raw <svg> vs empty.
+    const totp = payload.totp;
+    console.info(
+      "[mfa] totp enroll response " +
+        `factorId=${payload.id} hasTotp=${Boolean(totp)} ` +
+        `qrCodeLen=${totp?.qr_code?.length ?? 0} ` +
+        `qrCodePrefix=${JSON.stringify((totp?.qr_code ?? "").slice(0, 24))} ` +
+        `hasSecret=${Boolean(totp?.secret)}`,
+    );
     return {
       factorId: payload.id,
       qrCodeSvg: payload.totp?.qr_code ?? "",

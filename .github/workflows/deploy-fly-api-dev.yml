@@ -47,7 +47,13 @@ jobs:
       - name: TypeScript compile check
         run: npx tsc --noEmit
       - name: Backend unit tests
-        run: npx jest --config jest.config.cjs --runInBand --testPathIgnorePatterns="dashboard"
+        # The ignore list (cf-worker, dashboard, node_modules, worktrees) lives
+        # in jest.config.cjs. Do NOT pass --testPathIgnorePatterns here: the Jest
+        # CLI flag REPLACES the config's array rather than extending it, which
+        # silently un-ignores cf-worker's vitest-only suite and breaks the build
+        # (TS2307: cannot find 'cloudflare:test'/'vitest'). cf-worker is tested
+        # separately in cf-worker.yml via `npm test` (vitest-pool-workers).
+        run: npx jest --config jest.config.cjs --runInBand
         env:
           AUTOFLOW_ALLOW_INMEMORY: "true"
           NODE_ENV: test

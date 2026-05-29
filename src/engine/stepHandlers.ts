@@ -249,7 +249,9 @@ export async function handleLlm(
   const tieredModel = usedHostedFree
     ? resolved.config.model
     : resolveModelForTier(resolved.config.provider, classification.tier);
+  const llmWorkspaceId = readWorkspaceIdFromCtx(ctx);
   logClassificationDecision({
+    workspaceId: llmWorkspaceId,
     promptHash: hashPrompt(renderedPrompt),
     features: classification.features,
     selectedTier: classification.tier,
@@ -274,7 +276,6 @@ export async function handleLlm(
   // Skip the fallback for hosted-free routes — those keys are
   // platform-shared, so a "BYOK failed" event there isn't a customer
   // problem the credits wallet should pay for.
-  const llmWorkspaceId = readWorkspaceIdFromCtx(ctx);
   const useCreditsFallback = !usedHostedFree && Boolean(llmWorkspaceId);
 
   let response: Awaited<ReturnType<ReturnType<typeof getProvider>>>;

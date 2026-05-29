@@ -353,13 +353,17 @@ describe("handleLlm", () => {
       outputKeys: ["intent"],
       promptTemplate: "Classify this support ticket into one category and return JSON.",
     });
-    const ctx: StepContext = { body: "Billing issue with invoice mismatch" };
+    const ctx: StepContext = {
+      body: "Billing issue with invoice mismatch",
+      workspaceId: "workspace-analytics",
+    };
 
     await handleLlm(step, ctx, TEST_USER);
 
     const logs = listClassificationDecisions();
     expect(logs).toHaveLength(1);
     const entry = logs[0];
+    expect(entry.workspaceId).toBe("workspace-analytics");
     expect(entry.promptHash).toMatch(/^[a-f0-9]{64}$/);
     expect(entry.selectedTier).toBe("lite");
     expect(entry.confidenceScore).toBeGreaterThanOrEqual(0);

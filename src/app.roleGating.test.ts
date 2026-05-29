@@ -175,6 +175,27 @@ describe.each(["/api/billing/checkout", "/api/billing/subscription"])(
 );
 
 // ---------------------------------------------------------------------------
+// admin-only routes
+// ---------------------------------------------------------------------------
+
+describe.each([
+  "/api/analytics/routing-decisions",
+])("admin-only route — %s", (path) => {
+  it.each(["developer", "operator", "billing", "approver", "member"])(
+    "403 for insufficient role=%s",
+    async (role) => {
+      const res = await request(app).get(path).set("x-test-role", role);
+      expect(res.status).toBe(403);
+    },
+  );
+
+  it.each(["admin", "owner"])("allows role=%s (not 403)", async (role) => {
+    const res = await request(app).get(path).set("x-test-role", role);
+    expect(res.status).not.toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Workspace management — allowlisted (no requireRole, user-scoped)
 // ---------------------------------------------------------------------------
 

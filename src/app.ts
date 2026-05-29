@@ -67,7 +67,7 @@ import { parseFile } from "./engine/fileParser";
 import { resolveModelForTier } from "./engine/llmRouter";
 import {
   getClassificationDecisionLogCapacity,
-  listClassificationDecisions,
+  listClassificationDecisionsForWorkspace,
 } from "./engine/classificationLog";
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import { requireAAL2, buildAal2AttestationCookieHeader } from "./middleware/requireAAL2";
@@ -1870,14 +1870,26 @@ app.get("/api/observability", requireAuth, asyncHandler<AuthenticatedRequest>(as
 // Routing analytics API — recent classifier decisions for dashboarding
 // ---------------------------------------------------------------------------
 
-app.get("/api/analytics/routing-decisions", requireAuth, (_req, res) => {
-  const decisions = listClassificationDecisions();
-  res.json({
-    decisions,
-    total: decisions.length,
-    capacity: getClassificationDecisionLogCapacity(),
-  });
-});
+app.get(
+  "/api/analytics/routing-decisions",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin"),
+  (req: WorkspaceAwareRequest, res) => {
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(500).json({ error: "Server misconfiguration: workspace context missing." });
+      return;
+    }
+
+    const decisions = listClassificationDecisionsForWorkspace(workspaceId);
+    res.json({
+      decisions,
+      total: decisions.length,
+      capacity: getClassificationDecisionLogCapacity(),
+    });
+  },
+);
 
 // ---------------------------------------------------------------------------
 // File-triggered runs — multipart upload → parse → start run

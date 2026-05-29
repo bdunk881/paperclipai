@@ -11,7 +11,9 @@ This document covers the AutoFlow Durable Objects substrate that lives in `cf-wo
 | `cf-worker/src/durable-objects/` | One file per DO class. |
 | `cf-worker/wrangler.toml` | DO bindings, env vars, per-env Worker names. |
 | `src/lib/cfWorker/client.ts` | Server-side helper for every backend call to the Worker. Centralizes timeout, fail-open policy, observability. |
+| `src/lib/cfWorker/rateLimiter.ts` | Typed server helper for `RateLimiterDO` consume/refund calls. Express middleware imports this, not `callWorker` directly. |
 | `src/middleware/requireCfWorker.ts` | Express middleware that verifies a Worker→server JWT. Mounted at `/api/internal/*`. |
+| `src/middleware/rateLimit.ts` | Express middleware that preserves the API's current limit windows while delegating atomic decisions to `RateLimiterDO`. |
 | `src/internal/routes.ts` | Routes the Worker can hit on the API. |
 | `.github/workflows/cf-worker.yml` | CI: typecheck + vitest on PR; deploy on push to dev/master. |
 
@@ -81,6 +83,81 @@ Two log streams:
 2. **Worker-side** (`cf-worker/src/index.ts`): single-line JSON per request — `cf_worker_request` (success) or `cf_worker_error` (thrown). Logged via `console.log`/`console.error`, captured by Cloudflare's tail / Logflare integration.
 
 Keep cardinality bounded — `path` and `event` are fine to index on, but never log full request bodies or DO state.
+
+## RateLimiterDO (HEL-291)
+
+`RateLimiterDO` replaces the API's old process-local `express-rate-limit`
+counters. It is the first production coordination DO and establishes the
+pattern later HEL-292 through HEL-296 work should reuse.
+
+### Endpoint
+
+`POST /rate-limit/consume`
+
+```json
+{
+  "scope": "workspace",
+  "key": "workspace:abc-123",
+  "limit": 100,
+  "windowMs": 60000
+}
+```
+
+Response:
+
+```json
+{
+  "allowed": true,
+  "remaining": 99,
+  "retryAfterMs": 0
+}
+```
+
+The Worker derives the DO instance name as `"{scope}::{key}"` and resolves it
+with `env.RATE_LIMITER.idFromName(...)`. The DO stores sliding-window hit
+timestamps in SQLite and keeps a hot in-memory copy for repeated requests while
+the instance is warm. The persisted SQLite rows are the source of truth after
+hibernation or eviction.
+
+`POST /rate-limit/refund` accepts the same body and removes the newest hit for
+that key. The Express middleware uses this only for legacy
+`skipFailedRequests` compatibility on mutation endpoints where failed upstream
+requests should not consume the customer's limited budget.
+
+### Server usage
+
+Feature code should call the typed helper:
+
+```ts
+const decision = await rateLimit({
+  scope: "workspace",
+  key: `workspace:${workspaceId}`,
+  limit: 100,
+  windowMs: 60_000,
+});
+```
+
+Express routes should use `createDurableObjectRateLimiter(...)` from
+`src/middleware/rateLimit.ts`. The middleware preserves the existing API
+contract: status `429`, body `{ "error": "Too Many Requests" }`, a
+`Retry-After` header, and standard `RateLimit-*` headers.
+
+### Fallback policy
+
+Rate limiting is fail-open by default. If the Worker returns non-2xx, times out
+after the default 100ms, or is unreachable, `src/lib/cfWorker/client.ts` logs a
+structured warning and the middleware allows the request through. Callers with a
+security-sensitive threat model can pass `onFailure: "fail-closed"`; the typed
+helper converts Worker failures into a denied decision.
+
+### Observability
+
+Server-side call logs come from `src/lib/cfWorker/logger.ts` with
+`metadata.feature = "rate_limiter"` and a bounded `scope` tag. Worker-side
+request logs come from `cf-worker/src/index.ts`; the DO additionally logs
+`rate_limiter_consume` with class/method/outcome, limit/window, remaining
+tokens, and duration. Do not add raw request bodies or full user/API keys to
+logs.
 
 ## Local development
 

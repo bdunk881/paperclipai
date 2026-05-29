@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // with `[..., user]` in its deps re-fires on every render, and at
   // least one such effect (in MCPIntegrations) used to feed back into
   // a setState that triggered the next render, looping until
-  // express-rate-limit emitted a 429 and trackedFetch's global cooldown
+  // the backend rate limiter emitted a 429 and trackedFetch's global cooldown
   // locked the whole dashboard out for up to 60s. Key the memo on the
   // primitive identity fields so structurally-equal users stay ref-equal.
   //

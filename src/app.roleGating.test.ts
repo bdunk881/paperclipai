@@ -13,13 +13,6 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
-// Bypass rate limiting so the 100 req/min ceiling doesn't interfere with role checks.
-jest.mock("express-rate-limit", () => {
-  const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
-  const mockRateLimit = jest.fn(() => passThrough);
-  return { __esModule: true, default: mockRateLimit };
-});
-
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
     req.auth = { sub: "test-user-id", email: "test@example.com" };

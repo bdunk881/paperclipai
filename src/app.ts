@@ -6,7 +6,6 @@
 
 import * as Sentry from "@sentry/node";
 import express from "express";
-import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
 import helmet from "helmet";
@@ -75,6 +74,11 @@ import { requireCfAccess } from "./admin/cfAccessAuth";
 import { requireEntitlement } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
 import { asyncHandler } from "./middleware/asyncHandler";
+import {
+  createDurableObjectRateLimiter,
+  getIpRateLimitKey,
+  getRateLimitKey,
+} from "./middleware/rateLimit";
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
@@ -380,46 +384,6 @@ const corsOptions: cors.CorsOptions = {
 app.use(helmet());
 app.use(cors(corsOptions));
 
-function getAuthenticatedUserId(req: express.Request): string | null {
-  const authReq = req as AuthenticatedRequest;
-  const userId = authReq.auth?.sub;
-  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
-}
-
-function getHeaderUserId(req: express.Request): string | null {
-  const userId = req.headers["x-user-id"];
-  return typeof userId === "string" && userId.trim() ? userId.trim() : null;
-}
-
-function getBearerTokenSubject(req: express.Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.slice(7).trim();
-  return token || null;
-}
-
-function getRateLimitKey(req: express.Request): string {
-  const userId =
-    getAuthenticatedUserId(req) ?? getHeaderUserId(req) ?? getBearerTokenSubject(req);
-  if (userId) {
-    return `user:${userId}`;
-  }
-  return `ip:${req.ip || req.socket.remoteAddress || "unknown"}`;
-}
-
-function createRateLimitHandler(windowMs: number) {
-  return (req: express.Request, res: express.Response) => {
-    const resetTime = (req as { rateLimit?: { resetTime?: Date } }).rateLimit?.resetTime;
-    const resetMs = resetTime ? resetTime.getTime() - Date.now() : windowMs;
-    const retryAfterSeconds = Math.max(1, Math.ceil(resetMs / 1000));
-    res.setHeader("Retry-After", String(retryAfterSeconds));
-    res.status(429).json({ error: "Too Many Requests" });
-  };
-}
-
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) {
@@ -430,31 +394,25 @@ function parsePositiveIntegerEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-const generalApiRateLimiter = rateLimit({
+const generalApiRateLimiter = createDurableObjectRateLimiter({
+  scope: "api",
   windowMs: 60 * 1000,
   limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
   keyGenerator: getRateLimitKey,
-  handler: createRateLimitHandler(60 * 1000),
 });
 
-const webhookRateLimiter = rateLimit({
+const webhookRateLimiter = createDurableObjectRateLimiter({
+  scope: "webhook",
   windowMs: 60 * 1000,
   limit: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
-  handler: createRateLimitHandler(60 * 1000),
+  keyGenerator: getIpRateLimitKey,
 });
 
-const llmEndpointRateLimiter = rateLimit({
+const llmEndpointRateLimiter = createDurableObjectRateLimiter({
+  scope: "llm",
   windowMs: 60 * 60 * 1000,
   limit: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
   keyGenerator: getRateLimitKey,
-  handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
 // Mission routes — constructed here (not at the top with the other
@@ -471,35 +429,29 @@ const authRouteRateLimitWindowMs = parsePositiveIntegerEnv(
   60 * 1000
 );
 
-const authRouteRateLimiter = rateLimit({
+const authRouteRateLimiter = createDurableObjectRateLimiter({
+  scope: "auth",
   windowMs: authRouteRateLimitWindowMs,
   limit: parsePositiveIntegerEnv("AUTH_ROUTE_RATE_LIMIT_MAX", 20),
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => `ip:${req.ip || req.socket.remoteAddress || "unknown"}`,
-  handler: createRateLimitHandler(authRouteRateLimitWindowMs),
+  keyGenerator: getIpRateLimitKey,
 });
 
-const billingMutationRateLimiter = rateLimit({
+const billingMutationRateLimiter = createDurableObjectRateLimiter({
+  scope: "billing-mutation",
   windowMs: 24 * 60 * 60 * 1000,
   limit: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
   skipFailedRequests: true,
-  handler: createRateLimitHandler(24 * 60 * 60 * 1000),
 });
 
-const knowledgeMutationRateLimiter = rateLimit({
+const knowledgeMutationRateLimiter = createDurableObjectRateLimiter({
+  scope: "knowledge-mutation",
   windowMs: 60 * 60 * 1000,
   limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
   keyGenerator: getRateLimitKey,
   skip: (req) => !["POST", "PUT", "PATCH", "DELETE"].includes(req.method),
   skipFailedRequests: true,
-  handler: createRateLimitHandler(60 * 60 * 1000),
 });
 
 app.use("/api", generalApiRateLimiter);

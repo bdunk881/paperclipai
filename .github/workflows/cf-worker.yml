@@ -1,0 +1,95 @@
+# Build, test, and deploy the Cloudflare Worker hosting Durable Objects
+# (cf-worker/). Mirrors the env / secrets pattern from
+# dashboard-cloudflare-pages.yml — two envs (dev / production), Infisical
+# for CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID.
+#
+# HEL-310 — first iteration. HEL-291+ extends the deploy story when real
+# DOs (rate limiter, idempotency, etc.) start shipping behind this.
+
+name: cf-worker — build, test, deploy
+
+on:
+  pull_request:
+    paths:
+      - "cf-worker/**"
+      - ".github/workflows/cf-worker.yml"
+  push:
+    branches: [dev, master]
+    paths:
+      - "cf-worker/**"
+      - ".github/workflows/cf-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: cf-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cf-worker/package-lock.json
+      - run: cd cf-worker && npm ci
+      - run: cd cf-worker && npm run typecheck
+      - run: cd cf-worker && npm test
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: cf-worker/package-lock.json
+      - run: cd cf-worker && npm ci
+
+      - name: Resolve target env
+        id: target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.ref_name }}" in
+            dev) echo "env_slug=dev" >> "$GITHUB_OUTPUT"; echo "wrangler_env=dev" >> "$GITHUB_OUTPUT" ;;
+            master) echo "env_slug=production" >> "$GITHUB_OUTPUT"; echo "wrangler_env=production" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Unsupported ref ${{ github.ref_name }}"; exit 1 ;;
+          esac
+
+      - name: Pull target secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: auto-flow-va-pt
+          env-slug: ${{ steps.target.outputs.env_slug }}
+
+      - name: Verify Cloudflare secrets present
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Infisical secret ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Deploy with wrangler
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ env.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
+        run: cd cf-worker && npx wrangler deploy --env "${{ steps.target.outputs.wrangler_env }}"

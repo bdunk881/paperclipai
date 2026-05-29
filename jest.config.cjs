@@ -9,6 +9,10 @@ module.exports = {
   testPathIgnorePatterns: [
     "/node_modules/",
     "/dashboard/",
+    // HEL-310: cf-worker tests run under @cloudflare/vitest-pool-workers
+    // (not jest) because they import cloudflare:test, a Workers-runtime
+    // virtual module. Run via `cd cf-worker && npm test`.
+    "/cf-worker/",
     "/\\.claude/worktrees/",
     "/\\.worktrees/",
     "/paperclipai-alt\\d+/",

@@ -1,0 +1,25 @@
+{
+  "name": "autoflow-cf-worker",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Cloudflare Worker hosting Durable Objects for autoflow-api (rate limit, webhook idempotency, quota, presence, etc.). Lives separately from the Fly-hosted Express API; called via fetch from src/lib/cfWorker/client.ts.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy:dev": "wrangler deploy --env dev",
+    "deploy:production": "wrangler deploy --env production",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.40",
+    "@cloudflare/workers-types": "^4.20260520.0",
+    "typescript": "^5.6.3",
+    "vitest": "~2.1.9",
+    "wrangler": "^3.86.0"
+  },
+  "dependencies": {
+    "itty-router": "^5.0.18"
+  }
+}

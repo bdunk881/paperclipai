@@ -5,6 +5,7 @@ import {
   isToolSlugInCatalog,
   resolveConnectorKeyForToolSlug,
 } from "../../lib/integrationToolSlugs";
+import { useTheme, type ResolvedTheme } from "../../context/ThemeContext";
 
 export type ConnectorHealthByKey = Record<
   string,
@@ -35,10 +36,12 @@ function ToolChipLabel({
   tool,
   connectorKey,
   suffix,
+  logoTheme,
 }: {
   tool: string;
   connectorKey: string | null;
   suffix: string;
+  logoTheme: ResolvedTheme;
 }) {
   return (
     <>
@@ -46,6 +49,7 @@ function ToolChipLabel({
         integrationId={connectorKey ?? tool.trim().toLowerCase()}
         name={tool}
         size={14}
+        theme={logoTheme}
         style={{ borderRadius: 4, flexShrink: 0 }}
       />
       <span>
@@ -56,6 +60,8 @@ function ToolChipLabel({
 }
 
 export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) {
+  const { resolvedTheme } = useTheme();
+
   if (tools.length === 0) return null;
 
   return (
@@ -70,7 +76,12 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
               style={chipStyle("var(--af2-paper-2)", "var(--af2-ink-3)")}
               title="This integration is not available in AutoFlow yet"
             >
-              <ToolChipLabel tool={tool} connectorKey={null} suffix="Not available yet" />
+              <ToolChipLabel
+                tool={tool}
+                connectorKey={null}
+                suffix="Not available yet"
+                logoTheme={resolvedTheme}
+              />
             </span>
           );
         }
@@ -83,7 +94,12 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
               key={tool}
               style={chipStyle("rgba(90,120,90,0.15)", "var(--af2-sage)")}
             >
-              <ToolChipLabel tool={tool} connectorKey={connectorKey} suffix="Connected" />
+              <ToolChipLabel
+                tool={tool}
+                connectorKey={connectorKey}
+                suffix="Connected"
+                logoTheme={resolvedTheme}
+              />
             </span>
           );
         }
@@ -94,7 +110,12 @@ export function AgentToolChips({ tools, connectorHealth }: AgentToolChipsProps) 
             to={`/connections?tab=integrations&reconnect=${encodeURIComponent(connectorKey)}`}
             style={chipStyle("rgba(194,80,43,0.12)", "var(--af2-clay)")}
           >
-            <ToolChipLabel tool={tool} connectorKey={connectorKey} suffix="Connect" />
+            <ToolChipLabel
+              tool={tool}
+              connectorKey={connectorKey}
+              suffix="Connect"
+              logoTheme={resolvedTheme}
+            />
           </Link>
         );
       })}

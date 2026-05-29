@@ -31,6 +31,7 @@ import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { useWorkspace } from "../context/useWorkspace";
 import {
   LIVE_CONNECTOR_PROVIDERS,
@@ -1396,6 +1397,8 @@ function CredentialsSection({
   manageLabel,
   rows,
 }: CredentialsSectionProps) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <section>
       <div
@@ -1468,6 +1471,7 @@ function CredentialsSection({
                       integrationId={r.integrationId}
                       name={r.left}
                       size={24}
+                      theme={resolvedTheme}
                       style={{ borderRadius: 6, flexShrink: 0 }}
                     />
                   ) : null}

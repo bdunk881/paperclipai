@@ -25,6 +25,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { useExperienceMode } from "../context/ExperienceModeContext";
+import { useTheme, type ResolvedTheme } from "../context/ThemeContext";
 import {
   createLLMConfig,
   deleteLLMConfig,
@@ -218,12 +219,13 @@ function stateToPill(state: ConnectorHealthRecord["state"]): ReactNode {
   return <span className="pill">not connected</span>;
 }
 
-function integrationLogo(integrationId: string, name: string): ReactNode {
+function integrationLogo(integrationId: string, name: string, theme: ResolvedTheme): ReactNode {
   return (
     <CompanyLogo
       integrationId={integrationId}
       name={name}
       size={32}
+      theme={theme}
       style={{ borderRadius: 8 }}
     />
   );
@@ -332,6 +334,7 @@ function formatLastChecked(ts: number | null): string {
 }
 
 function IntegrationsPanel() {
+  const { resolvedTheme } = useTheme();
   const {
     connectors,
     loading,
@@ -582,7 +585,7 @@ function IntegrationsPanel() {
           <IntegrationRow
             key={c.connectorKey}
             id={c.connectorKey}
-            logo={integrationLogo(c.connectorKey, c.connectorName)}
+            logo={integrationLogo(c.connectorKey, c.connectorName, resolvedTheme)}
             name={c.connectorName}
             desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet connected"}
             highlight={recentlyChangedKeys.has(c.connectorKey)}
@@ -1791,6 +1794,7 @@ function ProviderManageBody({ entry, configs, onChange }: ProviderManageBodyProp
 }
 
 function ModelsPanel() {
+  const { resolvedTheme } = useTheme();
   const { configs, loading, error, refetch } = useLLMConfigs();
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1831,7 +1835,7 @@ function ModelsPanel() {
           <IntegrationRow
             key={entry.provider}
             id={entry.provider}
-            logo={integrationLogo(entry.provider, entry.category)}
+            logo={integrationLogo(entry.provider, entry.category, resolvedTheme)}
             name={entry.category}
             desc={`${entry.models.length} models — ${modelSummary}`}
             pill={
@@ -1916,6 +1920,7 @@ function McpPanel() {
 }
 
 function HealthPanel() {
+  const { resolvedTheme } = useTheme();
   const { connectors, loading, error } = useConnectorHealth();
 
   return (
@@ -1962,6 +1967,7 @@ function HealthPanel() {
                     integrationId={c.connectorKey}
                     name={c.connectorName}
                     size={24}
+                    theme={resolvedTheme}
                     style={{ borderRadius: 6, flexShrink: 0 }}
                   />
                   <div>

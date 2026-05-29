@@ -44,6 +44,7 @@ import {
 } from "../api/hostedFreeModelsApi";
 import clsx from "clsx";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { useEntitlement402, type Entitlement402State } from "../hooks/useEntitlement402";
 import { CompanyLogo } from "@autoflow/logo-dev";
 
@@ -141,6 +142,7 @@ interface ConnectModalProps {
 
 function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps) {
   const { requireAccessToken } = useAuth();
+  const { resolvedTheme } = useTheme();
   const entitlement402 = useEntitlement402();
   const providerKeys = Object.keys(PROVIDER_MODELS) as ProviderName[];
   const [provider, setProvider] = useState<ProviderName>(
@@ -211,6 +213,7 @@ function ConnectModal({ initialProvider, onClose, onSuccess }: ConnectModalProps
                 integrationId={provider}
                 name={meta.name}
                 size={28}
+                theme={resolvedTheme}
                 className="w-full h-full"
               />
             </div>
@@ -536,6 +539,7 @@ function DeleteConfirm({ config, onClose, onSuccess }: DeleteConfirmProps) {
 
 export default function LLMProviders() {
   const { requireAccessToken } = useAuth();
+  const { resolvedTheme } = useTheme();
   const [configs, setConfigs] = useState<LLMConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -993,6 +997,7 @@ export default function LLMProviders() {
                     integrationId={provider}
                     name={meta.name}
                     size={28}
+                    theme={resolvedTheme}
                     style={{ borderRadius: 6, background: "var(--af2-paper-2)" }}
                   />
                   <strong style={{ fontSize: 13.5 }}>{meta.name}</strong>

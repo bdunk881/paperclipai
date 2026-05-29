@@ -27,6 +27,7 @@ vi.mock("../context/ExperienceModeContext", () => ({
   useExperienceMode: () => ({ mode: "simple", setMode: vi.fn(), loading: false }),
 }));
 
+
 vi.mock("../api/searchApi", () => ({
   searchEntities: searchEntitiesMock,
 }));

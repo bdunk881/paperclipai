@@ -40,3 +40,12 @@ cf-worker/
 ## Secrets
 
 `CF_WORKER_SHARED_SECRET` is set per env via `wrangler secret put --env <env> CF_WORKER_SHARED_SECRET` (one-time outside CI). It signs JWTs the Worker mints back to the API for `/api/internal/*` routes.
+
+## URLs
+
+| Env | Worker URL |
+|---|---|
+| dev | `https://autoflow-api-worker-dev.<cf-subdomain>.workers.dev` |
+| production | `https://worker.helloautoflow.com` (custom domain — see `wrangler.toml` `[[env.production.routes]]`) |
+
+Health check on either env: `GET /__health` → `{ ok, ts, instanceId }` from `HealthCheckDO`.

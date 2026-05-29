@@ -235,3 +235,18 @@ export function workflowPresenceStreamUrl(
   url.searchParams.set("access_token", accessToken);
   return url.toString();
 }
+
+/**
+ * Build the y-websocket server URL for workflow Y.Doc sync (HEL-241C-2b).
+ *
+ * y-websocket appends `/${roomName}` itself, so this returns the collection
+ * base (`/api/workflows`) with the scheme swapped for WebSocket transport.
+ */
+export function workflowYDocWebSocketUrl(): string {
+  const url = new URL(
+    `${BASE}/workflows`,
+    typeof window === "undefined" ? "http://localhost" : window.location.origin,
+  );
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString().replace(/\/$/, "");
+}

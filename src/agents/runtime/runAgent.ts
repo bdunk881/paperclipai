@@ -19,6 +19,7 @@
  * BYOK + tier-router story doesn't change at all from a caller's POV.
  */
 
+import * as Sentry from "@sentry/node";
 import { llmConfigStore } from "../../llmConfig/llmConfigStore";
 import { resolveModelForTier } from "../../engine/llmRouter";
 import type { ProviderName } from "../../engine/llmProviders/types";
@@ -67,10 +68,34 @@ export function backendNameFor(provider: ProviderName): AgentBackendName {
   return pickBackend(provider).name;
 }
 
+/**
+ * Groups every gen_ai span emitted during one agent run into a single Sentry
+ * Conversation (HEL-321). `runId` (= `runs.id`) is stable across a run's turns
+ * and delegations, so all of a run's LLM calls share one
+ * `gen_ai.conversation.id`; ad-hoc runs with no run row fall back to the agent
+ * id. Both `backend.run()` callsites (`runAgent` here and `runAgentTurn`) go
+ * through this so every backend + caller is covered.
+ *
+ * Wrapped in an isolation scope so the conversation id can't leak across
+ * concurrent agent runs sharing the worker process — `setConversationId` is a
+ * top-level setter (writes the isolation scope), matching `withIsolationScope`.
+ * Relies on `streamGenAiSpans: true` in `Sentry.init` (src/instrument.ts) for
+ * the Conversations view to pick the id up.
+ */
+export function withAgentConversation<T>(
+  input: Pick<AgentRunInput, "runId" | "agentId">,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return Sentry.withIsolationScope(() => {
+    Sentry.setConversationId(input.runId ?? `agent:${input.agentId}`);
+    return fn();
+  });
+}
+
 export async function runAgent(input: AgentRunInput): Promise<AgentRunResult> {
   const binding = await resolveBinding(input);
   const backend = pickBackend(binding.provider);
-  return backend.run(input, binding);
+  return withAgentConversation(input, () => backend.run(input, binding));
 }
 
 /**

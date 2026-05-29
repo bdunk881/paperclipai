@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, {
   createContext,
   useCallback,
@@ -29,6 +30,14 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+const fallbackThemeContext: ThemeContextValue = {
+  mode: "system",
+  resolvedTheme: "light",
+  setMode: () => {},
+  loading: false,
+  featureEnabled: false,
+};
 
 function coerceThemeMode(value: unknown): ThemeMode | null {
   if (value === "light" || value === "dark" || value === "system") return value;
@@ -181,9 +190,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
-  if (!ctx) {
-    throw new Error("useTheme must be used within ThemeProvider");
-  }
-  return ctx;
+  return ctx ?? fallbackThemeContext;
 }
 

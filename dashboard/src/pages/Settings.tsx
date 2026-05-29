@@ -251,7 +251,6 @@ const TAB_HUB: Partial<Record<TabKey, Array<{ to: string; title: string; descrip
 export default function Settings() {
   const { activeWorkspace } = useWorkspace();
   const { requireAccessToken } = useAuth();
-  const { resolvedTheme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<TabKey>("general");
 
@@ -1398,6 +1397,8 @@ function CredentialsSection({
   manageLabel,
   rows,
 }: CredentialsSectionProps) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <section>
       <div

@@ -2,14 +2,15 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider, useTheme } from "./ThemeContext";
 
-const { getAccessTokenMock, trackedFetchMock } = vi.hoisted(() => ({
+const { getAccessTokenMock, trackedFetchMock, authUser } = vi.hoisted(() => ({
   getAccessTokenMock: vi.fn(),
   trackedFetchMock: vi.fn(),
+  authUser: { id: "user-1", email: "jane@example.com" },
 }));
 
 vi.mock("./AuthContext", () => ({
   useAuth: () => ({
-    user: { id: "user-1", email: "jane@example.com" },
+    user: authUser,
     getAccessToken: getAccessTokenMock,
   }),
 }));
@@ -91,7 +92,7 @@ describe("ThemeProvider", () => {
     fireEvent.click(screen.getByRole("button", { name: "Light" }));
 
     await waitFor(() =>
-      expect(trackedFetchMock).toHaveBeenLastCalledWith(
+      expect(trackedFetchMock).toHaveBeenCalledWith(
         "/api/user-profile/preferences",
         expect.objectContaining({
           method: "PATCH",

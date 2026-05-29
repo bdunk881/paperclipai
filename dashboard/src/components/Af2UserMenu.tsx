@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
+import { useTheme, type ThemeMode } from "../context/ThemeContext";
 import { useWorkspace } from "../context/useWorkspace";
 
 /**
@@ -42,6 +43,7 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
   // this menu mounts, so reading them here is safe.
   const { activeWorkspace } = useWorkspace();
   const { mode: experienceMode } = useExperienceMode();
+  const { mode: themeMode, setMode: setThemeMode, featureEnabled: themeToggleEnabled } = useTheme();
   const workspaceName = activeWorkspace?.name ?? null;
   const planLabel = experienceMode === "pro" ? "Pro" : "Simple";
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -169,6 +171,84 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
               {workspaceName} · {planLabel}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {themeToggleEnabled ? (
+        <div
+          role="group"
+          aria-label="Theme"
+          style={{
+            padding: "8px 10px 10px",
+            borderBottom: "1px solid var(--af2-line)",
+            marginBottom: 4,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 8,
+            }}
+          >
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--af2-ink)" }}>
+              Theme
+            </span>
+            <span
+              style={{
+                border: "1px solid var(--af2-clay)",
+                borderRadius: 999,
+                padding: "1px 6px",
+                color: "var(--af2-clay)",
+                background: "var(--af2-clay-wash)",
+                fontSize: 9.5,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              Beta
+            </span>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 4,
+              padding: 3,
+              borderRadius: 8,
+              background: "var(--af2-paper-2)",
+            }}
+          >
+            {(["light", "dark", "system"] satisfies ThemeMode[]).map((option) => {
+              const selected = themeMode === option;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  onClick={() => setThemeMode(option)}
+                  style={{
+                    border: 0,
+                    borderRadius: 6,
+                    padding: "5px 6px",
+                    background: selected ? "var(--af2-card)" : "transparent",
+                    color: selected ? "var(--af2-ink)" : "var(--af2-ink-3)",
+                    boxShadow: selected ? "var(--af2-shadow)" : "none",
+                    fontSize: 11.5,
+                    fontWeight: selected ? 700 : 500,
+                    textTransform: "capitalize",
+                    cursor: "pointer",
+                  }}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
       {items.map((item) => (

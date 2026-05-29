@@ -6,6 +6,7 @@
 
 import * as Sentry from "@sentry/node";
 import express from "express";
+import type { IncomingMessage, ServerResponse } from "http";
 import rateLimit from "express-rate-limit";
 import multer from "multer";
 import cors from "cors";
@@ -164,6 +165,7 @@ import { requirePersistence } from "./bootstrap";
 import { randomUUID } from "crypto";
 import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
 import { getRunQueue } from "./queue/queues";
+import { verifyHmac } from "./webhooks/verifySignature";
 
 import { deleteImportedTemplate, getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
@@ -195,6 +197,80 @@ const workspaceRoutes = isPostgresPersistenceEnabled()
       .post("/", (_req, res) => {
         res.status(501).json({ error: "Workspace creation requires PostgreSQL persistence." });
       });
+
+type RawBodyRequest = express.Request & { rawBody?: Buffer };
+
+interface WebhookTriggerSecretConfig {
+  secret: string;
+  userId: string;
+}
+
+type WebhookTriggerAuthResult =
+  | { ok: true; userId: string; secret: string }
+  | { ok: false; status: 401 | 503; error: string };
+
+function captureRawJsonBody(req: IncomingMessage, _res: ServerResponse, buf: Buffer): void {
+  if (buf.length > 0) {
+    (req as IncomingMessage & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
+  }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getWebhookTriggerSecretConfig(templateId: string): WebhookTriggerAuthResult {
+  const rawRegistry = process.env.WEBHOOK_TRIGGER_SECRETS;
+  if (!rawRegistry?.trim()) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Webhook trigger signing secrets are not configured",
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawRegistry);
+  } catch {
+    return {
+      ok: false,
+      status: 503,
+      error: "Webhook trigger signing secrets are misconfigured",
+    };
+  }
+
+  if (!isPlainRecord(parsed)) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Webhook trigger signing secrets are misconfigured",
+    };
+  }
+
+  const entry = parsed[templateId];
+  if (!isPlainRecord(entry)) {
+    return {
+      ok: false,
+      status: 401,
+      error: "Webhook trigger is not authorized for this template",
+    };
+  }
+
+  const config: Partial<WebhookTriggerSecretConfig> = {
+    secret: typeof entry.secret === "string" ? entry.secret.trim() : undefined,
+    userId: typeof entry.userId === "string" ? entry.userId.trim() : undefined,
+  };
+  if (!config.secret || !config.userId) {
+    return {
+      ok: false,
+      status: 503,
+      error: "Webhook trigger signing secrets are misconfigured",
+    };
+  }
+
+  return { ok: true, secret: config.secret, userId: config.userId };
+}
 
 // HEL-24: mission routes (POST /api/missions/:id/generate-plan).
 // Requires Postgres for the mission/hiring_plans persistence; in-memory
@@ -537,7 +613,7 @@ app.use("/api/webhooks/intercom", intercomWebhookRouter);
 app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
-app.use(express.json());
+app.use(express.json({ verify: captureRawJsonBody }));
 app.use(passport.initialize());
 
 // Track HTTP request duration, counts, and errors as Sentry custom metrics.
@@ -2143,11 +2219,11 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
  * Trigger a workflow run from an inbound webhook.
  * The entire request body is forwarded as the run input.
  *
- * HEL-186: this endpoint previously trusted an arbitrary `x-user-id` header,
- * allowing any caller with a templateId to enqueue a run in any user's
- * scope. Gated behind `WEBHOOK_TRIGGERS_ENABLED=true` (default off) until a
- * per-template signing-secret design lands. A follow-up ticket tracks the
- * signed-payload + workspace-binding work.
+ * HEL-265: authenticate enabled webhook triggers with a per-template HMAC
+ * secret. `WEBHOOK_TRIGGER_SECRETS` is a JSON object keyed by template id:
+ *   { "tpl-support-bot": { "secret": "...", "userId": "..." } }
+ * The run owner is resolved from this registry, never from caller-provided
+ * identity headers.
  */
 app.post("/api/webhooks/:templateId", asyncHandler(async (req, res) => {
   if (process.env.WEBHOOK_TRIGGERS_ENABLED !== "true") {
@@ -2168,18 +2244,35 @@ app.post("/api/webhooks/:templateId", asyncHandler(async (req, res) => {
     return;
   }
 
+  const auth = getWebhookTriggerSecretConfig(templateId);
+  if (!auth.ok) {
+    res.status(auth.status).json({ error: auth.error });
+    return;
+  }
+
+  try {
+    verifyHmac({
+      secret: auth.secret,
+      rawBody: (req as RawBodyRequest).rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}), "utf8"),
+      signatureHeader: req.header("X-AutoFlow-Signature"),
+      prefix: "sha256=",
+    });
+  } catch {
+    res.status(401).json({ error: "Invalid webhook signature" });
+    return;
+  }
+
   const input = req.body as Record<string, unknown>;
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     res.status(400).json({ error: "Webhook body must be a JSON object" });
     return;
   }
 
-  const webhookUserId = req.headers["x-user-id"];
   const run = await workflowEngine.startRun(
     template,
     input,
     undefined,
-    typeof webhookUserId === "string" ? webhookUserId : undefined
+    auth.userId
   );
   res.status(202).json({ runId: run.id, status: run.status });
 }));

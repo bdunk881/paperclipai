@@ -1,7 +1,9 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { BrowserRouter, Link, Navigate, Route, Routes } from "react-router-dom";
 import { AuthGate } from "./auth/AuthGate";
 import { MfaStepUpModal } from "./auth/MfaStepUpModal";
+import { STEP_UP_SATISFIED_EVENT } from "./auth/stepUpEvents";
 import { SearchPage } from "./pages/SearchPage";
 import { Customer360 } from "./pages/Customer360";
 import { AuditLogPage } from "./pages/AuditLogPage";
@@ -21,6 +23,25 @@ import { getSupabaseClient } from "./lib/supabase";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: false } },
 });
+
+/**
+ * HEL-319: the admin-console API now requires an AAL2 step-up for every
+ * route (reads included). A query firing before step-up gets a
+ * `401 mfa_step_up_required`, which apiClient turns into the passkey modal.
+ * Once the user completes step-up, refetch everything so the gated reads
+ * that just errored resolve without a manual page reload.
+ */
+function StepUpQueryRefresher() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const handler = () => {
+      void queryClient.invalidateQueries();
+    };
+    window.addEventListener(STEP_UP_SATISFIED_EVENT, handler);
+    return () => window.removeEventListener(STEP_UP_SATISFIED_EVENT, handler);
+  }, [queryClient]);
+  return null;
+}
 
 function Shell() {
   return (
@@ -70,6 +91,7 @@ function Shell() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <StepUpQueryRefresher />
       <BrowserRouter>
         <AuthGate>
           <Shell />

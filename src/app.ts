@@ -110,6 +110,8 @@ import integrationRoutes, {
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
+import internalRoutes from "./internal/routes";
+import { requireCfWorker } from "./middleware/requireCfWorker";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "./db/postgres";
 import {
   createExplicitWorkspaceHeaderResolver,
@@ -1077,6 +1079,12 @@ app.use("/api/approval-policies", requireAuth, workspaceResolver, requireRole("a
 app.use("/api/approval-rules", requireAuth, workspaceResolver, requireRole("admin", "approver", "operator"), approvalRuleDebugRoutes);
 app.use("/api/mission-assignments", requireAuth, workspaceResolver, requireRole("admin", "developer"), missionAssignmentReplayRoutes);
 app.use("/api/hire", requireAuth, workspaceResolver, requireRole("admin", "developer"), hireTemplateRoutes);
+
+// HEL-310: internal API surface — reachable only by the Cloudflare Worker
+// (cf-worker/) via the requireCfWorker JWT middleware. No user-facing auth
+// applied here; the worker authenticates itself with a short-lived HS256
+// token signed by CF_WORKER_SHARED_SECRET.
+app.use("/api/internal", requireCfWorker, internalRoutes);
 
 // (HEL-118 canonical-reads mounts live in the earlier block alongside their
 // requireRole(...ALL_MEMBER_ROLES) gates; do not re-mount here.)

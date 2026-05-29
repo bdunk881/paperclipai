@@ -13,6 +13,7 @@ import {
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
+import { useTheme } from "../context/ThemeContext";
 
 const MAGIC_LINK_COOLDOWN_KEY = "autoflow.auth.magicLinkCooldown";
 import { CompanyLogo } from "@autoflow/logo-dev";
@@ -511,6 +512,7 @@ function Field({
 }
 
 function ProviderIcon({ provider, disabled }: { provider: SupabaseOAuthProvider; disabled: boolean }) {
+  const { resolvedTheme } = useTheme();
   const label = provider === "google" ? "Google" : "GitHub";
 
   return (
@@ -518,6 +520,7 @@ function ProviderIcon({ provider, disabled }: { provider: SupabaseOAuthProvider;
       integrationId={provider}
       name={label}
       size={24}
+      theme={resolvedTheme}
       className={disabled ? "grayscale opacity-60" : undefined}
     />
   );

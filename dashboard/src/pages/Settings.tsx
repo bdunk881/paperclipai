@@ -31,6 +31,7 @@ import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
 import { useWorkspace } from "../context/useWorkspace";
 import {
   LIVE_CONNECTOR_PROVIDERS,
@@ -250,6 +251,7 @@ const TAB_HUB: Partial<Record<TabKey, Array<{ to: string; title: string; descrip
 export default function Settings() {
   const { activeWorkspace } = useWorkspace();
   const { requireAccessToken } = useAuth();
+  const { resolvedTheme } = useTheme();
 
   const [activeTab, setActiveTab] = useState<TabKey>("general");
 
@@ -1468,6 +1470,7 @@ function CredentialsSection({
                       integrationId={r.integrationId}
                       name={r.left}
                       size={24}
+                      theme={resolvedTheme}
                       style={{ borderRadius: 6, flexShrink: 0 }}
                     />
                   ) : null}

@@ -139,7 +139,7 @@ export function Af2UserMenu({ open, onClose, anchorRect }: Af2UserMenuProps) {
         background: "var(--af2-card)",
         border: "1px solid var(--af2-line)",
         borderRadius: 10,
-        boxShadow: "0 12px 32px rgba(26, 20, 16, 0.18)",
+        boxShadow: "var(--af2-shadow-lg)",
       }}
     >
       {user ? (

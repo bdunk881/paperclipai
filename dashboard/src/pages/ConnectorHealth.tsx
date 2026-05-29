@@ -25,6 +25,7 @@ import {
   type ConnectorHealthSummary,
 } from "../api/client";
 import { ErrorState, LoadingState } from "../components/UiStates";
+import { useTheme } from "../context/ThemeContext";
 import { CompanyLogo } from "@autoflow/logo-dev";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -252,6 +253,7 @@ export default function ConnectorHealth() {
 }
 
 function ConnectorRow({ connector }: { connector: ConnectorHealthRecord }) {
+  const { resolvedTheme } = useTheme();
   const meta = STATE_META[connector.state];
   const Icon = meta.icon;
   const showReconnect =
@@ -265,6 +267,7 @@ function ConnectorRow({ connector }: { connector: ConnectorHealthRecord }) {
             integrationId={connector.connectorKey}
             name={connector.connectorName}
             size={28}
+            theme={resolvedTheme}
             style={{ borderRadius: 6, background: "var(--af2-paper-2)" }}
           />
           <strong style={{ fontSize: 14 }}>{connector.connectorName}</strong>

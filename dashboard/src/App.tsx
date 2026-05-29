@@ -10,6 +10,7 @@ import {
 import { sessionFromAccessToken } from "./auth/tokenSession";
 import { AuthProvider } from "./context/AuthContext";
 import { ExperienceModeProvider } from "./context/ExperienceModeContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { WorkspaceProvider } from "./context/WorkspaceContext";
 import { AppRouter } from "./router";
 import { ToastProvider } from "./components/ToastProvider";
@@ -74,20 +75,22 @@ export default function App() {
               (it depends on getAccessToken) but outside Workspace so
               workspace switches don't unmount/re-fetch preferences. */}
           <ExperienceModeProvider>
-            <WorkspaceProvider>
-              <WorkspaceBootstrap />
-              {/* UX-7: single toast surface for the entire app. Wraps the
-                  router so every page (and every modal launched from a
-                  page) can call useToast() and have its messages stack
-                  bottom-right without each page wiring its own inline
-                  fade-out state. */}
-              <ToastProvider>
-                <ImpersonationBanner />
-                <AppRouter />
-                <MfaStepUpModal />
-                <MfaEnrollmentSheet />
-              </ToastProvider>
-            </WorkspaceProvider>
+            <ThemeProvider>
+              <WorkspaceProvider>
+                <WorkspaceBootstrap />
+                {/* UX-7: single toast surface for the entire app. Wraps the
+                    router so every page (and every modal launched from a
+                    page) can call useToast() and have its messages stack
+                    bottom-right without each page wiring its own inline
+                    fade-out state. */}
+                <ToastProvider>
+                  <ImpersonationBanner />
+                  <AppRouter />
+                  <MfaStepUpModal />
+                  <MfaEnrollmentSheet />
+                </ToastProvider>
+              </WorkspaceProvider>
+            </ThemeProvider>
           </ExperienceModeProvider>
         </AuthProvider>
       </QueryClientProvider>

@@ -134,16 +134,18 @@
   .auth-input:focus {
     outline: none;
     border-color: var(--af2-clay);
-    box-shadow: 0 0 0 3px rgba(194, 80, 43, 0.16);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--af2-clay) 16%, transparent);
   }
 
   .auth-primary-button {
     @apply inline-flex w-full items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
     background: var(--af2-clay);
-    color: #fff;
+    color: var(--af2-on-clay);
     border: 1px solid var(--af2-clay);
     border-radius: var(--af2-radius);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 6px 16px rgba(194, 80, 43, 0.22);
+    box-shadow:
+      0 1px 0 color-mix(in srgb, var(--af2-on-clay) 18%, transparent) inset,
+      0 6px 16px color-mix(in srgb, var(--af2-clay) 22%, transparent);
   }
 
   .auth-primary-button:hover {
@@ -152,8 +154,8 @@
   }
 
   .auth-primary-button:active {
-    background: #a8451f;
-    border-color: #a8451f;
+    background: color-mix(in srgb, var(--af2-clay) 82%, var(--af2-ink));
+    border-color: color-mix(in srgb, var(--af2-clay) 82%, var(--af2-ink));
   }
 
   .auth-microsoft-button {
@@ -566,7 +568,7 @@
      without a built-in overlay; we paint the page underneath with a
      soft ink wash so the palette feels like a modal. */
   [cmdk-dialog] {
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--af2-shadow-lg);
   }
   [cmdk-item][data-selected="true"] {
     background: var(--af2-paper-2);

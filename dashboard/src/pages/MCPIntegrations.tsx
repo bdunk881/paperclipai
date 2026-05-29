@@ -46,6 +46,7 @@ import { getApiBasePath } from "../api/baseUrl";
 import { trackedFetch } from "../api/trackedFetch";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import { useToast } from "../components/ToastProvider";
+import { useTheme } from "../context/ThemeContext";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import {
   LIVE_CONNECTOR_PROVIDER_BY_KEY,
@@ -216,6 +217,7 @@ interface ConnectModalState {
 
 export default function IntegrationsHub() {
   const { user, requireAccessToken } = useAuth();
+  const { resolvedTheme } = useTheme();
   const toast = useToast();
   const [registered, setRegistered] = useState<RegisteredIntegration[]>([]);
   const [loadingRegistered, setLoadingRegistered] = useState(true);
@@ -449,6 +451,7 @@ export default function IntegrationsHub() {
                       integrationId={entry.id}
                       name={entry.name}
                       size={32}
+                      theme={resolvedTheme}
                       style={{ borderRadius: 8, background: "var(--af2-paper-2)" }}
                     />
                     <div style={{ minWidth: 0 }}>

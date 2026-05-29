@@ -126,6 +126,7 @@ export function buildIntegrationLogoUrl(
   displayName: string,
   token: string,
   size = 64,
+  theme: LogoDevUrlOptions["theme"] = "auto",
 ): string | null {
   if (!token) return null;
   const domain = resolveIntegrationLogoDomain(idOrKey);
@@ -134,5 +135,6 @@ export function buildIntegrationLogoUrl(
     domain,
     token,
     size,
+    theme,
   });
 }

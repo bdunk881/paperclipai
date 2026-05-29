@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   buildIntegrationLogoUrl,
   buildLogoDevUrl,
@@ -17,6 +17,7 @@ export interface CompanyLogoProps {
   className?: string;
   style?: CSSProperties;
   alt?: string;
+  theme?: "auto" | "light" | "dark";
   /** Shown when logo.dev is unavailable or the image fails to load. */
   fallback?: ReactNode;
 }
@@ -72,6 +73,7 @@ export function CompanyLogo({
   className,
   style,
   alt,
+  theme = "auto",
   fallback,
 }: CompanyLogoProps) {
   const token = getLogoDevPublishableKey();
@@ -84,7 +86,7 @@ export function CompanyLogo({
       (integrationId ? resolveIntegrationLogoDomain(integrationId) : undefined);
 
     if (integrationId) {
-      return buildIntegrationLogoUrl(integrationId, name, token, size);
+      return buildIntegrationLogoUrl(integrationId, name, token, size, theme);
     }
 
     return buildLogoDevUrl({
@@ -92,8 +94,13 @@ export function CompanyLogo({
       domain: resolvedDomain,
       token,
       size,
+      theme,
     });
-  }, [domain, integrationId, name, size, token]);
+  }, [domain, integrationId, name, size, theme, token]);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
   if (!src || failed) {
     if (fallback !== undefined) return <>{fallback}</>;

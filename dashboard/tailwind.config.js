@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  // HEL-116b — dark mode dropped; v2 paper aesthetic is light-only.
+  // HEL-238 keeps af2 dark mode token-driven; do not add Tailwind dark: variants.
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
   theme: {
     extend: {

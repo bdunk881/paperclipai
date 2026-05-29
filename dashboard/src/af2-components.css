@@ -89,11 +89,11 @@
 .af2-btn-primary:hover { background: var(--af2-ink-2); }
 .af2-btn-clay {
   background: var(--af2-clay);
-  color: #fff;
+  color: var(--af2-on-clay);
   border-color: var(--af2-clay);
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.18) inset,
-    0 6px 16px rgba(194, 80, 43, 0.25);
+    0 1px 0 color-mix(in srgb, var(--af2-on-clay) 18%, transparent) inset,
+    0 6px 16px color-mix(in srgb, var(--af2-clay) 25%, transparent);
 }
 .af2-btn-clay:hover { background: var(--af2-clay-2); }
 .af2-btn-ghost {
@@ -122,7 +122,7 @@
 }
 .af2-input:focus {
   border-color: var(--af2-ink-3);
-  box-shadow: 0 0 0 3px rgba(26, 20, 16, 0.08);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--af2-ink) 8%, transparent);
 }
 
 /* Card */
@@ -147,36 +147,36 @@
 }
 .af2-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--af2-ink-3); }
 .af2-pill-live {
-  background: rgba(74, 107, 74, 0.10);
+  background: var(--af2-sage-soft);
   color: var(--af2-sage);
-  border-color: rgba(74, 107, 74, 0.25);
+  border-color: color-mix(in srgb, var(--af2-sage) 25%, transparent);
 }
 .af2-pill-live .af2-dot {
   background: var(--af2-sage);
-  box-shadow: 0 0 0 0 rgba(74, 107, 74, 0.6);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-sage) 60%, transparent);
   animation: af2-pulse 1.8s ease-out infinite;
 }
 .af2-pill-pending {
-  background: rgba(184, 134, 44, 0.10);
+  background: var(--af2-mustard-soft);
   color: var(--af2-mustard);
-  border-color: rgba(184, 134, 44, 0.25);
+  border-color: color-mix(in srgb, var(--af2-mustard) 25%, transparent);
 }
 .af2-pill-pending .af2-dot { background: var(--af2-mustard); }
 .af2-pill-clay {
-  background: rgba(194, 80, 43, 0.10);
+  background: var(--af2-clay-wash);
   color: var(--af2-clay);
-  border-color: rgba(194, 80, 43, 0.25);
+  border-color: color-mix(in srgb, var(--af2-clay) 25%, transparent);
 }
 .af2-pill-clay .af2-dot { background: var(--af2-clay); }
 .af2-pill-plum {
-  background: rgba(93, 58, 94, 0.10);
+  background: var(--af2-plum-soft);
   color: var(--af2-plum);
-  border-color: rgba(93, 58, 94, 0.22);
+  border-color: color-mix(in srgb, var(--af2-plum) 22%, transparent);
 }
 .af2-pill-plum .af2-dot { background: var(--af2-plum); }
 @keyframes af2-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(74, 107, 74, 0.55); }
-  70% { box-shadow: 0 0 0 8px rgba(74, 107, 74, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-sage) 55%, transparent); }
+  70% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--af2-sage) 0%, transparent); }
 }
 
 /* Page chrome ---------------------------------------------- */
@@ -269,7 +269,7 @@
   display: grid;
   place-items: center;
   font: 600 12px var(--af2-sans);
-  color: white;
+  color: var(--af2-on-accent);
   position: relative;
 }
 .af2-avatar.sm { width: 26px; height: 26px; font-size: 10px; }
@@ -288,25 +288,25 @@
 .af2-avatar.lg .af2-avatar-status { width: 14px; height: 14px; }
 .af2-avatar-status.working {
   background: var(--af2-sage);
-  box-shadow: 0 0 0 0 rgba(74, 107, 74, 0.55);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--af2-sage) 55%, transparent);
   animation: af2-pulse 1.4s ease-out infinite;
 }
 .af2-avatar-status.idle { background: var(--af2-ink-4); }
 .af2-avatar-status.blocked { background: var(--af2-mustard); }
 
 /* Tone palette for avatars + badges */
-.af2-tone-clay    { background: linear-gradient(140deg, var(--af2-clay),    #8e3a1f); }
-.af2-tone-sage    { background: linear-gradient(140deg, var(--af2-sage),    #2d4a2d); }
-.af2-tone-mustard { background: linear-gradient(140deg, var(--af2-mustard), #8a6320); }
-.af2-tone-plum    { background: linear-gradient(140deg, var(--af2-plum),    #3a2438); }
-.af2-tone-blue    { background: linear-gradient(140deg, var(--af2-ink-blue), #0f1f2e); }
+.af2-tone-clay    { background: linear-gradient(140deg, var(--af2-clay),    color-mix(in srgb, var(--af2-clay) 72%, var(--af2-ink))); }
+.af2-tone-sage    { background: linear-gradient(140deg, var(--af2-sage),    color-mix(in srgb, var(--af2-sage) 72%, var(--af2-ink))); }
+.af2-tone-mustard { background: linear-gradient(140deg, var(--af2-mustard), color-mix(in srgb, var(--af2-mustard) 72%, var(--af2-ink))); }
+.af2-tone-plum    { background: linear-gradient(140deg, var(--af2-plum),    color-mix(in srgb, var(--af2-plum) 72%, var(--af2-ink))); }
+.af2-tone-blue    { background: linear-gradient(140deg, var(--af2-ink-blue), color-mix(in srgb, var(--af2-ink-blue) 72%, var(--af2-ink))); }
 .af2-tone-ink     { background: linear-gradient(140deg, var(--af2-ink-2),   var(--af2-ink)); }
 
-.af2-tone-bg-clay    { background: rgba(194, 80, 43, 0.10); color: var(--af2-clay); }
-.af2-tone-bg-sage    { background: rgba(74, 107, 74, 0.10); color: var(--af2-sage); }
-.af2-tone-bg-mustard { background: rgba(184, 134, 44, 0.10); color: var(--af2-mustard); }
-.af2-tone-bg-plum    { background: rgba(93, 58, 94, 0.10); color: var(--af2-plum); }
-.af2-tone-bg-blue    { background: rgba(31, 58, 82, 0.10); color: var(--af2-ink-blue); }
+.af2-tone-bg-clay    { background: var(--af2-clay-wash); color: var(--af2-clay); }
+.af2-tone-bg-sage    { background: var(--af2-sage-soft); color: var(--af2-sage); }
+.af2-tone-bg-mustard { background: var(--af2-mustard-soft); color: var(--af2-mustard); }
+.af2-tone-bg-plum    { background: var(--af2-plum-soft); color: var(--af2-plum); }
+.af2-tone-bg-blue    { background: var(--af2-ink-blue-soft); color: var(--af2-ink-blue); }
 
 /* Tables (lists) */
 .af2-list {

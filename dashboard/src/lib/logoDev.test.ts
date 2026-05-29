@@ -42,6 +42,13 @@ describe("logoDev", () => {
     );
   });
 
+  it("threads explicit logo theme variants", () => {
+    const url = buildIntegrationLogoUrl("github", "GitHub", token, 32, "dark");
+    expect(url).toBe(
+      "https://img.logo.dev/github.com?token=pk_test_key&size=32&format=png&theme=dark&fallback=404",
+    );
+  });
+
   it("returns null when token is empty", () => {
     expect(buildIntegrationLogoUrl("slack", "Slack", "", 32)).toBeNull();
   });

@@ -27,6 +27,16 @@ vi.mock("../context/ExperienceModeContext", () => ({
   useExperienceMode: () => ({ mode: "simple", setMode: vi.fn(), loading: false }),
 }));
 
+vi.mock("../context/ThemeContext", () => ({
+  useTheme: () => ({
+    mode: "system",
+    resolvedTheme: "light",
+    setMode: vi.fn(),
+    loading: false,
+    featureEnabled: false,
+  }),
+}));
+
 vi.mock("../api/searchApi", () => ({
   searchEntities: searchEntitiesMock,
 }));

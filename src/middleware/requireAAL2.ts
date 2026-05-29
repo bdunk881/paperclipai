@@ -49,9 +49,31 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/**
+ * App-minted AAL2 attestation methods. `email_otp` / `magic_link` (HEL-282)
+ * join the original passkey/TOTP/recovery-code set — all app-owned channels
+ * that produce the attestation cookie. Note these are deliberately NOT added
+ * to the Supabase-`amr` acceptance set in `checkSupabaseAal2`: Supabase never
+ * stamps them, so they only ever arrive via the attestation cookie.
+ */
+export type Aal2AttestationMethod =
+  | "webauthn"
+  | "totp"
+  | "recovery_code"
+  | "email_otp"
+  | "magic_link";
+
+const VALID_ATTESTATION_METHODS: ReadonlySet<Aal2AttestationMethod> = new Set([
+  "webauthn",
+  "totp",
+  "recovery_code",
+  "email_otp",
+  "magic_link",
+]);
+
 export interface Aal2AttestationClaims extends JwtPayload {
   sub: string;
-  method: "webauthn" | "totp" | "recovery_code";
+  method: Aal2AttestationMethod;
 }
 
 export interface VerifyAal2AttestationResult {
@@ -76,7 +98,7 @@ export function verifyAal2AttestationCookie(
     if (!decoded.sub || decoded.sub !== expectedUserId) {
       return { valid: false, reason: "subject_mismatch" };
     }
-    if (decoded.method !== "webauthn" && decoded.method !== "totp" && decoded.method !== "recovery_code") {
+    if (!VALID_ATTESTATION_METHODS.has(decoded.method)) {
       return { valid: false, reason: "invalid_method" };
     }
     return { valid: true, claims: decoded };
@@ -246,7 +268,7 @@ export const requireAAL2: (
 
 export interface MintAal2AttestationInput {
   userId: string;
-  method: "webauthn" | "totp" | "recovery_code";
+  method: Aal2AttestationMethod;
   ttlSeconds?: number;
 }
 

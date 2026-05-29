@@ -19,15 +19,22 @@
  * all prior codes).
  */
 
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { SecurityServiceError } from "./securityService";
 import { auditService } from "../auditing/auditService";
+import { isAutoflowStaff } from "../admin/staffAuth";
 import {
   getDefaultMfaRepository,
+  type LastVerifiedMethod,
+  type MfaEmailFactorPurpose,
   type MfaRepository,
   type UserMfaPolicyRow,
   type WebauthnCredentialRow,
 } from "./mfaRepository";
+import {
+  buildDefaultMfaEmailSender,
+  type MfaEmailSender,
+} from "./mfaEmailSender";
 import {
   mintAal2Attestation,
   type MintedAal2Attestation,
@@ -60,6 +67,9 @@ export type SignInMethod =
 export interface MfaPolicySummary {
   hasWebauthn: boolean;
   hasTotp: boolean;
+  /** HEL-282: app-owned email second factors. */
+  hasEmailOtp: boolean;
+  hasMagicLink: boolean;
   hasAnyFactor: boolean;
   hasRecoveryCodes: boolean;
   /** HEL-280: how the active session authenticated. */
@@ -72,7 +82,7 @@ export interface MfaPolicySummary {
   requiresAppMfa: boolean;
   enrollmentCompletedAt: string | null;
   lastVerifiedAt: string | null;
-  lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;
+  lastVerifiedMethod: LastVerifiedMethod | null;
   recoveryCodesIssuedAt: string | null;
   webauthnDevices: Array<{
     credentialId: string;
@@ -248,6 +258,18 @@ export interface MfaServiceDeps {
    * Tests can pass an in-memory instance directly.
    */
   challengeStore?: MfaChallengeStore;
+  /**
+   * HEL-282: injectable transactional email sender for the email-OTP /
+   * magic-link factors. Defaults to the SendGrid-or-log sender. Tests pass
+   * a capturing fake so they can read the issued code/token.
+   */
+  emailSender?: MfaEmailSender;
+  /**
+   * HEL-282: public base URL the magic-link email points at — the API's own
+   * origin, since the verify endpoint lives at
+   * `<base>/api/mfa/magic-link/verify`. Defaults to `PAPERCLIP_API_URL`.
+   */
+  magicLinkApiBaseUrl?: string;
 }
 
 export interface GetPolicyOptions {
@@ -312,6 +334,12 @@ function deriveSignInMethod(
 
 const DEFAULT_RECOVERY_CODE_COUNT = 10;
 
+// HEL-282: email-OTP + magic-link tuning.
+const EMAIL_FACTOR_TTL_SECONDS = 5 * 60; // 5-minute TTL for both code + token
+const MAX_OTP_ATTEMPTS = 3; // failed guesses per code before lock
+const EMAIL_FACTOR_SENDS_PER_HOUR = 5; // per-user send rate limit
+const MAGIC_LINK_TOKEN_BYTES = 32; // 256 bits of entropy
+
 function formatPolicy(
   policy: UserMfaPolicyRow | null,
   credentials: WebauthnCredentialRow[],
@@ -319,10 +347,15 @@ function formatPolicy(
   signInMethod: SignInMethod,
   requiresAppMfa: boolean,
 ): MfaPolicySummary {
+  const hasEmailOtp = policy?.hasEmailOtp ?? false;
+  const hasMagicLink = policy?.hasMagicLink ?? false;
   return {
     hasWebauthn: credentials.length > 0,
     hasTotp: policy?.hasTotp ?? false,
-    hasAnyFactor: credentials.length > 0 || (policy?.hasTotp ?? false),
+    hasEmailOtp,
+    hasMagicLink,
+    hasAnyFactor:
+      credentials.length > 0 || (policy?.hasTotp ?? false) || hasEmailOtp || hasMagicLink,
     hasRecoveryCodes: activeRecoveryCodes > 0,
     signInMethod,
     requiresAppMfa,
@@ -408,6 +441,9 @@ export class MfaService {
   // begin → finish round-trip survives Fly machine restarts and
   // multi-machine routing.
   private challengeStore: MfaChallengeStore;
+  // HEL-282: email second-factor sender + magic-link base URL.
+  private emailSender: MfaEmailSender;
+  private magicLinkApiBaseUrl: string;
 
   constructor(deps: MfaServiceDeps = {}) {
     this.repository = deps.repository ?? getDefaultMfaRepository();
@@ -420,6 +456,11 @@ export class MfaService {
       deps.origin ?? this.parseOriginEnv(process.env.MFA_ORIGIN ?? "http://localhost:5173");
     this.workspaceFlagChecker = deps.workspaceFlagChecker ?? defaultWorkspaceFlagChecker;
     this.challengeStore = deps.challengeStore ?? getDefaultMfaChallengeStore();
+    this.emailSender = deps.emailSender ?? buildDefaultMfaEmailSender();
+    this.magicLinkApiBaseUrl =
+      deps.magicLinkApiBaseUrl ??
+      process.env.PAPERCLIP_API_URL ??
+      "http://localhost:3000";
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -690,6 +731,203 @@ export class MfaService {
     return {
       attestation: mintAal2Attestation({ userId: ctx.userId, method: "recovery_code" }),
     };
+  }
+
+  // ---- Email OTP + magic link (HEL-282) ------------------------------------
+  //
+  // App-owned email second factors. Each successful verify mints the same
+  // AAL2 attestation cookie as passkey/recovery, so requireAAL2 stays simple.
+  // Staff are passkey-only — issuance is rejected for staff users. Both
+  // channels share a per-user 5-sends-per-hour rate limit.
+
+  private generateOtpCode(): string {
+    // 6 digits, 100000–999999 inclusive (randomInt's upper bound is exclusive).
+    return String(randomInt(100000, 1000000));
+  }
+
+  private hashMagicLinkToken(rawToken: string): string {
+    // 256-bit token → unsalted SHA-256 is sufficient (no dictionary risk).
+    return createHash("sha256").update(rawToken).digest("hex");
+  }
+
+  private assertNotStaff(userId: string): void {
+    if (isAutoflowStaff(userId)) {
+      throw new SecurityServiceError(
+        "AutoFlow staff must use a passkey; email factors are disabled.",
+        403,
+        "staff_passkey_only",
+      );
+    }
+  }
+
+  private async enforceSendRateLimit(ctx: MfaServiceContext): Promise<void> {
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+    const recent = await this.repository.countRecentEmailFactorSends(ctx.userId, since);
+    if (recent >= EMAIL_FACTOR_SENDS_PER_HOUR) {
+      await recordAudit(ctx, "mfa.email_factor.rate_limited", { recent });
+      throw new SecurityServiceError(
+        "Too many verification codes requested. Try again later.",
+        429,
+        "too_many_codes",
+        { retryAfterSeconds: 60 * 60 },
+      );
+    }
+  }
+
+  private async issueEmailOtp(
+    ctx: MfaServiceContext,
+    userEmail: string,
+    purpose: MfaEmailFactorPurpose,
+  ): Promise<{ sent: true }> {
+    this.assertNotStaff(ctx.userId);
+    await this.enforceSendRateLimit(ctx);
+    const code = this.generateOtpCode();
+    const codeHash = await this.hasher.hash(code);
+    const expiresAt = new Date(Date.now() + EMAIL_FACTOR_TTL_SECONDS * 1000);
+    await this.repository.insertEmailOtp({ userId: ctx.userId, codeHash, purpose, expiresAt });
+    await this.emailSender.send({ to: userEmail, kind: "email_otp_code", code, purpose });
+    await recordAudit(ctx, "mfa.email_otp.sent", { purpose });
+    return { sent: true };
+  }
+
+  beginEmailOtpEnrollment(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
+    return this.issueEmailOtp(ctx, userEmail, "enroll");
+  }
+
+  challengeEmailOtp(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
+    return this.issueEmailOtp(ctx, userEmail, "verify");
+  }
+
+  private async verifyEmailOtpCode(
+    ctx: MfaServiceContext,
+    purpose: MfaEmailFactorPurpose,
+    code: string,
+  ): Promise<void> {
+    const normalized = code.trim();
+    const row = await this.repository.findActiveEmailOtp(ctx.userId, purpose);
+    if (!row) {
+      await recordAudit(ctx, "mfa.verify.failure", { method: "email_otp", reason: "no_active_code" });
+      throw new SecurityServiceError("Code expired or not found. Request a new one.", 400, "otp_not_found");
+    }
+    const matches = await this.hasher.compare(normalized, row.codeHash);
+    if (!matches) {
+      const attempts = await this.repository.incrementEmailOtpAttempts(ctx.userId, row.id);
+      const locked = attempts >= MAX_OTP_ATTEMPTS;
+      if (locked) {
+        // Burn the row so a fresh code is required after too many guesses.
+        await this.repository.consumeEmailOtp(ctx.userId, row.id);
+      }
+      await recordAudit(ctx, "mfa.verify.failure", {
+        method: "email_otp",
+        reason: locked ? "locked" : "wrong_code",
+        attempts,
+      });
+      throw new SecurityServiceError(
+        locked ? "Too many incorrect attempts. Request a new code." : "Incorrect code.",
+        401,
+        locked ? "otp_locked" : "otp_invalid",
+      );
+    }
+    await this.repository.consumeEmailOtp(ctx.userId, row.id);
+  }
+
+  async verifyEmailOtpEnrollment(
+    ctx: MfaServiceContext,
+    code: string,
+  ): Promise<{ attestation: MintedAal2Attestation }> {
+    await this.verifyEmailOtpCode(ctx, "enroll", code);
+    const now = new Date();
+    await this.repository.upsertPolicy(ctx.userId, {
+      hasEmailOtp: true,
+      enrollmentCompletedAt: now,
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "email_otp",
+    });
+    await recordAudit(ctx, "mfa.enroll.email_otp", {});
+    return { attestation: mintAal2Attestation({ userId: ctx.userId, method: "email_otp" }) };
+  }
+
+  async verifyEmailOtp(
+    ctx: MfaServiceContext,
+    code: string,
+  ): Promise<{ attestation: MintedAal2Attestation }> {
+    await this.verifyEmailOtpCode(ctx, "verify", code);
+    await this.repository.upsertPolicy(ctx.userId, {
+      lastVerifiedAt: new Date(),
+      lastVerifiedMethod: "email_otp",
+    });
+    await recordAudit(ctx, "mfa.verify.success", { method: "email_otp" });
+    return { attestation: mintAal2Attestation({ userId: ctx.userId, method: "email_otp" }) };
+  }
+
+  async removeEmailOtp(ctx: MfaServiceContext): Promise<void> {
+    await this.repository.upsertPolicy(ctx.userId, { hasEmailOtp: false });
+    await recordAudit(ctx, "mfa.disable.email_otp", {});
+  }
+
+  private async issueMagicLink(
+    ctx: MfaServiceContext,
+    userEmail: string,
+    purpose: MfaEmailFactorPurpose,
+  ): Promise<{ sent: true }> {
+    this.assertNotStaff(ctx.userId);
+    await this.enforceSendRateLimit(ctx);
+    const rawToken = randomBytes(MAGIC_LINK_TOKEN_BYTES).toString("base64url");
+    const tokenHash = this.hashMagicLinkToken(rawToken);
+    const expiresAt = new Date(Date.now() + EMAIL_FACTOR_TTL_SECONDS * 1000);
+    await this.repository.insertMagicLink({ userId: ctx.userId, tokenHash, purpose, expiresAt });
+    const link = `${this.magicLinkApiBaseUrl.replace(/\/$/, "")}/api/mfa/magic-link/verify?token=${encodeURIComponent(rawToken)}`;
+    await this.emailSender.send({ to: userEmail, kind: "magic_link", link, purpose });
+    await recordAudit(ctx, "mfa.magic_link.sent", { purpose });
+    return { sent: true };
+  }
+
+  beginMagicLinkEnrollment(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
+    return this.issueMagicLink(ctx, userEmail, "enroll");
+  }
+
+  challengeMagicLink(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
+    return this.issueMagicLink(ctx, userEmail, "verify");
+  }
+
+  /**
+   * Pre-auth: consumes a magic-link token clicked from an email (no session).
+   * The token itself binds the user. Marks the factor enrolled on first
+   * `enroll` click, stamps last-verified, and mints the AAL2 attestation.
+   * Returns null on invalid/expired/already-consumed tokens.
+   */
+  async consumeMagicLinkToken(rawToken: string): Promise<{
+    userId: string;
+    purpose: MfaEmailFactorPurpose;
+    attestation: MintedAal2Attestation;
+  } | null> {
+    const tokenHash = this.hashMagicLinkToken(rawToken);
+    const consumed = await this.repository.consumeMagicLinkByTokenHash(tokenHash);
+    if (!consumed) return null;
+    const { userId, purpose } = consumed;
+    const now = new Date();
+    await this.repository.upsertPolicy(userId, {
+      ...(purpose === "enroll" ? { hasMagicLink: true, enrollmentCompletedAt: now } : {}),
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "magic_link",
+    });
+    // No workspace context on the pre-auth click — recordAudit no-ops without
+    // a workspaceId, which is acceptable here (the mint is the security record).
+    await recordAudit(
+      { userId },
+      purpose === "enroll" ? "mfa.enroll.magic_link" : "mfa.verify.success",
+      { method: "magic_link" },
+    );
+    return {
+      userId,
+      purpose,
+      attestation: mintAal2Attestation({ userId, method: "magic_link" }),
+    };
+  }
+
+  async removeMagicLink(ctx: MfaServiceContext): Promise<void> {
+    await this.repository.upsertPolicy(ctx.userId, { hasMagicLink: false });
+    await recordAudit(ctx, "mfa.disable.magic_link", {});
   }
 }
 

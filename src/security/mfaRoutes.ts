@@ -17,6 +17,15 @@
  *   DELETE /api/mfa/totp/:factorId              — remove a TOTP factor (requires AAL2)
  *   POST   /api/mfa/recovery-codes/regenerate   — issue fresh recovery codes (requires AAL2)
  *   POST   /api/mfa/recovery-codes/consume      — one-time fallback verify → AAL2 cookie
+ *   POST   /api/mfa/email-otp/enroll/begin      — HEL-282: send enrollment code
+ *   POST   /api/mfa/email-otp/enroll/verify     — HEL-282: verify code → enroll + AAL2 cookie
+ *   POST   /api/mfa/email-otp/challenge         — HEL-282: step-up: send code
+ *   POST   /api/mfa/email-otp/verify            — HEL-282: step-up: verify code → AAL2 cookie
+ *   DELETE /api/mfa/email-otp                   — HEL-282: disable email-OTP (requires AAL2)
+ *   POST   /api/mfa/magic-link/enroll/begin     — HEL-282: email an enrollment link
+ *   POST   /api/mfa/magic-link/challenge        — HEL-282: step-up: email a verify link
+ *   DELETE /api/mfa/magic-link                  — HEL-282: disable magic-link (requires AAL2)
+ *   GET    /api/mfa/magic-link/verify?token=…   — HEL-282: PUBLIC (mounted in app.ts) → AAL2 cookie + redirect
  *
  * Routes that grant AAL2 set `autoflow_aal2_attestation` as an HttpOnly,
  * Secure (in prod), SameSite=Strict cookie scoped to /.
@@ -57,7 +66,12 @@ function buildContext(req: AuthenticatedRequest): MfaServiceContext {
 
 function sendError(res: Response, error: unknown): void {
   if (error instanceof SecurityServiceError) {
-    res.status(error.statusCode).json({ error: error.message, code: error.code });
+    res.status(error.statusCode).json({
+      error: error.message,
+      code: error.code,
+      // HEL-282: merge structured fields (e.g. retryAfterSeconds on a 429).
+      ...(error.details ?? {}),
+    });
     return;
   }
   const message = error instanceof Error ? error.message : "Unknown MFA error";
@@ -106,6 +120,21 @@ const totpVerifySchema = z.object({
 const recoveryConsumeSchema = z.object({
   code: z.string().min(8),
 });
+
+// HEL-282: email-OTP code is exactly 6 digits.
+const emailOtpVerifySchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
+});
+
+/**
+ * HEL-282: the verified email the OTP/magic-link is sent to. Mirrors the
+ * WebAuthn route's fallback so a brand-new user with no email claim still
+ * resolves to a deterministic address (dev/test only — real users always
+ * carry an email claim).
+ */
+function resolveUserEmail(req: AuthenticatedRequest): string {
+  return req.auth?.email ?? `${req.auth!.sub}@autoflow.local`;
+}
 
 export function createMfaRoutes(service: MfaService = getMfaService()): Router {
   const router = Router();
@@ -312,6 +341,117 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
         const { attestation } = await service.consumeRecoveryCode(buildContext(req), parsed.data.code);
         setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
         res.json({ verified: true, expiresAt: attestation.expiresAt });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  // ---- Email OTP (HEL-282) ----------------------------------------------
+  router.post(
+    "/email-otp/enroll/begin",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        res.json(await service.beginEmailOtpEnrollment(buildContext(req), resolveUserEmail(req)));
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.post(
+    "/email-otp/enroll/verify",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = emailOtpVerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
+      try {
+        const { attestation } = await service.verifyEmailOtpEnrollment(buildContext(req), parsed.data.code);
+        setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
+        res.status(201).json({ enrolled: true, verified: true, expiresAt: attestation.expiresAt });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.post(
+    "/email-otp/challenge",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        res.json(await service.challengeEmailOtp(buildContext(req), resolveUserEmail(req)));
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.post(
+    "/email-otp/verify",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = emailOtpVerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
+      try {
+        const { attestation } = await service.verifyEmailOtp(buildContext(req), parsed.data.code);
+        setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
+        res.json({ verified: true, expiresAt: attestation.expiresAt });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.delete(
+    "/email-otp",
+    requireAAL2,
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        await service.removeEmailOtp(buildContext(req));
+        res.status(204).send();
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  // ---- Magic link (HEL-282) ---------------------------------------------
+  // The verify step (GET /api/mfa/magic-link/verify?token=…) is mounted as a
+  // PUBLIC route in app.ts — it's clicked from an email and carries no bearer
+  // token, so it can't live behind this router's requireAuth mount.
+  router.post(
+    "/magic-link/enroll/begin",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        res.json(await service.beginMagicLinkEnrollment(buildContext(req), resolveUserEmail(req)));
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.post(
+    "/magic-link/challenge",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        res.json(await service.challengeMagicLink(buildContext(req), resolveUserEmail(req)));
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  router.delete(
+    "/magic-link",
+    requireAAL2,
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      try {
+        await service.removeMagicLink(buildContext(req));
+        res.status(204).send();
       } catch (error) {
         sendError(res, error);
       }

@@ -10,6 +10,9 @@ import {
 } from "./mfaService";
 import { InMemoryMfaRepository } from "./mfaRepository";
 import { InMemoryMfaChallengeStore } from "./mfaChallengeStore";
+import type { MfaEmailMessage, MfaEmailSender } from "./mfaEmailSender";
+import { __resetStaffIdsCacheForTests } from "../admin/staffAuth";
+import { verifyAal2AttestationCookie } from "../middleware/requireAAL2";
 
 const APP_JWT_SECRET = "test-secret-key-at-least-32-bytes-long-please";
 
@@ -366,5 +369,189 @@ describe("DefaultRecoveryCodeHasher", () => {
     expect(a).not.toBe(b);
     expect(await hasher.compare("SAME", a)).toBe(true);
     expect(await hasher.compare("SAME", b)).toBe(true);
+  });
+});
+
+// HEL-282: email-OTP + magic-link second factors ---------------------------
+
+interface CapturingSender extends MfaEmailSender {
+  sent: MfaEmailMessage[];
+}
+
+function makeEmailSender(): CapturingSender {
+  const sent: MfaEmailMessage[] = [];
+  return {
+    sent,
+    async send(message) {
+      sent.push(message);
+    },
+  };
+}
+
+function tokenFromLink(link: string): string {
+  return new URL(link).searchParams.get("token") ?? "";
+}
+
+describe("MfaService — email OTP + magic link (HEL-282)", () => {
+  const APP_JWT_SECRET = "test-secret-key-at-least-32-bytes-long-please";
+  const originalSecret = process.env.APP_JWT_SECRET;
+  const originalStaff = process.env.AUTOFLOW_STAFF_USER_IDS;
+  let repo: InMemoryMfaRepository;
+  let email: CapturingSender;
+
+  beforeEach(() => {
+    process.env.APP_JWT_SECRET = APP_JWT_SECRET;
+    delete process.env.AUTOFLOW_STAFF_USER_IDS;
+    __resetStaffIdsCacheForTests();
+    repo = new InMemoryMfaRepository();
+    email = makeEmailSender();
+  });
+
+  afterAll(() => {
+    if (originalSecret === undefined) delete process.env.APP_JWT_SECRET;
+    else process.env.APP_JWT_SECRET = originalSecret;
+    if (originalStaff === undefined) delete process.env.AUTOFLOW_STAFF_USER_IDS;
+    else process.env.AUTOFLOW_STAFF_USER_IDS = originalStaff;
+    __resetStaffIdsCacheForTests();
+  });
+
+  function makeService(): MfaService {
+    return new MfaService({
+      repository: repo,
+      emailSender: email,
+      magicLinkApiBaseUrl: "https://api.test",
+    });
+  }
+
+  it("enrolls email OTP and mints an email_otp attestation", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-otp" };
+
+    const begin = await service.beginEmailOtpEnrollment(ctx, "user@example.com");
+    expect(begin).toEqual({ sent: true });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].kind).toBe("email_otp_code");
+    const code = email.sent[0].code!;
+    expect(code).toMatch(/^\d{6}$/);
+
+    const { attestation } = await service.verifyEmailOtpEnrollment(ctx, code);
+    const verified = verifyAal2AttestationCookie(attestation.token, "u-otp");
+    expect(verified.valid).toBe(true);
+    expect(verified.claims?.method).toBe("email_otp");
+
+    const policy = await service.getPolicy(ctx);
+    expect(policy.hasEmailOtp).toBe(true);
+    expect(policy.hasAnyFactor).toBe(true);
+    expect(policy.lastVerifiedMethod).toBe("email_otp");
+  });
+
+  it("rejects an expired email OTP", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-exp" };
+    const hasher = new DefaultRecoveryCodeHasher();
+    await repo.insertEmailOtp({
+      userId: ctx.userId,
+      codeHash: await hasher.hash("123456"),
+      purpose: "enroll",
+      expiresAt: new Date(Date.now() - 1000), // already expired
+    });
+    await expect(service.verifyEmailOtpEnrollment(ctx, "123456")).rejects.toMatchObject({
+      statusCode: 400,
+      code: "otp_not_found",
+    });
+  });
+
+  it("increments attempts on wrong code then locks after 3", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-lock" };
+    await service.beginEmailOtpEnrollment(ctx, "user@example.com");
+
+    await expect(service.verifyEmailOtpEnrollment(ctx, "000001")).rejects.toMatchObject({
+      code: "otp_invalid",
+    });
+    await expect(service.verifyEmailOtpEnrollment(ctx, "000002")).rejects.toMatchObject({
+      code: "otp_invalid",
+    });
+    // Third wrong guess locks (consumes) the row.
+    await expect(service.verifyEmailOtpEnrollment(ctx, "000003")).rejects.toMatchObject({
+      code: "otp_locked",
+    });
+    // Even the correct code now fails — the row is consumed.
+    const code = email.sent[0].code!;
+    await expect(service.verifyEmailOtpEnrollment(ctx, code)).rejects.toMatchObject({
+      code: "otp_not_found",
+    });
+  });
+
+  it("rate-limits to 5 sends per hour (6th returns 429 too_many_codes)", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-rate" };
+    for (let i = 0; i < 5; i += 1) {
+      await service.beginEmailOtpEnrollment(ctx, "user@example.com");
+    }
+    await expect(service.beginEmailOtpEnrollment(ctx, "user@example.com")).rejects.toMatchObject({
+      statusCode: 429,
+      code: "too_many_codes",
+    });
+  });
+
+  it("counts email-OTP and magic-link sends together toward the rate limit", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-mixed" };
+    await service.beginEmailOtpEnrollment(ctx, "user@example.com"); // 1
+    await service.challengeMagicLink(ctx, "user@example.com"); // 2
+    await service.beginEmailOtpEnrollment(ctx, "user@example.com"); // 3
+    await service.challengeMagicLink(ctx, "user@example.com"); // 4
+    await service.beginEmailOtpEnrollment(ctx, "user@example.com"); // 5
+    await expect(service.challengeMagicLink(ctx, "user@example.com")).rejects.toMatchObject({
+      statusCode: 429,
+    });
+  });
+
+  it("rejects email factors for staff users with 403", async () => {
+    process.env.AUTOFLOW_STAFF_USER_IDS = "staff-1,staff-2";
+    __resetStaffIdsCacheForTests();
+    const service = makeService();
+
+    await expect(
+      service.beginEmailOtpEnrollment({ userId: "staff-1" }, "staff@autoflow.com"),
+    ).rejects.toMatchObject({ statusCode: 403, code: "staff_passkey_only" });
+    await expect(
+      service.beginMagicLinkEnrollment({ userId: "staff-2" }, "staff@autoflow.com"),
+    ).rejects.toMatchObject({ statusCode: 403, code: "staff_passkey_only" });
+
+    // A non-staff user is unaffected.
+    await expect(
+      service.beginEmailOtpEnrollment({ userId: "normal-user" }, "user@example.com"),
+    ).resolves.toEqual({ sent: true });
+  });
+
+  it("enrolls magic-link on first token consume and enforces one-time use", async () => {
+    const service = makeService();
+    const ctx = { userId: "u-magic" };
+
+    await service.beginMagicLinkEnrollment(ctx, "user@example.com");
+    expect(email.sent[0].kind).toBe("magic_link");
+    const token = tokenFromLink(email.sent[0].link!);
+    expect(token.length).toBeGreaterThan(20);
+
+    const first = await service.consumeMagicLinkToken(token);
+    expect(first).not.toBeNull();
+    expect(first!.userId).toBe("u-magic");
+    expect(first!.purpose).toBe("enroll");
+    const verified = verifyAal2AttestationCookie(first!.attestation.token, "u-magic");
+    expect(verified.valid).toBe(true);
+    expect(verified.claims?.method).toBe("magic_link");
+
+    const policy = await service.getPolicy(ctx);
+    expect(policy.hasMagicLink).toBe(true);
+
+    // Second consume of the same token fails (one-time use).
+    expect(await service.consumeMagicLinkToken(token)).toBeNull();
+  });
+
+  it("rejects an unknown / malformed magic-link token", async () => {
+    const service = makeService();
+    expect(await service.consumeMagicLinkToken("not-a-real-token")).toBeNull();
   });
 });

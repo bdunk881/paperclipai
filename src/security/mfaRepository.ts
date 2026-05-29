@@ -42,14 +42,61 @@ export interface RecoveryCodeRow {
   createdAt: Date;
 }
 
+/** HEL-282: app-issued artifacts for the email-OTP / magic-link factors. */
+export type MfaEmailFactorPurpose = "enroll" | "verify";
+
+export interface EmailOtpRow {
+  id: string;
+  userId: string;
+  codeHash: string;
+  purpose: MfaEmailFactorPurpose;
+  attempts: number;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface MagicLinkRow {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  purpose: MfaEmailFactorPurpose;
+  expiresAt: Date;
+  consumedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface InsertEmailOtpInput {
+  userId: string;
+  codeHash: string;
+  purpose: MfaEmailFactorPurpose;
+  expiresAt: Date;
+}
+
+export interface InsertMagicLinkInput {
+  userId: string;
+  tokenHash: string;
+  purpose: MfaEmailFactorPurpose;
+  expiresAt: Date;
+}
+
+export type LastVerifiedMethod =
+  | "webauthn"
+  | "totp"
+  | "recovery_code"
+  | "email_otp"
+  | "magic_link";
+
 export interface UserMfaPolicyRow {
   userId: string;
   hasWebauthn: boolean;
   hasTotp: boolean;
+  hasEmailOtp: boolean;
+  hasMagicLink: boolean;
   recoveryCodesIssuedAt: Date | null;
   enrollmentCompletedAt: Date | null;
   lastVerifiedAt: Date | null;
-  lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;
+  lastVerifiedMethod: LastVerifiedMethod | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -95,6 +142,28 @@ export interface MfaRepository {
   countActiveRecoveryCodes(userId: string): Promise<number>;
   consumeRecoveryCode(userId: string, predicate: (hash: string) => Promise<boolean>): Promise<boolean>;
 
+  // ---- HEL-282: email-OTP + magic-link --------------------------------
+  insertEmailOtp(input: InsertEmailOtpInput): Promise<EmailOtpRow>;
+  /** Most-recent unconsumed, unexpired OTP row for the user+purpose, or null. */
+  findActiveEmailOtp(userId: string, purpose: MfaEmailFactorPurpose): Promise<EmailOtpRow | null>;
+  /** Bumps attempts by one; returns the new attempt count. */
+  incrementEmailOtpAttempts(userId: string, id: string): Promise<number>;
+  /** Marks a row consumed (verified or locked). Idempotent. */
+  consumeEmailOtp(userId: string, id: string): Promise<void>;
+
+  insertMagicLink(input: InsertMagicLinkInput): Promise<MagicLinkRow>;
+  /**
+   * Pre-auth, unscoped consume of a magic-link token by its hash (the email
+   * click has no user context). Atomically marks consumed and returns the
+   * bound user_id + purpose, or null if invalid/expired/already-consumed.
+   */
+  consumeMagicLinkByTokenHash(
+    tokenHash: string,
+  ): Promise<{ userId: string; purpose: MfaEmailFactorPurpose } | null>;
+
+  /** Count of email-OTP + magic-link sends for the user since `since` (rate limit). */
+  countRecentEmailFactorSends(userId: string, since: Date): Promise<number>;
+
   getPolicy(userId: string): Promise<UserMfaPolicyRow | null>;
   upsertPolicy(userId: string, patch: Partial<Omit<UserMfaPolicyRow, "userId" | "createdAt" | "updatedAt">>): Promise<UserMfaPolicyRow>;
 }
@@ -119,11 +188,38 @@ function rowToWebauthn(row: Record<string, unknown>): WebauthnCredentialRow {
   };
 }
 
+function rowToEmailOtp(row: Record<string, unknown>): EmailOtpRow {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    codeHash: String(row.code_hash),
+    purpose: String(row.purpose) as MfaEmailFactorPurpose,
+    attempts: Number.parseInt(String(row.attempts ?? "0"), 10),
+    expiresAt: new Date(String(row.expires_at)),
+    consumedAt: row.consumed_at == null ? null : new Date(String(row.consumed_at)),
+    createdAt: new Date(String(row.created_at)),
+  };
+}
+
+function rowToMagicLink(row: Record<string, unknown>): MagicLinkRow {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    tokenHash: String(row.token_hash),
+    purpose: String(row.purpose) as MfaEmailFactorPurpose,
+    expiresAt: new Date(String(row.expires_at)),
+    consumedAt: row.consumed_at == null ? null : new Date(String(row.consumed_at)),
+    createdAt: new Date(String(row.created_at)),
+  };
+}
+
 function rowToPolicy(row: Record<string, unknown>): UserMfaPolicyRow {
   return {
     userId: String(row.user_id),
     hasWebauthn: Boolean(row.has_webauthn),
     hasTotp: Boolean(row.has_totp),
+    hasEmailOtp: Boolean(row.has_email_otp),
+    hasMagicLink: Boolean(row.has_magic_link),
     recoveryCodesIssuedAt: row.recovery_codes_issued_at == null ? null : new Date(String(row.recovery_codes_issued_at)),
     enrollmentCompletedAt: row.enrollment_completed_at == null ? null : new Date(String(row.enrollment_completed_at)),
     lastVerifiedAt: row.last_verified_at == null ? null : new Date(String(row.last_verified_at)),
@@ -273,10 +369,109 @@ export class PostgresMfaRepository implements MfaRepository {
     });
   }
 
+  // ---- HEL-282: email-OTP + magic-link ----------------------------------
+
+  async insertEmailOtp(input: InsertEmailOtpInput): Promise<EmailOtpRow> {
+    return withUserContext(getPostgresPool(), input.userId, async (client) => {
+      const result = await client.query(
+        `INSERT INTO mfa_email_otp (user_id, code_hash, purpose, expires_at)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, code_hash, purpose, attempts, expires_at, consumed_at, created_at`,
+        [input.userId, input.codeHash, input.purpose, input.expiresAt],
+      );
+      return rowToEmailOtp(result.rows[0] as Record<string, unknown>);
+    });
+  }
+
+  async findActiveEmailOtp(
+    userId: string,
+    purpose: MfaEmailFactorPurpose,
+  ): Promise<EmailOtpRow | null> {
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query(
+        `SELECT id, user_id, code_hash, purpose, attempts, expires_at, consumed_at, created_at
+           FROM mfa_email_otp
+          WHERE user_id = $1 AND purpose = $2
+            AND consumed_at IS NULL AND expires_at > now()
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [userId, purpose],
+      );
+      if (result.rows.length === 0) return null;
+      return rowToEmailOtp(result.rows[0] as Record<string, unknown>);
+    });
+  }
+
+  async incrementEmailOtpAttempts(userId: string, id: string): Promise<number> {
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<{ attempts: number }>(
+        `UPDATE mfa_email_otp
+            SET attempts = attempts + 1
+          WHERE id = $1 AND user_id = $2
+          RETURNING attempts`,
+        [id, userId],
+      );
+      return result.rows[0]?.attempts ?? 0;
+    });
+  }
+
+  async consumeEmailOtp(userId: string, id: string): Promise<void> {
+    await withUserContext(getPostgresPool(), userId, async (client) => {
+      await client.query(
+        `UPDATE mfa_email_otp SET consumed_at = now()
+          WHERE id = $1 AND user_id = $2 AND consumed_at IS NULL`,
+        [id, userId],
+      );
+    });
+  }
+
+  async insertMagicLink(input: InsertMagicLinkInput): Promise<MagicLinkRow> {
+    return withUserContext(getPostgresPool(), input.userId, async (client) => {
+      const result = await client.query(
+        `INSERT INTO mfa_magic_link (user_id, token_hash, purpose, expires_at)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, user_id, token_hash, purpose, expires_at, consumed_at, created_at`,
+        [input.userId, input.tokenHash, input.purpose, input.expiresAt],
+      );
+      return rowToMagicLink(result.rows[0] as Record<string, unknown>);
+    });
+  }
+
+  async consumeMagicLinkByTokenHash(
+    tokenHash: string,
+  ): Promise<{ userId: string; purpose: MfaEmailFactorPurpose } | null> {
+    // Pre-auth: no user context. The SECURITY DEFINER function added in
+    // migration 093 bypasses the FORCE-RLS user_isolation policy and
+    // atomically consumes the row, so this runs as a plain pool query.
+    const result = await getPostgresPool().query<{ user_id: string; purpose: string }>(
+      `SELECT user_id, purpose FROM consume_mfa_magic_link($1)`,
+      [tokenHash],
+    );
+    if (result.rows.length === 0) return null;
+    return {
+      userId: String(result.rows[0].user_id),
+      purpose: String(result.rows[0].purpose) as MfaEmailFactorPurpose,
+    };
+  }
+
+  async countRecentEmailFactorSends(userId: string, since: Date): Promise<number> {
+    return withUserContext(getPostgresPool(), userId, async (client) => {
+      const result = await client.query<{ count: string }>(
+        `SELECT (
+            (SELECT COUNT(*) FROM mfa_email_otp  WHERE user_id = $1 AND created_at >= $2)
+          + (SELECT COUNT(*) FROM mfa_magic_link WHERE user_id = $1 AND created_at >= $2)
+         )::text AS count`,
+        [userId, since],
+      );
+      return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+    });
+  }
+
   async getPolicy(userId: string): Promise<UserMfaPolicyRow | null> {
     return withUserContext(getPostgresPool(), userId, async (client) => {
       const result = await client.query(
-        `SELECT user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+        `SELECT user_id, has_webauthn, has_totp, has_email_otp, has_magic_link,
+                recovery_codes_issued_at,
                 enrollment_completed_at, last_verified_at, last_verified_method,
                 created_at, updated_at
            FROM user_mfa_policy
@@ -295,17 +490,22 @@ export class PostgresMfaRepository implements MfaRepository {
     return withUserContext(getPostgresPool(), userId, async (client) => {
       const result = await client.query(
         `INSERT INTO user_mfa_policy
-           (user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+           (user_id, has_webauthn, has_totp, has_email_otp, has_magic_link,
+            recovery_codes_issued_at,
             enrollment_completed_at, last_verified_at, last_verified_method)
-         VALUES ($1, COALESCE($2, FALSE), COALESCE($3, FALSE), $4, $5, $6, $7)
+         VALUES ($1, COALESCE($2, FALSE), COALESCE($3, FALSE),
+                 COALESCE($8, FALSE), COALESCE($9, FALSE), $4, $5, $6, $7)
          ON CONFLICT (user_id) DO UPDATE
            SET has_webauthn             = COALESCE($2, user_mfa_policy.has_webauthn),
                has_totp                 = COALESCE($3, user_mfa_policy.has_totp),
+               has_email_otp            = COALESCE($8, user_mfa_policy.has_email_otp),
+               has_magic_link           = COALESCE($9, user_mfa_policy.has_magic_link),
                recovery_codes_issued_at = COALESCE($4, user_mfa_policy.recovery_codes_issued_at),
                enrollment_completed_at  = COALESCE($5, user_mfa_policy.enrollment_completed_at),
                last_verified_at         = COALESCE($6, user_mfa_policy.last_verified_at),
                last_verified_method     = COALESCE($7, user_mfa_policy.last_verified_method)
-         RETURNING user_id, has_webauthn, has_totp, recovery_codes_issued_at,
+         RETURNING user_id, has_webauthn, has_totp, has_email_otp, has_magic_link,
+                   recovery_codes_issued_at,
                    enrollment_completed_at, last_verified_at, last_verified_method,
                    created_at, updated_at`,
         [
@@ -316,6 +516,8 @@ export class PostgresMfaRepository implements MfaRepository {
           patch.enrollmentCompletedAt ?? null,
           patch.lastVerifiedAt ?? null,
           patch.lastVerifiedMethod ?? null,
+          patch.hasEmailOtp ?? null,
+          patch.hasMagicLink ?? null,
         ],
       );
       return rowToPolicy(result.rows[0] as Record<string, unknown>);
@@ -331,11 +533,15 @@ export class InMemoryMfaRepository implements MfaRepository {
   private credentials = new Map<string, WebauthnCredentialRow>(); // keyed by credential_id
   private recoveryCodes = new Map<string, RecoveryCodeRow[]>(); // keyed by user_id
   private policies = new Map<string, UserMfaPolicyRow>(); // keyed by user_id
+  private emailOtps = new Map<string, EmailOtpRow>(); // keyed by id
+  private magicLinks = new Map<string, MagicLinkRow>(); // keyed by id
 
   reset(): void {
     this.credentials.clear();
     this.recoveryCodes.clear();
     this.policies.clear();
+    this.emailOtps.clear();
+    this.magicLinks.clear();
   }
 
   async listWebauthnCredentials(userId: string): Promise<WebauthnCredentialRow[]> {
@@ -423,6 +629,95 @@ export class InMemoryMfaRepository implements MfaRepository {
     return false;
   }
 
+  // ---- HEL-282: email-OTP + magic-link ----------------------------------
+
+  async insertEmailOtp(input: InsertEmailOtpInput): Promise<EmailOtpRow> {
+    const row: EmailOtpRow = {
+      id: randomUUID(),
+      userId: input.userId,
+      codeHash: input.codeHash,
+      purpose: input.purpose,
+      attempts: 0,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      createdAt: new Date(),
+    };
+    this.emailOtps.set(row.id, row);
+    return row;
+  }
+
+  async findActiveEmailOtp(
+    userId: string,
+    purpose: MfaEmailFactorPurpose,
+  ): Promise<EmailOtpRow | null> {
+    const now = Date.now();
+    const candidates = Array.from(this.emailOtps.values())
+      .filter(
+        (r) =>
+          r.userId === userId &&
+          r.purpose === purpose &&
+          r.consumedAt == null &&
+          r.expiresAt.getTime() > now,
+      )
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return candidates[0] ?? null;
+  }
+
+  async incrementEmailOtpAttempts(userId: string, id: string): Promise<number> {
+    const row = this.emailOtps.get(id);
+    if (!row || row.userId !== userId) return 0;
+    row.attempts += 1;
+    return row.attempts;
+  }
+
+  async consumeEmailOtp(userId: string, id: string): Promise<void> {
+    const row = this.emailOtps.get(id);
+    if (!row || row.userId !== userId || row.consumedAt != null) return;
+    row.consumedAt = new Date();
+  }
+
+  async insertMagicLink(input: InsertMagicLinkInput): Promise<MagicLinkRow> {
+    const row: MagicLinkRow = {
+      id: randomUUID(),
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      purpose: input.purpose,
+      expiresAt: input.expiresAt,
+      consumedAt: null,
+      createdAt: new Date(),
+    };
+    this.magicLinks.set(row.id, row);
+    return row;
+  }
+
+  async consumeMagicLinkByTokenHash(
+    tokenHash: string,
+  ): Promise<{ userId: string; purpose: MfaEmailFactorPurpose } | null> {
+    const now = Date.now();
+    for (const row of this.magicLinks.values()) {
+      if (
+        row.tokenHash === tokenHash &&
+        row.consumedAt == null &&
+        row.expiresAt.getTime() > now
+      ) {
+        row.consumedAt = new Date();
+        return { userId: row.userId, purpose: row.purpose };
+      }
+    }
+    return null;
+  }
+
+  async countRecentEmailFactorSends(userId: string, since: Date): Promise<number> {
+    const sinceMs = since.getTime();
+    const otps = Array.from(this.emailOtps.values()).filter(
+      (r) => r.userId === userId && r.createdAt.getTime() >= sinceMs,
+    ).length;
+    const links = Array.from(this.magicLinks.values()).filter(
+      (r) => r.userId === userId && r.createdAt.getTime() >= sinceMs,
+    ).length;
+    return otps + links;
+  }
+
   async getPolicy(userId: string): Promise<UserMfaPolicyRow | null> {
     return this.policies.get(userId) ?? null;
   }
@@ -438,6 +733,8 @@ export class InMemoryMfaRepository implements MfaRepository {
           ...existing,
           hasWebauthn: patch.hasWebauthn ?? existing.hasWebauthn,
           hasTotp: patch.hasTotp ?? existing.hasTotp,
+          hasEmailOtp: patch.hasEmailOtp ?? existing.hasEmailOtp,
+          hasMagicLink: patch.hasMagicLink ?? existing.hasMagicLink,
           recoveryCodesIssuedAt: patch.recoveryCodesIssuedAt ?? existing.recoveryCodesIssuedAt,
           enrollmentCompletedAt: patch.enrollmentCompletedAt ?? existing.enrollmentCompletedAt,
           lastVerifiedAt: patch.lastVerifiedAt ?? existing.lastVerifiedAt,
@@ -448,6 +745,8 @@ export class InMemoryMfaRepository implements MfaRepository {
           userId,
           hasWebauthn: patch.hasWebauthn ?? false,
           hasTotp: patch.hasTotp ?? false,
+          hasEmailOtp: patch.hasEmailOtp ?? false,
+          hasMagicLink: patch.hasMagicLink ?? false,
           recoveryCodesIssuedAt: patch.recoveryCodesIssuedAt ?? null,
           enrollmentCompletedAt: patch.enrollmentCompletedAt ?? null,
           lastVerifiedAt: patch.lastVerifiedAt ?? null,

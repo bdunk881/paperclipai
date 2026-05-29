@@ -172,6 +172,36 @@ describe("requireAAL2", () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  // HEL-282: the app-owned email factors mint attestations with new methods.
+  it.each(["email_otp", "magic_link"] as const)(
+    "accepts a fresh %s attestation cookie",
+    async (method) => {
+      const minted = mintAal2Attestation({ userId: "user-1", method });
+      const verified = verifyAal2AttestationCookie(minted.token, "user-1");
+      expect(verified.valid).toBe(true);
+      expect(verified.claims?.method).toBe(method);
+
+      const req = makeReq({ sub: "user-1", aal: "aal1", cookie: minted.token });
+      const res = createResponse();
+      const next = jest.fn() as NextFunction;
+      await requireAAL2(req, res, next);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects an attestation cookie with an unknown method", () => {
+    const expiredAt = nowSeconds() + 600;
+    const bogus = require("jsonwebtoken").sign(
+      { sub: "user-1", method: "sms", iat: nowSeconds(), exp: expiredAt },
+      APP_JWT_SECRET_FOR_TESTS,
+      { audience: "autoflow-aal2", issuer: "autoflow-mfa" },
+    );
+    const verified = verifyAal2AttestationCookie(bogus, "user-1");
+    expect(verified.valid).toBe(false);
+    expect(verified.reason).toBe("invalid_method");
+  });
+
   it("rejects an attestation cookie whose sub does not match req.auth.sub", async () => {
     const minted = mintAal2Attestation({ userId: "user-A", method: "webauthn" });
     const req = makeReq({ sub: "user-B", aal: "aal1", cookie: minted.token });

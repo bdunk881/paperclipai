@@ -1,0 +1,52 @@
+# Cloudflare Worker hosting Durable Objects for autoflow-api.
+#
+# Two environments to match the existing Cloudflare Pages pattern
+# (dashboard-cloudflare-pages.yml uses dev / production; staging traffic
+# flows through the production project per the Infisical env-slug mapping).
+#
+# Per-env Worker name keeps prod and dev separate even though they share
+# the wrangler.toml. Production secrets (CF_WORKER_SHARED_SECRET) are set
+# per-env via `wrangler secret put --env production NAME`.
+
+name = "autoflow-api-worker"
+main = "src/index.ts"
+compatibility_date = "2026-05-20"
+compatibility_flags = ["nodejs_compat"]
+
+# Durable Object bindings — every new DO class registers here.
+[[durable_objects.bindings]]
+name = "HEALTH_CHECK"
+class_name = "HealthCheckDO"
+
+# Migrations track DO class additions/renames/deletes over time.
+# Append a new [[migrations]] block when adding a new DO class; never
+# rewrite an old block.
+[[migrations]]
+tag = "v1"
+new_classes = ["HealthCheckDO"]
+
+# --- Environments ---
+
+[env.dev]
+name = "autoflow-api-worker-dev"
+
+[env.dev.vars]
+ENVIRONMENT = "dev"
+API_BASE_URL = "https://dev.helloautoflow.com"
+CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
+
+[[env.dev.durable_objects.bindings]]
+name = "HEALTH_CHECK"
+class_name = "HealthCheckDO"
+
+[env.production]
+name = "autoflow-api-worker"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+API_BASE_URL = "https://app.helloautoflow.com"
+CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
+
+[[env.production.durable_objects.bindings]]
+name = "HEALTH_CHECK"
+class_name = "HealthCheckDO"

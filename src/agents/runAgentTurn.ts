@@ -36,7 +36,7 @@ import {
   filterToolsByPermissions,
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
-import { pickBackend } from "./runtime/runAgent";
+import { pickBackend, withAgentConversation } from "./runtime/runAgent";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
 import { createBudgetHook } from "./runtime/budgetHook";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
@@ -266,28 +266,32 @@ export async function runAgentTurn(
 
   let response: { text: string; usage: NonNullable<LLMResponse["usage"]> };
   try {
-    const runResult = await backend.run(
-      {
-        pool: input.pool,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        agentId: input.agentId,
-        runId: input.runId,
-        agentName: input.agentName,
-        agentRoleKey: input.agentRoleKey,
-        systemPrompt,
-        userPrompt: input.userPrompt,
-        tier: input.tier ?? "standard",
-        tools,
-        maxToolIterations: undefined,
-        requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
-        onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
-        skills: resolvedSkills,
-        mcpServers,
-        permissionMode: input.permissionMode,
-        hooks,
-      },
-      binding,
+    const runResult = await withAgentConversation(
+      { runId: input.runId, agentId: input.agentId },
+      () =>
+        backend.run(
+          {
+            pool: input.pool,
+            workspaceId: input.workspaceId,
+            userId: input.userId,
+            agentId: input.agentId,
+            runId: input.runId,
+            agentName: input.agentName,
+            agentRoleKey: input.agentRoleKey,
+            systemPrompt,
+            userPrompt: input.userPrompt,
+            tier: input.tier ?? "standard",
+            tools,
+            maxToolIterations: undefined,
+            requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+            onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
+            skills: resolvedSkills,
+            mcpServers,
+            permissionMode: input.permissionMode,
+            hooks,
+          },
+          binding,
+        ),
     );
     response = { text: runResult.text, usage: runResult.usage };
   } catch (err) {

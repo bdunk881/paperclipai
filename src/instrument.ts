@@ -55,6 +55,13 @@ if (dsn) {
       /^https:\/\/autoflow-api-(?:dev|staging|production)\.fly\.dev/,
     ],
     sendDefaultPii: true,
+    // HEL-321: emit gen_ai spans as standalone envelope items rather than
+    // bundling them in the surrounding transaction. Required for Sentry's
+    // Conversations view to group an agent run's LLM calls — which we tag
+    // with a stable id via Sentry.setConversationId() in runAgent's
+    // withAgentConversation() wrapper. Complements the anthropic/openai/
+    // googleGenAI integrations below (added 10.53.0; needs @sentry/node ≥10.53).
+    streamGenAiSpans: true,
     enableLogs: true,
     enableMetrics: true,
     integrations: [

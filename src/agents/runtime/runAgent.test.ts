@@ -1,6 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals";
 
-import { backendNameFor, isAgentSdkEnabled, pickBackend } from "./runAgent";
+jest.mock("@sentry/node", () => ({
+  // Run the callback synchronously and return its value, mirroring the real
+  // withIsolationScope contract, so the wrapped fn actually executes.
+  withIsolationScope: jest.fn((cb: () => unknown) => cb()),
+  setConversationId: jest.fn(),
+}));
+
+import * as Sentry from "@sentry/node";
+import {
+  backendNameFor,
+  isAgentSdkEnabled,
+  pickBackend,
+  withAgentConversation,
+} from "./runAgent";
 
 const SDK_ENV = "AUTOFLOW_AGENT_SDK_ENABLED";
 
@@ -43,5 +56,52 @@ describe("runAgent backend selection", () => {
     process.env[SDK_ENV] = "true";
     expect(isAgentSdkEnabled()).toBe(true);
     expect(backendNameFor("anthropic")).toBe("claude_sdk");
+  });
+});
+
+describe("withAgentConversation (HEL-321)", () => {
+  const setConversationId = jest.mocked(Sentry.setConversationId);
+  const withIsolationScope = jest.mocked(Sentry.withIsolationScope);
+
+  beforeEach(() => {
+    // mockClear (not mockReset) so withIsolationScope keeps its callback-
+    // invoking implementation from the mock factory.
+    setConversationId.mockClear();
+    withIsolationScope.mockClear();
+  });
+
+  it("tags the run with its runId inside an isolation scope and returns the inner result", async () => {
+    const result = await withAgentConversation(
+      { runId: "run_123", agentId: "agent_abc" },
+      async () => "done",
+    );
+
+    expect(result).toBe("done");
+    expect(withIsolationScope).toHaveBeenCalledTimes(1);
+    expect(setConversationId).toHaveBeenCalledWith("run_123");
+  });
+
+  it("falls back to agent:<agentId> when there is no runId", async () => {
+    await withAgentConversation({ agentId: "agent_abc" }, async () => undefined);
+    expect(setConversationId).toHaveBeenCalledWith("agent:agent_abc");
+  });
+
+  it("sets the conversation id before invoking the wrapped fn", async () => {
+    const order: string[] = [];
+    setConversationId.mockImplementation(() => {
+      order.push("setConversationId");
+    });
+    await withAgentConversation({ runId: "run_xyz", agentId: "a" }, async () => {
+      order.push("fn");
+    });
+    expect(order).toEqual(["setConversationId", "fn"]);
+  });
+
+  it("propagates rejections from the wrapped fn", async () => {
+    await expect(
+      withAgentConversation({ runId: "run_err", agentId: "a" }, async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
   });
 });

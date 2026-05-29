@@ -130,3 +130,37 @@ export async function withUserContext<T>(
     client.release();
   }
 }
+
+/**
+ * Executes a callback within a system-admin-scoped transaction. Sets
+ * `app.is_platform_admin = 'true'` via SET LOCAL so admin-only RLS policies
+ * gated on `app_is_platform_admin()` pass for the duration of the transaction.
+ *
+ * Use this for background-job writers (cron) that need to write to admin-only
+ * tables but have no request context. There is no userId — the writes are
+ * attributed to the cron system itself. Request-driven admin code should
+ * continue to use `req.platformAdminDb` (set by `requirePlatformAdmin`),
+ * which already sets both `app.current_user_id` and `app.is_platform_admin`.
+ */
+export async function withSystemAdminContext<T>(
+  pool: Pool,
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.is_platform_admin', 'true', true)");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Swallow rollback error; original error is more important
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { getMfaPolicy, type MfaPolicy } from "../api/mfaApi";
 
@@ -6,6 +6,22 @@ type PolicyState =
   | { status: "loading" }
   | { status: "ready"; policy: MfaPolicy }
   | { status: "error"; message: string };
+
+const errorWrapStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  minHeight: "60vh",
+  padding: 24,
+};
+
+const errorCardStyle: CSSProperties = {
+  maxWidth: 420,
+  textAlign: "center",
+  border: "1px solid rgba(0,0,0,.12)",
+  borderRadius: 8,
+  padding: 24,
+};
 
 function isDevBypassEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -19,9 +35,11 @@ function isDevBypassEnabled(): boolean {
 export function MfaEnforcementGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [state, setState] = useState<PolicyState>({ status: "loading" });
+  const [retryCounter, setRetryCounter] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setState({ status: "loading" });
     void (async () => {
       try {
         const policy = await getMfaPolicy();
@@ -35,7 +53,7 @@ export function MfaEnforcementGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryCounter]);
 
   if (location.pathname.startsWith("/onboarding/mfa")) {
     return <>{children}</>;
@@ -50,7 +68,25 @@ export function MfaEnforcementGate({ children }: { children: ReactNode }) {
   }
 
   if (state.status === "error") {
-    return <>{children}</>;
+    // Fail CLOSED. This gate protects the platform-admin console; if we
+    // can't confirm the caller's MFA status we must NOT render the
+    // protected shell (the old "render children on error" behavior is what
+    // let HEL-313 silently bypass enforcement). Block with a retry instead.
+    return (
+      <div className="mfa-gate-error" role="alert" style={errorWrapStyle}>
+        <div style={errorCardStyle}>
+          <h2 style={{ margin: "0 0 8px" }}>Can&rsquo;t verify MFA</h2>
+          <p className="muted" style={{ margin: "0 0 16px" }}>
+            We couldn&rsquo;t confirm your two-factor status, so the admin
+            console is locked until the check succeeds.
+          </p>
+          <p className="muted" style={{ margin: "0 0 16px", fontSize: 12 }}>
+            {state.message}
+          </p>
+          <button onClick={() => setRetryCounter((n) => n + 1)}>Retry</button>
+        </div>
+      </div>
+    );
   }
 
   if (!state.policy.hasAnyFactor) {

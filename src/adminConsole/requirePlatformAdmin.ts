@@ -5,8 +5,11 @@
  *   1. requireAuth (mounted upstream) confirms the JWT.
  *   2. The user's email matches AUTOFLOW_STAFF_USER_IDS / staff allowlist OR
  *      user_profiles.is_platform_admin = true.
- *   3. For routes that ALSO need MFA (most of them), `requireStaffMfa` is a
- *      separate downstream middleware that checks the JWT's `aal` claim.
+ *   3. MFA: `requireAAL2` is mounted right after this middleware at the
+ *      admin-console router level (HEL-319), so EVERY admin-console route —
+ *      reads included — requires a stepped-up second factor. Individual
+ *      mutation routes layer on the stricter `requireWebAuthnAal2` where a
+ *      passkey (not TOTP) is mandatory.
  *
  * This middleware ALSO sets `app.is_platform_admin = 'true'` on the DB
  * session inside a transaction, which is what the SECURITY DEFINER lookup
@@ -18,7 +21,7 @@
  * release it themselves.
  */
 
-import type { Response, NextFunction, RequestHandler } from "express";
+import type { RequestHandler } from "express";
 import type { Pool, PoolClient } from "pg";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import type { PlatformAdminRequest } from "./types";
@@ -142,28 +145,4 @@ export function createRequirePlatformAdmin(pool: Pool, opts: CreateOpts = {}): R
       next(err);
     }
   };
-}
-
-/**
- * Optional second-layer gate: require the JWT to have AAL2 (MFA-elevated).
- * Most admin routes mount this AFTER requirePlatformAdmin. Routes that need
- * to be reachable BEFORE MFA enrollment (e.g. the enroll-mfa endpoint) skip
- * it.
- */
-export function requireStaffMfa(
-  req: import("express").Request,
-  res: Response,
-  next: NextFunction,
-): void {
-  // The JWT `aal` claim is set by Supabase to 'aal1' (password) or 'aal2'
-  // (with MFA factor). Different Supabase SDK versions surface the claim
-  // under different keys; check the resolved auth context too if you've
-  // stamped it there.
-  const authReq = req as AuthenticatedRequest & { auth?: { aal?: string } };
-  const aal = authReq.auth?.aal;
-  if (aal !== "aal2") {
-    res.status(403).json({ error: "MFA required for admin actions", code: "mfa_required" });
-    return;
-  }
-  next();
 }

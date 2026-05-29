@@ -16,6 +16,7 @@
 import { Router } from "express";
 import type { Pool } from "pg";
 import { createRequirePlatformAdmin } from "./requirePlatformAdmin";
+import { requireAAL2 } from "../middleware/requireAAL2";
 import { createLookupRoutes } from "./lookupRoutes";
 import { createIdentityRoutes } from "./identityRoutes";
 import { createBillingRoutes } from "./billingRoutes";
@@ -38,6 +39,19 @@ import { verifyImpersonationToken } from "./impersonationStore";
 export function createAdminConsoleRoutes(pool: Pool): Router {
   const router = Router();
   router.use(createRequirePlatformAdmin(pool));
+
+  // HEL-319: require a stepped-up MFA (AAL2) session for the ENTIRE
+  // admin-console surface, reads included. Previously only the mutation
+  // sub-routers mounted requireAAL2, so every read route (lookup, identity,
+  // billing, audit, …) returned cross-tenant customer data to a platform
+  // admin holding only a password (AAL1) — bypassing the client-side
+  // MfaEnforcementGate entirely via a direct API call. The admin app's
+  // apiClient intercepts the resulting `401 mfa_step_up_required` and drives
+  // the passkey step-up modal, so this triggers step-up rather than locking
+  // the admin out. Mutation routes keep their own requireAAL2 /
+  // requireWebAuthnAal2 (the latter is strictly stronger) — redundant but
+  // harmless, and they document intent at the callsite.
+  router.use(requireAAL2);
 
   router.use("/lookup", createLookupRoutes(pool));
   router.use("/identity", createIdentityRoutes(pool));

@@ -180,7 +180,7 @@ Each issue carries a **type label**, an **agent label** (or none if Brad-manual)
 | `spike` | Time-boxed research that ships a doc or follow-up ticket, not code. |
 | `hotfix` | Production-blocking; combine with `bug` or `security`. File in the same heartbeat as the PR if speed matters, but file it. |
 
-**Agent label**: `agent:claude-routine` / `agent:cursor` / `agent:codex` if an agent will work it. No agent label = Brad's manual work (per "Routing" below).
+**Agent label**: `claude` / `agent:cursor` / `agent:codex` if an agent will work it. No agent label = Brad's manual work (per "Routing" below).
 
 **Priority**: P0–P3. Default P3 if unsure; Brad re-prioritizes.
 
@@ -205,7 +205,7 @@ Still need a ticket. Drift in operating manuals is itself a P0 (see "When this f
 
 This repo is multi-agent. Three agents currently work tickets:
 
-- **Claude Code routine** (cloud-hosted, hourly cron) — [routine link](https://claude.ai/code/routines/trig_01Wge2tqiDc16KTbVVtfsVHk). Picks up tickets labeled `agent:claude-routine`.
+- **Claude Code routine** (cloud-hosted, hourly cron) — [routine link](https://claude.ai/code/routines/trig_01Wge2tqiDc16KTbVVtfsVHk). Picks up tickets labeled `claude`.
 - **Cursor** (in Brad's IDE) — picks up tickets labeled `agent:cursor`.
 - **Codex CLI** (Brad's terminal) — picks up tickets labeled `agent:codex`.
 
@@ -217,9 +217,9 @@ When you start work, list Linear issues where:
 - `team = Helloautoflow`
 - `assignee = me` (the routine owner / Brad)
 - `state = "In Progress"`
-- `label = agent:<your-name>` (one of `agent:claude-routine`, `agent:cursor`, `agent:codex`)
+- `label = agent:<your-name>` (one of `claude`, `agent:cursor`, `agent:codex`)
 
-For the Claude Code routine specifically, the pull query is `team = Helloautoflow`, `assignee = me`, `state = "In Progress"`, and `label = agent:claude-routine`.
+For the Claude Code routine specifically, the pull query is `team = Helloautoflow`, `assignee = me`, `state = "In Progress"`, and `label = claude`.
 
 If the list is empty, exit cleanly. Do not pick up tickets without your label — another agent owns them. Tickets with no agent label are Brad's manual work.
 
@@ -246,7 +246,7 @@ If the list is empty, exit cleanly. Do not pick up tickets without your label �
 - List Backlog + Todo issues in the **same phase project** as the just-completed issue, ordered by priority ascending.
 - Filter out any whose `blockedBy` array contains an issue not yet `Done` or `Canceled`.
 - Filter out any without your `agent:<name>` label.
-- For the Claude Code routine, only auto-promote Backlog/Todo tickets that also have `agent:claude-routine`.
+- For the Claude Code routine, only auto-promote Backlog/Todo tickets that also have `claude`.
 - If none qualify in the same phase project, **STOP** — do NOT advance to the next phase project. That's a human decision.
 - Otherwise: set the top qualifying ticket's state to `In Progress`, comment "Auto-promoted from <previous-HEL-id>", and begin step 4 above on the next run.
 

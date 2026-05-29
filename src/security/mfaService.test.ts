@@ -193,6 +193,33 @@ describe("MfaService", () => {
     ).rejects.toThrow(/challenge/i);
   });
 
+  it("treats a retried registration verify as success once the credential already exists", async () => {
+    const webauthn = makeWebauthnStub();
+    const service = new MfaService({ repository: repo, webauthn, totp: makeTotpStub() });
+    const ctx = { userId: "u-1" };
+    const response = { id: "cred-1", rawId: "cred-1" };
+
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await expect(service.finishWebauthnRegistration(ctx, response, "MacBook")).resolves.toEqual({
+      credentialId: "cred-1",
+    });
+    await expect(service.finishWebauthnRegistration(ctx, response, "MacBook")).resolves.toEqual({
+      credentialId: "cred-1",
+    });
+
+    expect(webauthn.verifyRegistrationResponse).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not accept a missing registration challenge for another user's credential", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    await service.beginWebauthnRegistration({ userId: "u-1" }, "alice@example.com");
+    await service.finishWebauthnRegistration({ userId: "u-1" }, { id: "cred-1" }, "MacBook");
+
+    await expect(
+      service.finishWebauthnRegistration({ userId: "u-2" }, { id: "cred-1" }, "MacBook"),
+    ).rejects.toThrow(/challenge/i);
+  });
+
   // HEL-303: regression — when the challenge store is shared (Redis in
   // prod), a different MfaService instance can complete the ceremony
   // that another instance started. This simulates a Fly machine

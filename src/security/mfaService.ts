@@ -339,6 +339,7 @@ const EMAIL_FACTOR_TTL_SECONDS = 5 * 60; // 5-minute TTL for both code + token
 const MAX_OTP_ATTEMPTS = 3; // failed guesses per code before lock
 const EMAIL_FACTOR_SENDS_PER_HOUR = 5; // per-user send rate limit
 const MAGIC_LINK_TOKEN_BYTES = 32; // 256 bits of entropy
+const REGISTRATION_IDEMPOTENCY_WINDOW_MS = 60 * 1000;
 
 function formatPolicy(
   policy: UserMfaPolicyRow | null,
@@ -372,6 +373,17 @@ function formatPolicy(
       lastUsedAt: c.lastUsedAt?.toISOString() ?? null,
     })),
   };
+}
+
+function extractCredentialIdFromWebauthnResponse(response: unknown): string | null {
+  if (!response || typeof response !== "object") return null;
+  const record = response as { id?: unknown; rawId?: unknown };
+  const candidate = typeof record.id === "string" ? record.id : record.rawId;
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
+}
+
+function isRecentlyCreatedCredential(credential: WebauthnCredentialRow, now: Date = new Date()): boolean {
+  return Math.abs(now.getTime() - credential.createdAt.getTime()) <= REGISTRATION_IDEMPOTENCY_WINDOW_MS;
 }
 
 /**
@@ -528,6 +540,16 @@ export class MfaService {
     }
     const expectedChallenge = await this.challengeStore.consume(`reg:${ctx.userId}`);
     if (!expectedChallenge) {
+      const duplicateCredentialId = extractCredentialIdFromWebauthnResponse(response);
+      if (duplicateCredentialId) {
+        const existing = await this.repository.findWebauthnCredentialById(ctx.userId, duplicateCredentialId);
+        if (existing && isRecentlyCreatedCredential(existing)) {
+          await recordAudit(ctx, "mfa.enroll.passkey.duplicate_verify", {
+            credentialId: existing.credentialId,
+          });
+          return { credentialId: existing.credentialId };
+        }
+      }
       throw new SecurityServiceError("Registration challenge expired or missing", 400, "challenge_missing");
     }
     const verification = await this.webauthn.verifyRegistrationResponse({

@@ -14,6 +14,7 @@ function parseRingBufferSize(raw: string | undefined): number {
 
 export interface ClassificationDecisionLogEntry {
   timestamp: string;
+  workspaceId?: string;
   promptHash: string;
   features: PromptFeatures;
   selectedTier: LlmTier;
@@ -22,6 +23,7 @@ export interface ClassificationDecisionLogEntry {
 }
 
 export interface ClassificationDecisionLogInput {
+  workspaceId?: string;
   promptHash: string;
   features: PromptFeatures;
   selectedTier: LlmTier;
@@ -40,6 +42,7 @@ class ClassificationDecisionLogStore {
   log(input: ClassificationDecisionLogInput): ClassificationDecisionLogEntry {
     const entry: ClassificationDecisionLogEntry = {
       timestamp: new Date().toISOString(),
+      workspaceId: input.workspaceId,
       promptHash: input.promptHash,
       features: input.features,
       selectedTier: input.selectedTier,
@@ -56,6 +59,10 @@ class ClassificationDecisionLogStore {
 
   list(): ClassificationDecisionLogEntry[] {
     return [...this.entries];
+  }
+
+  listForWorkspace(workspaceId: string): ClassificationDecisionLogEntry[] {
+    return this.entries.filter((entry) => entry.workspaceId === workspaceId);
   }
 
   getCapacity(): number {
@@ -77,6 +84,10 @@ export function logClassificationDecision(input: ClassificationDecisionLogInput)
 
 export function listClassificationDecisions(): ClassificationDecisionLogEntry[] {
   return routingDecisionLog.list();
+}
+
+export function listClassificationDecisionsForWorkspace(workspaceId: string): ClassificationDecisionLogEntry[] {
+  return routingDecisionLog.listForWorkspace(workspaceId);
 }
 
 export function getClassificationDecisionLogCapacity(): number {

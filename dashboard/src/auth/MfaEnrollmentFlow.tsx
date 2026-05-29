@@ -324,13 +324,21 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
             Use 1Password, Authy, Google Authenticator, or any TOTP app. Then enter the 6-digit code.
           </p>
           <div className="flex flex-col md:flex-row gap-6 items-start mb-4">
-            <div
-              className="bg-white p-2 rounded border border-af2-edge"
-              dangerouslySetInnerHTML={{ __html: totpEnrollment.qrCodeSvg }}
-            />
+            <TotpQr value={totpEnrollment.qrCodeSvg} />
             <div className="text-sm text-af2-ink-4">
-              <p className="mb-2">Can't scan? Enter this secret manually:</p>
-              <code className="bg-af2-paper-2 px-2 py-1 rounded">{totpEnrollment.secret}</code>
+              {totpEnrollment.secret ? (
+                <>
+                  <p className="mb-2">Can't scan? Enter this setup key manually:</p>
+                  <code className="bg-af2-paper-2 px-2 py-1 rounded break-all">
+                    {totpEnrollment.secret}
+                  </code>
+                </>
+              ) : (
+                <p className="text-af2-rust">
+                  Couldn't load the authenticator setup key. Go Back and try again — if it keeps
+                  happening, an unfinished setup may be stuck on your account.
+                </p>
+              )}
             </div>
           </div>
           <label className="block mb-4">
@@ -455,6 +463,30 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
         </Af2Card>
       )}
     </>
+  );
+}
+
+/**
+ * HEL-327: render the TOTP QR robustly across gotrue formats. `qr_code`
+ * comes back as a data-URL (Supabase's documented `<img src>` form),
+ * occasionally as raw inline `<svg>`, and — when the enroll response has
+ * no usable totp block — empty. Previously this was always injected via
+ * dangerouslySetInnerHTML, so a data-URL rendered as text and an empty
+ * value rendered as a silent blank box.
+ */
+function TotpQr({ value }: { value: string }) {
+  const v = (value ?? "").trim();
+  const boxClass = "bg-white p-2 rounded border border-af2-edge";
+  if (v.startsWith("data:") || v.startsWith("http")) {
+    return <img src={v} alt="Authenticator QR code" width={200} height={200} className={boxClass} />;
+  }
+  if (v.includes("<svg")) {
+    return <div className={boxClass} dangerouslySetInnerHTML={{ __html: v }} />;
+  }
+  return (
+    <div className="max-w-[220px] rounded border border-af2-edge bg-af2-paper-2 p-3 text-sm text-af2-ink-4">
+      QR code unavailable — use the setup key to add this account to your authenticator app manually.
+    </div>
   );
 }
 

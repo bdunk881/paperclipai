@@ -211,13 +211,19 @@ export default function MfaEnrollmentWizard() {
             className="row"
             style={{ alignItems: "flex-start", gap: "1.5rem", marginBottom: "1rem" }}
           >
-            <div
-              style={{ background: "#fff", padding: "0.5rem", border: "1px solid #e6e8eb" }}
-              dangerouslySetInnerHTML={{ __html: totpEnrollment.qrCodeSvg }}
-            />
+            <TotpQr value={totpEnrollment.qrCodeSvg} />
             <div className="muted">
-              <p>Can't scan? Enter this secret manually:</p>
-              <code className="code">{totpEnrollment.secret}</code>
+              {totpEnrollment.secret ? (
+                <>
+                  <p>Can't scan? Enter this setup key manually:</p>
+                  <code className="code">{totpEnrollment.secret}</code>
+                </>
+              ) : (
+                <p style={{ color: "#6a1d1a" }}>
+                  Couldn't load the authenticator setup key. Go Back and try again — if it keeps
+                  happening, an unfinished setup may be stuck on your account.
+                </p>
+              )}
             </div>
           </div>
           <div className="field" style={{ maxWidth: 160 }}>
@@ -278,6 +284,30 @@ export default function MfaEnrollmentWizard() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * HEL-327: render the TOTP QR robustly across gotrue formats. `qr_code`
+ * is usually a data-URL (Supabase's documented `<img src>` form),
+ * sometimes raw inline `<svg>`, and empty when the enroll response has no
+ * usable totp block. The old code always injected it via
+ * dangerouslySetInnerHTML, so a data-URL showed as text and an empty
+ * value showed as a silent blank box.
+ */
+function TotpQr({ value }: { value: string }) {
+  const v = (value ?? "").trim();
+  const boxStyle = { background: "#fff", padding: "0.5rem", border: "1px solid #e6e8eb" } as const;
+  if (v.startsWith("data:") || v.startsWith("http")) {
+    return <img src={v} alt="Authenticator QR code" width={200} height={200} style={boxStyle} />;
+  }
+  if (v.includes("<svg")) {
+    return <div style={boxStyle} dangerouslySetInnerHTML={{ __html: v }} />;
+  }
+  return (
+    <div className="muted" style={{ maxWidth: 220, padding: "0.75rem", border: "1px solid #e6e8eb" }}>
+      QR code unavailable — use the setup key to add this account to your authenticator app manually.
     </div>
   );
 }

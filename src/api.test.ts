@@ -63,9 +63,11 @@ jest.mock("./auth/authMiddleware", () => ({
 }));
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: () =>
-    (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-      req.workspace = { id: "test-workspace-id", role: "owner" };
-      req.workspaceId = "test-workspace-id";
+    (req: { headers?: Record<string, string | undefined>; workspaceId?: string; workspace?: { id: string; role: string } }, _res: unknown, next: () => void) => {
+      const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      const role = req.headers?.["x-test-role"]?.trim() || "owner";
+      req.workspaceId = explicitWorkspaceId ?? "test-workspace-id";
+      req.workspace = { id: req.workspaceId, role };
       next();
     },
   createExplicitWorkspaceHeaderResolver: () =>
@@ -73,10 +75,11 @@ jest.mock("./middleware/workspaceResolver", () => ({
       // Preserve original workspaceId scoping: only set from header when present.
       // Always set req.workspace so requireRole() can check the role.
       const explicitWorkspaceId = req.headers?.["x-workspace-id"]?.trim();
+      const role = req.headers?.["x-test-role"]?.trim() || "owner";
       if (explicitWorkspaceId) {
         req.workspaceId = explicitWorkspaceId;
       }
-      req.workspace = { id: explicitWorkspaceId ?? "test-workspace-id", role: "owner" };
+      req.workspace = { id: explicitWorkspaceId ?? "test-workspace-id", role };
       next();
     },
 }));
@@ -106,6 +109,7 @@ import {
   PORTABLE_WORKFLOW_FORMAT,
   PORTABLE_WORKFLOW_SCHEMA_VERSION,
 } from "./workflows/portableSchema";
+import { signOutboundBody } from "./webhooks/verifySignature";
 
 function asAuth(userId = "test-user") {
   return { Authorization: `Bearer ${userId}` };
@@ -2492,12 +2496,28 @@ describe("GET /api/analytics/routing-decisions", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns logged routing decisions for dashboard consumption", async () => {
+  it("returns only the requesting workspace's logged routing decisions", async () => {
     logClassificationDecision({
+      workspaceId: "test-workspace-id",
       promptHash: "hash-1",
       features: extractPromptFeatures("Classify this ticket", 120, 1),
       selectedTier: "lite",
       confidenceScore: 0.9,
+      modelId: "gpt-4o-mini",
+    });
+    logClassificationDecision({
+      workspaceId: "other-workspace-id",
+      promptHash: "hash-foreign",
+      features: extractPromptFeatures("Draft a competitor analysis", 9000, 5),
+      selectedTier: "power",
+      confidenceScore: 0.7,
+      modelId: "gpt-4o",
+    });
+    logClassificationDecision({
+      promptHash: "hash-unscoped",
+      features: extractPromptFeatures("Classify this ticket", 120, 1),
+      selectedTier: "lite",
+      confidenceScore: 0.5,
       modelId: "gpt-4o-mini",
     });
 
@@ -2509,8 +2529,10 @@ describe("GET /api/analytics/routing-decisions", () => {
     expect(Array.isArray(res.body.decisions)).toBe(true);
     expect(res.body.total).toBe(1);
     expect(typeof res.body.capacity).toBe("number");
+    expect(res.body.decisions.map((entry: { promptHash: string }) => entry.promptHash)).toEqual(["hash-1"]);
     expect(res.body.decisions[0]).toEqual(
       expect.objectContaining({
+        workspaceId: "test-workspace-id",
         promptHash: "hash-1",
         selectedTier: "lite",
         confidenceScore: 0.9,
@@ -2771,16 +2793,46 @@ describe("GET /api/observability/throughput", () => {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/webhooks/:templateId", () => {
-  // HEL-186: webhook triggers are feature-gated by WEBHOOK_TRIGGERS_ENABLED
-  // until per-template signing-secret support lands. Enable for these tests
-  // so the existing happy-path coverage continues to assert behaviour.
+  const webhookSecret = "hel-265-test-webhook-secret";
+  const webhookUserId = "webhook-trigger-user";
+  const webhookTriggerSecrets = {
+    "tpl-support-bot": { secret: webhookSecret, userId: webhookUserId },
+    "tpl-lead-enrich": { secret: webhookSecret, userId: webhookUserId },
+    "tpl-content-gen": { secret: webhookSecret, userId: webhookUserId },
+  };
   const originalWebhookFlag = process.env.WEBHOOK_TRIGGERS_ENABLED;
-  beforeAll(() => { process.env.WEBHOOK_TRIGGERS_ENABLED = "true"; });
+  const originalWebhookSecrets = process.env.WEBHOOK_TRIGGER_SECRETS;
+
+  function signedWebhookPost(
+    templateId: string,
+    body: unknown,
+    headers: Record<string, string> = {}
+  ) {
+    const rawBody = JSON.stringify(body);
+    const req = request(app)
+      .post(`/api/webhooks/${templateId}`)
+      .set("Content-Type", "application/json")
+      .set("X-AutoFlow-Signature", signOutboundBody(webhookSecret, rawBody));
+    for (const [key, value] of Object.entries(headers)) {
+      req.set(key, value);
+    }
+    return req.send(rawBody);
+  }
+
+  beforeAll(() => {
+    process.env.WEBHOOK_TRIGGERS_ENABLED = "true";
+    process.env.WEBHOOK_TRIGGER_SECRETS = JSON.stringify(webhookTriggerSecrets);
+  });
   afterAll(() => {
     if (originalWebhookFlag === undefined) {
       delete process.env.WEBHOOK_TRIGGERS_ENABLED;
     } else {
       process.env.WEBHOOK_TRIGGERS_ENABLED = originalWebhookFlag;
+    }
+    if (originalWebhookSecrets === undefined) {
+      delete process.env.WEBHOOK_TRIGGER_SECRETS;
+    } else {
+      process.env.WEBHOOK_TRIGGER_SECRETS = originalWebhookSecrets;
     }
   });
 
@@ -2799,12 +2851,44 @@ describe("POST /api/webhooks/:templateId", () => {
   });
 
   it("returns 202 with runId and status for a valid templateId", async () => {
-    const res = await request(app)
-      .post("/api/webhooks/tpl-support-bot")
-      .send({ ticketId: "WH-001", subject: "Webhook test", body: "Hello", customerEmail: "wh@example.com", channel: "webhook" });
+    const res = await signedWebhookPost(
+      "tpl-support-bot",
+      {
+        ticketId: "WH-001",
+        subject: "Webhook test",
+        body: "Hello",
+        customerEmail: "wh@example.com",
+        channel: "webhook",
+      },
+      { "X-User-Id": "spoofed-user" }
+    );
     expect(res.status).toBe(202);
     expect(typeof res.body.runId).toBe("string");
     expect(["pending", "running", "completed"]).toContain(res.body.status);
+
+    const run = await runStore.get(res.body.runId);
+    expect(run?.userId).toBe(webhookUserId);
+  });
+
+  it("returns 401 when only X-User-Id is provided without a valid HMAC", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .set("X-User-Id", "spoofed-user")
+      .send({ ticketId: "WH-SPOOF" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/signature/i);
+  });
+
+  it("returns 401 when the HMAC does not match the payload", async () => {
+    const res = await request(app)
+      .post("/api/webhooks/tpl-support-bot")
+      .set("Content-Type", "application/json")
+      .set("X-AutoFlow-Signature", signOutboundBody(webhookSecret, JSON.stringify({ ticketId: "original" })))
+      .send(JSON.stringify({ ticketId: "tampered" }));
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toMatch(/signature/i);
   });
 
   it("returns 404 for an unknown templateId", async () => {
@@ -2825,16 +2909,12 @@ describe("POST /api/webhooks/:templateId", () => {
   });
 
   it("returns 400 when body is an array", async () => {
-    const res = await request(app)
-      .post("/api/webhooks/tpl-support-bot")
-      .send([{ ticketId: "T-1" }]);
+    const res = await signedWebhookPost("tpl-support-bot", [{ ticketId: "T-1" }]);
     expect(res.status).toBe(400);
   });
 
   it("webhook response only contains runId and status (not full run object)", async () => {
-    const res = await request(app)
-      .post("/api/webhooks/tpl-support-bot")
-      .send({ ticketId: "WH-002" });
+    const res = await signedWebhookPost("tpl-support-bot", { ticketId: "WH-002" });
     expect(res.status).toBe(202);
     expect(res.body.runId).toBeDefined();
     expect(res.body.status).toBeDefined();
@@ -2844,13 +2924,11 @@ describe("POST /api/webhooks/:templateId", () => {
   });
 
   it("run created by webhook is retrievable via GET /api/runs/:id", async () => {
-    const webhookRes = await request(app)
-      .post("/api/webhooks/tpl-support-bot")
-      .send({ ticketId: "WH-003", subject: "Test" });
+    const webhookRes = await signedWebhookPost("tpl-support-bot", { ticketId: "WH-003", subject: "Test" });
     expect(webhookRes.status).toBe(202);
 
     const runId = webhookRes.body.runId;
-    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth());
+    const getRes = await request(app).get(`/api/runs/${runId}`).set(asAuth(webhookUserId));
     expect(getRes.status).toBe(200);
     expect(getRes.body.id).toBe(runId);
   });
@@ -2862,7 +2940,7 @@ describe("POST /api/webhooks/:templateId", () => {
       { id: "tpl-content-gen", body: { topic: "AI", keywords: [], audience: "all", format: "blog", wordCount: 500 } },
     ];
     for (const { id, body } of cases) {
-      const res = await request(app).post(`/api/webhooks/${id}`).send(body);
+      const res = await signedWebhookPost(id, body);
       expect(res.status).toBe(202);
     }
   });

@@ -681,9 +681,54 @@ export class MfaService {
     if (!this.totp) {
       throw new SecurityServiceError("TOTP not configured", 503, "totp_unavailable");
     }
+    // HEL-327 follow-up: gotrue auto-clears unverified *phone* factors before
+    // enroll but leaves unverified *TOTP* factors in place, and rejects a
+    // re-enroll that collides on friendly_name with a 422 factor-name
+    // conflict. A user who abandons TOTP setup once (closes the tab, reloads,
+    // hits a transient error) is then permanently stuck: the stale unverified
+    // factor blocks every retry, so the QR/secret never resolves and
+    // verification can never complete. Clear any stale unverified TOTP
+    // factors first so re-enrollment always starts from a clean slate.
+    await this.clearUnverifiedTotpFactors(ctx, accessToken);
     const enrolled = await this.totp.enrollTotp(accessToken, friendlyName);
     await recordAudit(ctx, "mfa.enroll.totp.begin", { factorId: enrolled.factorId });
     return enrolled;
+  }
+
+  /**
+   * Best-effort removal of the caller's unverified TOTP factors. Verified
+   * factors are never touched. Failures here never block enrollment — a real
+   * conflict will still surface its own error from the enroll call — so we log
+   * and continue.
+   */
+  private async clearUnverifiedTotpFactors(
+    ctx: MfaServiceContext,
+    accessToken: string,
+  ): Promise<void> {
+    if (!this.totp) return;
+    let factors: Array<{ id: string; type: "totp" | "phone"; status: "verified" | "unverified" }>;
+    try {
+      factors = await this.totp.listFactors(accessToken);
+    } catch (error) {
+      console.warn(
+        "[mfaService] could not list factors before TOTP enroll",
+        error instanceof Error ? error.message : error,
+      );
+      return;
+    }
+    const stale = factors.filter((f) => f.type === "totp" && f.status === "unverified");
+    for (const factor of stale) {
+      try {
+        await this.totp.unenrollTotp(accessToken, factor.id);
+        await recordAudit(ctx, "mfa.enroll.totp.cleared_unverified", { factorId: factor.id });
+      } catch (error) {
+        console.warn(
+          "[mfaService] could not clear unverified TOTP factor",
+          factor.id,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
   }
 
   async finishTotpEnrollment(

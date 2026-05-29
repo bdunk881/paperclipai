@@ -481,7 +481,12 @@ function TotpQr({ value }: { value: string }) {
     return <img src={v} alt="Authenticator QR code" width={200} height={200} className={boxClass} />;
   }
   if (v.includes("<svg")) {
-    return <div className={boxClass} dangerouslySetInnerHTML={{ __html: v }} />;
+    // gotrue returns the QR as a full SVG *document* — `<?xml …?>` prolog +
+    // `<!DOCTYPE …>` then `<svg>`. Injected as innerHTML, the HTML parser
+    // chokes on the prolog and renders nothing (the blank box). Slice down
+    // to the `<svg>` root so it renders inline.
+    const svg = v.slice(v.indexOf("<svg"));
+    return <div className={boxClass} dangerouslySetInnerHTML={{ __html: svg }} />;
   }
   return (
     <div className="max-w-[220px] rounded border border-af2-edge bg-af2-paper-2 p-3 text-sm text-af2-ink-4">

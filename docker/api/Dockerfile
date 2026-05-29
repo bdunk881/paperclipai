@@ -22,7 +22,12 @@ WORKDIR /app
 
 COPY package.json package-lock.json* ./
 
-RUN --mount=type=cache,target=/root/.npm \
+# HEL-322: pin a distinct cache id so this install doesn't share /root/.npm
+# with the runtime stage's `npm ci`. The two stages run in parallel (runtime
+# only depends on `build` at its later COPY --from=build), and a shared cache
+# mount (default sharing=shared) let them corrupt each other's cacache —
+# intermittent EEXIST/ENOENT in the deps stage.
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache-deps \
     npm ci --no-audit --no-fund
 
 # ---------------------------------------------------------------------------
@@ -70,9 +75,11 @@ RUN apt-get update \
 
 # Production deps only (drops jest, ts-node, @types/*, etc.)
 COPY package.json package-lock.json* ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --no-audit --no-fund \
-    && npm cache clean --force
+# HEL-322: distinct cache id (see deps stage). No `npm cache clean --force` —
+# a type=cache mount is never part of the image layer, so cleaning it saves
+# zero image size and only clobbers the shared cache mid-build.
+RUN --mount=type=cache,target=/root/.npm,id=npm-cache-runtime \
+    npm ci --omit=dev --no-audit --no-fund
 
 # Compiled output
 COPY --from=build /app/dist ./dist

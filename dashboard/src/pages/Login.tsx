@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { ArrowRight, CheckCircle2, Link2, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, KeyRound, Link2, Loader2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { writeStoredAuthUser } from "../auth/authStorage";
 import { Link } from "react-router-dom";
@@ -8,8 +8,10 @@ import {
   mapSupabaseAuthError,
   sendSupabaseMagicLink,
   signInWithSupabaseOAuth,
+  signInWithSupabasePasskey,
   signInWithSupabasePassword,
   signUpWithSupabasePassword,
+  supabasePasskeysEnabled,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
@@ -91,11 +93,15 @@ export default function Login() {
           : ""
   );
   const [notice, setNotice] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
 
   const magicLinkCooldown = useAuthCooldown(MAGIC_LINK_COOLDOWN_KEY);
 
   const configured = isSupabaseAuthConfigured();
-  const isAnyBusy = busy || activeProvider !== null;
+  // HEL-311 spike: dev-only Supabase native passkey sign-in. Gated by
+  // VITE_AUTOFLOW_SUPABASE_PASSKEYS — read once at render.
+  const passkeysEnabled = supabasePasskeysEnabled();
+  const isAnyBusy = busy || activeProvider !== null || passkeyBusy;
 
   // HEL-76: the v1 hero-side `signals` strip was dropped for the v2 single-card
   // layout. Trust pills (BYOK / OAuth / SOC 2) render under the form instead.
@@ -231,6 +237,35 @@ export default function Login() {
       // Supabase project quota the same as a successful one, so the user
       // shouldn't be able to retry instantly.
       magicLinkCooldown.start();
+    }
+  }
+
+  // HEL-311 spike: dev-only Supabase native passkey sign-in. Surfaces the
+  // resulting AAL inline so we can see whether passkey login is aal1 or aal2.
+  async function handleSupabasePasskey() {
+    if (!configured) {
+      triggerError("Supabase auth is not configured for this dashboard environment.");
+      return;
+    }
+    setPasskeyBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await signInWithSupabasePasskey();
+      console.info("[HEL-311] Supabase passkey sign-in result:", result.aal);
+      if (result.session) {
+        writeStoredAuthUser(result.session.user);
+      }
+      setNotice(
+        `Signed in with passkey. Supabase reports aal=${result.aal.currentLevel ?? "?"}` +
+          ` (next=${result.aal.nextLevel ?? "?"}, jwt aal=${result.aal.rawAalClaim ?? "?"}).`,
+      );
+      // Brief pause so the AAL notice is visible before redirect.
+      setPasskeyBusy(false);
+      navigate("/", { replace: true });
+    } catch (authError) {
+      setPasskeyBusy(false);
+      triggerError(mapSupabaseAuthError(authError));
     }
   }
 
@@ -424,6 +459,33 @@ export default function Login() {
                       : "Send magic link"}
                 </button>
               </form>
+            ) : null}
+
+            {/* HEL-311 spike: dev-only Supabase native passkey sign-in.
+                Hidden unless VITE_AUTOFLOW_SUPABASE_PASSKEYS is set. */}
+            {passkeysEnabled ? (
+              <div className="mt-4 border-t border-dashed border-af2-line pt-4">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+                  Experimental
+                </p>
+                <button
+                  type="button"
+                  onClick={handleSupabasePasskey}
+                  disabled={isAnyBusy || !configured}
+                  className="auth-microsoft-button w-full justify-center"
+                  aria-label="Sign in with a Supabase passkey (experimental)"
+                >
+                  {passkeyBusy ? (
+                    <Loader2 size={18} className="animate-spin text-af2-ink-3" />
+                  ) : (
+                    <KeyRound size={18} className="text-af2-ink-3" />
+                  )}
+                  {passkeyBusy ? "Waiting for passkey…" : "Sign in with passkey"}
+                </button>
+                <p className="mt-1.5 text-[11px] text-af2-ink-3">
+                  Supabase native passkeys (HEL-311 spike). Register one first from Security settings.
+                </p>
+              </div>
             ) : null}
 
           <div className="mt-6 flex flex-wrap items-center gap-2 text-[11px] text-af2-ink-3">

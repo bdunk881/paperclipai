@@ -9,6 +9,8 @@ const {
   sendSupabaseMagicLinkMock,
   signInWithSupabaseOAuthMock,
   isSupabaseAuthConfiguredMock,
+  signInWithSupabasePasskeyMock,
+  supabasePasskeysEnabledMock,
   writeStoredAuthUserMock,
 } = vi.hoisted(() => ({
   signInWithSupabasePasswordMock: vi.fn(),
@@ -16,6 +18,9 @@ const {
   sendSupabaseMagicLinkMock: vi.fn(),
   signInWithSupabaseOAuthMock: vi.fn(),
   isSupabaseAuthConfiguredMock: vi.fn(() => true),
+  signInWithSupabasePasskeyMock: vi.fn(),
+  // HEL-311: default OFF so existing tests see no passkey button.
+  supabasePasskeysEnabledMock: vi.fn(() => false),
   writeStoredAuthUserMock: vi.fn(),
 }));
 
@@ -25,6 +30,8 @@ vi.mock("../auth/supabaseAuth", () => ({
   sendSupabaseMagicLink: sendSupabaseMagicLinkMock,
   signInWithSupabaseOAuth: signInWithSupabaseOAuthMock,
   isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
+  signInWithSupabasePasskey: signInWithSupabasePasskeyMock,
+  supabasePasskeysEnabled: supabasePasskeysEnabledMock,
   mapSupabaseAuthError: (err: unknown) => (err instanceof Error ? err.message : "Error"),
 }));
 
@@ -36,6 +43,8 @@ describe("Login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isSupabaseAuthConfiguredMock.mockReturnValue(true);
+    // HEL-311: default the passkey spike flag OFF; specific tests opt in.
+    supabasePasskeysEnabledMock.mockReturnValue(false);
     window.history.replaceState({}, "", "/login");
     // HEL-284: cooldown is sessionStorage-backed, so reset between tests
     // or one test's cooldown leaks into the next.
@@ -231,6 +240,44 @@ describe("Login", () => {
     await waitFor(() => {
       const button = screen.getByRole("button", { name: /send magic link · \d+s/i });
       expect(button).toBeDisabled();
+    });
+  });
+
+  // HEL-311 spike --------------------------------------------------------
+
+  it("hides the Supabase passkey button when the spike flag is off", () => {
+    supabasePasskeysEnabledMock.mockReturnValue(false);
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.queryByRole("button", { name: /sign in with a supabase passkey/i })).not.toBeInTheDocument();
+  });
+
+  it("shows and runs the Supabase passkey sign-in when the spike flag is on", async () => {
+    supabasePasskeysEnabledMock.mockReturnValue(true);
+    signInWithSupabasePasskeyMock.mockResolvedValueOnce({
+      session: { user: { id: "u-1", email: "user@example.com", name: "User" } },
+      aal: { currentLevel: "aal1", nextLevel: "aal2", rawAalClaim: "aal1" },
+    });
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const button = screen.getByRole("button", { name: /sign in with a supabase passkey/i });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(signInWithSupabasePasskeyMock).toHaveBeenCalledTimes(1);
+      // The resulting AAL is surfaced so the spike can read aal1-vs-aal2.
+      expect(screen.getByText(/aal=aal1/i)).toBeInTheDocument();
     });
   });
 });

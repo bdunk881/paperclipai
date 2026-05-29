@@ -89,6 +89,18 @@ export function isSupabaseAuthConfigured(): boolean {
   return Boolean(getSupabaseUrl() && getSupabaseAnonKey());
 }
 
+/**
+ * HEL-311 spike: gate Supabase's *experimental* native passkey flow behind
+ * `VITE_AUTOFLOW_SUPABASE_PASSKEYS`. Off by default (prod builds), flipped
+ * per-environment for testing. Controls both the experimental client option
+ * AND whether the dev-only passkey buttons render. Treat any truthy-ish
+ * value except "0"/"false"/"" as enabled.
+ */
+export function supabasePasskeysEnabled(): boolean {
+  const raw = String(import.meta.env.VITE_AUTOFLOW_SUPABASE_PASSKEYS ?? "").trim().toLowerCase();
+  return raw !== "" && raw !== "0" && raw !== "false";
+}
+
 export function getSupabaseClient(): SupabaseClient | null {
   if (cachedClient !== undefined) {
     return cachedClient;
@@ -101,27 +113,34 @@ export function getSupabaseClient(): SupabaseClient | null {
     return cachedClient;
   }
 
-  cachedClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      // Critical: `detectSessionInUrl: false`. With it true, supabase-js
-      // auto-exchanges any `?code=` it sees at client construction time.
-      // We ALSO call `exchangeCodeForSession()` explicitly from
-      // `exchangeAuthCallbackCodeIfPresent()` so we can dedupe via
-      // `codeExchangePromise`, surface errors deterministically, and
-      // strip URL params with confidence after the exchange completes.
-      // With both paths active, PKCE codes (single-use) hit a race:
-      // one call succeeds, the other throws `invalid_grant` / "code
-      // already used", which we surface to the user as an error on the
-      // /reset-password screen — they retry the email, get a fresh
-      // code, hit the same race, and loop.
-      detectSessionInUrl: false,
-      flowType: "pkce",
-      storageKey: SUPABASE_STORAGE_KEY,
-      storage: createLocalStorageAdapter(),
-    },
-  });
+  const authOptions = {
+    persistSession: true,
+    autoRefreshToken: true,
+    // Critical: `detectSessionInUrl: false`. With it true, supabase-js
+    // auto-exchanges any `?code=` it sees at client construction time.
+    // We ALSO call `exchangeCodeForSession()` explicitly from
+    // `exchangeAuthCallbackCodeIfPresent()` so we can dedupe via
+    // `codeExchangePromise`, surface errors deterministically, and
+    // strip URL params with confidence after the exchange completes.
+    // With both paths active, PKCE codes (single-use) hit a race:
+    // one call succeeds, the other throws `invalid_grant` / "code
+    // already used", which we surface to the user as an error on the
+    // /reset-password screen — they retry the email, get a fresh
+    // code, hit the same race, and loop.
+    detectSessionInUrl: false,
+    flowType: "pkce",
+    storageKey: SUPABASE_STORAGE_KEY,
+    storage: createLocalStorageAdapter(),
+  };
+
+  // HEL-311 spike: the experimental passkey API mutates client behavior, so
+  // only opt in when the flag is on. The `experimental` option isn't in the
+  // 2.106 SupabaseClientOptions type yet (it's experimental), so cast.
+  if (supabasePasskeysEnabled()) {
+    (authOptions as Record<string, unknown>).experimental = { passkey: true };
+  }
+
+  cachedClient = createClient(url, anonKey, { auth: authOptions });
 
   return cachedClient;
 }
@@ -401,6 +420,127 @@ export async function signOutSupabase(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+}
+
+// ---------------------------------------------------------------------------
+// HEL-311 spike: Supabase native (experimental) passkeys.
+//
+// These wrap the experimental `auth.registerPasskey` / `auth.signInWithPasskey`
+// / `auth.mfa` APIs. They only work when the client was built with
+// `experimental: { passkey: true }`, i.e. when `supabasePasskeysEnabled()`.
+// The whole point is to learn whether a passkey sign-in yields aal1 or aal2 —
+// hence the AAL capture below.
+// ---------------------------------------------------------------------------
+
+/** Minimal shape of the experimental passkey surface on `auth`, cast in. */
+interface SupabasePasskeyAuth {
+  registerPasskey: () => Promise<{
+    data: { id: string; friendly_name?: string } | null;
+    error: { message: string } | null;
+  }>;
+  signInWithPasskey: () => Promise<{
+    data: { session: Session | null } | null;
+    error: { message: string } | null;
+  }>;
+  mfa: {
+    getAuthenticatorAssuranceLevel: () => Promise<{
+      data: { currentLevel: string | null; nextLevel: string | null } | null;
+      error: { message: string } | null;
+    }>;
+  };
+}
+
+export interface SupabasePasskeyAalResult {
+  /** From `mfa.getAuthenticatorAssuranceLevel()`. */
+  currentLevel: string | null;
+  nextLevel: string | null;
+  /** Decoded straight from the session JWT's `aal` claim, for cross-check. */
+  rawAalClaim: string | null;
+}
+
+export interface SupabasePasskeyRegistration {
+  id: string;
+  friendlyName: string | null;
+}
+
+export interface SupabasePasskeySignInResult {
+  session: StoredAuthSession | null;
+  aal: SupabasePasskeyAalResult;
+}
+
+function passkeyAuth(): SupabasePasskeyAuth {
+  return requireSupabaseClient().auth as unknown as SupabasePasskeyAuth;
+}
+
+/** Decode the `aal` claim from a JWT without verifying — diagnostic only. */
+function decodeAalClaim(accessToken: string | undefined): string | null {
+  if (!accessToken) return null;
+  const payload = accessToken.split(".")[1];
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const json = JSON.parse(
+      typeof atob === "function"
+        ? atob(padded)
+        : Buffer.from(padded, "base64").toString("utf8"),
+    ) as { aal?: unknown };
+    return typeof json.aal === "string" ? json.aal : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Register a Supabase native passkey for the *currently signed-in* user.
+ * Supabase requires an authenticated session — this can't run from the
+ * logged-out login page.
+ */
+export async function registerSupabasePasskey(): Promise<SupabasePasskeyRegistration> {
+  const { data, error } = await passkeyAuth().registerPasskey();
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data) {
+    throw new Error("Supabase passkey registration returned no data.");
+  }
+  return { id: data.id, friendlyName: data.friendly_name ?? null };
+}
+
+/**
+ * Sign in with a Supabase native passkey (discoverable credential). On
+ * success, also reads the resulting AAL two ways — the SDK helper and the
+ * raw JWT claim — so the spike can record whether passkey sign-in is aal1
+ * or aal2.
+ */
+export async function signInWithSupabasePasskey(): Promise<SupabasePasskeySignInResult> {
+  const auth = passkeyAuth();
+  const { data, error } = await auth.signInWithPasskey();
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const session = data?.session ?? null;
+
+  let currentLevel: string | null = null;
+  let nextLevel: string | null = null;
+  try {
+    const aal = await auth.mfa.getAuthenticatorAssuranceLevel();
+    currentLevel = aal.data?.currentLevel ?? null;
+    nextLevel = aal.data?.nextLevel ?? null;
+  } catch {
+    // getAuthenticatorAssuranceLevel rarely uses the network and rarely
+    // throws, but the spike shouldn't blow up the sign-in if it does.
+  }
+
+  return {
+    session: session ? sessionFromSupabaseSession(session) : null,
+    aal: {
+      currentLevel,
+      nextLevel,
+      rawAalClaim: decodeAalClaim(session?.access_token),
+    },
+  };
 }
 
 /** @internal Test-only reset for exchange deduplication state. */

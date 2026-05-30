@@ -3127,6 +3127,44 @@ describe("GET /health — run stats", () => {
 // ---------------------------------------------------------------------------
 
 describe("Rate limiting", () => {
+  const originalCfWorkerBaseUrl = process.env.CF_WORKER_BASE_URL;
+  let fetchSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    const counters = new Map<string, number>();
+    process.env.CF_WORKER_BASE_URL = "https://worker.test.example";
+    fetchSpy = jest.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        scope: string;
+        key: string;
+        limit: number;
+        windowMs: number;
+      };
+      const counterKey = `${body.scope}::${body.key}`;
+      const used = (counters.get(counterKey) ?? 0) + 1;
+      counters.set(counterKey, used);
+      const allowed = used <= body.limit;
+
+      return new Response(
+        JSON.stringify({
+          allowed,
+          remaining: Math.max(0, body.limit - used),
+          retryAfterMs: allowed ? 0 : body.windowMs,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+    if (originalCfWorkerBaseUrl === undefined) {
+      delete process.env.CF_WORKER_BASE_URL;
+    } else {
+      process.env.CF_WORKER_BASE_URL = originalCfWorkerBaseUrl;
+    }
+  });
+
   it("enforces LLM endpoint limits per authenticated user and returns Retry-After", async () => {
     for (let i = 0; i < 10; i += 1) {
       const res = await request(app)
@@ -3156,6 +3194,17 @@ describe("Rate limiting", () => {
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  it("fails open with a structured warning when the Durable Object call fails", async () => {
+    fetchSpy.mockRejectedValueOnce(new Error("worker unavailable"));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-outage-user");
+
+    expect(res.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('"event":"call_network_error"'));
+    warn.mockRestore();
   });
 });
 

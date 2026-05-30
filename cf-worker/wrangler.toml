@@ -18,12 +18,20 @@ compatibility_flags = ["nodejs_compat"]
 name = "HEALTH_CHECK"
 class_name = "HealthCheckDO"
 
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
+
 # Migrations track DO class additions/renames/deletes over time.
 # Append a new [[migrations]] block when adding a new DO class; never
 # rewrite an old block.
 [[migrations]]
 tag = "v1"
 new_classes = ["HealthCheckDO"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateLimiterDO"]
 
 # --- Environments ---
 
@@ -39,6 +47,10 @@ CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
 name = "HEALTH_CHECK"
 class_name = "HealthCheckDO"
 
+[[env.dev.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
+
 [env.production]
 name = "autoflow-api-worker"
 
@@ -50,6 +62,10 @@ CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
 [[env.production.durable_objects.bindings]]
 name = "HEALTH_CHECK"
 class_name = "HealthCheckDO"
+
+[[env.production.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
 
 # Production custom domain. The Worker IS the origin for worker.helloautoflow.com,
 # so `custom_domain = true` makes Cloudflare auto-provision the proxied DNS record

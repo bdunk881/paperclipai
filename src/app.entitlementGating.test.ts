@@ -11,11 +11,6 @@ jest.mock("./engine/llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
-jest.mock("express-rate-limit", () => {
-  const passThrough = (_req: unknown, _res: unknown, next: () => void) => next();
-  return { __esModule: true, default: jest.fn(() => passThrough) };
-});
-
 jest.mock("./auth/authMiddleware", () => ({
   requireAuth: (req: Record<string, unknown>, _res: unknown, next: () => void) => {
     req.auth = { sub: "test-user-ent" };

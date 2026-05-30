@@ -13,8 +13,8 @@ function normalizeEndpoint(url: string): string {
   );
 }
 
-// Global 429 cooldown. When the backend's express-rate-limit emits 429, it
-// also sends Retry-After. We honor it by short-circuiting new requests to
+// Global 429 cooldown. When the backend rate limiter emits 429, it also sends
+// Retry-After. We honor it by short-circuiting new requests to
 // a synthetic 429 response for the same window. Otherwise React effects fire
 // dozens of requests per second from re-mounting components and the user
 // gets stuck in an unrecoverable loop. Caller code already handles 429 as

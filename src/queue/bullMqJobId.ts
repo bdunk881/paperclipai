@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 
 /**
- * BullMQ rejects custom jobId values containing `:` (Redis key delimiter).
+ * BullMQ rejects custom jobId values containing `:` (Redis key separator).
  * Scheduler IDs (`routine:{uuid}`) use a separate API and may keep colons.
  */
 

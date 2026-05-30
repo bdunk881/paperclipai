@@ -186,7 +186,7 @@ describe("AuthContext", () => {
   // sessionUser() rebuilt it from storedSession/storedUser each time.
   // Any consumer effect with `[..., user]` deps then re-fired on every
   // parent render, and pages like MCPIntegrations looped fetches until
-  // express-rate-limit emitted a 429 and trackedFetch's global cooldown
+  // the backend rate limiter emitted a 429 and trackedFetch's global cooldown
   // locked the whole dashboard out. The fix memoizes `user` (+ the
   // context value object) on the primitive identity fields, so forced
   // re-renders without identity changes keep the same references.

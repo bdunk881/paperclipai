@@ -9,16 +9,100 @@
  * binding in `wrangler.toml`.
  */
 import { HealthCheckDO } from "./durable-objects/HealthCheck";
+import {
+  RateLimiterDO,
+  type RateLimiterConsumeRequest,
+  type RateLimiterRefundRequest,
+} from "./durable-objects/RateLimiter";
 
-export { HealthCheckDO };
+export { HealthCheckDO, RateLimiterDO };
 
 export interface WorkerEnv {
   HEALTH_CHECK: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace<RateLimiterDO>;
   ENVIRONMENT: string;
   API_BASE_URL: string;
   CF_WORKER_INTERNAL_JWT_AUDIENCE: string;
   /** Shared secret for minting JWTs back to the API. Set via `wrangler secret put`. */
   CF_WORKER_SHARED_SECRET?: string;
+}
+
+interface RateLimiterHttpRequest {
+  scope: string;
+  key: string;
+  limit: number;
+  windowMs: number;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function parseRateLimiterBody(body: unknown): RateLimiterHttpRequest | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+  const candidate = body as Partial<RateLimiterHttpRequest>;
+  if (
+    typeof candidate.scope !== "string" ||
+    !candidate.scope.trim() ||
+    typeof candidate.key !== "string" ||
+    !candidate.key.trim() ||
+    !isPositiveInteger(candidate.limit) ||
+    !isPositiveInteger(candidate.windowMs)
+  ) {
+    return null;
+  }
+
+  return {
+    scope: candidate.scope.trim(),
+    key: candidate.key.trim(),
+    limit: candidate.limit,
+    windowMs: candidate.windowMs,
+  };
+}
+
+async function readJson(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
+async function handleRateLimitConsume(request: Request, env: WorkerEnv): Promise<Response> {
+  const body = parseRateLimiterBody(await readJson(request));
+  if (!body) {
+    return Response.json({ error: "Invalid rate limit request" }, { status: 400 });
+  }
+
+  const instanceKey = `${body.scope}::${body.key}`;
+  const id = env.RATE_LIMITER.idFromName(instanceKey);
+  const stub = env.RATE_LIMITER.get(id);
+  const payload: RateLimiterConsumeRequest = {
+    key: instanceKey,
+    limit: body.limit,
+    windowMs: body.windowMs,
+  };
+  const result = await stub.consume(payload);
+  return Response.json(result);
+}
+
+async function handleRateLimitRefund(request: Request, env: WorkerEnv): Promise<Response> {
+  const body = parseRateLimiterBody(await readJson(request));
+  if (!body) {
+    return Response.json({ error: "Invalid rate limit refund request" }, { status: 400 });
+  }
+
+  const instanceKey = `${body.scope}::${body.key}`;
+  const id = env.RATE_LIMITER.idFromName(instanceKey);
+  const stub = env.RATE_LIMITER.get(id);
+  const payload: RateLimiterRefundRequest = {
+    key: instanceKey,
+    windowMs: body.windowMs,
+  };
+  const result = await stub.refund(payload);
+  return Response.json(result);
 }
 
 async function route(request: Request, env: WorkerEnv): Promise<Response> {
@@ -28,6 +112,14 @@ async function route(request: Request, env: WorkerEnv): Promise<Response> {
     const id = env.HEALTH_CHECK.idFromName("singleton");
     const stub = env.HEALTH_CHECK.get(id);
     return stub.fetch(request);
+  }
+
+  if (url.pathname === "/rate-limit/consume" && request.method === "POST") {
+    return handleRateLimitConsume(request, env);
+  }
+
+  if (url.pathname === "/rate-limit/refund" && request.method === "POST") {
+    return handleRateLimitRefund(request, env);
   }
 
   return new Response("Not Found", { status: 404 });

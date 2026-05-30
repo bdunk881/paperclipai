@@ -1,5 +1,4 @@
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
-jest.mock("express-rate-limit", () => () => (_req: unknown, _res: unknown, next: () => void) => next());
 // Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.
 jest.mock("../middleware/workspaceResolver", () => ({
   createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {

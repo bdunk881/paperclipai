@@ -61,7 +61,10 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   kill_postgres_query: { limit: 10, window: "hour" },
   // Pattern-based key flushes are blast-radius-heavy even with the
   // deny-list — keep this tight.
-  flush_redis_pattern: { limit: 5, window: "day" },
+  flush_redis_pattern: {
+    limit: 5,
+    window: "day",
+  },
 
   // HEL infra follow-up: platform admin revocation is the highest-blast-
   // radius action on the dashboard — extremely tight cap.

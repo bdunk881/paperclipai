@@ -40,7 +40,6 @@
     "bullmq": "^5.76.8",
     "cors": "^2.8.6",
     "express": "^4.22.2",
-    "express-rate-limit": "^7.5.1",
     "google-auth-library": "^10.6.2",
     "helmet": "^8.1.0",
     "jose": "^5.9.6",

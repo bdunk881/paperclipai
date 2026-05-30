@@ -249,12 +249,16 @@ describe("MfaService", () => {
     const response = { id: "cred-1", rawId: "cred-1" };
 
     await service.beginWebauthnRegistration(ctx, "alice@example.com");
-    await expect(service.finishWebauthnRegistration(ctx, response, "MacBook")).resolves.toEqual({
-      credentialId: "cred-1",
-    });
-    await expect(service.finishWebauthnRegistration(ctx, response, "MacBook")).resolves.toEqual({
-      credentialId: "cred-1",
-    });
+    // HEL-338: both the first verify and the recent-duplicate retry now also
+    // return an AAL2 attestation, so assert credentialId + a present attestation
+    // rather than a strict-equal on the whole object.
+    const first = await service.finishWebauthnRegistration(ctx, response, "MacBook");
+    expect(first.credentialId).toBe("cred-1");
+    expect(first.attestation.token).toBeTruthy();
+
+    const retry = await service.finishWebauthnRegistration(ctx, response, "MacBook");
+    expect(retry.credentialId).toBe("cred-1");
+    expect(retry.attestation.token).toBeTruthy();
 
     expect(webauthn.verifyRegistrationResponse).toHaveBeenCalledTimes(1);
   });

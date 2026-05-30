@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import clsx from "clsx";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import type * as Y from "yjs";
 import type { LLMConfig } from "../../api/client";
 import type { WorkflowStep } from "../../types/workflow";
 import {
@@ -21,6 +22,7 @@ import {
   validateIntervalMinutes,
 } from "../../pages/workflowStepSetup";
 import { SetupCoachCard } from "./SetupCoachCard";
+import { YTextInput } from "./YTextInput";
 
 type Props = {
   step: WorkflowStep;
@@ -35,6 +37,7 @@ type Props = {
   cronValidationError?: string | null;
   cronPreview?: string | null;
   intervalValidationError?: string | null;
+  nameYText?: Y.Text | null;
   onUpdateStep: (patch: Partial<WorkflowStep>) => void;
   onFocusField?: (field: string) => void;
   onSuggestedAction?: (action: SuggestedNextStep) => void;
@@ -100,6 +103,7 @@ export function StepSetupCoach({
   cronValidationError = null,
   cronPreview = null,
   intervalValidationError = null,
+  nameYText = null,
   onUpdateStep,
   onFocusField,
   onSuggestedAction,
@@ -396,13 +400,14 @@ export function StepSetupCoach({
         <div className="af2-eyebrow">Setup this step</div>
         <div className="mt-2 flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <input
+            <YTextInput
+              yText={nameYText}
               data-field="name"
               className="w-full border-0 bg-transparent font-af2-serif text-lg font-medium text-af2-ink outline-none"
               value={step.name}
               disabled={readonly}
               aria-label="Step name"
-              onChange={(e) => onUpdateStep({ name: e.target.value })}
+              onChangeValue={(nextName) => onUpdateStep({ name: nextName })}
             />
             <p className="mt-1 text-xs leading-relaxed text-af2-ink-3">{subtitle}</p>
           </div>

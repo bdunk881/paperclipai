@@ -49,6 +49,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import clsx from "clsx";
+import * as Y from "yjs";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import {
   PanelGroup,
@@ -115,6 +116,7 @@ import { NodeConfigForm } from "../components/workflow/NodeConfigForm";
 import { PresenceStack } from "../components/workflow/PresenceStack";
 import { WorkflowCursors } from "../components/workflow/WorkflowCursors";
 import { useWorkflowPresence } from "../hooks/useWorkflowPresence";
+import { useYDoc } from "../hooks/useYDoc";
 import { LaunchTeamModal } from "../components/workflow/LaunchTeamModal";
 import type { WorkflowBuilderMode } from "../utils/workflowBuilderRoute";
 
@@ -286,6 +288,8 @@ type CopilotMessage = {
 const FLOW_STEP_X = 80;
 const FLOW_STEP_Y = 64;
 const FLOW_STEP_GAP_Y = 190;
+const STEP_NAME_YMAP_KEY = "stepNames";
+const STEP_NAME_SEED_ORIGIN = "workflowbuilder-step-name-seed";
 const COMMON_TIMEZONES = [
   "UTC",
   "America/New_York",
@@ -554,6 +558,10 @@ export default function WorkflowBuilder() {
   // long-lived; if it expires the hook's heartbeat will fail silently
   // and the user can refresh.
   const [presenceAccessToken, setPresenceAccessToken] = useState<string | null>(null);
+  const [selectedStepNameYTextBinding, setSelectedStepNameYTextBinding] = useState<{
+    stepId: string;
+    yText: Y.Text;
+  } | null>(null);
   const studioHeaderRef = useRef<HTMLDivElement | null>(null);
   const [studioHeaderHeight, setStudioHeaderHeight] = useState(0);
   // Palette → canvas drag-drop (HTML5 DnD). The palette button sets a kind
@@ -645,6 +653,8 @@ export default function WorkflowBuilder() {
       name: user?.name || user?.email || "Teammate",
       selectedStepId: selectedStepId,
     });
+  const { doc: workflowYDoc, synced: workflowYDocSynced } =
+    useYDoc(canonicalWorkflowId);
 
   const stepNamesById = useMemo(() => {
     const out: Record<string, string> = {};
@@ -682,6 +692,56 @@ export default function WorkflowBuilder() {
   }, [templateId, requireAccessToken]);
 
   const selectedStep = template.steps.find((s) => s.id === selectedStepId) ?? null;
+
+  useEffect(() => {
+    if (!workflowYDoc || !workflowYDocSynced || !selectedStep) {
+      setSelectedStepNameYTextBinding(null);
+      return;
+    }
+
+    const stepNames = workflowYDoc.getMap<Y.Text>(STEP_NAME_YMAP_KEY);
+
+    const ensureSelectedStepText = (): void => {
+      let yText = stepNames.get(selectedStep.id) ?? null;
+      if (!yText) {
+        yText = new Y.Text();
+        const nextText = yText;
+        workflowYDoc.transact(() => {
+          stepNames.set(selectedStep.id, nextText);
+          if (selectedStep.name) nextText.insert(0, selectedStep.name);
+        }, STEP_NAME_SEED_ORIGIN);
+      } else if (yText.length === 0 && selectedStep.name) {
+        const existingText = yText;
+        workflowYDoc.transact(() => {
+          if (existingText.length === 0) {
+            existingText.insert(0, selectedStep.name);
+          }
+        }, STEP_NAME_SEED_ORIGIN);
+      }
+      setSelectedStepNameYTextBinding({ stepId: selectedStep.id, yText });
+    };
+
+    ensureSelectedStepText();
+
+    const handleStepNamesChange = (event: Y.YMapEvent<Y.Text>): void => {
+      if (event.keysChanged.has(selectedStep.id)) {
+        ensureSelectedStepText();
+      }
+    };
+
+    stepNames.observe(handleStepNamesChange);
+    return () => {
+      stepNames.unobserve(handleStepNamesChange);
+    };
+  }, [selectedStep, workflowYDoc, workflowYDocSynced]);
+
+  const selectedStepNameYText =
+    selectedStepNameYTextBinding &&
+    selectedStep &&
+    selectedStepNameYTextBinding.stepId === selectedStep.id
+      ? selectedStepNameYTextBinding.yText
+      : null;
+
   const isLlmStep = selectedStep?.kind === "llm";
   const deploymentAgentByStepId = useMemo(() => {
     const mapping = new Map<string, ControlPlaneAgent>();
@@ -2038,6 +2098,7 @@ export default function WorkflowBuilder() {
                     cronValidationError={cronValidationError}
                     cronPreview={cronPreview}
                     intervalValidationError={intervalValidationError}
+                    nameYText={selectedStepNameYText}
                     onUpdateStep={(patch) => updateStep(selectedStep.id, patch)}
                     onFocusField={focusCoachField}
                     onSuggestedAction={handleSuggestedNextStep}

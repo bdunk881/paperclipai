@@ -38,7 +38,9 @@
     "react-dom": "^18.3.1",
     "react-resizable-panels": "^2.1.9",
     "react-router-dom": "^7.15.1",
-    "stripe": "^21.0.1"
+    "stripe": "^21.0.1",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

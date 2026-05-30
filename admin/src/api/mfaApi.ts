@@ -273,3 +273,27 @@ export async function beginMagicLinkEnrollment(): Promise<{ sent: true }> {
   if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
   return res.json() as Promise<{ sent: true }>;
 }
+
+// ---- Email OTP / magic link removal (HEL-336) --------------------------------
+
+export async function removeEmailOtp(): Promise<void> {
+  const res = await fetch(`${BASE}/email-otp`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readError(res, "Could not remove email codes"));
+  }
+}
+
+export async function removeMagicLink(): Promise<void> {
+  const res = await fetch(`${BASE}/magic-link`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(await readError(res, "Could not remove magic link"));
+  }
+}

@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import {
   getMfaPolicy,
   regenerateRecoveryCodes,
+  removeEmailOtp,
+  removeMagicLink,
   removeTotpFactor,
   removeWebauthnCredential,
   type MfaPolicy,
@@ -81,6 +83,42 @@ export function MfaSettingsCard() {
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove authenticator.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveEmailOtp() {
+    setError(null);
+    setBusy(true);
+    try {
+      await removeEmailOtp();
+      await refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not remove email codes.";
+      setError(
+        message.includes("mfa_step_up_required")
+          ? "Step-up authentication required. Verify your factor first, then retry."
+          : message,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveMagicLink() {
+    setError(null);
+    setBusy(true);
+    try {
+      await removeMagicLink();
+      await refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not remove magic link.";
+      setError(
+        message.includes("mfa_step_up_required")
+          ? "Step-up authentication required. Verify your factor first, then retry."
+          : message,
+      );
     } finally {
       setBusy(false);
     }
@@ -190,6 +228,34 @@ export function MfaSettingsCard() {
       ) : (
         <button type="button" className="link-button" onClick={() => navigate("/onboarding/mfa")}>
           Add an authenticator app
+        </button>
+      )}
+
+      <h3 style={{ marginTop: "1.25rem" }}>Email code (OTP)</h3>
+      {policy.hasEmailOtp ? (
+        <div className="row">
+          <span>Email codes enabled</span>
+          <button onClick={handleRemoveEmailOtp} disabled={busy}>
+            Remove
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="link-button" onClick={() => navigate("/onboarding/mfa")}>
+          Add email codes
+        </button>
+      )}
+
+      <h3 style={{ marginTop: "1.25rem" }}>Magic link</h3>
+      {policy.hasMagicLink ? (
+        <div className="row">
+          <span>Magic link enabled</span>
+          <button onClick={handleRemoveMagicLink} disabled={busy}>
+            Remove
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="link-button" onClick={() => navigate("/onboarding/mfa")}>
+          Add magic link
         </button>
       )}
 

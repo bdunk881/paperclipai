@@ -183,12 +183,15 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
         return;
       }
       try {
-        const result = await service.finishWebauthnRegistration(
+        const { credentialId, attestation } = await service.finishWebauthnRegistration(
           buildContext(req),
           parsed.data.response,
           parsed.data.deviceName,
         );
-        res.status(201).json(result);
+        // HEL-338: passkey registration grants AAL2 (parity with auth verify /
+        // TOTP enroll) so the next admin request isn't 401 mfa_step_up_required.
+        setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
+        res.status(201).json({ credentialId, expiresAt: attestation.expiresAt });
       } catch (error) {
         sendError(res, error);
       }

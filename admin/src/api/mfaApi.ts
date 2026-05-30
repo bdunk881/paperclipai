@@ -191,6 +191,47 @@ export async function consumeRecoveryCode(
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
 }
 
+// ---- Email OTP step-up (HEL-333, mirrors dashboard HEL-282) -------------------
+
+/** Step-up: send a fresh code to the user's verified email. */
+export async function challengeEmailOtp(): Promise<{ sent: true }> {
+  const res = await fetch(`${BASE}/email-otp/challenge`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification code"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+export async function verifyEmailOtp(
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await fetch(`${BASE}/email-otp/verify`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+// ---- Magic link step-up (HEL-333, mirrors dashboard HEL-282) ------------------
+// Verification happens out-of-band by clicking the emailed link (a public GET
+// on the API that sets the AAL2 cookie), so there is no client-side verify
+// call — only "send the link".
+
+export async function challengeMagicLink(): Promise<{ sent: true }> {
+  const res = await fetch(`${BASE}/magic-link/challenge`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
 // ---- Email OTP enrollment (HEL-334, mirrors dashboard HEL-282) ---------------
 
 /** Send the enrollment code to the user's verified email. */

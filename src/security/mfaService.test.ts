@@ -368,8 +368,14 @@ describe("MfaService", () => {
     expect(result.factorId).toBe("factor-1");
     expect(totp.enrollTotp).toHaveBeenCalledWith("token", "iPhone");
 
-    await service.finishTotpEnrollment(ctx, "token", "factor-1", "123456");
+    const { attestation } = await service.finishTotpEnrollment(ctx, "token", "factor-1", "123456");
     expect(totp.verifyTotp).toHaveBeenCalled();
+    // HEL-331: TOTP verify must mint an AAL2 attestation (parity with the other
+    // factors) so the wizard's follow-up recovery-code issuance isn't blocked
+    // into a passkey-only step-up.
+    const verified = verifyAal2AttestationCookie(attestation.token, "u-1");
+    expect(verified.valid).toBe(true);
+    expect(verified.claims?.method).toBe("totp");
     const policy = await service.getPolicy(ctx);
     expect(policy.hasTotp).toBe(true);
   });

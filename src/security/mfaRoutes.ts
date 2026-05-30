@@ -284,13 +284,17 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
         return;
       }
       try {
-        await service.finishTotpEnrollment(
+        const { attestation } = await service.finishTotpEnrollment(
           buildContext(req),
           accessToken,
           parsed.data.factorId,
           parsed.data.code,
         );
-        res.status(201).json({ enrolled: true });
+        // HEL-331: TOTP enrollment-verify grants AAL2 (parity with email-OTP
+        // enroll) so the immediately-following recovery-code issuance — and any
+        // step-up — is satisfied without bouncing to a passkey-only modal.
+        setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
+        res.status(201).json({ enrolled: true, verified: true, expiresAt: attestation.expiresAt });
       } catch (error) {
         sendError(res, error);
       }

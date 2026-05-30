@@ -32,6 +32,23 @@ function isDevBypassEnabled(): boolean {
   }
 }
 
+function formatMfaPolicyError(error: unknown): string {
+  if (error instanceof TypeError) {
+    return "Can't reach dev-api.helloautoflow.com — check the browser network tab (CORS, DNS, or VPN).";
+  }
+  const message = error instanceof Error ? error.message : "Could not check MFA status.";
+  if (/401|unauthorized|jwt|session/i.test(message)) {
+    return "Session expired — sign in again.";
+  }
+  if (/webauthn_unavailable|503/i.test(message)) {
+    return "WebAuthn is not configured on dev-api.";
+  }
+  if (/Failed to fetch|NetworkError|network/i.test(message)) {
+    return "Can't reach dev-api.helloautoflow.com — check the browser network tab.";
+  }
+  return message;
+}
+
 export function MfaEnforcementGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [state, setState] = useState<PolicyState>({ status: "loading" });
@@ -46,8 +63,7 @@ export function MfaEnforcementGate({ children }: { children: ReactNode }) {
         if (!cancelled) setState({ status: "ready", policy });
       } catch (error) {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : "Could not check MFA status.";
-        setState({ status: "error", message });
+        setState({ status: "error", message: formatMfaPolicyError(error) });
       }
     })();
     return () => {

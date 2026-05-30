@@ -117,6 +117,10 @@ const totpVerifySchema = z.object({
   code: z.string().trim().regex(/^\d{6}$/, "TOTP code must be 6 digits"),
 });
 
+const magicLinkBeginSchema = z.object({
+  returnTo: z.literal("admin").optional(),
+});
+
 const recoveryConsumeSchema = z.object({
   code: z.string().min(8),
 });
@@ -462,8 +466,19 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
   router.post(
     "/magic-link/enroll/begin",
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = magicLinkBeginSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
       try {
-        res.json(await service.beginMagicLinkEnrollment(buildContext(req), resolveUserEmail(req)));
+        res.json(
+          await service.beginMagicLinkEnrollment(
+            buildContext(req),
+            resolveUserEmail(req),
+            parsed.data.returnTo,
+          ),
+        );
       } catch (error) {
         sendError(res, error);
       }
@@ -473,8 +488,19 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
   router.post(
     "/magic-link/challenge",
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = magicLinkBeginSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
       try {
-        res.json(await service.challengeMagicLink(buildContext(req), resolveUserEmail(req)));
+        res.json(
+          await service.challengeMagicLink(
+            buildContext(req),
+            resolveUserEmail(req),
+            parsed.data.returnTo,
+          ),
+        );
       } catch (error) {
         sendError(res, error);
       }

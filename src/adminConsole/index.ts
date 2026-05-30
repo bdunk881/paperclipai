@@ -35,10 +35,25 @@ import { createAgentReplyRoute } from "./agentWebhooks/replyRoute";
 import { createPlatformAdminsRoutes } from "./platformAdminsRoutes";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
+import type { PlatformAdminRequest } from "./types";
 
 export function createAdminConsoleRoutes(pool: Pool): Router {
   const router = Router();
   router.use(createRequirePlatformAdmin(pool));
+
+  // Platform-admin gate only (no AAL2) — lets the admin UI reject non-admins
+  // before MFA enrollment. Mounted before the HEL-319 AAL2 blanket below.
+  router.get(
+    "/session",
+    asyncHandler(async (req, res) => {
+      const admin = (req as PlatformAdminRequest).platformAdmin;
+      res.json({
+        user_id: admin.userId,
+        email: admin.email,
+        is_platform_admin: true,
+      });
+    }),
+  );
 
   // HEL-319: require a stepped-up MFA (AAL2) session for the ENTIRE
   // admin-console surface, reads included. Previously only the mutation
@@ -52,6 +67,13 @@ export function createAdminConsoleRoutes(pool: Pool): Router {
   // requireWebAuthnAal2 (the latter is strictly stronger) — redundant but
   // harmless, and they document intent at the callsite.
   router.use(requireAAL2);
+
+  router.get(
+    "/step-up-probe",
+    asyncHandler(async (_req, res) => {
+      res.json({ ok: true });
+    }),
+  );
 
   router.use("/lookup", createLookupRoutes(pool));
   router.use("/identity", createIdentityRoutes(pool));

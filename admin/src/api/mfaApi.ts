@@ -242,6 +242,7 @@ export async function challengeMagicLink(): Promise<{ sent: true }> {
     method: "POST",
     headers: await authHeaders({ "Content-Type": "application/json" }),
     credentials: "include",
+    body: JSON.stringify({ returnTo: "admin" }),
   });
   if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
   return res.json() as Promise<{ sent: true }>;
@@ -284,6 +285,7 @@ export async function beginMagicLinkEnrollment(): Promise<{ sent: true }> {
     method: "POST",
     headers: await authHeaders({ "Content-Type": "application/json" }),
     credentials: "include",
+    body: JSON.stringify({ returnTo: "admin" }),
   });
   if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
   return res.json() as Promise<{ sent: true }>;

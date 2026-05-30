@@ -991,6 +991,7 @@ export class MfaService {
     ctx: MfaServiceContext,
     userEmail: string,
     purpose: MfaEmailFactorPurpose,
+    returnTo?: "admin",
   ): Promise<{ sent: true }> {
     this.assertNotStaff(ctx.userId);
     await this.enforceSendRateLimit(ctx);
@@ -998,18 +999,28 @@ export class MfaService {
     const tokenHash = this.hashMagicLinkToken(rawToken);
     const expiresAt = new Date(Date.now() + EMAIL_FACTOR_TTL_SECONDS * 1000);
     await this.repository.insertMagicLink({ userId: ctx.userId, tokenHash, purpose, expiresAt });
-    const link = `${this.magicLinkApiBaseUrl.replace(/\/$/, "")}/api/mfa/magic-link/verify?token=${encodeURIComponent(rawToken)}`;
+    const params = new URLSearchParams({ token: rawToken });
+    if (returnTo === "admin") params.set("return_to", "admin");
+    const link = `${this.magicLinkApiBaseUrl.replace(/\/$/, "")}/api/mfa/magic-link/verify?${params.toString()}`;
     await this.emailSender.send({ to: userEmail, kind: "magic_link", link, purpose });
     await recordAudit(ctx, "mfa.magic_link.sent", { purpose });
     return { sent: true };
   }
 
-  beginMagicLinkEnrollment(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
-    return this.issueMagicLink(ctx, userEmail, "enroll");
+  beginMagicLinkEnrollment(
+    ctx: MfaServiceContext,
+    userEmail: string,
+    returnTo?: "admin",
+  ): Promise<{ sent: true }> {
+    return this.issueMagicLink(ctx, userEmail, "enroll", returnTo);
   }
 
-  challengeMagicLink(ctx: MfaServiceContext, userEmail: string): Promise<{ sent: true }> {
-    return this.issueMagicLink(ctx, userEmail, "verify");
+  challengeMagicLink(
+    ctx: MfaServiceContext,
+    userEmail: string,
+    returnTo?: "admin",
+  ): Promise<{ sent: true }> {
+    return this.issueMagicLink(ctx, userEmail, "verify", returnTo);
   }
 
   /**

@@ -1017,36 +1017,45 @@ app.use(
 // requireAuth-gated /api/mfa mount below — the token itself binds the user.
 // On success it mints the AAL2 attestation cookie and 302-redirects back to
 // the dashboard; otherwise it redirects with ?mfa=link_invalid.
+function resolveMagicLinkRedirectOrigin(returnTo: string): string {
+  if (returnTo === "admin") {
+    const admin = (process.env.ADMIN_APP_URL ?? "").trim().replace(/\/+$/, "");
+    if (admin) return admin;
+  }
+  return (
+    process.env.DASHBOARD_APP_URL ??
+    process.env.APP_BASE_URL ??
+    "http://localhost:5173"
+  ).replace(/\/+$/, "");
+}
+
 app.get(
   "/api/mfa/magic-link/verify",
   asyncHandler(async (req, res) => {
-    const dashboard = (
-      process.env.DASHBOARD_APP_URL ??
-      process.env.APP_BASE_URL ??
-      "http://localhost:5173"
-    ).replace(/\/$/, "");
+    const returnTo = typeof req.query.return_to === "string" ? req.query.return_to : "";
+    const redirectOrigin = resolveMagicLinkRedirectOrigin(returnTo);
     const token = typeof req.query.token === "string" ? req.query.token : "";
     if (!token) {
-      res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+      res.redirect(302, `${redirectOrigin}/?mfa=link_invalid`);
       return;
     }
     try {
       const result = await getMfaService().consumeMagicLinkToken(token);
       if (!result) {
-        res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+        res.redirect(302, `${redirectOrigin}/?mfa=link_invalid`);
         return;
       }
       res.setHeader(
         "Set-Cookie",
         buildAal2AttestationCookieHeader(result.attestation.token, result.attestation.maxAgeSeconds),
       );
-      res.redirect(302, `${dashboard}/?mfa=verified`);
+      res.redirect(302, `${redirectOrigin}/?mfa=verified`);
     } catch (error) {
       console.warn(
         "[app] magic-link verify failed",
         error instanceof Error ? error.message : error,
       );
-      res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+      res.redirect(302, `${redirectOrigin}/?mfa=link_invalid`);
     }
   }),
 );

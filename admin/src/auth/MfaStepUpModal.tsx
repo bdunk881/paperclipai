@@ -8,6 +8,7 @@ import {
   verifyTotpStepUp,
   type MfaPolicy,
 } from "../api/mfaApi";
+import { probeStepUp } from "../api/adminSessionApi";
 import { isWebauthnAvailable, verifyPasskey } from "./mfa";
 import {
   STEP_UP_REQUIRED_EVENT,
@@ -173,6 +174,26 @@ export function MfaStepUpModal() {
     }
   }
 
+  async function handleMagicLinkRetry() {
+    setError(null);
+    setBusy(true);
+    try {
+      const ok = await probeStepUp();
+      if (!ok) {
+        setError(
+          "Link not verified yet — open the email link in this browser, then try again. (AutoFlow staff must use a passkey, not email link.)",
+        );
+        return;
+      }
+      emitStepUpSatisfied();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not verify step-up.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!open) return null;
 
   const showTotp = policy?.hasTotp ?? false;
@@ -295,15 +316,8 @@ export function MfaStepUpModal() {
                   your action.
                 </p>
                 <div className="row">
-                  <button
-                    className="primary"
-                    onClick={() => {
-                      emitStepUpSatisfied();
-                      setOpen(false);
-                    }}
-                    disabled={busy}
-                  >
-                    I've clicked the link — retry
+                  <button className="primary" onClick={handleMagicLinkRetry} disabled={busy}>
+                    {busy ? "Checking…" : "I've clicked the link — retry"}
                   </button>
                   <button type="button" onClick={handleSendMagicLink} disabled={busy}>
                     Resend

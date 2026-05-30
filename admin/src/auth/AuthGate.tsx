@@ -3,6 +3,7 @@ import type { Session } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../lib/supabase";
 import { LoginPage } from "../pages/LoginPage";
 import { MfaEnforcementGate } from "./MfaEnforcementGate";
+import { PlatformAdminGate } from "./PlatformAdminGate";
 
 interface Props {
   children: ReactNode;
@@ -31,5 +32,9 @@ export function AuthGate({ children }: Props) {
   if (loading) return <div className="muted">Checking session…</div>;
   if (!session) return <LoginPage />;
 
-  return <MfaEnforcementGate>{children}</MfaEnforcementGate>;
+  return (
+    <PlatformAdminGate>
+      <MfaEnforcementGate>{children}</MfaEnforcementGate>
+    </PlatformAdminGate>
+  );
 }

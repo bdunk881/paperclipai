@@ -1,66 +1,120 @@
 # Admin Console — setup and operations
 
-This document covers everything needed to stand up the platform admin console
-(admin.helloautoflow.com) and grant the first staff member.
+This document covers the platform admin console for **dev** (`admin.helloautoflow.com` on the dev stack).
+
+## Dev stack
+
+| Layer | URL / project |
+|---|---|
+| Admin UI | `https://admin.helloautoflow.com` (also `https://admin-dev.helloautoflow.com`) |
+| API | `https://dev-api.helloautoflow.com` (`autoflow-api-dev` on Fly) |
+| Auth + DB | **autoflow-dev** Supabase (`pjbpcfmidpxplcrwpcyk`) |
+| Customer dashboard | `https://dev.helloautoflow.com` / `https://dev.app.helloautoflow.com` |
+
+Sign in with credentials that exist in **autoflow-dev** — the same account you use on the dev customer dashboard. Production dashboard credentials will not work.
+
+```mermaid
+flowchart LR
+  AdminUI["admin.helloautoflow.com"]
+  DevAPI["dev-api.helloautoflow.com"]
+  DevSB["autoflow-dev Supabase"]
+  DevDash["dev.app.helloautoflow.com"]
+
+  AdminUI --> DevAPI
+  AdminUI --> DevSB
+  DevAPI --> DevSB
+  AdminUI -.-> DevDash
+```
 
 ## Architecture
 
 - **Frontend** lives in `admin/` and deploys to Cloudflare Pages via
-  `.github/workflows/admin-cloudflare-pages.yml`. Custom domain:
-  `admin.helloautoflow.com` (prod) / `admin-dev.helloautoflow.com` (dev).
+  `.github/workflows/admin-cloudflare-pages.yml` when `admin/**` changes on `dev`.
+  Build env: `VITE_API_BASE_URL=https://dev-api.helloautoflow.com`, dev Supabase keys.
 - **Backend** lives under `src/adminConsole/` and is mounted at
   `/api/admin-console/*` from `src/app.ts`. The public impersonation-verify
   endpoint is at `/api/impersonation/verify` (NOT under the admin gate).
 - **Audit log** is `platform_admin_audit_log` (migration 059) — cross-tenant,
   append-only at the RLS level.
-- **Cross-tenant reads** go through the SECURITY DEFINER lookup functions in
+- **Cross-tenant reads** go through SECURITY DEFINER lookup functions in
   migration 060; they gate on the session GUC `app.is_platform_admin`.
 
-## Required environment variables
+## Required environment variables (dev)
 
-### API (Fly)
+### API (`autoflow-api-dev` / [`fly.api.dev.toml`](fly.api.dev.toml))
+
 | Name | Purpose |
 |---|---|
-| `SUPABASE_URL` | Supabase project URL (same as the customer dashboard). |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key. **Only set on the API; never on the frontend.** Required for password-reset link gen, MFA factor wipe, sign-out-all-sessions. |
-| `IMPERSONATION_TOKEN_SECRET` | ≥ 32-char random secret. Signs impersonation tokens. Rotating it invalidates all in-flight sessions. |
-| `AUTOFLOW_STAFF_USER_IDS` | (optional, bootstrap only) comma-separated user IDs treated as platform admin even without the DB flag. Use to bootstrap the first admin. |
-| `ADMIN_RATE_LIMIT_*` | (optional) Override the default per-admin rate limits. See `src/adminConsole/rateLimit.ts`. |
+| `SUPABASE_URL` | autoflow-dev project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role key (**API only**, never on the frontend) |
+| `IMPERSONATION_TOKEN_SECRET` | Signs impersonation tokens |
+| `AUTOFLOW_STAFF_USER_IDS` | (optional bootstrap) comma-separated user IDs treated as platform admin without the DB flag |
+| `ADMIN_APP_URL` | `https://admin.helloautoflow.com` — magic-link MFA redirects here when `return_to=admin` |
+| `ALLOWED_ORIGINS` / `MFA_ORIGIN` | Must include `https://admin.helloautoflow.com` and `https://admin-dev.helloautoflow.com` (already in dev toml) |
 
-### Admin app (Cloudflare Pages, via Infisical)
+### Admin app (Cloudflare Pages dev build / Infisical `dev`)
+
 | Name | Purpose |
 |---|---|
-| `VITE_SUPABASE_URL` | Same as dashboard. |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | Same as dashboard. |
-| `VITE_API_BASE_URL` | `https://api.helloautoflow.com` (or dev equivalent). |
-| `VITE_DASHBOARD_ORIGIN` | `https://app.helloautoflow.com` (origin of the customer dashboard used by the "Open dashboard as user" link). |
+| `VITE_SUPABASE_URL` | autoflow-dev |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | autoflow-dev |
+| `VITE_API_BASE_URL` | `https://dev-api.helloautoflow.com` |
+| `VITE_DASHBOARD_ORIGIN` | `https://dev.helloautoflow.com` (impersonation “open dashboard as user”) |
 
-## Granting the first platform admin
+## Granting the first platform admin (autoflow-dev)
 
-There is no UI for granting `is_platform_admin` — it must be done via psql.
+There is no UI for granting `is_platform_admin` — use psql against **autoflow-dev**:
 
 ```sql
--- Find the user's id from the email
-SELECT id FROM auth.users WHERE email = 'staff@helloautoflow.com';
+SELECT id, email FROM auth.users WHERE email = 'you@helloautoflow.com';
 
--- Upsert their profile row with the flag set
 INSERT INTO user_profiles (user_id, is_platform_admin)
-     VALUES ($1, true)
+     VALUES ('<uuid-from-above>', true)
 ON CONFLICT (user_id) DO UPDATE SET is_platform_admin = true;
 ```
 
-Alternatively, set the env var bootstrap on the API and the user is treated as
-admin without a DB row (useful for first-time setup):
+Alternatively, set on dev-api (Fly secret or Infisical):
 
 ```
-AUTOFLOW_STAFF_USER_IDS=<sub-of-first-staff-user>
+AUTOFLOW_STAFF_USER_IDS=<supabase-auth-sub-uuid>
 ```
+
+The admin UI calls `GET /api/admin-console/session` after sign-in; without the flag or allowlist you see **Not a platform admin** before MFA enrollment.
 
 ## MFA requirement
 
-Every admin route requires the JWT's `aal` claim to be `aal2` (MFA-elevated).
-The admin app's `MfaGate` enforces this client-side as well — staff who haven't
-enrolled a TOTP factor see only the enrollment page.
+1. **Enrollment** — at least one factor (passkey or TOTP recommended on dev).
+2. **Step-up (HEL-319)** — every `/api/admin-console/*` route after enrollment requires a fresh AAL2 attestation (~15 min). The admin app shows a step-up modal when the API returns `401 mfa_step_up_required`.
+
+**Passkey enrollment** mints an AAL2 cookie immediately (HEL-338) so recovery-code issuance works without an extra step-up.
+
+**Magic link** — links include `return_to=admin` and redirect to `ADMIN_APP_URL` after verify. AutoFlow staff on `AUTOFLOW_STAFF_USER_IDS` cannot use email/magic-link factors (passkey only).
+
+**Dev bypass (local debugging only):** in the browser console:
+
+```js
+localStorage.setItem('autoflow.mfa.enforcement', 'off')
+```
+
+## Local development
+
+```bash
+# Terminal 1 — API (repo root)
+AUTOFLOW_ALLOW_INMEMORY=true NODE_ENV=development npx ts-node --transpile-only src/index.ts
+
+# Terminal 2 — admin
+cd admin
+cp .env.local.example .env.local   # fill autoflow-dev Supabase keys
+npm run dev   # http://localhost:5174, proxies /api → :3000
+```
+
+For local passkey/MFA against a real API, run the API with Postgres and set in root `.env.local`:
+
+```
+ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
+MFA_ORIGIN=http://localhost:5173,http://localhost:5174
+ADMIN_APP_URL=http://localhost:5174
+```
 
 ## Two-person rule
 
@@ -69,33 +123,21 @@ to confirm within 5 minutes:
 
 - workspace suspension (`POST /api/admin-console/workspace-ops/:id/suspend`)
 - right-to-erasure delete (`POST /api/admin-console/data-hygiene/:userId/erasure`)
-- (future) ownership transfer
 
-The confirming admin opens `/pending-actions` in the admin app and clicks
-Confirm. The CHECK constraint on the table blocks self-confirmation.
+The confirming admin opens `/pending-actions` in the admin app and clicks Confirm.
 
-## Failed-login telemetry
+## Operational runbook (dev)
 
-Optional but recommended: configure a Supabase auth webhook to POST to
-`/api/admin-console/abuse/_ingest/failed-login` (TODO route — wire when the
-webhook is enabled) so `auth_failed_logins` and `auth_login_devices` populate.
-Without the webhook, the abuse-signal tab shows empty state.
+| Symptom | Check |
+|---|---|
+| Login fails | User exists in autoflow-dev, not production Supabase |
+| “Not a platform admin” | `is_platform_admin` or `AUTOFLOW_STAFF_USER_IDS` on dev-api |
+| “Can't verify MFA” | Network to dev-api; CORS includes admin origin; signed in |
+| Passkey enroll then recovery codes 401 | dev-api deployed with HEL-338 (passkey registration grants AAL2) |
+| Magic link opens dev dashboard | dev-api has `ADMIN_APP_URL`; admin sends `returnTo: admin` |
+| Search 401 loop | Complete step-up modal (passkey/TOTP/recovery) |
+| Search 403 | Platform-admin grant missing |
 
 ## Audit log retention
 
-The table is append-only via RLS — UPDATE/DELETE are blocked even for
-superusers. For long-term retention, mirror the table daily to R2 via the
-existing `ops/` job runners (TODO: add `dump-audit-log.sh`).
-
-## Operational runbook
-
-- A staff member can't sign in? Check (a) `is_platform_admin` flag set;
-  (b) MFA enrolled (Supabase dashboard → Authentication → Users → Factors);
-  (c) JWT shows `aal: aal2` after their challenge.
-- Audit log row was supposed to be written but wasn't? The handler aborted
-  before reaching `recordAdminAction()` (validation failure). Re-issue with a
-  valid payload.
-- Impersonation token rejected even though just minted? Either the secret
-  rotated, or the verifier and minter are on different deploys. Check
-  `IMPERSONATION_TOKEN_SECRET` matches between API and (if you ever expose it)
-  consumer.
+The table is append-only via RLS. For long-term retention, mirror to R2 via ops job runners (TODO: `dump-audit-log.sh`).

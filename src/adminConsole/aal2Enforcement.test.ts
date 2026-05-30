@@ -74,4 +74,20 @@ describe("admin-console AAL2 enforcement (HEL-319)", () => {
     // the point is the request was NOT turned away by requireAAL2).
     expect(res.status).not.toBe(401);
   });
+
+  it("exposes GET /session without AAL2 for platform admins", async () => {
+    const res = await request(buildApp()).get("/api/admin-console/session");
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      user_id: "admin-1",
+      email: "admin@helloautoflow.com",
+      is_platform_admin: true,
+    });
+  });
+
+  it("blocks GET /step-up-probe without AAL2", async () => {
+    const res = await request(buildApp()).get("/api/admin-console/step-up-probe");
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({ error: "mfa_step_up_required" });
+  });
 });

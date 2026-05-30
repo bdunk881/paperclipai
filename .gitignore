@@ -53,7 +53,9 @@ Thumbs.db
 
 # Agent / IDE local state — these tools drop session/cache dirs into
 # whatever cwd they run from. Keep them out of the repo.
-.claude/
+# Exception: .claude/skills/ holds curated, versioned Claude Code skills (see HEL-344).
+.claude/*
+!.claude/skills/
 .cursor-*/
 .codex/
 .aider*

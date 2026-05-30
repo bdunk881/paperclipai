@@ -736,17 +736,25 @@ export class MfaService {
     accessToken: string,
     factorId: string,
     code: string,
-  ): Promise<void> {
+  ): Promise<{ attestation: MintedAal2Attestation }> {
     if (!this.totp) {
       throw new SecurityServiceError("TOTP not configured", 503, "totp_unavailable");
     }
     const challenge = await this.totp.challengeTotp(accessToken, factorId);
     await this.totp.verifyTotp(accessToken, factorId, challenge.challengeId, code);
+    const now = new Date();
     await this.repository.upsertPolicy(ctx.userId, {
       hasTotp: true,
-      enrollmentCompletedAt: new Date(),
+      enrollmentCompletedAt: now,
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "totp",
     });
     await recordAudit(ctx, "mfa.enroll.totp", { factorId });
+    // HEL-331: verifying the TOTP code is a fresh strong-auth event, so mint
+    // AAL2 like every other verify path (webauthn / recovery_code / email_otp).
+    // Without it the wizard's immediate regenerateRecoveryCodes() (requireAAL2)
+    // 401s and dead-ends in a passkey-only step-up the user can't satisfy.
+    return { attestation: mintAal2Attestation({ userId: ctx.userId, method: "totp" }) };
   }
 
   async removeTotpFactor(

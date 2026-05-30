@@ -537,7 +537,7 @@ export class MfaService {
     ctx: MfaServiceContext,
     response: unknown,
     deviceName?: string,
-  ): Promise<{ credentialId: string }> {
+  ): Promise<{ credentialId: string; attestation: MintedAal2Attestation }> {
     if (!this.webauthn) {
       throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
     }
@@ -550,7 +550,12 @@ export class MfaService {
           await recordAudit(ctx, "mfa.enroll.passkey.duplicate_verify", {
             credentialId: existing.credentialId,
           });
-          return { credentialId: existing.credentialId };
+          // HEL-338: a recent duplicate verify is still a fresh WebAuthn
+          // ceremony — grant AAL2 so the user isn't walled on their next action.
+          return {
+            credentialId: existing.credentialId,
+            attestation: mintAal2Attestation({ userId: ctx.userId, method: "webauthn" }),
+          };
         }
       }
       throw new SecurityServiceError("Registration challenge expired or missing", 400, "challenge_missing");
@@ -575,16 +580,25 @@ export class MfaService {
       backedUp: verification.backedUp,
       deviceName: deviceName ?? null,
     });
+    const now = new Date();
     await this.repository.upsertPolicy(ctx.userId, {
       hasWebauthn: true,
-      enrollmentCompletedAt: new Date(),
+      enrollmentCompletedAt: now,
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "webauthn",
     });
     await recordAudit(ctx, "mfa.enroll.passkey", {
       credentialId: verification.credentialId,
       deviceName: deviceName ?? null,
       backedUp: verification.backedUp,
     });
-    return { credentialId: verification.credentialId };
+    // HEL-338: completing a passkey registration ceremony is a fresh strong-auth
+    // event — grant AAL2 (parity with finishWebauthnAuthentication / TOTP enroll)
+    // so the very next admin request isn't a 401 mfa_step_up_required.
+    return {
+      credentialId: verification.credentialId,
+      attestation: mintAal2Attestation({ userId: ctx.userId, method: "webauthn" }),
+    };
   }
 
   async beginWebauthnAuthentication(

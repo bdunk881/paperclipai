@@ -182,11 +182,17 @@ describe("MfaService", () => {
 
     const result = await service.finishWebauthnRegistration(ctx, { mockResponse: true }, "MacBook");
     expect(result.credentialId).toBe("cred-1");
+    // HEL-338: passkey registration must mint an AAL2 attestation so the user
+    // isn't immediately walled with 401 mfa_step_up_required on their next call.
+    const verified = verifyAal2AttestationCookie(result.attestation.token, "u-1");
+    expect(verified.valid).toBe(true);
+    expect(verified.claims?.method).toBe("webauthn");
 
     const policy = await service.getPolicy(ctx);
     expect(policy.hasWebauthn).toBe(true);
     expect(policy.webauthnDevices).toHaveLength(1);
     expect(policy.webauthnDevices[0].deviceName).toBe("MacBook");
+    expect(policy.lastVerifiedMethod).toBe("webauthn");
   });
 
   it("rejects finish without a prior begin (no challenge stored)", async () => {

@@ -380,6 +380,35 @@ describe("MfaService", () => {
     expect(policy.hasTotp).toBe(true);
   });
 
+  it("verifies an existing TOTP factor for step-up and mints an AAL2 attestation (HEL-335)", async () => {
+    const totp = makeTotpStub();
+    (totp.listFactors as jest.Mock).mockResolvedValueOnce([
+      { id: "verified-totp", type: "totp", status: "verified" },
+    ]);
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+    const ctx = { userId: "u-1" };
+
+    const { attestation } = await service.verifyTotpStepUp(ctx, "token", "123456");
+
+    expect(totp.challengeTotp).toHaveBeenCalledWith("token", "verified-totp");
+    expect(totp.verifyTotp).toHaveBeenCalledWith("token", "verified-totp", "challenge-1", "123456");
+    const verified = verifyAal2AttestationCookie(attestation.token, "u-1");
+    expect(verified.valid).toBe(true);
+    expect(verified.claims?.method).toBe("totp");
+  });
+
+  it("rejects TOTP step-up when no verified factor exists (HEL-335)", async () => {
+    const totp = makeTotpStub();
+    (totp.listFactors as jest.Mock).mockResolvedValueOnce([
+      { id: "unverified", type: "totp", status: "unverified" },
+    ]);
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+    const ctx = { userId: "u-1" };
+
+    await expect(service.verifyTotpStepUp(ctx, "token", "123456")).rejects.toThrow();
+    expect(totp.verifyTotp).not.toHaveBeenCalled();
+  });
+
   it("clears stale unverified TOTP factors before re-enrolling (HEL-327 follow-up)", async () => {
     const totp = makeTotpStub();
     (totp.listFactors as jest.Mock).mockResolvedValueOnce([

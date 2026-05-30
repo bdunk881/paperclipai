@@ -757,6 +757,36 @@ export class MfaService {
     return { attestation: mintAal2Attestation({ userId: ctx.userId, method: "totp" }) };
   }
 
+  /**
+   * HEL-335: step-up with an ALREADY-VERIFIED TOTP factor (as opposed to
+   * `finishTotpEnrollment`, which verifies a freshly-enrolled one). Resolves
+   * the user's verified TOTP factor, challenges + verifies the 6-digit code,
+   * and mints an AAL2 attestation so a TOTP-only user can satisfy a step-up
+   * without falling back to a recovery code.
+   */
+  async verifyTotpStepUp(
+    ctx: MfaServiceContext,
+    accessToken: string,
+    code: string,
+  ): Promise<{ attestation: MintedAal2Attestation }> {
+    if (!this.totp) {
+      throw new SecurityServiceError("TOTP not configured", 503, "totp_unavailable");
+    }
+    const factors = await this.totp.listFactors(accessToken);
+    const verified = factors.find((f) => f.type === "totp" && f.status === "verified");
+    if (!verified) {
+      throw new SecurityServiceError("No verified authenticator app", 404, "totp_not_enrolled");
+    }
+    const challenge = await this.totp.challengeTotp(accessToken, verified.id);
+    await this.totp.verifyTotp(accessToken, verified.id, challenge.challengeId, code);
+    await this.repository.upsertPolicy(ctx.userId, {
+      lastVerifiedAt: new Date(),
+      lastVerifiedMethod: "totp",
+    });
+    await recordAudit(ctx, "mfa.verify.success", { method: "totp", factorId: verified.id });
+    return { attestation: mintAal2Attestation({ userId: ctx.userId, method: "totp" }) };
+  }
+
   async removeTotpFactor(
     ctx: MfaServiceContext,
     accessToken: string,

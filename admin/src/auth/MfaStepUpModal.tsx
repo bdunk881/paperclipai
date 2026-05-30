@@ -5,6 +5,7 @@ import {
   consumeRecoveryCode,
   getMfaPolicy,
   verifyEmailOtp,
+  verifyTotpStepUp,
   type MfaPolicy,
 } from "../api/mfaApi";
 import { isWebauthnAvailable, verifyPasskey } from "./mfa";
@@ -14,7 +15,7 @@ import {
   emitStepUpSatisfied,
 } from "./stepUpEvents";
 
-type StepUpMode = "passkey" | "recovery" | "email_otp" | "magic_link";
+type StepUpMode = "passkey" | "totp" | "recovery" | "email_otp" | "magic_link";
 
 export function MfaStepUpModal() {
   const [open, setOpen] = useState(false);
@@ -24,6 +25,7 @@ export function MfaStepUpModal() {
   const [error, setError] = useState<string | null>(null);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [emailCode, setEmailCode] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [emailSent, setEmailSent] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
   const [policy, setPolicy] = useState<MfaPolicy | null>(null);
@@ -35,6 +37,7 @@ export function MfaStepUpModal() {
       setError(null);
       setRecoveryCode("");
       setEmailCode("");
+      setTotpCode("");
       setEmailSent(false);
       setLinkSent(false);
       setPolicy(null);
@@ -57,7 +60,8 @@ export function MfaStepUpModal() {
         setPolicy(fetched);
         // Prefer passkey; otherwise land on the first enrolled fallback.
         if (!isWebauthnAvailable()) {
-          if (fetched.hasEmailOtp) setMode("email_otp");
+          if (fetched.hasTotp) setMode("totp");
+          else if (fetched.hasEmailOtp) setMode("email_otp");
           else if (fetched.hasMagicLink) setMode("magic_link");
           else setMode("recovery");
         }
@@ -102,6 +106,24 @@ export function MfaStepUpModal() {
       setOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recovery code rejected.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerifyTotp() {
+    setError(null);
+    if (!/^\d{6}$/.test(totpCode.trim())) {
+      setError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await verifyTotpStepUp(totpCode.trim());
+      emitStepUpSatisfied();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Code rejected.");
     } finally {
       setBusy(false);
     }
@@ -153,6 +175,7 @@ export function MfaStepUpModal() {
 
   if (!open) return null;
 
+  const showTotp = policy?.hasTotp ?? false;
   const showEmailOtp = policy?.hasEmailOtp ?? false;
   const showMagicLink = policy?.hasMagicLink ?? false;
 
@@ -200,6 +223,27 @@ export function MfaStepUpModal() {
             </div>
             <button className="primary" onClick={handleRecovery} disabled={busy}>
               Verify
+            </button>
+          </div>
+        )}
+
+        {mode === "totp" && (
+          <div className="stack">
+            <div className="field">
+              <label htmlFor="stepup-totp">Authenticator code</label>
+              <input
+                id="stepup-totp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              />
+            </div>
+            <button className="primary" onClick={handleVerifyTotp} disabled={busy}>
+              {busy ? "Verifying…" : "Verify"}
             </button>
           </div>
         )}
@@ -275,6 +319,11 @@ export function MfaStepUpModal() {
           {mode !== "passkey" && isWebauthnAvailable() && (
             <button type="button" className="link-button" onClick={() => switchTo("passkey")}>
               Use passkey
+            </button>
+          )}
+          {mode !== "totp" && showTotp && (
+            <button type="button" className="link-button" onClick={() => switchTo("totp")}>
+              Use authenticator app
             </button>
           )}
           {mode !== "email_otp" && showEmailOtp && (

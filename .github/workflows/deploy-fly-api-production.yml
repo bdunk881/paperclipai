@@ -56,6 +56,9 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v5
+        with:
+          # HEL-345: full history so Sentry can associate commits to the release.
+          fetch-depth: 0
 
       - name: Pull production secrets from Infisical
         uses: Infisical/secrets-action@v1.0.9
@@ -75,6 +78,20 @@ jobs:
               exit 1
             fi
           done
+
+      # HEL-345: detect the Sentry release token (pulled from Infisical above).
+      # Reads it from the process env the secrets-action exports, so the gate
+      # below is reliable regardless of env-context propagation. When absent,
+      # the release step is skipped and CI stays green.
+      - name: Detect Sentry release token
+        id: sentry_token_check
+        run: |
+          if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SENTRY_AUTH_TOKEN not in Infisical's production env — skipping Sentry release/deploy (HEL-345)."
+          fi
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -105,8 +122,24 @@ jobs:
             --config fly.api.production.toml \
             --remote-only \
             --strategy bluegreen \
+            --env SENTRY_RELEASE="${{ github.sha }}" \
             --build-arg BUILD_SHA="${{ github.sha }}" \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      # HEL-345: create the Sentry release for node-express, associate commits,
+      # and mark a `production` deploy. version == github.sha matches the runtime
+      # release tag (flyctl --env SENTRY_RELEASE).
+      - name: Create Sentry release + deploy
+        if: ${{ steps.sentry_token_check.outputs.present == 'true' }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_ORG: autoflow-mo
+          SENTRY_PROJECT: node-express
+        with:
+          environment: production
+          version: ${{ github.sha }}
+          set_commits: auto
+          finalize: true
 
       - name: Smoke test
         env:

@@ -64,6 +64,9 @@ jobs:
     needs: [validate]
     steps:
       - uses: actions/checkout@v5
+        with:
+          # HEL-345: full history so Sentry can associate commits to the release.
+          fetch-depth: 0
 
       - name: Pull dev secrets from Infisical
         uses: Infisical/secrets-action@v1.0.9
@@ -118,6 +121,20 @@ jobs:
           echo "[verify] Upstash REST token present: $([ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ] && echo yes || echo no)"
           echo "[verify] Upstash TCP URL present: $([ -n "${UPSTASH_REDIS_URL:-}" ] && echo yes || echo no)"
           echo "[verify] Legacy REDIS_URL present: $([ -n "${REDIS_URL:-}" ] && echo yes || echo no)"
+
+      # HEL-345: detect the Sentry release token (pulled from Infisical above).
+      # Reads it from the process env the secrets-action exports, so the gate
+      # below is reliable regardless of env-context propagation. When absent,
+      # the release step is skipped and CI stays green.
+      - name: Detect Sentry release token
+        id: sentry_token_check
+        run: |
+          if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SENTRY_AUTH_TOKEN not in Infisical's dev env — skipping Sentry release/deploy (HEL-345)."
+          fi
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 
@@ -182,8 +199,25 @@ jobs:
           flyctl deploy \
             --config fly.api.dev.toml \
             --remote-only \
+            --env SENTRY_RELEASE="${{ github.sha }}" \
             --build-arg BUILD_SHA="${{ github.sha }}" \
             --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      # HEL-345: create the Sentry release for node-express, associate commits,
+      # and mark a `dev` deploy. Runs after a successful deploy (before smoke) so
+      # a release exists to attribute any post-deploy errors to. version ==
+      # github.sha matches the runtime release tag (flyctl --env SENTRY_RELEASE).
+      - name: Create Sentry release + deploy
+        if: ${{ steps.sentry_token_check.outputs.present == 'true' }}
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_ORG: autoflow-mo
+          SENTRY_PROJECT: node-express
+        with:
+          environment: dev
+          version: ${{ github.sha }}
+          set_commits: auto
+          finalize: true
 
       - name: Smoke test
         env:

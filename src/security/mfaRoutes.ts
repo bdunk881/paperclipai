@@ -301,6 +301,35 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
     }),
   );
 
+  // HEL-335: step-up using an existing verified TOTP factor → AAL2 cookie.
+  // Distinct from /totp/verify (which finalizes a fresh enrollment).
+  router.post(
+    "/totp/step-up/verify",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = emailOtpVerifySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
+      const accessToken = extractAccessToken(req);
+      if (!accessToken) {
+        res.status(401).json({ error: "Bearer token required" });
+        return;
+      }
+      try {
+        const { attestation } = await service.verifyTotpStepUp(
+          buildContext(req),
+          accessToken,
+          parsed.data.code,
+        );
+        setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
+        res.json({ verified: true, expiresAt: attestation.expiresAt });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
   router.delete(
     "/totp/:factorId",
     requireAAL2,

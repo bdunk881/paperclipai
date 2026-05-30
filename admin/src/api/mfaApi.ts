@@ -157,6 +157,21 @@ export async function verifyTotpEnrollment(factorId: string, code: string): Prom
   if (!res.ok) throw new Error(await readError(res, "TOTP verification failed"));
 }
 
+// HEL-335: step-up with an already-verified authenticator (TOTP) factor.
+// Backend grants AAL2 via Set-Cookie on success.
+export async function verifyTotpStepUp(
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await fetch(`${BASE}/totp/step-up/verify`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
 export async function removeTotpFactor(factorId: string): Promise<void> {
   const res = await fetch(`${BASE}/totp/${encodeURIComponent(factorId)}`, {
     method: "DELETE",

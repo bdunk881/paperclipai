@@ -274,6 +274,21 @@ export async function verifyEmailOtp(
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
 }
 
+// HEL-335: step-up with an already-verified authenticator (TOTP) factor.
+export async function verifyTotpStepUp(
+  accessToken: string,
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await trackedFetch(`${BASE}/totp/step-up/verify`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
 export async function removeEmailOtp(accessToken: string): Promise<void> {
   const res = await trackedFetch(`${BASE}/email-otp`, {
     method: "DELETE",

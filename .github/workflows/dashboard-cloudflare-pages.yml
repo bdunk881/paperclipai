@@ -37,6 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # HEL-346: full history so Sentry can associate commits to the release.
+          fetch-depth: 0
 
       - name: Derive Cloudflare Pages target
         id: target
@@ -123,6 +126,23 @@ jobs:
             echo "::warning::LOGO_DEV_PUBLISHABLE_KEY is unset — CompanyLogo will fall back to initials"
           fi
 
+          # HEL-346: pin the Sentry release to the commit SHA so the
+          # @sentry/vite-plugin (which honors SENTRY_RELEASE) and the post-deploy
+          # set-commits/deploy step below agree on one release name.
+          echo "SENTRY_RELEASE=${{ github.sha }}" >> "$GITHUB_ENV"
+
+      # HEL-346: detect the Sentry release token (pulled from Infisical above)
+      # from the process env, so the post-deploy release step is reliably gated.
+      - name: Detect Sentry release token
+        id: sentry_token_check
+        run: |
+          if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SENTRY_AUTH_TOKEN not in Infisical's env — source-map upload + release annotation skipped (HEL-346)."
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -155,6 +175,27 @@ jobs:
           fi
 
           echo "deployment-url=$deploy_url" >> "$GITHUB_OUTPUT"
+
+      # HEL-346: associate commits + mark the Sentry deploy on the release the
+      # @sentry/vite-plugin created during the build (named via SENTRY_RELEASE).
+      # Push-only (PRs don't mark deploys); best-effort so it never fails a deploy.
+      - name: Sentry release — commits + deploy
+        if: ${{ github.event_name == 'push' && steps.sentry_token_check.outputs.present == 'true' }}
+        env:
+          SENTRY_ORG: autoflow-mo
+          SENTRY_PROJECT: javascript-react
+          TARGET_BRANCH: ${{ steps.target.outputs.target_branch }}
+        run: |
+          set -uo pipefail
+          case "${TARGET_BRANCH}" in
+            dev) deploy_env=dev ;;
+            staging) deploy_env=staging ;;
+            *) deploy_env=production ;;
+          esac
+          npx --yes @sentry/cli@2 releases set-commits "${SENTRY_RELEASE}" --auto --ignore-missing \
+            || echo "::warning::Sentry set-commits failed (non-fatal)"
+          npx --yes @sentry/cli@2 releases deploys "${SENTRY_RELEASE}" new -e "${deploy_env}" \
+            || echo "::warning::Sentry deploy marker failed (non-fatal)"
 
       - name: Smoke Pages deployment URL
         run: bash ./infra/scripts/cloudflare_pages_smoke.sh dashboard "${{ steps.deploy.outputs.deployment-url }}"

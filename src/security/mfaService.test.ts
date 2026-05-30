@@ -18,7 +18,10 @@ const APP_JWT_SECRET = "test-secret-key-at-least-32-bytes-long-please";
 
 function makeWebauthnStub(overrides: Partial<WebauthnAdapter> = {}): WebauthnAdapter {
   return {
-    generateRegistrationOptions: (input) =>
+    // HEL-337: these MUST be async — the real @simplewebauthn/server@11
+    // functions return Promises. The original synchronous stub is exactly why
+    // the "unawaited Promise → undefined challenge" bug slipped past the suite.
+    generateRegistrationOptions: async (input) =>
       ({
         challenge: "REG_CHALLENGE",
         rp: { name: input.rpName, id: input.rpID },
@@ -29,7 +32,7 @@ function makeWebauthnStub(overrides: Partial<WebauthnAdapter> = {}): WebauthnAda
         authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
         excludeCredentials: input.excludeCredentials,
       }) as WebauthnRegistrationOptions,
-    generateAuthenticationOptions: (input) =>
+    generateAuthenticationOptions: async (input) =>
       ({
         challenge: "AUTH_CHALLENGE",
         rpId: input.rpID,
@@ -191,6 +194,46 @@ describe("MfaService", () => {
     await expect(
       service.finishWebauthnRegistration({ userId: "u-1" }, {}),
     ).rejects.toThrow(/challenge/i);
+  });
+
+  it("persists the REAL challenge to the store on begin (HEL-337 regression)", async () => {
+    // Guards the un-awaited-Promise bug: if generateRegistrationOptions isn't
+    // awaited, `options.challenge` is undefined and the store holds garbage,
+    // so consume() returns falsy at finish → "challenge expired or missing".
+    // A shared store lets us assert the begin side wrote the actual challenge.
+    const store = new InMemoryMfaChallengeStore();
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: store,
+    });
+    const ctx = { userId: "u-1" };
+
+    const options = await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    // The browser-facing options carry a real challenge...
+    expect(options.challenge).toBe("REG_CHALLENGE");
+    // ...and CRUCIALLY the same value must be what we stored (not undefined).
+    const stored = await store.consume(`reg:${ctx.userId}`);
+    expect(stored).toBe("REG_CHALLENGE");
+  });
+
+  it("persists the REAL challenge on authentication begin (HEL-337 regression)", async () => {
+    const store = new InMemoryMfaChallengeStore();
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      challengeStore: store,
+    });
+    const ctx = { userId: "u-1" };
+    // Need an enrolled credential so beginWebauthnAuthentication doesn't 404.
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await service.finishWebauthnRegistration(ctx, { mockResponse: true }, "MacBook");
+
+    await service.beginWebauthnAuthentication(ctx);
+    const stored = await store.consume(`auth:${ctx.userId}`);
+    expect(stored).toBe("AUTH_CHALLENGE");
   });
 
   it("treats a retried registration verify as success once the credential already exists", async () => {

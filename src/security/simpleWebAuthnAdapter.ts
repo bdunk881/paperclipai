@@ -55,15 +55,19 @@ function bufferToBase64Url(buf: Buffer | Uint8Array): string {
 }
 
 export class SimpleWebAuthnAdapter implements WebauthnAdapter {
-  generateRegistrationOptions(input: {
+  // HEL-337: `generateRegistrationOptions` is ASYNC in @simplewebauthn/server@11
+  // (returns a Promise). It MUST be awaited — reading `.challenge` off the
+  // unawaited Promise yields `undefined`, which we then stored as the challenge,
+  // producing the long-standing "Registration challenge expired or missing".
+  async generateRegistrationOptions(input: {
     rpName: string;
     rpID: string;
     userID: string;
     userName: string;
     userDisplayName: string;
     excludeCredentials: Array<{ id: string; type: "public-key"; transports?: string[] }>;
-  }): WebauthnRegistrationOptions {
-    const options = generateRegistrationOptions({
+  }): Promise<WebauthnRegistrationOptions> {
+    const options = await generateRegistrationOptions({
       rpName: input.rpName,
       rpID: input.rpID,
       userID: Buffer.from(input.userID),
@@ -78,23 +82,24 @@ export class SimpleWebAuthnAdapter implements WebauthnAdapter {
         id: c.id,
         transports: normalizeTransports(c.transports),
       })),
-    }) as unknown as WebauthnRegistrationOptions;
-    return options;
+    });
+    return options as unknown as WebauthnRegistrationOptions;
   }
 
-  generateAuthenticationOptions(input: {
+  // HEL-337: async in v11 — see generateRegistrationOptions note above.
+  async generateAuthenticationOptions(input: {
     rpID: string;
     allowCredentials: Array<{ id: string; type: "public-key"; transports?: string[] }>;
-  }): WebauthnAuthenticationOptions {
-    const options = generateAuthenticationOptions({
+  }): Promise<WebauthnAuthenticationOptions> {
+    const options = await generateAuthenticationOptions({
       rpID: input.rpID,
       userVerification: "required",
       allowCredentials: input.allowCredentials.map((c) => ({
         id: c.id,
         transports: normalizeTransports(c.transports),
       })),
-    }) as unknown as WebauthnAuthenticationOptions;
-    return options;
+    });
+    return options as unknown as WebauthnAuthenticationOptions;
   }
 
   async verifyRegistrationResponse(

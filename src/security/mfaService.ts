@@ -168,6 +168,9 @@ export interface WebauthnVerifyAuthenticationResult {
  * dependency into the jest preset.
  */
 export interface WebauthnAdapter {
+  // HEL-337: async in @simplewebauthn/server@11 — Promise return forces callers
+  // to await. The bug was reading `.challenge` off an unawaited Promise
+  // (undefined) and storing that as the challenge → "challenge expired or missing".
   generateRegistrationOptions(input: {
     rpName: string;
     rpID: string;
@@ -175,11 +178,11 @@ export interface WebauthnAdapter {
     userName: string;
     userDisplayName: string;
     excludeCredentials: Array<{ id: string; type: "public-key"; transports?: string[] }>;
-  }): WebauthnRegistrationOptions;
+  }): Promise<WebauthnRegistrationOptions>;
   generateAuthenticationOptions(input: {
     rpID: string;
     allowCredentials: Array<{ id: string; type: "public-key"; transports?: string[] }>;
-  }): WebauthnAuthenticationOptions;
+  }): Promise<WebauthnAuthenticationOptions>;
   verifyRegistrationResponse(input: WebauthnVerifyRegistrationInput): Promise<WebauthnVerifyRegistrationResult>;
   verifyAuthenticationResponse(input: WebauthnVerifyAuthenticationInput): Promise<WebauthnVerifyAuthenticationResult>;
 }
@@ -514,7 +517,7 @@ export class MfaService {
       throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
     }
     const existing = await this.repository.listWebauthnCredentials(ctx.userId);
-    const options = this.webauthn.generateRegistrationOptions({
+    const options = await this.webauthn.generateRegistrationOptions({
       rpName: this.rpName,
       rpID: this.rpId,
       userID: ctx.userId,
@@ -594,7 +597,7 @@ export class MfaService {
     if (credentials.length === 0) {
       throw new SecurityServiceError("No passkeys enrolled", 404, "no_passkeys");
     }
-    const options = this.webauthn.generateAuthenticationOptions({
+    const options = await this.webauthn.generateAuthenticationOptions({
       rpID: this.rpId,
       allowCredentials: credentials.map((c) => ({
         id: c.credentialId,

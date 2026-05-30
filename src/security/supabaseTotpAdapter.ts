@@ -158,7 +158,10 @@ export class SupabaseAuthTotpAdapter implements SupabaseTotpAdapter {
 
   async listFactors(accessToken: string): Promise<Array<{ id: string; type: "totp" | "phone"; status: "verified" | "unverified" }>> {
     const { authUrl, apiKey } = resolveSupabaseAuthConfig();
-    const response = await fetch(`${authUrl}/factors`, {
+    // gotrue has no `GET /factors` endpoint (it 405s). The authoritative
+    // list of a user's enrolled factors is the `factors` array on the user
+    // object, so read it from `GET /user`.
+    const response = await fetch(`${authUrl}/user`, {
       headers: { apikey: apiKey, Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {

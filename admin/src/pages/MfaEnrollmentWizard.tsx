@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+  beginEmailOtpEnrollment,
+  beginMagicLinkEnrollment,
   enrollTotp,
+  getMfaPolicy,
   regenerateRecoveryCodes,
+  verifyEmailOtpEnrollment,
   verifyTotpEnrollment,
   type TotpEnrollmentResponse,
 } from "../api/mfaApi";
 import { isWebauthnAvailable, platformAuthenticatorAvailable, registerPasskey } from "../auth/mfa";
 
-type Step = "choose" | "enroll-passkey" | "enroll-totp" | "recovery-codes";
-type FactorChoice = "passkey" | "totp";
+type Step =
+  | "choose"
+  | "enroll-passkey"
+  | "enroll-totp"
+  | "enroll-email-otp"
+  | "enroll-magic-link"
+  | "recovery-codes";
+type FactorChoice = "passkey" | "totp" | "email_otp" | "magic_link";
 
 interface LocationState {
   from?: string;
@@ -28,6 +38,7 @@ export default function MfaEnrollmentWizard() {
   const [platformAvailable, setPlatformAvailable] = useState(false);
   const [totpEnrollment, setTotpEnrollment] = useState<TotpEnrollmentResponse | null>(null);
   const [totpCode, setTotpCode] = useState("");
+  const [emailOtpCode, setEmailOtpCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [recoveryAcknowledged, setRecoveryAcknowledged] = useState(false);
 
@@ -45,14 +56,106 @@ export default function MfaEnrollmentWizard() {
       setStep("enroll-passkey");
       return;
     }
-    setStep("enroll-totp");
+    if (choice === "totp") {
+      setStep("enroll-totp");
+      setBusy(true);
+      try {
+        const enrolled = await enrollTotp("AutoFlow Admin authenticator");
+        setTotpEnrollment(enrolled);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not start TOTP enrollment.");
+        setStep("choose");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (choice === "email_otp") {
+      setEmailOtpCode("");
+      setStep("enroll-email-otp");
+      setBusy(true);
+      try {
+        await beginEmailOtpEnrollment();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not send a verification code.");
+        setStep("choose");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // magic_link
+    setStep("enroll-magic-link");
     setBusy(true);
     try {
-      const enrolled = await enrollTotp("AutoFlow Admin authenticator");
-      setTotpEnrollment(enrolled);
+      await beginMagicLinkEnrollment();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start TOTP enrollment.");
+      setError(err instanceof Error ? err.message : "Could not send a verification link.");
       setStep("choose");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerifyEmailOtp() {
+    setError(null);
+    if (!/^\d{6}$/.test(emailOtpCode.trim())) {
+      setError("Enter the 6-digit code we emailed you.");
+      return;
+    }
+    setBusy(true);
+    try {
+      // enroll/verify already grants AAL2 (Set-Cookie), so recovery codes
+      // issue without a step-up wall (HEL-331).
+      await verifyEmailOtpEnrollment(emailOtpCode.trim());
+      await issueAndShowRecoveryCodes();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Code verification failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendEmailOtp() {
+    setError(null);
+    setBusy(true);
+    try {
+      await beginEmailOtpEnrollment();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend the code.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleMagicLinkContinue() {
+    setError(null);
+    setBusy(true);
+    try {
+      // The link click verifies out-of-band and grants AAL2; re-fetch the
+      // policy to confirm enrollment landed before issuing recovery codes.
+      const policy = await getMfaPolicy();
+      if (!policy.hasMagicLink) {
+        setError(
+          "We haven't seen the link clicked yet. Open the email and click the link, then try again.",
+        );
+        return;
+      }
+      await issueAndShowRecoveryCodes();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not confirm verification.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendMagicLink() {
+    setError(null);
+    setBusy(true);
+    try {
+      await beginMagicLinkEnrollment();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend the link.");
     } finally {
       setBusy(false);
     }
@@ -170,6 +273,26 @@ export default function MfaEnrollmentWizard() {
               phish-resistant than a passkey — use only if you can't use a passkey.
             </p>
           </button>
+
+          <button type="button" className="factor-card" onClick={() => handleChoose("email_otp")}>
+            <h3>Email code (OTP)</h3>
+            <p className="muted">
+              We'll email a 6-digit code each time we need to verify it's you. Less phish-resistant
+              than a passkey — offered as an alternative if you can't use a passkey.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            className="factor-card"
+            onClick={() => handleChoose("magic_link")}
+          >
+            <h3>Magic link</h3>
+            <p className="muted">
+              We'll email a one-click sign-in link each time we need to verify it's you. Less
+              phish-resistant than a passkey — offered as an alternative if you can't use a passkey.
+            </p>
+          </button>
         </div>
       )}
 
@@ -250,13 +373,72 @@ export default function MfaEnrollmentWizard() {
         </div>
       )}
 
+      {step === "enroll-email-otp" && (
+        <div>
+          <h3>Enter the 6-digit code we emailed you</h3>
+          <p className="muted">
+            We emailed you a 6-digit code. It expires shortly. Enter it below to finish setting up
+            email codes as your second factor.
+          </p>
+          <div className="field" style={{ maxWidth: 160 }}>
+            <label htmlFor="email-otp-code">6-digit code</label>
+            <input
+              id="email-otp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={emailOtpCode}
+              onChange={(e) => setEmailOtpCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="000000"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+            />
+          </div>
+          <div className="row">
+            <button className="primary" onClick={handleVerifyEmailOtp} disabled={busy}>
+              {busy ? "Verifying…" : "Verify & continue"}
+            </button>
+            <button onClick={handleResendEmailOtp} disabled={busy}>
+              Resend code
+            </button>
+            <button onClick={() => setStep("choose")} disabled={busy}>
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === "enroll-magic-link" && (
+        <div>
+          <h3>Check your email</h3>
+          <p className="muted">
+            Check your email for a sign-in link to finish enrollment. It expires shortly and can be
+            used once. Open it on this device, then come back and continue.
+          </p>
+          <div className="row">
+            <button className="primary" onClick={handleMagicLinkContinue} disabled={busy}>
+              {busy ? "Checking…" : "I've clicked the link — continue"}
+            </button>
+            <button onClick={handleResendMagicLink} disabled={busy}>
+              Resend link
+            </button>
+            <button onClick={() => setStep("choose")} disabled={busy}>
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+
       {step === "recovery-codes" && (
         <div>
           <h3>Save your recovery codes</h3>
           <p className="muted">
             Each code can be used <strong>once</strong> if you lose access to your{" "}
-            {factor === "passkey" ? "passkey" : "authenticator app"}. Store them somewhere safe —
-            we won't show them again.
+            {factor === "passkey"
+              ? "passkey"
+              : factor === "totp"
+                ? "authenticator app"
+                : "email"}
+            . Store them somewhere safe — we won't show them again.
           </p>
           <div className="recovery-grid">
             {recoveryCodes.map((code) => (

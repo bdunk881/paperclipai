@@ -21,11 +21,20 @@ export interface MfaWebauthnDevice {
 export interface MfaPolicy {
   hasWebauthn: boolean;
   hasTotp: boolean;
+  /** HEL-282/334: app-owned email second factors. */
+  hasEmailOtp: boolean;
+  hasMagicLink: boolean;
   hasAnyFactor: boolean;
   hasRecoveryCodes: boolean;
   enrollmentCompletedAt: string | null;
   lastVerifiedAt: string | null;
-  lastVerifiedMethod: "webauthn" | "totp" | "recovery_code" | null;
+  lastVerifiedMethod:
+    | "webauthn"
+    | "totp"
+    | "recovery_code"
+    | "email_otp"
+    | "magic_link"
+    | null;
   recoveryCodesIssuedAt: string | null;
   webauthnDevices: MfaWebauthnDevice[];
 }
@@ -180,4 +189,46 @@ export async function consumeRecoveryCode(
   });
   if (!res.ok) throw new Error(await readError(res, "Recovery code rejected"));
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+// ---- Email OTP enrollment (HEL-334, mirrors dashboard HEL-282) ---------------
+
+/** Send the enrollment code to the user's verified email. */
+export async function beginEmailOtpEnrollment(): Promise<{ sent: true }> {
+  const res = await fetch(`${BASE}/email-otp/enroll/begin`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification code"));
+  return res.json() as Promise<{ sent: true }>;
+}
+
+/** Verify the emailed code; the backend grants AAL2 via Set-Cookie on success. */
+export async function verifyEmailOtpEnrollment(
+  code: string,
+): Promise<{ verified: true; expiresAt: number }> {
+  const res = await fetch(`${BASE}/email-otp/enroll/verify`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Code rejected"));
+  return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+// ---- Magic link enrollment (HEL-334, mirrors dashboard HEL-282) --------------
+// Verification happens out-of-band by clicking the emailed link (a public GET
+// on the API that sets the AAL2 cookie), so there is no client-side verify
+// call — only "send the link". Completion is confirmed by re-reading the policy.
+
+export async function beginMagicLinkEnrollment(): Promise<{ sent: true }> {
+  const res = await fetch(`${BASE}/magic-link/enroll/begin`, {
+    method: "POST",
+    headers: await authHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not send verification link"));
+  return res.json() as Promise<{ sent: true }>;
 }

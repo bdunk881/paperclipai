@@ -47,10 +47,53 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      # HEL-347: open a Sentry cron check-in so a missed/failed 15-min rollup
+      # alerts. Authenticates via the runtime SENTRY_DSN ingest key (not the org
+      # token); the monitor_config upserts the monitor on first run — no UI/token
+      # needed. Gated on SENTRY_DSN + non-fatal so it never blocks maintenance.
+      - name: Sentry cron monitor — start
+        run: |
+          set -uo pipefail
+          if [[ -z "${SENTRY_DSN:-}" ]]; then
+            echo "::notice::SENTRY_DSN not in Infisical production env — skipping Sentry cron check-in (HEL-347)."
+            exit 0
+          fi
+          rest="${SENTRY_DSN#https://}"
+          public_key="${rest%%@*}"
+          hostpath="${rest#*@}"
+          host="${hostpath%%/*}"
+          project_id="${hostpath##*/}"
+          url="https://${host}/api/${project_id}/cron/observability-rollups/${public_key}/"
+          checkin_id="$(cat /proc/sys/kernel/random/uuid)"
+          echo "SENTRY_CRON_URL=${url}" >> "$GITHUB_ENV"
+          echo "SENTRY_CHECKIN_ID=${checkin_id}" >> "$GITHUB_ENV"
+          curl -sf -X POST "$url" -H 'Content-Type: application/json' \
+            -d "{\"check_in_id\":\"${checkin_id}\",\"status\":\"in_progress\",\"environment\":\"production\",\"monitor_config\":{\"schedule\":{\"type\":\"crontab\",\"value\":\"*/15 * * * *\"},\"checkin_margin\":5,\"max_runtime\":10,\"timezone\":\"Etc/UTC\"}}" \
+            >/dev/null || echo "::warning::Sentry cron start check-in failed (non-fatal)."
+
       - name: Run observability maintenance
         run: |
           chmod +x infra/scripts/run_observability_rollups.sh
           infra/scripts/run_observability_rollups.sh | tee observability-rollups.log
+
+      # HEL-347: close the Sentry cron check-in with the run's outcome so the
+      # monitor flips ok/error. Always runs; no-op if the start check-in was
+      # skipped (no SENTRY_DSN). Non-fatal.
+      - name: Sentry cron monitor — finish
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${SENTRY_CRON_URL:-}" || -z "${SENTRY_CHECKIN_ID:-}" ]]; then
+            echo "No Sentry check-in to finish."
+            exit 0
+          fi
+          status=ok
+          [[ "${JOB_STATUS}" == "success" ]] || status=error
+          curl -sf -X POST "${SENTRY_CRON_URL}" -H 'Content-Type: application/json' \
+            -d "{\"check_in_id\":\"${SENTRY_CHECKIN_ID}\",\"status\":\"${status}\"}" \
+            >/dev/null || echo "::warning::Sentry cron finish check-in failed (non-fatal)."
 
       - name: Upload maintenance log
         if: always()

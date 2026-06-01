@@ -122,7 +122,29 @@ export interface IntegrationManifest {
   category: IntegrationCategory;
   /** Icon identifier matching the dashboard icon set */
   icon: string;
+  /**
+   * Verified brand domain used for logo.dev logo lookup, e.g. "stripe.com".
+   * Preferred over `icon` for rendering — logo.dev returns the real brand mark.
+   */
+  logoDomain?: string;
+  /**
+   * Primary / default auth method. The connection wizard pre-selects this,
+   * but a user may pick any method advertised via supportsOAuth / supportsApiKey.
+   */
   authKind: AuthKind;
+  /**
+   * Whether the user may connect this integration through an OAuth flow.
+   * When unset, defaults to true for the oauth2_* auth kinds (see
+   * getIntegrationAuthMethods). Set explicitly to advertise OAuth as a
+   * secondary option on an API-key-primary integration.
+   */
+  supportsOAuth?: boolean;
+  /**
+   * Whether the user may connect this integration with a static API key,
+   * token, or basic credential. When unset, defaults to true for the
+   * api_key / bearer / basic auth kinds (see getIntegrationAuthMethods).
+   */
+  supportsApiKey?: boolean;
   /** Required when authKind is "oauth2_pkce" or "oauth2_client_credentials" */
   oauth2Config?: OAuth2Config;
   /** Header name used when authKind is "api_key", e.g. "X-API-Key" */
@@ -187,3 +209,30 @@ export interface IntegrationConnection {
 
 /** Public view of a connection (credentials omitted). */
 export type IntegrationConnectionPublic = Omit<IntegrationConnection, "credentialsEncrypted">;
+
+// ---------------------------------------------------------------------------
+// Auth-method resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the concrete set of auth methods a manifest supports, applying
+ * sensible defaults derived from `authKind` when the explicit flags are unset.
+ *
+ * This is the single place that turns the "ability to use OAuth or an API key"
+ * intent into a boolean pair the API and UI can rely on.
+ */
+export function getIntegrationAuthMethods(
+  manifest: Pick<IntegrationManifest, "authKind" | "supportsOAuth" | "supportsApiKey">,
+): { supportsOAuth: boolean; supportsApiKey: boolean } {
+  const oauthDefault =
+    manifest.authKind === "oauth2_pkce" ||
+    manifest.authKind === "oauth2_client_credentials";
+  const apiKeyDefault =
+    manifest.authKind === "api_key" ||
+    manifest.authKind === "bearer" ||
+    manifest.authKind === "basic";
+  return {
+    supportsOAuth: manifest.supportsOAuth ?? oauthDefault,
+    supportsApiKey: manifest.supportsApiKey ?? apiKeyDefault,
+  };
+}

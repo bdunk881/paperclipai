@@ -3,6 +3,8 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { writeStoredAuthUser } from "../auth/authStorage";
 import {
+  aalStepUpRequired,
+  getSupabaseAalStatus,
   getSupabaseClient,
   getSupabaseStoredSession,
   isPasswordRecoveryFlow,
@@ -11,6 +13,8 @@ import {
   sendSupabasePasswordReset,
   sessionFromSupabaseSession,
   updateSupabasePassword,
+  verifySupabaseTotpStepUp,
+  type SupabaseTotpFactor,
 } from "../auth/supabaseAuth";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
 
@@ -27,6 +31,8 @@ export default function ResetPassword() {
   const [requestEmail, setRequestEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [totpFactor, setTotpFactor] = useState<SupabaseTotpFactor | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(
     authError ? decodeURIComponent(authError.replace(/\+/g, " ")) : "",
@@ -89,6 +95,39 @@ export default function ResetPassword() {
     };
   }, []);
 
+  // Once the recovery session exists, find out whether MFA forces an aal2
+  // step-up before `updateUser({ password })` will be accepted. A recovery
+  // session lands at aal1; if the user has a verified TOTP factor we surface
+  // an authenticator-code field so we can step up *before* changing the
+  // password instead of hitting gotrue's "AAL2 session is required" error.
+  useEffect(() => {
+    if (phase !== "complete" || !configured) {
+      return;
+    }
+
+    let active = true;
+    void (async () => {
+      try {
+        const status = await getSupabaseAalStatus();
+        if (!active) {
+          return;
+        }
+        if (aalStepUpRequired(status) && status.totpFactors.length > 0) {
+          setTotpFactor(status.totpFactors[0]);
+        } else {
+          setTotpFactor(null);
+        }
+      } catch {
+        // Non-fatal: if the probe fails we still let the user try, and the
+        // mapped gotrue error explains the authenticator requirement.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [phase, configured]);
+
   async function handleRequestReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!requestEmail.trim()) {
@@ -134,12 +173,21 @@ export default function ResetPassword() {
       setError("Supabase auth is not configured for this dashboard environment.");
       return;
     }
+    if (totpFactor && !/^\d{6}$/.test(totpCode.trim())) {
+      setError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
 
     setBusy(true);
     setError("");
     setNotice("");
 
     try {
+      // When MFA is enabled the recovery session is aal1; step it up to aal2
+      // with the authenticator code before gotrue will accept the new password.
+      if (totpFactor) {
+        await verifySupabaseTotpStepUp(totpFactor.id, totpCode.trim());
+      }
       await updateSupabasePassword(newPassword);
       const session = await getSupabaseStoredSession();
       if (session?.user) {
@@ -264,6 +312,27 @@ export default function ResetPassword() {
                   placeholder="Repeat your new password"
                 />
               </label>
+              {totpFactor ? (
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+                    Authenticator code
+                  </span>
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    value={totpCode}
+                    onChange={(event) => setTotpCode(event.target.value.replace(/\D/g, ""))}
+                    disabled={busy || !configured}
+                    className="auth-input"
+                    placeholder="6-digit code"
+                  />
+                  <span className="mt-1.5 block text-xs leading-5 text-af2-ink-3">
+                    Your account has two-factor authentication enabled. Enter the code from your
+                    authenticator app to confirm this change.
+                  </span>
+                </label>
+              ) : null}
               <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
                 {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                 {busy ? "Updating…" : "Update password"}

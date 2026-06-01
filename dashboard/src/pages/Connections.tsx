@@ -94,21 +94,64 @@ function categoryLabel(category: string): string {
   return CATEGORY_LABELS[category] ?? category;
 }
 
-/** Group catalog entries by display category, sorted, names sorted within. */
-function groupCatalogByCategory(
-  entries: CatalogIntegration[],
-): Array<[string, CatalogIntegration[]]> {
-  const groups = new Map<string, CatalogIntegration[]>();
-  for (const entry of entries) {
-    const label = categoryLabel(entry.category);
-    const list = groups.get(label) ?? [];
-    list.push(entry);
-    groups.set(label, list);
+/**
+ * Segment for each bespoke live connector. Most share a slug with a catalog
+ * entry, but the connector-health record carries no category, so we map it
+ * here. (Apollo + Composio have no catalog entry at all.)
+ */
+const LIVE_CONNECTOR_CATEGORY: Record<string, string> = {
+  slack: "Communication",
+  gmail: "Communication",
+  teams: "Communication",
+  hubspot: "CRM",
+  apollo: "Sales",
+  linear: "Developer Tools",
+  sentry: "Developer Tools",
+  stripe: "Finance",
+  composio: "Automation",
+};
+
+function liveConnectorCategory(connectorKey: string): string {
+  return LIVE_CONNECTOR_CATEGORY[connectorKey] ?? "Other";
+}
+
+/** One segment heading's worth of rows: bespoke live connectors + catalog. */
+interface SegmentGroup {
+  live: ConnectorHealthRecord[];
+  catalog: CatalogIntegration[];
+}
+
+/**
+ * Group every integration — live connectors and catalog entries alike — under
+ * its segment heading. Segments are sorted alphabetically; within a segment,
+ * live connectors render first (then catalog), each sorted by name.
+ */
+export function buildSegments(
+  connectors: ConnectorHealthRecord[],
+  catalog: CatalogIntegration[],
+): Array<[string, SegmentGroup]> {
+  const groups = new Map<string, SegmentGroup>();
+  const ensure = (label: string): SegmentGroup => {
+    let group = groups.get(label);
+    if (!group) {
+      group = { live: [], catalog: [] };
+      groups.set(label, group);
+    }
+    return group;
+  };
+
+  for (const connector of connectors) {
+    ensure(liveConnectorCategory(connector.connectorKey)).live.push(connector);
   }
+  for (const entry of catalog) {
+    ensure(categoryLabel(entry.category)).catalog.push(entry);
+  }
+
   return Array.from(groups.entries())
-    .map(([label, list]) => {
-      list.sort((a, b) => a.name.localeCompare(b.name));
-      return [label, list] as [string, CatalogIntegration[]];
+    .map(([label, group]) => {
+      group.live.sort((a, b) => a.connectorName.localeCompare(b.connectorName));
+      group.catalog.sort((a, b) => a.name.localeCompare(b.name));
+      return [label, group] as [string, SegmentGroup];
     })
     .sort(([a], [b]) => a.localeCompare(b));
 }
@@ -752,6 +795,114 @@ function IntegrationsPanel() {
     );
   }
 
+  function renderLiveRow(c: ConnectorHealthRecord): ReactNode {
+    return (
+      <IntegrationRow
+        key={c.connectorKey}
+        id={c.connectorKey}
+        logo={integrationLogo(c.connectorKey, c.connectorName, resolvedTheme)}
+        name={c.connectorName}
+        desc={
+          c.lastSuccessAt
+            ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}`
+            : "Not yet connected"
+        }
+        highlight={recentlyChangedKeys.has(c.connectorKey)}
+        pill={stateToPill(c.state)}
+        action={actionButton(c)}
+        expanded={openId === c.connectorKey}
+        onToggle={toggle}
+      >
+        <div className="row-drawer-head">
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Connection
+            </div>
+            <h3>{c.connectorName} · permissions</h3>
+          </div>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={(event) => {
+              event.stopPropagation();
+              collapse();
+            }}
+          >
+            Collapse ↑
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
+          Set per-scope access. <b>Allow</b> = unrestricted · <b>Ask</b> = approval
+          required before each call · <b>Don&apos;t allow</b> = blocked.
+        </p>
+        <p className="desc">
+          No scopes configured. Drag this integration onto a mission, team, or agent to grant access.
+        </p>
+      </IntegrationRow>
+    );
+  }
+
+  function renderCatalogRow(entry: CatalogIntegration): ReactNode {
+    const conn = connectionForSlug(entry.slug);
+    const rowId = `cat:${entry.slug}`;
+    return (
+      <IntegrationRow
+        key={rowId}
+        id={rowId}
+        logo={integrationLogo(entry.slug, entry.name, resolvedTheme, entry.logoDomain)}
+        name={entry.name}
+        desc={entry.description}
+        pill={
+          conn ? (
+            <span className="pill dot">connected</span>
+          ) : (
+            <span className="pill">{authCapabilityText(entry)}</span>
+          )
+        }
+        action={catalogActionButton(entry)}
+        expanded={openId === rowId}
+        onToggle={toggle}
+      >
+        <div className="row-drawer-head">
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Connection
+            </div>
+            <h3>{entry.name}</h3>
+          </div>
+          <button
+            type="button"
+            className="btn ghost sm"
+            onClick={(event) => {
+              event.stopPropagation();
+              collapse();
+            }}
+          >
+            Collapse ↑
+          </button>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
+          {conn
+            ? `Connected as "${conn.label}". Disconnect to revoke agent access.`
+            : `Connect with ${authCapabilityText(entry)}.`}
+          {entry.docsUrl ? (
+            <>
+              {" "}
+              <a
+                href={entry.docsUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="link-clay"
+              >
+                API docs ↗
+              </a>
+            </>
+          ) : null}
+        </p>
+      </IntegrationRow>
+    );
+  }
+
   return (
     <div className="panel" role="tabpanel" id="con-int">
       <div
@@ -812,121 +963,18 @@ function IntegrationsPanel() {
           </p>
         </div>
       ) : (
-        connectors.map((c) => (
-          <IntegrationRow
-            key={c.connectorKey}
-            id={c.connectorKey}
-            logo={integrationLogo(c.connectorKey, c.connectorName, resolvedTheme)}
-            name={c.connectorName}
-            desc={c.lastSuccessAt ? `Last sync ${new Date(c.lastSuccessAt).toLocaleString()}` : "Not yet connected"}
-            highlight={recentlyChangedKeys.has(c.connectorKey)}
-            pill={stateToPill(c.state)}
-            action={actionButton(c)}
-            expanded={openId === c.connectorKey}
-            onToggle={toggle}
-          >
-            <div className="row-drawer-head">
-              <div>
-                <div className="eyebrow" style={{ marginBottom: 4 }}>
-                  Connection
-                </div>
-                <h3>{c.connectorName} · permissions</h3>
-              </div>
-              <button
-                type="button"
-                className="btn ghost sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  collapse();
-                }}
-              >
-                Collapse ↑
-              </button>
-            </div>
-            <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
-              Set per-scope access. <b>Allow</b> = unrestricted · <b>Ask</b> = approval
-              required before each call · <b>Don&apos;t allow</b> = blocked.
-            </p>
-            <p className="desc">
-              No scopes configured. Drag this integration onto a mission, team, or agent to grant access.
-            </p>
-          </IntegrationRow>
+        // Every integration — live connectors and catalog entries alike —
+        // grouped under its segment heading.
+        buildSegments(connectors, catalog).map(([label, group]) => (
+          <section key={label}>
+            <h3 className="eyebrow" style={{ margin: "16px 0 6px" }}>
+              {label}
+            </h3>
+            {group.live.map((c) => renderLiveRow(c))}
+            {group.catalog.map((entry) => renderCatalogRow(entry))}
+          </section>
         ))
       )}
-
-      {/* Full integration catalog (everything beyond the bespoke live
-          connectors): SendGrid, Notion, Zendesk, Salesforce, … Each connects
-          via OAuth (BYO app) and/or a static API key through the generic
-          framework. */}
-      {catalog.length > 0
-        ? groupCatalogByCategory(catalog).map(([label, entries]) => (
-            <section key={label}>
-              <h3 className="eyebrow" style={{ margin: "16px 0 6px" }}>
-                {label}
-              </h3>
-              {entries.map((entry) => {
-                const conn = connectionForSlug(entry.slug);
-                const rowId = `cat:${entry.slug}`;
-                return (
-                  <IntegrationRow
-                    key={entry.slug}
-                    id={rowId}
-                    logo={integrationLogo(entry.slug, entry.name, resolvedTheme, entry.logoDomain)}
-                    name={entry.name}
-                    desc={entry.description}
-                    pill={
-                      conn ? (
-                        <span className="pill dot">connected</span>
-                      ) : (
-                        <span className="pill">{authCapabilityText(entry)}</span>
-                      )
-                    }
-                    action={catalogActionButton(entry)}
-                    expanded={openId === rowId}
-                    onToggle={toggle}
-                  >
-                    <div className="row-drawer-head">
-                      <div>
-                        <div className="eyebrow" style={{ marginBottom: 4 }}>
-                          Connection
-                        </div>
-                        <h3>{entry.name}</h3>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn ghost sm"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          collapse();
-                        }}
-                      >
-                        Collapse ↑
-                      </button>
-                    </div>
-                    <p style={{ fontSize: 13, color: "var(--af2-ink-2)" }}>
-                      {conn
-                        ? `Connected as "${conn.label}". Disconnect to revoke agent access.`
-                        : `Connect with ${authCapabilityText(entry)}.`}
-                      {entry.docsUrl ? (
-                        <>
-                          {" "}
-                          <a
-                            href={entry.docsUrl}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            className="link-clay"
-                          >
-                            API docs ↗
-                          </a>
-                        </>
-                      ) : null}
-                    </p>
-                  </IntegrationRow>
-                );
-              })}
-            </section>
-          ))
-        : null}
 
       {connectTarget ? (
         <ConnectModal

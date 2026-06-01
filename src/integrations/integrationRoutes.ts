@@ -44,7 +44,7 @@ import {
   getIntegrationBySlug,
 } from "./integrationCatalog";
 import { integrationCredentialStore } from "./integrationCredentialStore";
-import { IntegrationCredentials } from "./integrationManifest";
+import { IntegrationCredentials, getIntegrationAuthMethods } from "./integrationManifest";
 import {
   beginOAuth2PkceFlow,
   completeOAuth2PkceFlow,
@@ -83,17 +83,24 @@ catalogRouter.get("/", (_req, res) => {
     : INTEGRATION_CATALOG;
 
   res.json({
-    catalog: catalog.map((m) => ({
-      slug: m.slug,
-      name: m.name,
-      description: m.description,
-      category: m.category,
-      icon: m.icon,
-      authKind: m.authKind,
-      actionCount: m.actions.length,
-      triggerCount: m.triggers.length,
-      verified: m.verified,
-    })),
+    catalog: catalog.map((m) => {
+      const { supportsOAuth, supportsApiKey } = getIntegrationAuthMethods(m);
+      return {
+        slug: m.slug,
+        name: m.name,
+        description: m.description,
+        category: m.category,
+        icon: m.icon,
+        logoDomain: m.logoDomain,
+        authKind: m.authKind,
+        supportsOAuth,
+        supportsApiKey,
+        actionCount: m.actions.length,
+        triggerCount: m.triggers.length,
+        verified: m.verified,
+        docsUrl: m.docsUrl,
+      };
+    }),
     categories: INTEGRATION_CATALOG_CATEGORIES,
     total: catalog.length,
   });

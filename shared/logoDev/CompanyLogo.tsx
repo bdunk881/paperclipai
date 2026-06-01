@@ -81,21 +81,22 @@ export function CompanyLogo({
 
   const src = useMemo(() => {
     if (!token) return null;
+    // An explicit domain (e.g. the catalog's authoritative logoDomain) always
+    // wins; otherwise fall back to resolving the integration id, then to a
+    // plain name-based lookup.
     const resolvedDomain =
       domain?.trim() ||
       (integrationId ? resolveIntegrationLogoDomain(integrationId) : undefined);
+
+    if (resolvedDomain) {
+      return buildLogoDevUrl({ name, domain: resolvedDomain, token, size, theme });
+    }
 
     if (integrationId) {
       return buildIntegrationLogoUrl(integrationId, name, token, size, theme);
     }
 
-    return buildLogoDevUrl({
-      name,
-      domain: resolvedDomain,
-      token,
-      size,
-      theme,
-    });
+    return buildLogoDevUrl({ name, token, size, theme });
   }, [domain, integrationId, name, size, theme, token]);
 
   useEffect(() => {

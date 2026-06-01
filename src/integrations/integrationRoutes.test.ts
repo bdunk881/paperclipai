@@ -104,6 +104,35 @@ describe("GET /api/integrations/catalog", () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(0);
   });
+
+  it("exposes a logo.dev domain for every catalog entry", async () => {
+    const res = await request(app).get("/api/integrations/catalog");
+    expect(res.status).toBe(200);
+    for (const entry of res.body.catalog as Array<{ slug: string; logoDomain?: string }>) {
+      expect(typeof entry.logoDomain).toBe("string");
+      expect(entry.logoDomain).toMatch(/\./); // looks like a domain
+    }
+  });
+
+  it("advertises OAuth and/or API-key auth per integration honestly", async () => {
+    const res = await request(app).get("/api/integrations/catalog");
+    const bySlug = Object.fromEntries(
+      (res.body.catalog as Array<{ slug: string; supportsOAuth: boolean; supportsApiKey: boolean }>)
+        .map((i) => [i.slug, i]),
+    );
+    // Every entry must support at least one connection method.
+    for (const entry of Object.values(bySlug)) {
+      expect(entry.supportsOAuth || entry.supportsApiKey).toBe(true);
+    }
+    // OAuth-primary services that also accept a static token expose both.
+    expect(bySlug.hubspot).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    expect(bySlug.slack).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    // Token-primary services that also offer OAuth expose both.
+    expect(bySlug.github).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    expect(bySlug.linear).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    // OAuth-only service stays OAuth-only.
+    expect(bySlug.salesforce).toMatchObject({ supportsOAuth: true, supportsApiKey: false });
+  });
 });
 
 describe("GET /api/integrations/catalog/:slug", () => {

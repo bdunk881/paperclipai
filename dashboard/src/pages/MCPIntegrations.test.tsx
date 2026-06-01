@@ -27,6 +27,41 @@ const liveStatuses = {
   stripe: { connected: false },
 };
 
+function catalogEntry(
+  slug: string,
+  name: string,
+  category: string,
+  overrides: Partial<{ supportsOAuth: boolean; supportsApiKey: boolean; logoDomain: string }> = {},
+) {
+  return {
+    slug,
+    name,
+    description: `${name} integration`,
+    category,
+    icon: slug,
+    logoDomain: overrides.logoDomain ?? `${slug}.com`,
+    authKind: "oauth2_pkce",
+    supportsOAuth: overrides.supportsOAuth ?? true,
+    supportsApiKey: overrides.supportsApiKey ?? false,
+    actionCount: 1,
+    triggerCount: 0,
+    verified: true,
+  };
+}
+
+const catalogPayload = {
+  catalog: [
+    catalogEntry("slack", "Slack", "communication", { supportsApiKey: true }),
+    catalogEntry("hubspot", "HubSpot", "crm", { supportsApiKey: true }),
+    catalogEntry("linear", "Linear", "devtools", { supportsApiKey: true }),
+    catalogEntry("sentry", "Sentry", "devtools"),
+    catalogEntry("stripe", "Stripe", "finance", { supportsApiKey: true }),
+    catalogEntry("notion", "Notion", "productivity", { supportsApiKey: true }),
+  ],
+  categories: ["communication", "crm", "devtools", "finance", "productivity"],
+  total: 6,
+};
+
 function renderHub() {
   return render(
     <MemoryRouter>
@@ -41,6 +76,9 @@ describe("IntegrationsHub — V2 category-list rebuild (DASH-12/13/8)", () => {
     apiGetMock.mockResolvedValue({ servers: [] });
     vi.spyOn(global, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
+      if (url.endsWith("/integrations/catalog")) {
+        return new Response(JSON.stringify(catalogPayload), { status: 200 });
+      }
       if (url.endsWith("/integrations/status")) {
         return new Response(JSON.stringify({ providers: liveStatuses }), { status: 200 });
       }
@@ -94,7 +132,7 @@ describe("IntegrationsHub — V2 category-list rebuild (DASH-12/13/8)", () => {
       container.querySelectorAll("h3.af2-eyebrow"),
     ).map((node) => node.textContent);
     expect(categoryHeadings).toEqual(
-      expect.arrayContaining(["Communication", "Developer Tools", "Payments"]),
+      expect.arrayContaining(["Communication", "Developer Tools", "Finance"]),
     );
 
     // The V1 filter-pill cluster is gone — categories are always-on sections.

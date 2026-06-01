@@ -18,7 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
-import { withUserContext } from "../middleware/workspaceContext";
+import { withSystemAdminContext, withUserContext } from "../middleware/workspaceContext";
 
 export interface WebauthnCredentialRow {
   id: string;
@@ -123,6 +123,19 @@ export interface MfaRepository {
    */
   findWebauthnCredentialById(
     userId: string,
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null>;
+  /**
+   * Pre-auth, unscoped lookup of a credential by its globally-unique
+   * `credential_id`. Used by the passwordless (discoverable-credential)
+   * login flow, where there is no session yet so `app_current_user_id()`
+   * is null and the per-user isolation policy would return zero rows.
+   * The postgres impl runs under `withSystemAdminContext` so the
+   * `mfa_webauthn_credentials_admin_read` SELECT policy permits the read;
+   * the bound `user_id` rides along on the returned row so the caller can
+   * scope the subsequent sign-count UPDATE back under that user.
+   */
+  findWebauthnCredentialByCredentialId(
     credentialId: string,
   ): Promise<WebauthnCredentialRow | null>;
   insertWebauthnCredential(input: InsertWebauthnCredentialInput): Promise<WebauthnCredentialRow>;
@@ -268,6 +281,27 @@ export class PostgresMfaRepository implements MfaRepository {
           WHERE credential_id = $1 AND user_id = $2
           LIMIT 1`,
         [credentialId, userId],
+      );
+      if (result.rows.length === 0) return null;
+      return rowToWebauthn(result.rows[0] as Record<string, unknown>);
+    });
+  }
+
+  async findWebauthnCredentialByCredentialId(
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null> {
+    // Pre-auth (no session → no app.current_user_id). Run under the
+    // platform-admin context so the `mfa_webauthn_credentials_admin_read`
+    // SELECT policy permits a global lookup by the unique credential_id.
+    // The GUC is SET LOCAL inside the transaction and never leaves the pool.
+    return withSystemAdminContext(getPostgresPool(), async (client) => {
+      const result = await client.query(
+        `SELECT id, user_id, credential_id, public_key, sign_count, transports,
+                device_name, aaguid, backed_up, created_at, last_used_at
+           FROM mfa_webauthn_credentials
+          WHERE credential_id = $1
+          LIMIT 1`,
+        [credentialId],
       );
       if (result.rows.length === 0) return null;
       return rowToWebauthn(result.rows[0] as Record<string, unknown>);
@@ -556,6 +590,12 @@ export class InMemoryMfaRepository implements MfaRepository {
   ): Promise<WebauthnCredentialRow | null> {
     const row = this.credentials.get(credentialId);
     return row && row.userId === userId ? row : null;
+  }
+
+  async findWebauthnCredentialByCredentialId(
+    credentialId: string,
+  ): Promise<WebauthnCredentialRow | null> {
+    return this.credentials.get(credentialId) ?? null;
   }
 
   async insertWebauthnCredential(input: InsertWebauthnCredentialInput): Promise<WebauthnCredentialRow> {

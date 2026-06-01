@@ -7,13 +7,13 @@ import {
   isSupabaseAuthConfigured,
   mapSupabaseAuthError,
   sendSupabaseMagicLink,
+  setSupabaseSessionFromTokens,
   signInWithSupabaseOAuth,
-  signInWithSupabasePasskey,
   signInWithSupabasePassword,
   signUpWithSupabasePassword,
-  supabasePasskeysEnabled,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
+import { isWebauthnAvailable, loginWithPasskey } from "../auth/mfa";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
 import { useTheme } from "../context/ThemeContext";
 
@@ -67,6 +67,35 @@ function cardCopy(mode: AuthMode): string {
   return "Sign in to your AutoFlow workspace.";
 }
 
+/**
+ * Friendly copy for passkey sign-in failures. The WebAuthn ceremony throws a
+ * `DOMException` (NotAllowedError on cancel/timeout, etc.); backend rejections
+ * arrive as plain `Error` messages. Cancellation isn't really an error, so
+ * keep it gentle.
+ */
+function mapPasskeyLoginError(error: unknown): string {
+  if (error instanceof DOMException || (error && typeof error === "object" && "name" in error)) {
+    const name = (error as { name?: string }).name;
+    if (name === "NotAllowedError" || name === "AbortError") {
+      return "Passkey sign-in was cancelled or timed out. Try again.";
+    }
+    if (name === "InvalidStateError") {
+      return "No matching passkey is registered on this device.";
+    }
+  }
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("unknown_credential")) {
+    return "That passkey isn't registered. Sign in another way, then add it from Security settings.";
+  }
+  if (message.includes("challenge_missing")) {
+    return "Your passkey sign-in attempt expired. Try again.";
+  }
+  if (message.includes("passwordless_login_unavailable")) {
+    return "Passwordless passkey sign-in isn't enabled for this environment yet.";
+  }
+  return message || "Passkey sign-in failed. Try again.";
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -99,9 +128,10 @@ export default function Login() {
   const magicLinkCooldown = useAuthCooldown(MAGIC_LINK_COOLDOWN_KEY);
 
   const configured = isSupabaseAuthConfigured();
-  // HEL-311 spike: dev-only Supabase native passkey sign-in. Gated by
-  // VITE_AUTOFLOW_SUPABASE_PASSKEYS — read once at render.
-  const passkeysEnabled = supabasePasskeysEnabled();
+  // Passwordless passkey sign-in is offered whenever the browser can run a
+  // WebAuthn ceremony (secure context + PublicKeyCredential). Read once at
+  // render — it doesn't change within the page's lifetime.
+  const passkeysAvailable = isWebauthnAvailable();
   const isAnyBusy = busy || activeProvider !== null || passkeyBusy;
 
   // HEL-76: the v1 hero-side `signals` strip was dropped for the v2 single-card
@@ -241,32 +271,29 @@ export default function Login() {
     }
   }
 
-  // HEL-311 spike: dev-only Supabase native passkey sign-in. Surfaces the
-  // resulting AAL inline so we can see whether passkey login is aal1 or aal2.
-  async function handleSupabasePasskey() {
+  // Passwordless first-factor sign-in with a discoverable passkey. The
+  // WebAuthn assertion is verified server-side and exchanged for a real
+  // Supabase session, which we adopt before redirecting into the app.
+  async function handlePasskeyLogin() {
     if (!configured) {
       triggerError("Supabase auth is not configured for this dashboard environment.");
+      return;
+    }
+    if (!passkeysAvailable) {
+      triggerError("Passkeys aren't available on this device or connection.");
       return;
     }
     setPasskeyBusy(true);
     setError("");
     setNotice("");
     try {
-      const result = await signInWithSupabasePasskey();
-      console.info("[HEL-311] Supabase passkey sign-in result:", result.aal);
-      if (result.session) {
-        writeStoredAuthUser(result.session.user);
-      }
-      setNotice(
-        `Signed in with passkey. Supabase reports aal=${result.aal.currentLevel ?? "?"}` +
-          ` (next=${result.aal.nextLevel ?? "?"}, jwt aal=${result.aal.rawAalClaim ?? "?"}).`,
-      );
-      // Brief pause so the AAL notice is visible before redirect.
-      setPasskeyBusy(false);
+      const result = await loginWithPasskey();
+      const session = await setSupabaseSessionFromTokens(result.accessToken, result.refreshToken);
+      writeStoredAuthUser(session.user);
       navigate("/", { replace: true });
     } catch (authError) {
       setPasskeyBusy(false);
-      triggerError(mapSupabaseAuthError(authError));
+      triggerError(mapPasskeyLoginError(authError));
     }
   }
 
@@ -341,6 +368,24 @@ export default function Login() {
                   disabled={isAnyBusy || !configured}
                   onSelect={handleOAuth}
                 />
+                {passkeysAvailable ? (
+                  <button
+                    type="button"
+                    onClick={handlePasskeyLogin}
+                    disabled={isAnyBusy || !configured}
+                    className="auth-microsoft-button mt-3 w-full justify-center"
+                    aria-label="Sign in with a passkey"
+                  >
+                    <span className="flex h-6 w-6 items-center justify-center">
+                      {passkeyBusy ? (
+                        <Loader2 size={18} className="animate-spin text-af2-ink-3" />
+                      ) : (
+                        <KeyRound size={18} className="text-af2-ink-3" />
+                      )}
+                    </span>
+                    <span>{passkeyBusy ? "Waiting for passkey…" : "Sign in with a passkey"}</span>
+                  </button>
+                ) : null}
                 <SectionDivider label={mode === "signin" ? "Or sign in with email" : "Or sign up with email"} />
               </>
             ) : null}
@@ -460,33 +505,6 @@ export default function Login() {
                       : "Send magic link"}
                 </button>
               </form>
-            ) : null}
-
-            {/* HEL-311 spike: dev-only Supabase native passkey sign-in.
-                Hidden unless VITE_AUTOFLOW_SUPABASE_PASSKEYS is set. */}
-            {passkeysEnabled ? (
-              <div className="mt-4 border-t border-dashed border-af2-line pt-4">
-                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
-                  Experimental
-                </p>
-                <button
-                  type="button"
-                  onClick={handleSupabasePasskey}
-                  disabled={isAnyBusy || !configured}
-                  className="auth-microsoft-button w-full justify-center"
-                  aria-label="Sign in with a Supabase passkey (experimental)"
-                >
-                  {passkeyBusy ? (
-                    <Loader2 size={18} className="animate-spin text-af2-ink-3" />
-                  ) : (
-                    <KeyRound size={18} className="text-af2-ink-3" />
-                  )}
-                  {passkeyBusy ? "Waiting for passkey…" : "Sign in with passkey"}
-                </button>
-                <p className="mt-1.5 text-[11px] text-af2-ink-3">
-                  Supabase native passkeys (HEL-311 spike). Register one first from Security settings.
-                </p>
-              </div>
             ) : null}
 
           <div className="mt-6 flex flex-wrap items-center gap-2 text-[11px] text-af2-ink-3">

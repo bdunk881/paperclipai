@@ -19,7 +19,7 @@
  * all prior codes).
  */
 
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { SecurityServiceError } from "./securityService";
 import { auditService } from "../auditing/auditService";
 import { isAutoflowStaff } from "../admin/staffAuth";
@@ -714,6 +714,96 @@ export class MfaService {
     });
     return {
       attestation: mintAal2Attestation({ userId: ctx.userId, method: "webauthn" }),
+    };
+  }
+
+  // ---- WebAuthn passwordless login (HEL: discoverable first-factor) ---------
+  //
+  // Unlike `beginWebauthnAuthentication` (step-up — requires an existing
+  // session and an `allowCredentials` list scoped to the signed-in user),
+  // these run PRE-AUTH. We generate options with an empty `allowCredentials`
+  // so the authenticator offers its discoverable (resident-key) credentials,
+  // resolve the asserted credential to its owning user globally, verify the
+  // signature against the stored public key, and hand the resolved `userId`
+  // back to the route so it can mint a Supabase session. A passkey is a
+  // phish-resistant strong factor, so a successful login also mints the AAL2
+  // attestation — the user lands fully stepped-up, no second prompt.
+
+  async beginWebauthnLogin(): Promise<{
+    loginId: string;
+    options: WebauthnAuthenticationOptions;
+  }> {
+    if (!this.webauthn) {
+      throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
+    }
+    const options = await this.webauthn.generateAuthenticationOptions({
+      rpID: this.rpId,
+      // Empty → discoverable-credential ceremony: the browser/authenticator
+      // picks a resident key bound to this RP without us naming the user.
+      allowCredentials: [],
+    });
+    // No user to key the challenge on yet, so mint an opaque login id and
+    // bind the challenge to it. The client echoes the id back on verify.
+    const loginId = randomUUID();
+    await this.challengeStore.remember(`login:${loginId}`, options.challenge);
+    return { loginId, options };
+  }
+
+  async finishWebauthnLogin(
+    loginId: string,
+    response: unknown,
+    rawCredentialId: string,
+  ): Promise<{ userId: string; attestation: MintedAal2Attestation }> {
+    if (!this.webauthn) {
+      throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
+    }
+    const expectedChallenge = await this.challengeStore.consume(`login:${loginId}`);
+    if (!expectedChallenge) {
+      throw new SecurityServiceError("Login challenge expired or missing", 400, "challenge_missing");
+    }
+    const credential = await this.repository.findWebauthnCredentialByCredentialId(rawCredentialId);
+    if (!credential) {
+      // No user context to audit against — the mint/throw is the record.
+      throw new SecurityServiceError("Unknown credential", 400, "unknown_credential");
+    }
+    const verification = await this.webauthn.verifyAuthenticationResponse({
+      expectedChallenge,
+      expectedOrigin: this.origin,
+      expectedRPID: this.rpId,
+      response,
+      authenticator: {
+        credentialId: credential.credentialId,
+        publicKey: credential.publicKey,
+        signCount: credential.signCount,
+      },
+    });
+    if (!verification.verified) {
+      await recordAudit({ userId: credential.userId }, "mfa.verify.failure", {
+        method: "webauthn",
+        reason: "signature_invalid",
+        context: "passwordless_login",
+      });
+      throw new SecurityServiceError("Passkey verification failed", 401, "verification_failed");
+    }
+    const now = new Date();
+    // The resolved user scopes the sign-count UPDATE back under user_isolation.
+    await this.repository.updateWebauthnSignCount(
+      credential.userId,
+      credential.credentialId,
+      verification.newSignCount,
+      now,
+    );
+    await this.repository.upsertPolicy(credential.userId, {
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "webauthn",
+    });
+    await recordAudit({ userId: credential.userId }, "mfa.login.passkey", {
+      method: "webauthn",
+      credentialId: credential.credentialId,
+    });
+    return {
+      userId: credential.userId,
+      attestation: mintAal2Attestation({ userId: credential.userId, method: "webauthn" }),
     };
   }
 

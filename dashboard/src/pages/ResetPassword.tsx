@@ -16,8 +16,15 @@ import {
   verifySupabaseTotpStepUp,
   type SupabaseTotpFactor,
 } from "../auth/supabaseAuth";
-import { getMfaPolicy, resetPasswordWithRecoveryCode } from "../api/mfaApi";
+import {
+  getMfaPolicy,
+  resetPasswordWithAttestation,
+  resetPasswordWithRecoveryCode,
+} from "../api/mfaApi";
+import { isWebauthnAvailable, verifyPasskey } from "../auth/mfa";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
+
+type StepUpMethod = "passkey" | "totp" | "recovery";
 
 const PASSWORD_RESET_COOLDOWN_KEY = "autoflow.auth.passwordResetCooldown";
 
@@ -36,10 +43,12 @@ export default function ResetPassword() {
   const [totpFactor, setTotpFactor] = useState<SupabaseTotpFactor | null>(null);
   // MFA step-up state for the recovery flow. `stepUpRequired` is true when the
   // account has a verified native factor, so gotrue blocks the aal1 password
-  // update. `recoveryMode` switches the UI to the recovery-code fallback for
-  // users who lost their authenticator (or whose only factor isn't TOTP).
+  // update. `stepUpMethod` selects how the user proves the second factor:
+  // a passkey (preferred when available), the authenticator app, or a saved
+  // recovery code (for a lost device / no usable TOTP).
   const [stepUpRequired, setStepUpRequired] = useState(false);
-  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [stepUpMethod, setStepUpMethod] = useState<StepUpMethod>("totp");
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(
@@ -105,11 +114,10 @@ export default function ResetPassword() {
 
   // Once the recovery session exists, find out whether MFA forces an aal2
   // step-up before `updateUser({ password })` will be accepted. A recovery
-  // session lands at aal1; if the user has a verified TOTP factor we surface
-  // an authenticator-code field so we can step up *before* changing the
-  // password instead of hitting gotrue's "AAL2 session is required" error. If
-  // the step-up is required but there's no usable TOTP factor (lost device, or
-  // a non-TOTP native factor), we fall back to the recovery-code path.
+  // session lands at aal1; if the account has a verified factor we offer a
+  // step-up *before* changing the password instead of hitting gotrue's "AAL2
+  // session is required" error. Preferred method: passkey (phishing-resistant)
+  // → authenticator app → recovery code (lost device / no usable TOTP).
   useEffect(() => {
     if (phase !== "complete" || !configured) {
       return;
@@ -123,15 +131,31 @@ export default function ResetPassword() {
           return;
         }
         const needsStepUp = aalStepUpRequired(status);
+        const totp = status.totpFactors[0] ?? null;
         setStepUpRequired(needsStepUp);
-        setTotpFactor(status.totpFactors[0] ?? null);
+        setTotpFactor(totp);
 
-        // No authenticator to step up with (lost device, or a non-TOTP native
-        // factor) → the recovery code is the only way through, so default
-        // straight to it.
-        if (needsStepUp && status.totpFactors.length === 0) {
-          setRecoveryMode(true);
+        if (!needsStepUp) {
+          return;
         }
+
+        // Does the account have a passkey we can use on this device? Passkeys
+        // are app-owned, so this comes from the policy, not the Supabase AAL.
+        let canPasskey = false;
+        try {
+          const session = await getSupabaseStoredSession();
+          if (session?.accessToken) {
+            const policy = await getMfaPolicy(session.accessToken);
+            canPasskey = policy.hasWebauthn && isWebauthnAvailable();
+          }
+        } catch {
+          // Ignore — passkey simply won't be offered.
+        }
+        if (!active) {
+          return;
+        }
+        setPasskeyAvailable(canPasskey);
+        setStepUpMethod(canPasskey ? "passkey" : totp ? "totp" : "recovery");
       } catch {
         // Non-fatal: if the probe fails we still let the user try, and the
         // mapped gotrue error explains the authenticator requirement.
@@ -207,6 +231,15 @@ export default function ResetPassword() {
     navigate(destination, { replace: true });
   }
 
+  async function requireRecoveryToken(): Promise<string> {
+    const session = await getSupabaseStoredSession();
+    const token = session?.accessToken;
+    if (!token) {
+      throw new Error("Your recovery session has expired. Request a new reset email.");
+    }
+    return token;
+  }
+
   async function handleCompleteReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newPassword.trim() || newPassword.length < 8) {
@@ -221,12 +254,11 @@ export default function ResetPassword() {
       setError("Supabase auth is not configured for this dashboard environment.");
       return;
     }
-    if (stepUpRequired && recoveryMode) {
-      if (recoveryCode.trim().length < 8) {
-        setError("Enter a valid recovery code.");
-        return;
-      }
-    } else if (stepUpRequired && totpFactor && !/^\d{6}$/.test(totpCode.trim())) {
+    if (stepUpRequired && stepUpMethod === "recovery" && recoveryCode.trim().length < 8) {
+      setError("Enter a valid recovery code.");
+      return;
+    }
+    if (stepUpRequired && stepUpMethod === "totp" && !/^\d{6}$/.test(totpCode.trim())) {
       setError("Enter the 6-digit code from your authenticator app.");
       return;
     }
@@ -236,20 +268,24 @@ export default function ResetPassword() {
     setNotice("");
 
     try {
-      if (stepUpRequired && recoveryMode) {
-        // Lost-device path: recovery codes are app-owned and can't lift the
-        // session to aal2, so the password is set server-side via the
-        // recovery-code endpoint instead of `updateUser`.
-        const session = await getSupabaseStoredSession();
-        const token = session?.accessToken;
-        if (!token) {
-          throw new Error("Your recovery session has expired. Request a new reset email.");
-        }
+      if (!stepUpRequired) {
+        await updateSupabasePassword(newPassword);
+      } else if (stepUpMethod === "passkey") {
+        // Passkeys are app-owned and can't lift the session to aal2, so we
+        // verify the assertion (mints the AAL2 attestation cookie) and set the
+        // password via the requireAAL2-gated backend endpoint.
+        const token = await requireRecoveryToken();
+        await verifyPasskey(token);
+        await resetPasswordWithAttestation(token, newPassword);
+      } else if (stepUpMethod === "recovery") {
+        // Lost-device path: recovery codes are app-owned, so the password is
+        // set server-side via the recovery-code endpoint instead of `updateUser`.
+        const token = await requireRecoveryToken();
         await resetPasswordWithRecoveryCode(token, recoveryCode.trim(), newPassword);
       } else {
-        // When MFA is enabled the recovery session is aal1; step it up to aal2
-        // with the authenticator code before gotrue will accept the password.
-        if (stepUpRequired && totpFactor) {
+        // TOTP is native: step the recovery session up to aal2, then gotrue's
+        // own `updateUser` accepts the new password.
+        if (totpFactor) {
           await verifySupabaseTotpStepUp(totpFactor.id, totpCode.trim());
         }
         await updateSupabasePassword(newPassword);
@@ -367,7 +403,14 @@ export default function ResetPassword() {
                   placeholder="Repeat your new password"
                 />
               </label>
-              {stepUpRequired && !recoveryMode && totpFactor ? (
+              {stepUpRequired && stepUpMethod === "passkey" ? (
+                <p className="text-xs leading-5 text-af2-ink-3">
+                  Your account has two-factor authentication enabled. Verify with your passkey to
+                  confirm this change — you'll be prompted by your device.
+                </p>
+              ) : null}
+
+              {stepUpRequired && stepUpMethod === "totp" ? (
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
                     Authenticator code
@@ -389,7 +432,7 @@ export default function ResetPassword() {
                 </label>
               ) : null}
 
-              {stepUpRequired && recoveryMode ? (
+              {stepUpRequired && stepUpMethod === "recovery" ? (
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
                     Recovery code
@@ -404,7 +447,7 @@ export default function ResetPassword() {
                     placeholder="XXXX-XXXX-XXXX-XXXX"
                   />
                   <span className="mt-1.5 block text-xs leading-5 text-af2-ink-3">
-                    {totpFactor === null
+                    {totpFactor === null && !passkeyAvailable
                       ? "Your account requires a second factor. Enter one of the recovery codes you saved when you set up two-factor authentication."
                       : "Enter one of the recovery codes you saved when you set up two-factor authentication. If you have none, contact support to recover access."}
                   </span>
@@ -413,22 +456,54 @@ export default function ResetPassword() {
 
               <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
                 {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
-                {busy ? "Updating…" : "Update password"}
+                {stepUpRequired && stepUpMethod === "passkey"
+                  ? busy
+                    ? "Waiting for device…"
+                    : "Verify with passkey & update password"
+                  : busy
+                    ? "Updating…"
+                    : "Update password"}
               </button>
 
-              {stepUpRequired && totpFactor ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError("");
-                    setRecoveryMode((prev) => !prev);
-                  }}
-                  className="block w-full text-center text-xs text-af2-ink-3 underline"
-                >
-                  {recoveryMode
-                    ? "Use your authenticator app instead"
-                    : "Lost your authenticator? Use a recovery code"}
-                </button>
+              {stepUpRequired ? (
+                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-af2-ink-3">
+                  {passkeyAvailable && stepUpMethod !== "passkey" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setStepUpMethod("passkey");
+                      }}
+                      className="underline"
+                    >
+                      Use a passkey
+                    </button>
+                  ) : null}
+                  {totpFactor && stepUpMethod !== "totp" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setStepUpMethod("totp");
+                      }}
+                      className="underline"
+                    >
+                      Use your authenticator app
+                    </button>
+                  ) : null}
+                  {stepUpMethod !== "recovery" ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError("");
+                        setStepUpMethod("recovery");
+                      }}
+                      className="underline"
+                    >
+                      Lost your device? Use a recovery code
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </form>
           ) : null}

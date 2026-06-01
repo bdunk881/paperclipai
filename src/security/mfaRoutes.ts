@@ -126,6 +126,10 @@ const recoveryResetPasswordSchema = z.object({
   newPassword: z.string().min(8, "Password must be at least 8 characters"),
 });
 
+const accountResetPasswordSchema = z.object({
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 // HEL-282: email-OTP code is exactly 6 digits.
 const emailOtpVerifySchema = z.object({
   code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
@@ -406,6 +410,29 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
           parsed.data.code,
           parsed.data.newPassword,
         );
+        res.json({ ok: true });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  // Factor-agnostic password reset for any already-proven AAL2 session.
+  // Gated by requireAAL2, which accepts the app-owned attestation cookie a
+  // passkey / email-OTP / magic-link verify just minted — so the recovery
+  // page can step up with a passkey and then set the password out-of-band
+  // (the recovery session itself is aal1, which gotrue's updateUser rejects).
+  router.post(
+    "/account/reset-password",
+    requireAAL2,
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = accountResetPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
+      try {
+        await service.setPasswordForCurrentUser(buildContext(req), parsed.data.newPassword);
         res.json({ ok: true });
       } catch (error) {
         sendError(res, error);

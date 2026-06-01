@@ -531,6 +531,35 @@ describe("MfaService", () => {
     expect(passwordResetter).not.toHaveBeenCalled();
   });
 
+  it("setPasswordForCurrentUser sets the password via the resetter (attestation-gated path)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+
+    await service.setPasswordForCurrentUser(ctx, "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+  });
+
+  it("setPasswordForCurrentUser rejects a weak password without calling the resetter", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+
+    await expect(
+      service.setPasswordForCurrentUser({ userId: "u-1" }, "short"),
+    ).rejects.toThrow(/at least 8/i);
+    expect(passwordResetter).not.toHaveBeenCalled();
+  });
+
   it("delegates TOTP enrollment to the Supabase adapter", async () => {
     const totp = makeTotpStub();
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });

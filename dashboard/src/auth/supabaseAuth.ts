@@ -383,17 +383,30 @@ export async function sendSignupEmailOtp(email: string, fullName?: string): Prom
 }
 
 /**
- * Passwordless passkey sign-up, phase 2: verify the emailed code. On success
- * Supabase returns a real session (creating the user if new), which the client
- * adopts — the caller can then register a passkey against that session via the
- * authenticated WebAuthn endpoints.
+ * Passwordless passkey sign-up, phase 2: verify the emailed code.
+ *
+ * Verification runs on a DETACHED client (`persistSession: false`) so it does
+ * NOT install the session into the shared dashboard client. That matters: the
+ * moment the shared client adopts a session, `onAuthStateChange` fires and the
+ * router redirects away from `/login`, which would unmount the sign-up form
+ * mid-flow and bounce the user into the MFA-enrollment onboarding before the
+ * passkey ceremony finished. Instead we hand the tokens back so the caller can
+ * register the passkey FIRST, then adopt the session via
+ * `setSupabaseSessionFromTokens`.
  */
 export async function verifySignupEmailOtp(
   email: string,
   code: string,
 ): Promise<StoredAuthSession> {
-  const client = requireSupabaseClient();
-  const { data, error } = await client.auth.verifyOtp({
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!url || !anonKey) {
+    throw new Error("Supabase auth is not configured for this dashboard environment.");
+  }
+  const detached = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await detached.auth.verifyOtp({
     email,
     token: code.trim(),
     type: "email",

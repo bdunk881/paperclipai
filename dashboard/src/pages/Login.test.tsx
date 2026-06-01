@@ -354,6 +354,13 @@ describe("Login", () => {
       authProvider: "supabase",
     });
     registerPasskeyMock.mockResolvedValueOnce({ credentialId: "cred-1" });
+    setSupabaseSessionFromTokensMock.mockResolvedValueOnce({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "u-1", email: "new@example.com", name: "New User" },
+      authProvider: "supabase",
+    });
 
     render(
       <MemoryRouter initialEntries={["/login?mode=signup"]}>
@@ -374,16 +381,62 @@ describe("Login", () => {
       expect(screen.getByLabelText("Email code")).toBeInTheDocument();
     });
 
-    // Phase 2: enter code → verify → register passkey → redirect.
+    // Phase 2: enter code → verify → register passkey → adopt session → redirect.
     fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: /verify code and create passkey/i }));
 
     await waitFor(() => {
       expect(verifySignupEmailOtpMock).toHaveBeenCalledWith("new@example.com", "123456");
       expect(registerPasskeyMock).toHaveBeenCalledWith("access-1", "Passkey");
+      expect(setSupabaseSessionFromTokensMock).toHaveBeenCalledWith("access-1", "refresh-1");
       expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
     });
+
+    // The fix: the passkey is registered BEFORE the session is adopted, so the
+    // user lands in the app with a factor already enrolled (no MFA onboarding
+    // bounce). Assert that ordering explicitly.
+    expect(registerPasskeyMock.mock.invocationCallOrder[0]).toBeLessThan(
+      setSupabaseSessionFromTokensMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not adopt the session if the passkey ceremony fails", async () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    sendSignupEmailOtpMock.mockResolvedValueOnce(undefined);
+    verifySignupEmailOtpMock.mockResolvedValueOnce({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "u-1", email: "new@example.com", name: "New User" },
+      authProvider: "supabase",
+    });
+    registerPasskeyMock.mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
+
+    render(
+      <MemoryRouter initialEntries={["/login?mode=signup"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Dashboard Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New User" } });
+    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign up with a passkey/i }));
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /verify code and create passkey/i }));
+
+    // Ceremony failed → stay on the code step, never sign in.
+    await waitFor(() => {
+      expect(screen.getByText(/cancelled or timed out/i)).toBeInTheDocument();
+    });
+    expect(setSupabaseSessionFromTokensMock).not.toHaveBeenCalled();
+    expect(writeStoredAuthUserMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Email code")).toBeInTheDocument();
   });
 
   it("requires name and email before sending the signup code", async () => {

@@ -337,9 +337,14 @@ export default function Login() {
     }
   }
 
-  // Phase 2: verify the emailed code (provisioning + signing in via Supabase),
-  // then register a passkey against that fresh session. Errors are mapped per
-  // stage so a wrong code reads differently from a cancelled passkey prompt.
+  // Phase 2: verify the emailed code, register the passkey, THEN adopt the
+  // session. Order matters: verify runs on a detached client so the shared
+  // client doesn't sign in yet — that lets the passkey ceremony finish at the
+  // sign-up window instead of the session change redirecting us into MFA
+  // onboarding first. Once the passkey exists, adopting the session lands the
+  // user in the app with a factor already enrolled (no second-factor prompt).
+  // Errors are mapped per stage so a wrong code reads differently from a
+  // cancelled passkey prompt.
   async function handlePasskeySignupVerify() {
     if (!passkeySignupCode.trim()) {
       triggerError("Enter the code we emailed you.");
@@ -359,12 +364,23 @@ export default function Login() {
     }
 
     try {
+      // Token-authenticated; the shared client has no session yet, so the
+      // ceremony completes here on the sign-up form.
       await registerPasskey(session.accessToken, "Passkey");
     } catch (authError) {
-      // Account exists and is signed in, but the passkey didn't take. Keep the
-      // code step so they can retry the ceremony without re-verifying email.
+      // Email is verified but the passkey didn't take. Keep the code step so
+      // they can retry the ceremony without re-requesting a code.
       setPasskeyBusy(false);
       triggerError(mapPasskeyLoginError(authError));
+      return;
+    }
+
+    try {
+      // Passkey is enrolled — now sign in for real and head into the app.
+      await setSupabaseSessionFromTokens(session.accessToken, session.refreshToken ?? "");
+    } catch (authError) {
+      setPasskeyBusy(false);
+      triggerError(mapSupabaseAuthError(authError));
       return;
     }
 

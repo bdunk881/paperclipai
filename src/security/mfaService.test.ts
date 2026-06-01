@@ -242,6 +242,66 @@ describe("MfaService", () => {
     expect(stored).toBe("AUTH_CHALLENGE");
   });
 
+  // Passwordless first-factor login (discoverable credential) -----------------
+
+  it("logs in passwordless: resolves the credential to its user and mints AAL2", async () => {
+    const store = new InMemoryMfaChallengeStore();
+    const webauthn = makeWebauthnStub();
+    const service = new MfaService({
+      repository: repo,
+      webauthn,
+      totp: makeTotpStub(),
+      challengeStore: store,
+    });
+    // Enroll a passkey for u-1 so there's a discoverable credential to resolve.
+    const ctx = { userId: "u-1" };
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await service.finishWebauthnRegistration(ctx, { id: "cred-1" }, "MacBook");
+
+    const { loginId, options } = await service.beginWebauthnLogin();
+    // Discoverable ceremony → no allowCredentials list leaks the user set.
+    expect(options.allowCredentials).toEqual([]);
+    expect(await store.consume(`login:${loginId}`)).toBe("AUTH_CHALLENGE");
+
+    // (consume above drained it; start a fresh login for the finish path)
+    const second = await service.beginWebauthnLogin();
+    const result = await service.finishWebauthnLogin(second.loginId, { id: "cred-1" }, "cred-1");
+    expect(result.userId).toBe("u-1");
+    expect(result.attestation.token).toBeTruthy();
+    const verified = verifyAal2AttestationCookie(result.attestation.token, "u-1");
+    expect(verified.valid).toBe(true);
+  });
+
+  it("rejects passwordless login for an unknown credential", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    const { loginId } = await service.beginWebauthnLogin();
+    await expect(
+      service.finishWebauthnLogin(loginId, { id: "nope" }, "nope"),
+    ).rejects.toThrow(/unknown credential/i);
+  });
+
+  it("rejects passwordless login when the challenge is missing or expired", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    await expect(
+      service.finishWebauthnLogin("never-issued", { id: "cred-1" }, "cred-1"),
+    ).rejects.toThrow(/challenge/i);
+  });
+
+  it("rejects passwordless login when the signature does not verify", async () => {
+    const webauthn = makeWebauthnStub({
+      verifyAuthenticationResponse: jest.fn(async () => ({ verified: false, newSignCount: 0n })),
+    });
+    const service = new MfaService({ repository: repo, webauthn, totp: makeTotpStub() });
+    const ctx = { userId: "u-1" };
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await service.finishWebauthnRegistration(ctx, { id: "cred-1" }, "MacBook");
+
+    const { loginId } = await service.beginWebauthnLogin();
+    await expect(
+      service.finishWebauthnLogin(loginId, { id: "cred-1" }, "cred-1"),
+    ).rejects.toThrow(/verification failed/i);
+  });
+
   it("treats a retried registration verify as success once the credential already exists", async () => {
     const webauthn = makeWebauthnStub();
     const service = new MfaService({ repository: repo, webauthn, totp: makeTotpStub() });

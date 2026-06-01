@@ -89,18 +89,6 @@ export function isSupabaseAuthConfigured(): boolean {
   return Boolean(getSupabaseUrl() && getSupabaseAnonKey());
 }
 
-/**
- * HEL-311 spike: gate Supabase's *experimental* native passkey flow behind
- * `VITE_AUTOFLOW_SUPABASE_PASSKEYS`. Off by default (prod builds), flipped
- * per-environment for testing. Controls both the experimental client option
- * AND whether the dev-only passkey buttons render. Treat any truthy-ish
- * value except "0"/"false"/"" as enabled.
- */
-export function supabasePasskeysEnabled(): boolean {
-  const raw = String(import.meta.env.VITE_AUTOFLOW_SUPABASE_PASSKEYS ?? "").trim().toLowerCase();
-  return raw !== "" && raw !== "0" && raw !== "false";
-}
-
 export function getSupabaseClient(): SupabaseClient | null {
   if (cachedClient !== undefined) {
     return cachedClient;
@@ -132,13 +120,6 @@ export function getSupabaseClient(): SupabaseClient | null {
     storageKey: SUPABASE_STORAGE_KEY,
     storage: createLocalStorageAdapter(),
   };
-
-  // HEL-311 spike: the experimental passkey API mutates client behavior, so
-  // only opt in when the flag is on. The `experimental` option isn't in the
-  // 2.106 SupabaseClientOptions type yet (it's experimental), so cast.
-  if (supabasePasskeysEnabled()) {
-    (authOptions as Record<string, unknown>).experimental = { passkey: true };
-  }
 
   cachedClient = createClient(url, anonKey, { auth: authOptions });
 
@@ -422,125 +403,30 @@ export async function signOutSupabase(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// HEL-311 spike: Supabase native (experimental) passkeys.
-//
-// These wrap the experimental `auth.registerPasskey` / `auth.signInWithPasskey`
-// / `auth.mfa` APIs. They only work when the client was built with
-// `experimental: { passkey: true }`, i.e. when `supabasePasskeysEnabled()`.
-// The whole point is to learn whether a passkey sign-in yields aal1 or aal2 —
-// hence the AAL capture below.
-// ---------------------------------------------------------------------------
-
-/** Minimal shape of the experimental passkey surface on `auth`, cast in. */
-interface SupabasePasskeyAuth {
-  registerPasskey: () => Promise<{
-    data: { id: string; friendly_name?: string } | null;
-    error: { message: string } | null;
-  }>;
-  signInWithPasskey: () => Promise<{
-    data: { session: Session | null } | null;
-    error: { message: string } | null;
-  }>;
-  mfa: {
-    getAuthenticatorAssuranceLevel: () => Promise<{
-      data: { currentLevel: string | null; nextLevel: string | null } | null;
-      error: { message: string } | null;
-    }>;
-  };
-}
-
-export interface SupabasePasskeyAalResult {
-  /** From `mfa.getAuthenticatorAssuranceLevel()`. */
-  currentLevel: string | null;
-  nextLevel: string | null;
-  /** Decoded straight from the session JWT's `aal` claim, for cross-check. */
-  rawAalClaim: string | null;
-}
-
-export interface SupabasePasskeyRegistration {
-  id: string;
-  friendlyName: string | null;
-}
-
-export interface SupabasePasskeySignInResult {
-  session: StoredAuthSession | null;
-  aal: SupabasePasskeyAalResult;
-}
-
-function passkeyAuth(): SupabasePasskeyAuth {
-  return requireSupabaseClient().auth as unknown as SupabasePasskeyAuth;
-}
-
-/** Decode the `aal` claim from a JWT without verifying — diagnostic only. */
-function decodeAalClaim(accessToken: string | undefined): string | null {
-  if (!accessToken) return null;
-  const payload = accessToken.split(".")[1];
-  if (!payload) return null;
-  try {
-    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    const json = JSON.parse(
-      typeof atob === "function"
-        ? atob(padded)
-        : Buffer.from(padded, "base64").toString("utf8"),
-    ) as { aal?: unknown };
-    return typeof json.aal === "string" ? json.aal : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Register a Supabase native passkey for the *currently signed-in* user.
- * Supabase requires an authenticated session — this can't run from the
- * logged-out login page.
+ * Adopt a Supabase session minted server-side (e.g. by the passwordless
+ * passkey login flow, which verifies a WebAuthn assertion and exchanges it
+ * for a real Supabase access/refresh token pair). Installs the tokens into
+ * the dashboard's Supabase client — which persists them under the shared
+ * storage key and starts auto-refresh — and returns the app's stored-session
+ * shape so the caller can `writeStoredAuthUser`.
  */
-export async function registerSupabasePasskey(): Promise<SupabasePasskeyRegistration> {
-  const { data, error } = await passkeyAuth().registerPasskey();
+export async function setSupabaseSessionFromTokens(
+  accessToken: string,
+  refreshToken: string,
+): Promise<StoredAuthSession> {
+  const client = requireSupabaseClient();
+  const { data, error } = await client.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
   if (error) {
     throw new Error(error.message);
   }
-  if (!data) {
-    throw new Error("Supabase passkey registration returned no data.");
+  if (!data.session) {
+    throw new Error("Supabase did not return a session for the provided tokens.");
   }
-  return { id: data.id, friendlyName: data.friendly_name ?? null };
-}
-
-/**
- * Sign in with a Supabase native passkey (discoverable credential). On
- * success, also reads the resulting AAL two ways — the SDK helper and the
- * raw JWT claim — so the spike can record whether passkey sign-in is aal1
- * or aal2.
- */
-export async function signInWithSupabasePasskey(): Promise<SupabasePasskeySignInResult> {
-  const auth = passkeyAuth();
-  const { data, error } = await auth.signInWithPasskey();
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const session = data?.session ?? null;
-
-  let currentLevel: string | null = null;
-  let nextLevel: string | null = null;
-  try {
-    const aal = await auth.mfa.getAuthenticatorAssuranceLevel();
-    currentLevel = aal.data?.currentLevel ?? null;
-    nextLevel = aal.data?.nextLevel ?? null;
-  } catch {
-    // getAuthenticatorAssuranceLevel rarely uses the network and rarely
-    // throws, but the spike shouldn't blow up the sign-in if it does.
-  }
-
-  return {
-    session: session ? sessionFromSupabaseSession(session) : null,
-    aal: {
-      currentLevel,
-      nextLevel,
-      rawAalClaim: decodeAalClaim(session?.access_token),
-    },
-  };
+  return sessionFromSupabaseSession(data.session);
 }
 
 /** @internal Test-only reset for exchange deduplication state. */

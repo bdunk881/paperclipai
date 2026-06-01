@@ -17,9 +17,12 @@ import {
 } from "@simplewebauthn/browser";
 import {
   beginWebauthnAuthentication,
+  beginWebauthnLogin,
   beginWebauthnRegistration,
   finishWebauthnAuthentication,
+  finishWebauthnLogin,
   finishWebauthnRegistration,
+  type WebauthnLoginResult,
 } from "../api/mfaApi";
 
 export interface PasskeyRegistrationResult {
@@ -51,6 +54,22 @@ export async function verifyPasskey(accessToken: string): Promise<PasskeyVerific
   >[0]["optionsJSON"];
   const assertion = await startAuthentication({ optionsJSON });
   return finishWebauthnAuthentication(accessToken, assertion, assertion.id);
+}
+
+/**
+ * Passwordless first-factor sign-in with a discoverable passkey. Runs the
+ * WebAuthn assertion ceremony against the backend's pre-auth challenge (no
+ * `allowCredentials`, so the authenticator offers its resident keys), then
+ * exchanges the assertion for a freshly-minted Supabase session. Unlike
+ * `verifyPasskey`, there is no access token in play — the assertion itself
+ * proves identity.
+ */
+export async function loginWithPasskey(): Promise<WebauthnLoginResult> {
+  const { loginId, options } = await beginWebauthnLogin();
+  const assertion = await startAuthentication({
+    optionsJSON: options as Parameters<typeof startAuthentication>[0]["optionsJSON"],
+  });
+  return finishWebauthnLogin(loginId, assertion, assertion.id);
 }
 
 /**

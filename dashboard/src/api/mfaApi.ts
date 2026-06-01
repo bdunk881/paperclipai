@@ -134,6 +134,49 @@ export async function finishWebauthnAuthentication(
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
 }
 
+// ---- WebAuthn passwordless login (public, pre-auth) -------------------------
+// No bearer token: the signed assertion is the proof. On success the backend
+// resolves the credential to a user, mints a Supabase session, and returns the
+// tokens for the dashboard's Supabase client to adopt.
+
+export interface WebauthnLoginOptions {
+  loginId: string;
+  /** PublicKeyCredentialRequestOptionsJSON from the backend. */
+  options: unknown;
+}
+
+export async function beginWebauthnLogin(): Promise<WebauthnLoginOptions> {
+  const res = await trackedFetch(`${BASE}/webauthn/login/options`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not start passkey sign-in"));
+  return res.json() as Promise<WebauthnLoginOptions>;
+}
+
+export interface WebauthnLoginResult {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+  user: { id: string; email: string | null };
+}
+
+export async function finishWebauthnLogin(
+  loginId: string,
+  response: unknown,
+  credentialId: string,
+): Promise<WebauthnLoginResult> {
+  const res = await trackedFetch(`${BASE}/webauthn/login/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ loginId, response, credentialId }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Passkey sign-in failed"));
+  return res.json() as Promise<WebauthnLoginResult>;
+}
+
 export async function removeWebauthnCredential(
   accessToken: string,
   credentialId: string,

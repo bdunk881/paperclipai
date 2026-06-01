@@ -1,11 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { MfaEnforcementGate } from "./MfaEnforcementGate";
-import {
-  ENROLLMENT_COMPLETED_EVENT,
-  ENROLLMENT_REQUIRED_EVENT,
-} from "./enrollmentEvents";
 
 const { getMfaPolicyMock, requireAccessTokenMock } = vi.hoisted(() => ({
   getMfaPolicyMock: vi.fn(),
@@ -46,6 +42,14 @@ function buildPolicy(overrides: PolicyOverrides = {}) {
   };
 }
 
+// Sentinel for the enrollment route so a redirect is observable, and so we
+// can assert the `state.from` the gate forwards for the bounce-back.
+function OnboardingSentinel() {
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? "(none)";
+  return <div>{`enroll-wizard:${from}`}</div>;
+}
+
 function renderGate(initialPath = "/") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
@@ -58,24 +62,21 @@ function renderGate(initialPath = "/") {
             </MfaEnforcementGate>
           }
         />
+        <Route path="/onboarding/mfa" element={<OnboardingSentinel />} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-describe("MfaEnforcementGate", () => {
-  let enrollmentRequiredSpy: ReturnType<typeof vi.fn>;
-
+describe("MfaEnforcementGate (HEL-389 hard gate)", () => {
   beforeEach(() => {
     requireAccessTokenMock.mockResolvedValue("access-token");
     window.localStorage.removeItem("autoflow.mfa.enforcement");
-    enrollmentRequiredSpy = vi.fn();
-    window.addEventListener(ENROLLMENT_REQUIRED_EVENT, enrollmentRequiredSpy);
   });
 
   afterEach(() => {
-    window.removeEventListener(ENROLLMENT_REQUIRED_EVENT, enrollmentRequiredSpy);
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     window.localStorage.removeItem("autoflow.mfa.enforcement");
   });
 
@@ -83,36 +84,25 @@ describe("MfaEnforcementGate", () => {
     getMfaPolicyMock.mockResolvedValue(buildPolicy({ hasAnyFactor: true }));
     renderGate();
     await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
-    expect(enrollmentRequiredSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/enroll-wizard/)).not.toBeInTheDocument();
   });
 
-  // HEL-281: redirect was replaced by an event + the children stay rendered.
-  // The dashboard shows behind the global <MfaEnrollmentSheet> scrim.
-  it("emits enrollment-required AND renders children when policy says no factors", async () => {
+  // The core fix: no factor → hard redirect to the standalone wizard, and the
+  // protected dashboard (which would carry the Ctrl+K command palette) is
+  // NEVER rendered.
+  it("hard-redirects to /onboarding/mfa (carrying state.from) when policy says no factors", async () => {
     getMfaPolicyMock.mockResolvedValue(buildPolicy());
-    renderGate();
-    await waitFor(() => expect(enrollmentRequiredSpy).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("protected-content")).toBeInTheDocument();
-    const event = enrollmentRequiredSpy.mock.calls[0][0] as CustomEvent<{ from?: string }>;
-    expect(event.detail.from).toBe("/");
+    renderGate("/");
+    await waitFor(() => expect(screen.getByText("enroll-wizard:/")).toBeInTheDocument());
+    expect(screen.queryByText("protected-content")).not.toBeInTheDocument();
   });
 
   it("fails open and renders children if the policy fetch errors out", async () => {
     getMfaPolicyMock.mockRejectedValue(new Error("network down"));
     renderGate();
     await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
-    expect(enrollmentRequiredSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/enroll-wizard/)).not.toBeInTheDocument();
   });
-
-  it("respects the localStorage dev bypass", async () => {
-    window.localStorage.setItem("autoflow.mfa.enforcement", "off");
-    getMfaPolicyMock.mockResolvedValue(buildPolicy());
-    renderGate();
-    await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
-    expect(enrollmentRequiredSpy).not.toHaveBeenCalled();
-  });
-
-  // HEL-280 ----------------------------------------------------------------
 
   it("renders children when an OAuth user has no factors but requiresAppMfa=false", async () => {
     getMfaPolicyMock.mockResolvedValue(
@@ -120,33 +110,33 @@ describe("MfaEnforcementGate", () => {
     );
     renderGate();
     await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
-    expect(enrollmentRequiredSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/enroll-wizard/)).not.toBeInTheDocument();
   });
 
-  it("emits for an OAuth user when requiresAppMfa=true (enterprise override)", async () => {
+  it("redirects an OAuth user when requiresAppMfa=true (enterprise override)", async () => {
     getMfaPolicyMock.mockResolvedValue(
       buildPolicy({ signInMethod: "oauth_google", requiresAppMfa: true }),
     );
     renderGate();
-    await waitFor(() => expect(enrollmentRequiredSpy).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("protected-content")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("enroll-wizard:/")).toBeInTheDocument());
+    expect(screen.queryByText("protected-content")).not.toBeInTheDocument();
   });
 
-  // HEL-281 ----------------------------------------------------------------
-
-  it("re-fetches policy on ENROLLMENT_COMPLETED_EVENT so the gate unblocks", async () => {
-    // First fetch: no factor. Subsequent fetch (after the event): factor exists.
-    getMfaPolicyMock
-      .mockResolvedValueOnce(buildPolicy())
-      .mockResolvedValueOnce(buildPolicy({ hasAnyFactor: true }));
-
+  it("honors the localStorage dev bypass in dev builds", async () => {
+    // Vitest runs with import.meta.env.DEV === true, so the escape hatch is live.
+    window.localStorage.setItem("autoflow.mfa.enforcement", "off");
+    getMfaPolicyMock.mockResolvedValue(buildPolicy());
     renderGate();
-    await waitFor(() => expect(enrollmentRequiredSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText("protected-content")).toBeInTheDocument());
+    expect(screen.queryByText(/enroll-wizard/)).not.toBeInTheDocument();
+  });
 
-    window.dispatchEvent(new Event(ENROLLMENT_COMPLETED_EVENT));
-
-    await waitFor(() => expect(getMfaPolicyMock).toHaveBeenCalledTimes(2));
-    // No second emit — the new policy has a factor.
-    expect(enrollmentRequiredSpy).toHaveBeenCalledTimes(1);
+  it("ignores the localStorage bypass in production builds (still hard-redirects)", async () => {
+    vi.stubEnv("DEV", false);
+    window.localStorage.setItem("autoflow.mfa.enforcement", "off");
+    getMfaPolicyMock.mockResolvedValue(buildPolicy());
+    renderGate();
+    await waitFor(() => expect(screen.getByText("enroll-wizard:/")).toBeInTheDocument());
+    expect(screen.queryByText("protected-content")).not.toBeInTheDocument();
   });
 });

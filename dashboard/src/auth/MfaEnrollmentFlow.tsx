@@ -34,7 +34,12 @@ import {
   verifyTotpEnrollment,
   type TotpEnrollmentResponse,
 } from "../api/mfaApi";
-import { isWebauthnAvailable, platformAuthenticatorAvailable, registerPasskey } from "./mfa";
+import {
+  consumePasskeySignupIntent,
+  isWebauthnAvailable,
+  platformAuthenticatorAvailable,
+  registerPasskey,
+} from "./mfa";
 
 type Step =
   | "choose"
@@ -75,6 +80,20 @@ export function MfaEnrollmentFlow({ onComplete }: MfaEnrollmentFlowProps) {
   useEffect(() => {
     void platformAuthenticatorAvailable().then(setPlatformAvailable);
   }, []);
+
+  // HEL-390: when the user arrived here straight from passkey sign-up (clicked
+  // the email link, now signed in but factorless), skip the factor chooser and
+  // drop them on the passkey step — that's the factor they came to create.
+  // Consumed once; if they're on a device without WebAuthn we leave the chooser.
+  useEffect(() => {
+    if (!webauthnAvailable) return;
+    if (consumePasskeySignupIntent()) {
+      setFactor("passkey");
+      setDeviceName((prev) => prev || "This device");
+      setStep("enroll-passkey");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webauthnAvailable]);
 
   function clearError() {
     setError(null);

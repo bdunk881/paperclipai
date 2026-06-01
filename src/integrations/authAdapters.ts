@@ -41,6 +41,11 @@ interface PkceState {
   userId: string;
   codeVerifier: string;
   redirectUri: string;
+  /** Stored at authorize time so the callback can complete without the
+   *  provider echoing them back (a provider redirect carries only code+state). */
+  clientId: string;
+  clientSecret?: string;
+  instanceDomain?: string;
   createdAt: number;
 }
 
@@ -61,9 +66,10 @@ export function beginOAuth2PkceFlow(params: {
   userId: string;
   redirectUri: string;
   clientId: string;
+  clientSecret?: string;
   instanceDomain?: string;
 }): { authorizationUrl: string; state: string } {
-  const { manifest, userId, redirectUri, clientId, instanceDomain } = params;
+  const { manifest, userId, redirectUri, clientId, clientSecret, instanceDomain } = params;
   const oauth2 = manifest.oauth2Config;
   if (!oauth2) throw new Error(`Integration "${manifest.slug}" does not support OAuth2`);
 
@@ -78,6 +84,9 @@ export function beginOAuth2PkceFlow(params: {
     userId,
     codeVerifier,
     redirectUri,
+    clientId,
+    clientSecret,
+    instanceDomain,
     createdAt: Date.now(),
   });
 
@@ -101,16 +110,24 @@ export async function completeOAuth2PkceFlow(params: {
   code: string;
   state: string;
   oauth2Config: OAuth2Config;
-  clientId: string;
+  /** Optional overrides — default to the values captured at authorize time. */
+  clientId?: string;
   clientSecret?: string;
   instanceDomain?: string;
 }): Promise<{ credentials: IntegrationCredentials; userId: string }> {
-  const { code, state, oauth2Config, clientId, clientSecret, instanceDomain } = params;
+  const { code, state, oauth2Config } = params;
 
   const saved = pkceStateMap.get(state);
   if (!saved) throw new Error("OAuth2 state not found or expired — please restart the auth flow");
 
   pkceStateMap.delete(state);
+
+  // A provider redirect carries only code + state, so the client credentials
+  // and instance domain come from the state captured at authorize time unless
+  // explicitly overridden by the caller.
+  const clientId = params.clientId ?? saved.clientId;
+  const clientSecret = params.clientSecret ?? saved.clientSecret;
+  const instanceDomain = params.instanceDomain ?? saved.instanceDomain;
 
   const tokenUrl = resolveUrlTemplate(oauth2Config.tokenUrl, instanceDomain);
 

@@ -222,6 +222,27 @@ export async function consumeRecoveryCode(
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
 }
 
+/**
+ * Lost-device password reset from a recovery (aal1) session: verify a recovery
+ * code and set the new password server-side. Used by the recovery page when
+ * the user has a verified factor (so gotrue blocks the aal1 `updateUser`) but
+ * can't produce an authenticator code. `accessToken` is the recovery session's
+ * token.
+ */
+export async function resetPasswordWithRecoveryCode(
+  accessToken: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await trackedFetch(`${BASE}/recovery-codes/reset-password`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code, newPassword }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not reset your password"));
+}
+
 // ---- Email OTP (HEL-282) ----------------------------------------------------
 
 /** Send the enrollment code to the user's verified email. */

@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { writeStoredAuthUser } from "../auth/authStorage";
+import { writeStoredAuthUser, type StoredAuthUser } from "../auth/authStorage";
 import {
   aalStepUpRequired,
   getSupabaseAalStatus,
@@ -16,6 +16,7 @@ import {
   verifySupabaseTotpStepUp,
   type SupabaseTotpFactor,
 } from "../auth/supabaseAuth";
+import { getMfaPolicy, resetPasswordWithRecoveryCode } from "../api/mfaApi";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
 
 const PASSWORD_RESET_COOLDOWN_KEY = "autoflow.auth.passwordResetCooldown";
@@ -33,6 +34,13 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [totpFactor, setTotpFactor] = useState<SupabaseTotpFactor | null>(null);
+  // MFA step-up state for the recovery flow. `stepUpRequired` is true when the
+  // account has a verified native factor, so gotrue blocks the aal1 password
+  // update. `recoveryMode` switches the UI to the recovery-code fallback for
+  // users who lost their authenticator (or whose only factor isn't TOTP).
+  const [stepUpRequired, setStepUpRequired] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(
     authError ? decodeURIComponent(authError.replace(/\+/g, " ")) : "",
@@ -99,7 +107,9 @@ export default function ResetPassword() {
   // step-up before `updateUser({ password })` will be accepted. A recovery
   // session lands at aal1; if the user has a verified TOTP factor we surface
   // an authenticator-code field so we can step up *before* changing the
-  // password instead of hitting gotrue's "AAL2 session is required" error.
+  // password instead of hitting gotrue's "AAL2 session is required" error. If
+  // the step-up is required but there's no usable TOTP factor (lost device, or
+  // a non-TOTP native factor), we fall back to the recovery-code path.
   useEffect(() => {
     if (phase !== "complete" || !configured) {
       return;
@@ -112,10 +122,15 @@ export default function ResetPassword() {
         if (!active) {
           return;
         }
-        if (aalStepUpRequired(status) && status.totpFactors.length > 0) {
-          setTotpFactor(status.totpFactors[0]);
-        } else {
-          setTotpFactor(null);
+        const needsStepUp = aalStepUpRequired(status);
+        setStepUpRequired(needsStepUp);
+        setTotpFactor(status.totpFactors[0] ?? null);
+
+        // No authenticator to step up with (lost device, or a non-TOTP native
+        // factor) → the recovery code is the only way through, so default
+        // straight to it.
+        if (needsStepUp && status.totpFactors.length === 0) {
+          setRecoveryMode(true);
         }
       } catch {
         // Non-fatal: if the probe fails we still let the user try, and the
@@ -159,6 +174,39 @@ export default function ResetPassword() {
     }
   }
 
+  // After the password is set, persist the user and route on. A user who had
+  // no MFA factor and whose workspace requires app MFA is sent straight to
+  // enrollment (the enforcement gate would also catch this at "/", but the
+  // explicit redirect avoids a flash of the dashboard first).
+  async function finishAndRedirect() {
+    const session = await getSupabaseStoredSession();
+    let user: StoredAuthUser | null = session?.user ?? null;
+    if (!user) {
+      const client = getSupabaseClient();
+      const { data } = await client!.auth.getSession();
+      if (data.session) {
+        user = sessionFromSupabaseSession(data.session).user;
+      }
+    }
+    if (user) {
+      writeStoredAuthUser(user);
+    }
+
+    let destination = "/";
+    const token = session?.accessToken;
+    if (!stepUpRequired && token) {
+      try {
+        const policy = await getMfaPolicy(token);
+        if (policy.requiresAppMfa && !policy.hasAnyFactor) {
+          destination = "/onboarding/mfa";
+        }
+      } catch {
+        // Fall back to "/"; the enforcement gate still forces enrollment.
+      }
+    }
+    navigate(destination, { replace: true });
+  }
+
   async function handleCompleteReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newPassword.trim() || newPassword.length < 8) {
@@ -173,7 +221,12 @@ export default function ResetPassword() {
       setError("Supabase auth is not configured for this dashboard environment.");
       return;
     }
-    if (totpFactor && !/^\d{6}$/.test(totpCode.trim())) {
+    if (stepUpRequired && recoveryMode) {
+      if (recoveryCode.trim().length < 8) {
+        setError("Enter a valid recovery code.");
+        return;
+      }
+    } else if (stepUpRequired && totpFactor && !/^\d{6}$/.test(totpCode.trim())) {
       setError("Enter the 6-digit code from your authenticator app.");
       return;
     }
@@ -183,23 +236,25 @@ export default function ResetPassword() {
     setNotice("");
 
     try {
-      // When MFA is enabled the recovery session is aal1; step it up to aal2
-      // with the authenticator code before gotrue will accept the new password.
-      if (totpFactor) {
-        await verifySupabaseTotpStepUp(totpFactor.id, totpCode.trim());
-      }
-      await updateSupabasePassword(newPassword);
-      const session = await getSupabaseStoredSession();
-      if (session?.user) {
-        writeStoredAuthUser(session.user);
-      } else {
-        const client = getSupabaseClient();
-        const { data } = await client!.auth.getSession();
-        if (data.session) {
-          writeStoredAuthUser(sessionFromSupabaseSession(data.session).user);
+      if (stepUpRequired && recoveryMode) {
+        // Lost-device path: recovery codes are app-owned and can't lift the
+        // session to aal2, so the password is set server-side via the
+        // recovery-code endpoint instead of `updateUser`.
+        const session = await getSupabaseStoredSession();
+        const token = session?.accessToken;
+        if (!token) {
+          throw new Error("Your recovery session has expired. Request a new reset email.");
         }
+        await resetPasswordWithRecoveryCode(token, recoveryCode.trim(), newPassword);
+      } else {
+        // When MFA is enabled the recovery session is aal1; step it up to aal2
+        // with the authenticator code before gotrue will accept the password.
+        if (stepUpRequired && totpFactor) {
+          await verifySupabaseTotpStepUp(totpFactor.id, totpCode.trim());
+        }
+        await updateSupabasePassword(newPassword);
       }
-      navigate("/", { replace: true });
+      await finishAndRedirect();
     } catch (completeError) {
       setBusy(false);
       setError(mapSupabaseAuthError(completeError));
@@ -312,7 +367,7 @@ export default function ResetPassword() {
                   placeholder="Repeat your new password"
                 />
               </label>
-              {totpFactor ? (
+              {stepUpRequired && !recoveryMode && totpFactor ? (
                 <label className="block">
                   <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
                     Authenticator code
@@ -333,10 +388,48 @@ export default function ResetPassword() {
                   </span>
                 </label>
               ) : null}
+
+              {stepUpRequired && recoveryMode ? (
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+                    Recovery code
+                  </span>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={recoveryCode}
+                    onChange={(event) => setRecoveryCode(event.target.value)}
+                    disabled={busy || !configured}
+                    className="auth-input font-af2-mono"
+                    placeholder="XXXX-XXXX-XXXX-XXXX"
+                  />
+                  <span className="mt-1.5 block text-xs leading-5 text-af2-ink-3">
+                    {totpFactor === null
+                      ? "Your account requires a second factor. Enter one of the recovery codes you saved when you set up two-factor authentication."
+                      : "Enter one of the recovery codes you saved when you set up two-factor authentication. If you have none, contact support to recover access."}
+                  </span>
+                </label>
+              ) : null}
+
               <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
                 {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
                 {busy ? "Updating…" : "Update password"}
               </button>
+
+              {stepUpRequired && totpFactor ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setRecoveryMode((prev) => !prev);
+                  }}
+                  className="block w-full text-center text-xs text-af2-ink-3 underline"
+                >
+                  {recoveryMode
+                    ? "Use your authenticator app instead"
+                    : "Lost your authenticator? Use a recovery code"}
+                </button>
+              ) : null}
             </form>
           ) : null}
         </section>

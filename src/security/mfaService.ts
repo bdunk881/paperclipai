@@ -44,6 +44,10 @@ import {
   isWorkspaceFlagEnabled as defaultWorkspaceFlagChecker,
 } from "./workspaceFeatureFlags";
 import {
+  getSupabaseAdminClient,
+  isSupabaseAdminConfigured,
+} from "../adminConsole/supabaseAdminClient";
+import {
   getDefaultMfaChallengeStore,
   type MfaChallengeStore,
 } from "./mfaChallengeStore";
@@ -235,6 +239,36 @@ export class DefaultRecoveryCodeHasher implements RecoveryCodeHasher {
   }
 }
 
+/**
+ * Sets a user's password out-of-band, bypassing gotrue's AAL2 requirement.
+ *
+ * Recovery codes are app-owned, so consuming one does NOT bump the Supabase
+ * JWT to aal2 — only native TOTP/phone does. A user who lost their
+ * authenticator therefore can't satisfy gotrue's `updateUser` from a recovery
+ * session. The lost-device password reset is instead mediated server-side:
+ * verify a recovery code, then set the password via the service-role admin
+ * API (which is not subject to the AAL2 gate).
+ */
+export type RecoverySessionPasswordResetter = (
+  userId: string,
+  newPassword: string,
+) => Promise<void>;
+
+async function defaultPasswordResetter(userId: string, newPassword: string): Promise<void> {
+  if (!isSupabaseAdminConfigured()) {
+    throw new SecurityServiceError(
+      "Password reset is unavailable in this environment.",
+      503,
+      "admin_not_configured",
+    );
+  }
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
+  if (error) {
+    throw new SecurityServiceError(error.message, 502, "password_update_failed");
+  }
+}
+
 export interface MfaServiceDeps {
   repository?: MfaRepository;
   webauthn?: WebauthnAdapter | null;
@@ -273,6 +307,11 @@ export interface MfaServiceDeps {
    * `<base>/api/mfa/magic-link/verify`. Defaults to `PAPERCLIP_API_URL`.
    */
   magicLinkApiBaseUrl?: string;
+  /**
+   * Out-of-band password setter for the lost-device recovery reset. Defaults
+   * to the service-role admin API; tests inject a capturing fake.
+   */
+  passwordResetter?: RecoverySessionPasswordResetter;
 }
 
 export interface GetPolicyOptions {
@@ -459,6 +498,7 @@ export class MfaService {
   // HEL-282: email second-factor sender + magic-link base URL.
   private emailSender: MfaEmailSender;
   private magicLinkApiBaseUrl: string;
+  private passwordResetter: RecoverySessionPasswordResetter;
 
   constructor(deps: MfaServiceDeps = {}) {
     this.repository = deps.repository ?? getDefaultMfaRepository();
@@ -476,6 +516,7 @@ export class MfaService {
       deps.magicLinkApiBaseUrl ??
       process.env.PAPERCLIP_API_URL ??
       "http://localhost:3000";
+    this.passwordResetter = deps.passwordResetter ?? defaultPasswordResetter;
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -833,10 +874,10 @@ export class MfaService {
     return { codes, count };
   }
 
-  async consumeRecoveryCode(
+  private async consumeRecoveryCodeOrThrow(
     ctx: MfaServiceContext,
     plaintext: string,
-  ): Promise<{ attestation: MintedAal2Attestation }> {
+  ): Promise<void> {
     const normalized = plaintext.trim().toUpperCase().replace(/\s+/g, "");
     const consumed = await this.repository.consumeRecoveryCode(ctx.userId, async (hash) => {
       return this.hasher.compare(normalized, hash);
@@ -850,9 +891,41 @@ export class MfaService {
       lastVerifiedMethod: "recovery_code",
     });
     await recordAudit(ctx, "mfa.recovery_code.used", {});
+  }
+
+  async consumeRecoveryCode(
+    ctx: MfaServiceContext,
+    plaintext: string,
+  ): Promise<{ attestation: MintedAal2Attestation }> {
+    await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
     return {
       attestation: mintAal2Attestation({ userId: ctx.userId, method: "recovery_code" }),
     };
+  }
+
+  /**
+   * Lost-device password reset: verify a recovery code, then set the new
+   * password out-of-band via the admin API. Used by the password-recovery
+   * page when the user has a verified native factor (so gotrue blocks the
+   * aal1 `updateUser`) but can't produce a TOTP code. The recovery email link
+   * proves email control; the recovery code is the second factor — together
+   * they preserve MFA integrity without an authenticator.
+   */
+  async resetPasswordWithRecoveryCode(
+    ctx: MfaServiceContext,
+    plaintext: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      throw new SecurityServiceError(
+        "Password must be at least 8 characters.",
+        400,
+        "weak_password",
+      );
+    }
+    await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
+    await this.passwordResetter(ctx.userId, newPassword);
+    await recordAudit(ctx, "mfa.recovery_code.password_reset", {});
   }
 
   // ---- Email OTP + magic link (HEL-282) ------------------------------------

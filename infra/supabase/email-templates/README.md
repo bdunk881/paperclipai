@@ -28,9 +28,9 @@ verified by the dashboard. The `type` values match the `VALID_OTP_TYPES` set in
 
 | Supabase template | File | Subject | `type` | Link target |
 |---|---|---|---|---|
-| Confirm signup | `confirm-signup.html` | `Confirm your AutoFlow email` | `signup` | `/auth/confirm … &next=/` |
+| Confirm signup | `confirm-signup.html` | `Confirm your AutoFlow email` | `signup` | `/auth/confirm … &next=/` + `{{ .Token }}` code |
 | Invite user | `invite.html` | `You're invited to AutoFlow` | `invite` | `/auth/confirm … &next=/welcome` |
-| Magic Link | `magic-link.html` | `Your AutoFlow sign-in link` | `magiclink` | `/auth/confirm … &next=/` |
+| Magic Link | `magic-link.html` | `Your AutoFlow sign-in link` | `magiclink` | `/auth/confirm … &next=/` + `{{ .Token }}` code |
 | Change Email Address | `change-email.html` | `Confirm your new AutoFlow email` | `email_change` | `/auth/confirm … &next=/` |
 | Reset Password | `reset-password.html` | `Reset your AutoFlow password` | `recovery` | `/auth/confirm … &next=/reset-password` |
 | Reauthentication | `reauthentication.html` | `Your AutoFlow verification code` | — | none — shows `{{ .Token }}` code |
@@ -39,6 +39,15 @@ The app actively triggers **Confirm signup** (`client.auth.signUp`,
 `src/auth/passwordAuthRoutes.ts`) and **Reset password**
 (`client.auth.resetPasswordForEmail`, same file). The others are branded and
 wired so they're correct the moment those flows are enabled.
+
+> **Passwordless passkey sign-up (HEL-386)** calls `signInWithOtp` /
+> `verifyOtp({ type: "email" })` from the login page, then registers a passkey.
+> Depending on GoTrue's state for the address, the emailed message is either
+> **Confirm signup** (new user) or **Magic Link** (existing user) — so **both**
+> of those templates now render the `{{ .Token }}` 6-digit code alongside the
+> link. The code-entry step on the login page reads that code; the link still
+> works for the other flows. If a template drops `{{ .Token }}`, passkey
+> sign-up users get an email with no code to type.
 
 > `recovery` links route through `/auth/confirm`, which `verifyOtp`s the token
 > and then redirects to `/reset-password` (`AuthConfirm.tsx`). The backend's
@@ -84,7 +93,7 @@ scripting parity across projects.
 |---|---|
 | `{{ .SiteURL }}` | The configured Site URL (dashboard origin). |
 | `{{ .TokenHash }}` | Hashed OTP for the verification link (`verifyOtp`). |
-| `{{ .Token }}` | 6-digit numeric code (reauthentication only). |
+| `{{ .Token }}` | 6-digit numeric code (`verifyOtp` with a `token`). Used by reauthentication, and by the passkey sign-up code-entry step in `magic-link.html` + `confirm-signup.html`. |
 | `{{ .Email }}` | The user's current email address. |
 | `{{ .NewEmail }}` | The requested new address (change-email only). |
 | `{{ .RedirectTo }}` | The app-supplied redirect target, if used. |

@@ -4,6 +4,26 @@ See [AGENTS.md](AGENTS.md) for the canonical agent operating manual. Anything Cl
 
 ---
 
+## ⛔ Branch & PR target — `dev` ONLY (non-negotiable)
+
+**Every branch is cut from `dev`, and every pull request targets `dev`.** Never
+open, retarget, or push a PR against `main` or `master` — those are the frozen
+production line and are gated separately ([HEL-7](https://linear.app/helloautoflow/issue/HEL-7)).
+
+Do this every time, no exceptions:
+1. Before branching: `git checkout dev && git pull origin dev`, then branch off it.
+2. When opening a PR, set the **base to `dev`** explicitly (`gh pr create --base dev …`,
+   or `base: "dev"` on the GitHub MCP `create_pull_request` call). Do not rely on the
+   repo default base — it may be `main`/`master`.
+3. **After opening, verify the base is `dev`.** If a PR ever shows `main`/`master`
+   as its base (telltale sign: a diff of hundreds/thousands of files), retarget it to
+   `dev` immediately (`gh pr edit <n> --base dev` or MCP `update_pull_request`).
+
+Promotion `dev → staging → master` is a separate, human-gated step (see AGENTS.md
+"Branch flow"). Agents never promote to `master`.
+
+---
+
 ## Linear ticket policy (mandatory for every PR)
 
 Every code change starts in Linear. No untracked PRs.

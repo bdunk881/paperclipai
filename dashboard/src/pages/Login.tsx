@@ -12,10 +12,9 @@ import {
   signInWithSupabaseOAuth,
   signInWithSupabasePassword,
   signUpWithSupabasePassword,
-  verifySignupEmailOtp,
   type SupabaseOAuthProvider,
 } from "../auth/supabaseAuth";
-import { isWebauthnAvailable, loginWithPasskey, registerPasskey } from "../auth/mfa";
+import { isWebauthnAvailable, loginWithPasskey, markPasskeySignupIntent } from "../auth/mfa";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
 import { useTheme } from "../context/ThemeContext";
 
@@ -126,11 +125,9 @@ export default function Login() {
   );
   const [notice, setNotice] = useState("");
   const [passkeyBusy, setPasskeyBusy] = useState(false);
-  // Passwordless passkey sign-up is two-phase: "idle" → enter email + name and
-  // request a code; "code" → enter the emailed code, then run the passkey
-  // registration ceremony.
-  const [passkeySignupStep, setPasskeySignupStep] = useState<"idle" | "code">("idle");
-  const [passkeySignupCode, setPasskeySignupCode] = useState("");
+  // Passwordless passkey sign-up emails a verification link; once the email is
+  // sent we flip this so the form shows "check your email" instead of the CTA.
+  const [passkeySignupLinkSent, setPasskeySignupLinkSent] = useState(false);
 
   const magicLinkCooldown = useAuthCooldown(MAGIC_LINK_COOLDOWN_KEY);
 
@@ -162,9 +159,8 @@ export default function Login() {
     setSearchParams(nextParams);
     setError("");
     setNotice("");
-    // Leaving a tab abandons any in-flight passkey sign-up code entry.
-    setPasskeySignupStep("idle");
-    setPasskeySignupCode("");
+    // Leaving a tab resets the passkey sign-up "check your email" state.
+    setPasskeySignupLinkSent(false);
   }
 
   async function handleOAuth(provider: SupabaseOAuthProvider) {
@@ -307,10 +303,12 @@ export default function Login() {
     }
   }
 
-  // Passwordless passkey sign-up, phase 1: prove inbox control. We email a
-  // one-time code (which also provisions the account on verify) before letting
-  // the user mint a passkey, so nobody can squat an address they don't own.
-  async function handlePasskeySignupStart() {
+  // Passwordless passkey sign-up: email a verification link that proves inbox
+  // control (and provisions the account). We stash a passkey-sign-up intent
+  // first; once the link signs the user in, the enrollment flow consumes that
+  // flag and routes them straight into creating their passkey. No password and
+  // no in-tab code to type — they just click the link on this device.
+  async function handlePasskeySignup() {
     if (!configured) {
       triggerError("Supabase auth is not configured for this dashboard environment.");
       return;
@@ -327,65 +325,17 @@ export default function Login() {
     setError("");
     setNotice("");
     try {
+      markPasskeySignupIntent();
       await sendSignupEmailOtp(signupEmail.trim(), signupName.trim());
-      setPasskeySignupStep("code");
-      setNotice("We emailed you a 6-digit code. Enter it below, then create your passkey.");
+      setPasskeySignupLinkSent(true);
+      setNotice(
+        "Check your email and open the link on this device. We'll set up your passkey right after.",
+      );
       setPasskeyBusy(false);
     } catch (authError) {
       setPasskeyBusy(false);
       triggerError(mapSupabaseAuthError(authError));
     }
-  }
-
-  // Phase 2: verify the emailed code, register the passkey, THEN adopt the
-  // session. Order matters: verify runs on a detached client so the shared
-  // client doesn't sign in yet — that lets the passkey ceremony finish at the
-  // sign-up window instead of the session change redirecting us into MFA
-  // onboarding first. Once the passkey exists, adopting the session lands the
-  // user in the app with a factor already enrolled (no second-factor prompt).
-  // Errors are mapped per stage so a wrong code reads differently from a
-  // cancelled passkey prompt.
-  async function handlePasskeySignupVerify() {
-    if (!passkeySignupCode.trim()) {
-      triggerError("Enter the code we emailed you.");
-      return;
-    }
-    setPasskeyBusy(true);
-    setError("");
-    setNotice("");
-
-    let session: Awaited<ReturnType<typeof verifySignupEmailOtp>>;
-    try {
-      session = await verifySignupEmailOtp(signupEmail.trim(), passkeySignupCode);
-    } catch (authError) {
-      setPasskeyBusy(false);
-      triggerError(mapSupabaseAuthError(authError));
-      return;
-    }
-
-    try {
-      // Token-authenticated; the shared client has no session yet, so the
-      // ceremony completes here on the sign-up form.
-      await registerPasskey(session.accessToken, "Passkey");
-    } catch (authError) {
-      // Email is verified but the passkey didn't take. Keep the code step so
-      // they can retry the ceremony without re-requesting a code.
-      setPasskeyBusy(false);
-      triggerError(mapPasskeyLoginError(authError));
-      return;
-    }
-
-    try {
-      // Passkey is enrolled — now sign in for real and head into the app.
-      await setSupabaseSessionFromTokens(session.accessToken, session.refreshToken ?? "");
-    } catch (authError) {
-      setPasskeyBusy(false);
-      triggerError(mapSupabaseAuthError(authError));
-      return;
-    }
-
-    writeStoredAuthUser(session.user);
-    navigate("/", { replace: true });
   }
 
   const headerText = cardTitle(mode);
@@ -570,14 +520,25 @@ export default function Login() {
               </form>
             ) : null}
 
-            {/* Passwordless sign-up: verify email, then mint a passkey instead
-                of a password. Uses the name + email entered in the form above. */}
+            {/* Passwordless sign-up: email a verification link instead of a
+                password. Clicking it signs the user in, then the enrollment
+                flow takes them straight into creating their passkey. Uses the
+                name + email entered in the form above. */}
             {mode === "signup" && passkeysAvailable ? (
               <div className="mt-4 border-t border-dashed border-af2-line pt-4">
-                {passkeySignupStep === "idle" ? (
+                {passkeySignupLinkSent ? (
                   <button
                     type="button"
-                    onClick={handlePasskeySignupStart}
+                    onClick={handlePasskeySignup}
+                    disabled={isAnyBusy || !configured}
+                    className="w-full text-center text-xs font-medium text-af2-clay hover:underline disabled:opacity-50"
+                  >
+                    Didn't get it? Resend the link
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handlePasskeySignup}
                     disabled={isAnyBusy || !configured}
                     className="auth-microsoft-button w-full justify-center"
                     aria-label="Sign up with a passkey"
@@ -589,45 +550,8 @@ export default function Login() {
                         <KeyRound size={18} className="text-af2-ink-3" />
                       )}
                     </span>
-                    <span>{passkeyBusy ? "Sending code…" : "Sign up with a passkey"}</span>
+                    <span>{passkeyBusy ? "Sending link…" : "Sign up with a passkey"}</span>
                   </button>
-                ) : (
-                  <div className="space-y-3">
-                    <Field label="Email code" delay={0}>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        value={passkeySignupCode}
-                        onChange={(event) => setPasskeySignupCode(event.target.value)}
-                        disabled={isAnyBusy}
-                        className="auth-input"
-                        placeholder="6-digit code"
-                      />
-                    </Field>
-                    <button
-                      type="button"
-                      onClick={handlePasskeySignupVerify}
-                      disabled={isAnyBusy}
-                      className="auth-primary-button"
-                      aria-label="Verify code and create passkey"
-                    >
-                      {passkeyBusy ? <Loader2 size={18} className="animate-spin" /> : <KeyRound size={18} />}
-                      {passkeyBusy ? "Verifying…" : "Verify & create passkey"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPasskeySignupStep("idle");
-                        setPasskeySignupCode("");
-                        setNotice("");
-                      }}
-                      disabled={isAnyBusy}
-                      className="w-full text-center text-xs font-medium text-af2-clay hover:underline disabled:opacity-50"
-                    >
-                      Use a different email
-                    </button>
-                  </div>
                 )}
               </div>
             ) : null}

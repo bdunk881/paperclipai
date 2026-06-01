@@ -31,8 +31,8 @@ export default function MfaEnrollmentWizard() {
     <Af2Page>
       <Af2PageHead
         eyebrow="Account · Security"
-        title="Set up two-factor authentication"
-        subtitle="AutoFlow protects every account with a phish-resistant second factor. Use a passkey (recommended) or an authenticator app, then save your recovery codes."
+        title="Secure your account"
+        subtitle="AutoFlow secures every account with a phish-resistant key. Add a passkey (recommended) — your fingerprint, face, or device PIN — then save your recovery codes."
       />
       <MfaEnrollmentFlow onComplete={() => navigate(fromUrl, { replace: true })} />
     </Af2Page>

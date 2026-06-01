@@ -132,14 +132,14 @@ export function MfaEnrollmentSheet() {
               className="af2-h2 font-af2-serif"
               style={{ lineHeight: 1.15 }}
             >
-              Set up two-factor auth
+              Secure your account
             </div>
           </div>
         </div>
         <div style={{ padding: "18px 22px", overflowY: "auto", flex: 1 }}>
           <p className="text-sm text-af2-ink-4 mb-4">
-            AutoFlow protects every account with a phish-resistant second factor. Choose a
-            passkey (recommended) or an authenticator app, then save your recovery codes.
+            AutoFlow secures every account with a phish-resistant key. Add a passkey
+            (recommended) — your fingerprint, face, or device PIN — then save your recovery codes.
           </p>
           <MfaEnrollmentFlow onComplete={handleComplete} />
         </div>

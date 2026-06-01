@@ -100,3 +100,39 @@ export function isWebauthnAvailable(): boolean {
   if (!window.isSecureContext) return false;
   return true;
 }
+
+// Passkey sign-up intent (HEL-390). Passwordless passkey sign-up verifies the
+// email via a clicked link, which often lands in a NEW tab — so we stash the
+// "this person came here to make a passkey" intent in localStorage (shared
+// across tabs, unlike sessionStorage) before sending the email. After the link
+// signs them in, the enrollment flow consumes the flag and jumps straight to
+// passkey creation instead of the generic factor chooser.
+const PASSKEY_SIGNUP_INTENT_KEY = "autoflow.auth.passkeySignupIntent";
+const PASSKEY_SIGNUP_INTENT_TTL_MS = 30 * 60 * 1000;
+
+export function markPasskeySignupIntent(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PASSKEY_SIGNUP_INTENT_KEY, String(Date.now()));
+  } catch {
+    // Private-mode / storage-disabled: the flow still works, it just lands on
+    // the factor chooser (passkey is the recommended first option anyway).
+  }
+}
+
+/**
+ * Reads and clears the passkey sign-up intent. Returns true only when the flag
+ * was set recently (guards against a stale flag from an abandoned sign-up).
+ */
+export function consumePasskeySignupIntent(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(PASSKEY_SIGNUP_INTENT_KEY);
+    if (!raw) return false;
+    window.localStorage.removeItem(PASSKEY_SIGNUP_INTENT_KEY);
+    const ts = Number(raw);
+    return Number.isFinite(ts) && Date.now() - ts < PASSKEY_SIGNUP_INTENT_TTL_MS;
+  } catch {
+    return false;
+  }
+}

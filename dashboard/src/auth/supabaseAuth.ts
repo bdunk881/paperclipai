@@ -358,14 +358,15 @@ export async function sendSupabaseMagicLink(email: string): Promise<void> {
 }
 
 /**
- * Passwordless passkey sign-up, phase 1: email a one-time code that proves the
- * user controls the inbox. Uses Supabase's email OTP (`signInWithOtp` with
- * `shouldCreateUser`), so a brand-new email provisions the account on verify
- * and an existing email simply re-authenticates (letting them add a passkey).
- * The full name rides along as user metadata, matching the password sign-up.
+ * Passwordless passkey sign-up: email a verification link that proves the user
+ * controls the inbox. Uses Supabase's email OTP (`signInWithOtp` with
+ * `shouldCreateUser`), so clicking the link provisions a brand-new account (or
+ * re-authenticates an existing one) and signs the user in. The full name rides
+ * along as user metadata, matching the password sign-up.
  *
- * NOTE: the Supabase project's email template must surface the `{{ .Token }}`
- * code (not only the magic link) for the code-entry step to work.
+ * The dashboard pairs this with a passkey-sign-up *intent* flag (see
+ * `markPasskeySignupIntent`): once the link signs the user in, the enrollment
+ * flow consumes the flag and routes them straight into passkey creation.
  */
 export async function sendSignupEmailOtp(email: string, fullName?: string): Promise<void> {
   const client = requireSupabaseClient();
@@ -380,44 +381,6 @@ export async function sendSignupEmailOtp(email: string, fullName?: string): Prom
   if (error) {
     throw new Error(error.message);
   }
-}
-
-/**
- * Passwordless passkey sign-up, phase 2: verify the emailed code.
- *
- * Verification runs on a DETACHED client (`persistSession: false`) so it does
- * NOT install the session into the shared dashboard client. That matters: the
- * moment the shared client adopts a session, `onAuthStateChange` fires and the
- * router redirects away from `/login`, which would unmount the sign-up form
- * mid-flow and bounce the user into the MFA-enrollment onboarding before the
- * passkey ceremony finished. Instead we hand the tokens back so the caller can
- * register the passkey FIRST, then adopt the session via
- * `setSupabaseSessionFromTokens`.
- */
-export async function verifySignupEmailOtp(
-  email: string,
-  code: string,
-): Promise<StoredAuthSession> {
-  const url = getSupabaseUrl();
-  const anonKey = getSupabaseAnonKey();
-  if (!url || !anonKey) {
-    throw new Error("Supabase auth is not configured for this dashboard environment.");
-  }
-  const detached = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await detached.auth.verifyOtp({
-    email,
-    token: code.trim(),
-    type: "email",
-  });
-  if (error) {
-    throw new Error(error.message);
-  }
-  if (!data.session) {
-    throw new Error("Email verification did not return a session.");
-  }
-  return sessionFromSupabaseSession(data.session);
 }
 
 export async function sendSupabasePasswordReset(email: string): Promise<void> {

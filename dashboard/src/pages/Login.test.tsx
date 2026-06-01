@@ -11,10 +11,9 @@ const {
   isSupabaseAuthConfiguredMock,
   setSupabaseSessionFromTokensMock,
   sendSignupEmailOtpMock,
-  verifySignupEmailOtpMock,
   loginWithPasskeyMock,
-  registerPasskeyMock,
   isWebauthnAvailableMock,
+  markPasskeySignupIntentMock,
   writeStoredAuthUserMock,
 } = vi.hoisted(() => ({
   signInWithSupabasePasswordMock: vi.fn(),
@@ -24,11 +23,10 @@ const {
   isSupabaseAuthConfiguredMock: vi.fn(() => true),
   setSupabaseSessionFromTokensMock: vi.fn(),
   sendSignupEmailOtpMock: vi.fn(),
-  verifySignupEmailOtpMock: vi.fn(),
   loginWithPasskeyMock: vi.fn(),
-  registerPasskeyMock: vi.fn(),
   // Default OFF so unrelated tests don't render the passkey button.
   isWebauthnAvailableMock: vi.fn(() => false),
+  markPasskeySignupIntentMock: vi.fn(),
   writeStoredAuthUserMock: vi.fn(),
 }));
 
@@ -40,14 +38,13 @@ vi.mock("../auth/supabaseAuth", () => ({
   isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
   setSupabaseSessionFromTokens: setSupabaseSessionFromTokensMock,
   sendSignupEmailOtp: sendSignupEmailOtpMock,
-  verifySignupEmailOtp: verifySignupEmailOtpMock,
   mapSupabaseAuthError: (err: unknown) => (err instanceof Error ? err.message : "Error"),
 }));
 
 vi.mock("../auth/mfa", () => ({
   loginWithPasskey: loginWithPasskeyMock,
-  registerPasskey: registerPasskeyMock,
   isWebauthnAvailable: isWebauthnAvailableMock,
+  markPasskeySignupIntent: markPasskeySignupIntentMock,
 }));
 
 vi.mock("../auth/authStorage", () => ({
@@ -343,30 +340,14 @@ describe("Login", () => {
     expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).not.toBeInTheDocument();
   });
 
-  it("emails a code, verifies it, then registers a passkey and signs in", async () => {
+  it("emails the verification link, marks passkey intent, and shows a check-your-email notice", async () => {
     isWebauthnAvailableMock.mockReturnValue(true);
     sendSignupEmailOtpMock.mockResolvedValueOnce(undefined);
-    verifySignupEmailOtpMock.mockResolvedValueOnce({
-      accessToken: "access-1",
-      refreshToken: "refresh-1",
-      expiresAt: Date.now() + 60_000,
-      user: { id: "u-1", email: "new@example.com", name: "New User" },
-      authProvider: "supabase",
-    });
-    registerPasskeyMock.mockResolvedValueOnce({ credentialId: "cred-1" });
-    setSupabaseSessionFromTokensMock.mockResolvedValueOnce({
-      accessToken: "access-1",
-      refreshToken: "refresh-1",
-      expiresAt: Date.now() + 60_000,
-      user: { id: "u-1", email: "new@example.com", name: "New User" },
-      authProvider: "supabase",
-    });
 
     render(
       <MemoryRouter initialEntries={["/login?mode=signup"]}>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
         </Routes>
       </MemoryRouter>
     );
@@ -375,71 +356,17 @@ describe("Login", () => {
     fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "new@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: /sign up with a passkey/i }));
 
-    // Phase 1: code sent, code input appears.
     await waitFor(() => {
+      expect(markPasskeySignupIntentMock).toHaveBeenCalledTimes(1);
       expect(sendSignupEmailOtpMock).toHaveBeenCalledWith("new@example.com", "New User");
-      expect(screen.getByLabelText("Email code")).toBeInTheDocument();
+      expect(screen.getByText(/check your email and open the link/i)).toBeInTheDocument();
+      // Flips to the resend affordance; no in-tab code entry anymore.
+      expect(screen.getByRole("button", { name: /resend the link/i })).toBeInTheDocument();
     });
-
-    // Phase 2: enter code → verify → register passkey → adopt session → redirect.
-    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "123456" } });
-    fireEvent.click(screen.getByRole("button", { name: /verify code and create passkey/i }));
-
-    await waitFor(() => {
-      expect(verifySignupEmailOtpMock).toHaveBeenCalledWith("new@example.com", "123456");
-      expect(registerPasskeyMock).toHaveBeenCalledWith("access-1", "Passkey");
-      expect(setSupabaseSessionFromTokensMock).toHaveBeenCalledWith("access-1", "refresh-1");
-      expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);
-      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
-    });
-
-    // The fix: the passkey is registered BEFORE the session is adopted, so the
-    // user lands in the app with a factor already enrolled (no MFA onboarding
-    // bounce). Assert that ordering explicitly.
-    expect(registerPasskeyMock.mock.invocationCallOrder[0]).toBeLessThan(
-      setSupabaseSessionFromTokensMock.mock.invocationCallOrder[0],
-    );
+    expect(screen.queryByLabelText("Email code")).not.toBeInTheDocument();
   });
 
-  it("does not adopt the session if the passkey ceremony fails", async () => {
-    isWebauthnAvailableMock.mockReturnValue(true);
-    sendSignupEmailOtpMock.mockResolvedValueOnce(undefined);
-    verifySignupEmailOtpMock.mockResolvedValueOnce({
-      accessToken: "access-1",
-      refreshToken: "refresh-1",
-      expiresAt: Date.now() + 60_000,
-      user: { id: "u-1", email: "new@example.com", name: "New User" },
-      authProvider: "supabase",
-    });
-    registerPasskeyMock.mockRejectedValueOnce(new DOMException("cancelled", "NotAllowedError"));
-
-    render(
-      <MemoryRouter initialEntries={["/login?mode=signup"]}>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<div>Dashboard Home</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New User" } });
-    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "new@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: /sign up with a passkey/i }));
-    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeInTheDocument());
-
-    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "123456" } });
-    fireEvent.click(screen.getByRole("button", { name: /verify code and create passkey/i }));
-
-    // Ceremony failed → stay on the code step, never sign in.
-    await waitFor(() => {
-      expect(screen.getByText(/cancelled or timed out/i)).toBeInTheDocument();
-    });
-    expect(setSupabaseSessionFromTokensMock).not.toHaveBeenCalled();
-    expect(writeStoredAuthUserMock).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Email code")).toBeInTheDocument();
-  });
-
-  it("requires name and email before sending the signup code", async () => {
+  it("requires name and email before sending the signup link", async () => {
     isWebauthnAvailableMock.mockReturnValue(true);
     render(
       <MemoryRouter initialEntries={["/login?mode=signup"]}>

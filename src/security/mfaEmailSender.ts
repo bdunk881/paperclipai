@@ -18,7 +18,9 @@
 
 export type MfaEmailKind =
   | "email_otp_code"
-  | "magic_link";
+  | "magic_link"
+  // HEL-383: out-of-band notice that the account password was changed.
+  | "password_changed";
 
 export interface MfaEmailMessage {
   to: string;
@@ -27,8 +29,10 @@ export interface MfaEmailMessage {
   code?: string;
   /** Absolute verification URL for `magic_link`. */
   link?: string;
-  /** 'enroll' | 'verify' — only affects copy. */
-  purpose: "enroll" | "verify";
+  /** How the change was made, for `password_changed` copy (e.g. "a recovery code"). */
+  method?: string;
+  /** 'enroll' | 'verify' — only affects copy. 'notify' for one-way notices. */
+  purpose: "enroll" | "verify" | "notify";
 }
 
 export interface MfaEmailSender {
@@ -62,6 +66,20 @@ interface RenderedEmail {
 }
 
 function render(message: MfaEmailMessage): RenderedEmail {
+  if (message.kind === "password_changed") {
+    const how = message.method ? ` using ${message.method}` : "";
+    return {
+      subject: "Your AutoFlow password was changed",
+      text:
+        `Your AutoFlow password was just changed${how}.\n\n` +
+        `If this was you, no action is needed. If you didn't do this, reset your ` +
+        `password immediately and contact support — your account may be at risk.`,
+      html:
+        `<p>Your AutoFlow password was just changed${escapeHtml(how)}.</p>` +
+        `<p>If this was you, no action is needed. If you didn't do this, reset your ` +
+        `password immediately and contact support — your account may be at risk.</p>`,
+    };
+  }
   if (message.kind === "email_otp_code") {
     const code = message.code ?? "";
     return {
@@ -143,7 +161,9 @@ export class LoggingMfaEmailSender implements MfaEmailSender {
     const detail =
       message.kind === "email_otp_code"
         ? `code=${message.code ?? "?"}`
-        : `link=${message.link ?? "?"}`;
+        : message.kind === "magic_link"
+          ? `link=${message.link ?? "?"}`
+          : `method=${message.method ?? "?"}`;
     console.log(
       `[mfaEmailSender] (dev) would send ${message.kind} (${message.purpose}) to ${message.to} — ${detail}`,
     );

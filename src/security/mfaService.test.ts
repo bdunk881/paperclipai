@@ -560,6 +560,43 @@ describe("MfaService", () => {
     expect(passwordResetter).not.toHaveBeenCalled();
   });
 
+  it("sends a password-changed notice after a recovery-code reset (HEL-383)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const sender = makeEmailSender();
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      emailSender: sender,
+    });
+    const ctx = { userId: "u-1", email: "user@example.com" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+
+    const notice = sender.sent.find((m) => m.kind === "password_changed");
+    expect(notice?.to).toBe("user@example.com");
+    expect(notice?.method).toBe("a recovery code");
+  });
+
+  it("skips the password-changed notice when no email is on the context (HEL-383)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const sender = makeEmailSender();
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      emailSender: sender,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(sender.sent.some((m) => m.kind === "password_changed")).toBe(false);
+  });
+
   it("delegates TOTP enrollment to the Supabase adapter", async () => {
     const totp = makeTotpStub();
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });

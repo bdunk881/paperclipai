@@ -108,6 +108,8 @@ export interface MfaServiceContext {
   userId: string;
   userAgent?: string;
   ip?: string;
+  /** Verified email of the session user, for out-of-band notifications. */
+  email?: string;
 }
 
 export interface WebauthnRegistrationOptions {
@@ -451,11 +453,16 @@ async function recordAudit(
   metadata: Record<string, unknown>,
 ): Promise<void> {
   if (!ctx.workspaceId) {
-    // Audit log is workspace-scoped. If the caller is in a state where
-    // no workspace context is available (e.g. login challenge before
-    // a workspace is bound), skip silently rather than throwing — the
-    // event is also stamped in the Supabase JWT's amr/aal so we don't
-    // lose security context entirely.
+    // The audit *table* is workspace-scoped, but security-critical auth
+    // events can legitimately fire with no workspace bound — notably the
+    // password-recovery flow (HEL-383), which carries no `x-workspace-id`.
+    // Rather than silently drop them, emit a structured security log so the
+    // event still lands in the aggregator. (A dedicated workspace-agnostic
+    // audit table is a larger follow-up.)
+    console.warn(
+      "[security-audit] workspaceless auth event",
+      JSON.stringify({ action, userId: ctx.userId, ip: ctx.ip ?? null, ...metadata }),
+    );
     return;
   }
   try {
@@ -1020,6 +1027,28 @@ export class MfaService {
     await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
     await this.passwordResetter(ctx.userId, newPassword);
     await recordAudit(ctx, "mfa.recovery_code.password_reset", {});
+    await this.notifyPasswordChanged(ctx, "a recovery code");
+  }
+
+  /**
+   * HEL-383: out-of-band "your password was changed" notice (OWASP ASVS /
+   * NIST 800-63B). Best-effort — a mail failure must never fail the reset.
+   */
+  private async notifyPasswordChanged(ctx: MfaServiceContext, method: string): Promise<void> {
+    if (!ctx.email) return;
+    try {
+      await this.emailSender.send({
+        to: ctx.email,
+        kind: "password_changed",
+        purpose: "notify",
+        method,
+      });
+    } catch (error) {
+      console.warn(
+        "[mfaService] password-changed notice failed",
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
 
   /**
@@ -1038,6 +1067,7 @@ export class MfaService {
     this.assertStrongPassword(newPassword);
     await this.passwordResetter(ctx.userId, newPassword);
     await recordAudit(ctx, "mfa.account.password_reset", {});
+    await this.notifyPasswordChanged(ctx, "your second factor");
   }
 
   // ---- Email OTP + magic link (HEL-282) ------------------------------------

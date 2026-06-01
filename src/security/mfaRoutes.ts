@@ -39,8 +39,19 @@ import {
   buildAal2AttestationCookieHeader,
   requireAAL2,
 } from "../middleware/requireAAL2";
+import { createDurableObjectRateLimiter, getRateLimitKey } from "../middleware/rateLimit";
 import { SecurityServiceError } from "./securityService";
 import { getMfaService, type MfaService, type MfaServiceContext } from "./mfaService";
+
+// HEL-383: throttle recovery-code attempts (consume + lost-device reset).
+// Codes are 80-bit and single-use, but unlimited guessing shouldn't be free.
+// Keyed by user (falls back to IP), shared across both recovery-code routes.
+const recoveryCodeRateLimiter = createDurableObjectRateLimiter({
+  scope: "mfa-recovery-code",
+  limit: 10,
+  windowMs: 15 * 60 * 1000,
+  keyGenerator: getRateLimitKey,
+});
 
 function buildContext(req: AuthenticatedRequest): MfaServiceContext {
   const workspaceHeader = req.headers["x-workspace-id"];
@@ -61,6 +72,7 @@ function buildContext(req: AuthenticatedRequest): MfaServiceContext {
     userId: req.auth!.sub,
     userAgent,
     ip,
+    email: typeof req.auth?.email === "string" ? req.auth.email : undefined,
   };
 }
 
@@ -376,6 +388,7 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
 
   router.post(
     "/recovery-codes/consume",
+    recoveryCodeRateLimiter,
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
       const parsed = recoveryConsumeSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -398,6 +411,7 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
   // the password is set out-of-band via the admin API inside the service.
   router.post(
     "/recovery-codes/reset-password",
+    recoveryCodeRateLimiter,
     asyncHandler<AuthenticatedRequest>(async (req, res) => {
       const parsed = recoveryResetPasswordSchema.safeParse(req.body);
       if (!parsed.success) {

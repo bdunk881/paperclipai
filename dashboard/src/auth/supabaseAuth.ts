@@ -357,6 +357,56 @@ export async function sendSupabaseMagicLink(email: string): Promise<void> {
   }
 }
 
+/**
+ * Passwordless passkey sign-up, phase 1: email a one-time code that proves the
+ * user controls the inbox. Uses Supabase's email OTP (`signInWithOtp` with
+ * `shouldCreateUser`), so a brand-new email provisions the account on verify
+ * and an existing email simply re-authenticates (letting them add a passkey).
+ * The full name rides along as user metadata, matching the password sign-up.
+ *
+ * NOTE: the Supabase project's email template must surface the `{{ .Token }}`
+ * code (not only the magic link) for the code-entry step to work.
+ */
+export async function sendSignupEmailOtp(email: string, fullName?: string): Promise<void> {
+  const client = requireSupabaseClient();
+  const trimmedName = fullName?.trim();
+  const { error } = await client.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true,
+      ...(trimmedName ? { data: { full_name: trimmedName } } : {}),
+    },
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Passwordless passkey sign-up, phase 2: verify the emailed code. On success
+ * Supabase returns a real session (creating the user if new), which the client
+ * adopts — the caller can then register a passkey against that session via the
+ * authenticated WebAuthn endpoints.
+ */
+export async function verifySignupEmailOtp(
+  email: string,
+  code: string,
+): Promise<StoredAuthSession> {
+  const client = requireSupabaseClient();
+  const { data, error } = await client.auth.verifyOtp({
+    email,
+    token: code.trim(),
+    type: "email",
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data.session) {
+    throw new Error("Email verification did not return a session.");
+  }
+  return sessionFromSupabaseSession(data.session);
+}
+
 export async function sendSupabasePasswordReset(email: string): Promise<void> {
   const client = requireSupabaseClient();
   const redirectTo = resetPasswordUrl();

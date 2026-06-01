@@ -10,7 +10,10 @@ const {
   signInWithSupabaseOAuthMock,
   isSupabaseAuthConfiguredMock,
   setSupabaseSessionFromTokensMock,
+  sendSignupEmailOtpMock,
+  verifySignupEmailOtpMock,
   loginWithPasskeyMock,
+  registerPasskeyMock,
   isWebauthnAvailableMock,
   writeStoredAuthUserMock,
 } = vi.hoisted(() => ({
@@ -20,7 +23,10 @@ const {
   signInWithSupabaseOAuthMock: vi.fn(),
   isSupabaseAuthConfiguredMock: vi.fn(() => true),
   setSupabaseSessionFromTokensMock: vi.fn(),
+  sendSignupEmailOtpMock: vi.fn(),
+  verifySignupEmailOtpMock: vi.fn(),
   loginWithPasskeyMock: vi.fn(),
+  registerPasskeyMock: vi.fn(),
   // Default OFF so unrelated tests don't render the passkey button.
   isWebauthnAvailableMock: vi.fn(() => false),
   writeStoredAuthUserMock: vi.fn(),
@@ -33,11 +39,14 @@ vi.mock("../auth/supabaseAuth", () => ({
   signInWithSupabaseOAuth: signInWithSupabaseOAuthMock,
   isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
   setSupabaseSessionFromTokens: setSupabaseSessionFromTokensMock,
+  sendSignupEmailOtp: sendSignupEmailOtpMock,
+  verifySignupEmailOtp: verifySignupEmailOtpMock,
   mapSupabaseAuthError: (err: unknown) => (err instanceof Error ? err.message : "Error"),
 }));
 
 vi.mock("../auth/mfa", () => ({
   loginWithPasskey: loginWithPasskeyMock,
+  registerPasskey: registerPasskeyMock,
   isWebauthnAvailable: isWebauthnAvailableMock,
 }));
 
@@ -317,5 +326,81 @@ describe("Login", () => {
       expect(screen.getByText(/cancelled or timed out/i)).toBeInTheDocument();
     });
     expect(setSupabaseSessionFromTokensMock).not.toHaveBeenCalled();
+  });
+
+  // Passwordless passkey sign-up (verify email first) -----------------------
+
+  it("shows 'Sign up with a passkey' on the signup tab, not the sign-in passkey button", () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    render(
+      <MemoryRouter initialEntries={["/login?mode=signup"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.getByRole("button", { name: /sign up with a passkey/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).not.toBeInTheDocument();
+  });
+
+  it("emails a code, verifies it, then registers a passkey and signs in", async () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    sendSignupEmailOtpMock.mockResolvedValueOnce(undefined);
+    verifySignupEmailOtpMock.mockResolvedValueOnce({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "u-1", email: "new@example.com", name: "New User" },
+      authProvider: "supabase",
+    });
+    registerPasskeyMock.mockResolvedValueOnce({ credentialId: "cred-1" });
+
+    render(
+      <MemoryRouter initialEntries={["/login?mode=signup"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Dashboard Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "New User" } });
+    fireEvent.change(screen.getByLabelText("Work email"), { target: { value: "new@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign up with a passkey/i }));
+
+    // Phase 1: code sent, code input appears.
+    await waitFor(() => {
+      expect(sendSignupEmailOtpMock).toHaveBeenCalledWith("new@example.com", "New User");
+      expect(screen.getByLabelText("Email code")).toBeInTheDocument();
+    });
+
+    // Phase 2: enter code → verify → register passkey → redirect.
+    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: /verify code and create passkey/i }));
+
+    await waitFor(() => {
+      expect(verifySignupEmailOtpMock).toHaveBeenCalledWith("new@example.com", "123456");
+      expect(registerPasskeyMock).toHaveBeenCalledWith("access-1", "Passkey");
+      expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
+    });
+  });
+
+  it("requires name and email before sending the signup code", async () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    render(
+      <MemoryRouter initialEntries={["/login?mode=signup"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /sign up with a passkey/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/enter your name and email/i)).toBeInTheDocument();
+    });
+    expect(sendSignupEmailOtpMock).not.toHaveBeenCalled();
   });
 });

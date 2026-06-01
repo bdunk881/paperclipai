@@ -24,6 +24,7 @@ const salesforce: IntegrationManifest = {
   description: "Create and update leads, contacts, opportunities, and accounts in Salesforce CRM.",
   category: "crm",
   icon: "salesforce",
+  logoDomain: "salesforce.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://login.salesforce.com/services/oauth2/authorize",
@@ -110,7 +111,9 @@ const hubspot: IntegrationManifest = {
   description: "Manage contacts, companies, deals, and pipelines in HubSpot CRM.",
   category: "crm",
   icon: "hubspot",
+  logoDomain: "hubspot.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://app.hubspot.com/oauth/authorize",
     tokenUrl: "https://api.hubapi.com/oauth/v1/token",
@@ -192,7 +195,9 @@ const pipedrive: IntegrationManifest = {
   description: "Manage deals, contacts, and pipelines in Pipedrive.",
   category: "crm",
   icon: "pipedrive",
+  logoDomain: "pipedrive.com",
   authKind: "api_key",
+  supportsOAuth: true,
   authHeaderKey: "X-API-Key",
   baseUrl: "https://api.pipedrive.com",
   setupInstructions:
@@ -250,7 +255,9 @@ const slack: IntegrationManifest = {
   description: "Send messages, create channels, and manage users in Slack.",
   category: "communication",
   icon: "slack",
+  logoDomain: "slack.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://slack.com/oauth/v2/authorize",
     tokenUrl: "https://slack.com/api/oauth.v2.access",
@@ -316,6 +323,7 @@ const twilio: IntegrationManifest = {
   description: "Send SMS, voice calls, and WhatsApp messages via Twilio.",
   category: "communication",
   icon: "twilio",
+  logoDomain: "twilio.com",
   authKind: "basic",
   baseUrl: "https://api.twilio.com",
   setupInstructions:
@@ -356,6 +364,7 @@ const sendgrid: IntegrationManifest = {
   description: "Send transactional and marketing emails via SendGrid.",
   category: "communication",
   icon: "sendgrid",
+  logoDomain: "sendgrid.com",
   authKind: "bearer",
   baseUrl: "https://api.sendgrid.com",
   setupInstructions:
@@ -424,7 +433,9 @@ const mailchimp: IntegrationManifest = {
   description: "Manage subscribers, campaigns, and automations in Mailchimp.",
   category: "marketing",
   icon: "mailchimp",
+  logoDomain: "mailchimp.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://login.mailchimp.com/oauth2/authorize",
     tokenUrl: "https://login.mailchimp.com/oauth2/token",
@@ -485,7 +496,9 @@ const intercom: IntegrationManifest = {
   description: "Create and update contacts, conversations, and messages in Intercom.",
   category: "marketing",
   icon: "intercom",
+  logoDomain: "intercom.com",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.intercom.io",
   setupInstructions:
     "1. In Intercom, go to Settings → Developers → Your Apps.\n" +
@@ -543,7 +556,9 @@ const github: IntegrationManifest = {
   description: "Manage repositories, issues, pull requests, and deployments on GitHub.",
   category: "devtools",
   icon: "github",
+  logoDomain: "github.com",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.github.com",
   setupInstructions:
     "1. Go to GitHub Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens.\n" +
@@ -627,7 +642,9 @@ const jira: IntegrationManifest = {
   description: "Create and manage issues, sprints, and projects in Jira.",
   category: "devtools",
   icon: "jira",
+  logoDomain: "atlassian.com",
   authKind: "basic",
+  supportsOAuth: true,
   baseUrl: "https://{{instanceDomain}}.atlassian.net",
   setupInstructions:
     "1. In Jira, go to Account Settings → Security → API Tokens.\n" +
@@ -694,6 +711,7 @@ const googleDrive: IntegrationManifest = {
   description: "Upload, read, search, and organize files in Google Drive.",
   category: "storage",
   icon: "google-drive",
+  logoDomain: "google.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -755,6 +773,7 @@ const awsS3: IntegrationManifest = {
   description: "Upload, download, and manage objects in Amazon S3 buckets.",
   category: "storage",
   icon: "aws",
+  logoDomain: "aws.amazon.com",
   authKind: "api_key",
   authHeaderKey: "X-Amz-Security-Token",
   baseUrl: "https://s3.{{instanceDomain}}.amazonaws.com",
@@ -810,6 +829,7 @@ const dropbox: IntegrationManifest = {
   description: "Upload, download, and share files and folders in Dropbox.",
   category: "storage",
   icon: "dropbox",
+  logoDomain: "dropbox.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://www.dropbox.com/oauth2/authorize",
@@ -873,6 +893,7 @@ const googleCalendar: IntegrationManifest = {
   description: "Create events, check availability, and manage calendars in Google Calendar.",
   category: "calendar",
   icon: "google-calendar",
+  logoDomain: "google.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -942,6 +963,7 @@ const mixpanel: IntegrationManifest = {
   description: "Track user events and query analytics data from Mixpanel.",
   category: "analytics",
   icon: "mixpanel",
+  logoDomain: "mixpanel.com",
   authKind: "basic",
   baseUrl: "https://api.mixpanel.com",
   setupInstructions:
@@ -975,6 +997,7 @@ const segment: IntegrationManifest = {
   description: "Send analytics events and user traits to Segment CDP.",
   category: "analytics",
   icon: "segment",
+  logoDomain: "segment.com",
   authKind: "bearer",
   baseUrl: "https://api.segment.io",
   setupInstructions:
@@ -1022,7 +1045,9 @@ const shopify: IntegrationManifest = {
   description: "Manage orders, products, customers, and inventory in Shopify.",
   category: "ecommerce",
   icon: "shopify",
+  logoDomain: "shopify.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://{{instanceDomain}}.myshopify.com/admin/oauth/authorize",
     tokenUrl: "https://{{instanceDomain}}.myshopify.com/admin/oauth/access_token",
@@ -1091,6 +1116,7 @@ const woocommerce: IntegrationManifest = {
   description: "Manage orders, products, and customers in WooCommerce.",
   category: "ecommerce",
   icon: "woocommerce",
+  logoDomain: "woocommerce.com",
   authKind: "basic",
   baseUrl: "https://{{instanceDomain}}/wp-json/wc",
   setupInstructions:
@@ -1149,7 +1175,9 @@ const stripe: IntegrationManifest = {
   description: "Process payments, manage subscriptions, and query financial data in Stripe.",
   category: "finance",
   icon: "stripe",
+  logoDomain: "stripe.com",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.stripe.com",
   sandboxBaseUrl: "https://api.stripe.com",
   setupInstructions:
@@ -1230,6 +1258,7 @@ const quickbooks: IntegrationManifest = {
   description: "Manage customers, invoices, expenses, and financial reports in QuickBooks Online.",
   category: "finance",
   icon: "quickbooks",
+  logoDomain: "quickbooks.intuit.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://appcenter.intuit.com/connect/oauth2",
@@ -1274,6 +1303,7 @@ const bamboohr: IntegrationManifest = {
   description: "Access employee records, time-off requests, and org data in BambooHR.",
   category: "hr",
   icon: "bamboohr",
+  logoDomain: "bamboohr.com",
   authKind: "basic",
   baseUrl: "https://api.bamboohr.com/api/gateway.php/{{instanceDomain}}",
   setupInstructions:
@@ -1338,6 +1368,7 @@ const workday: IntegrationManifest = {
   description: "Query workers, organizations, and HR data from Workday.",
   category: "hr",
   icon: "workday",
+  logoDomain: "workday.com",
   authKind: "oauth2_client_credentials",
   oauth2Config: {
     authorizationUrl: "https://{{instanceDomain}}.workday.com/ccx/oauth2/authorize",
@@ -1381,7 +1412,9 @@ const airtable: IntegrationManifest = {
   description: "Read, create, and update records in Airtable bases.",
   category: "storage",
   icon: "airtable",
+  logoDomain: "airtable.com",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.airtable.com",
   setupInstructions:
     "1. Go to airtable.com/account → API → Personal access tokens.\n" +
@@ -1427,7 +1460,9 @@ const notion: IntegrationManifest = {
   description: "Read and write pages, databases, and blocks in Notion.",
   category: "storage",
   icon: "notion",
+  logoDomain: "notion.so",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.notion.com",
   setupInstructions:
     "1. Go to notion.so/my-integrations and create a new integration.\n" +
@@ -1473,7 +1508,9 @@ const zendesk: IntegrationManifest = {
   description: "Create and manage support tickets, users, and organizations in Zendesk.",
   category: "support",
   icon: "zendesk",
+  logoDomain: "zendesk.com",
   authKind: "basic",
+  supportsOAuth: true,
   baseUrl: "https://{{instanceDomain}}.zendesk.com/api",
   setupInstructions:
     "1. In Zendesk, go to Admin → Integrations → APIs → Zendesk API → Settings.\n" +
@@ -1516,7 +1553,9 @@ const linear: IntegrationManifest = {
   description: "Create and update issues, cycles, and projects in Linear.",
   category: "devtools",
   icon: "linear",
+  logoDomain: "linear.app",
   authKind: "bearer",
+  supportsOAuth: true,
   baseUrl: "https://api.linear.app",
   setupInstructions:
     "1. Go to Linear Settings → API → Personal API Keys.\n" +
@@ -1561,6 +1600,7 @@ const gmail: IntegrationManifest = {
   description: "Send emails, manage labels, and search messages in Gmail.",
   category: "communication",
   icon: "gmail",
+  logoDomain: "google.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -1659,6 +1699,7 @@ const microsoftTeams: IntegrationManifest = {
   description: "Send messages, manage channels, and schedule meetings in Microsoft Teams.",
   category: "communication",
   icon: "microsoft-teams",
+  logoDomain: "microsoft.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
@@ -1746,6 +1787,7 @@ const googleWorkspace: IntegrationManifest = {
   description: "Unified access to Google Drive, Docs, Sheets, and Calendar via a single OAuth2 connection.",
   category: "productivity",
   icon: "google-workspace",
+  logoDomain: "google.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -1849,7 +1891,9 @@ const pagerduty: IntegrationManifest = {
   description: "Create incidents, manage on-call schedules, and acknowledge alerts in PagerDuty.",
   category: "devtools",
   icon: "pagerduty",
+  logoDomain: "pagerduty.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://app.pagerduty.com/oauth/authorize",
     tokenUrl: "https://app.pagerduty.com/oauth/token",
@@ -1934,7 +1978,9 @@ const sentry: IntegrationManifest = {
   description: "Query issues, manage releases, and resolve errors in Sentry.",
   category: "devtools",
   icon: "sentry",
+  logoDomain: "sentry.io",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://sentry.io/oauth/authorize/",
     tokenUrl: "https://sentry.io/oauth/token/",
@@ -2018,7 +2064,9 @@ const okta: IntegrationManifest = {
   description: "Manage users, groups, and application assignments in Okta.",
   category: "identity",
   icon: "okta",
+  logoDomain: "okta.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://{{instanceDomain}}.okta.com/oauth2/v1/authorize",
     tokenUrl: "https://{{instanceDomain}}.okta.com/oauth2/v1/token",
@@ -2105,6 +2153,7 @@ const docusign: IntegrationManifest = {
   description: "Send envelopes, manage templates, and track signature status in DocuSign.",
   category: "esign",
   icon: "docusign",
+  logoDomain: "docusign.com",
   authKind: "oauth2_pkce",
   oauth2Config: {
     authorizationUrl: "https://account.docusign.com/oauth/auth",
@@ -2192,7 +2241,9 @@ const servicenow: IntegrationManifest = {
   description: "Create incidents, manage change requests, and query the CMDB in ServiceNow.",
   category: "itsm",
   icon: "servicenow",
+  logoDomain: "servicenow.com",
   authKind: "oauth2_pkce",
+  supportsApiKey: true,
   oauth2Config: {
     authorizationUrl: "https://{{instanceDomain}}.service-now.com/oauth_auth.do",
     tokenUrl: "https://{{instanceDomain}}.service-now.com/oauth_token.do",

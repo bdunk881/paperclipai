@@ -44,7 +44,7 @@ import {
   getIntegrationBySlug,
 } from "./integrationCatalog";
 import { integrationCredentialStore } from "./integrationCredentialStore";
-import { IntegrationCredentials } from "./integrationManifest";
+import { IntegrationCredentials, getIntegrationAuthMethods } from "./integrationManifest";
 import {
   beginOAuth2PkceFlow,
   completeOAuth2PkceFlow,
@@ -83,17 +83,25 @@ catalogRouter.get("/", (_req, res) => {
     : INTEGRATION_CATALOG;
 
   res.json({
-    catalog: catalog.map((m) => ({
-      slug: m.slug,
-      name: m.name,
-      description: m.description,
-      category: m.category,
-      icon: m.icon,
-      authKind: m.authKind,
-      actionCount: m.actions.length,
-      triggerCount: m.triggers.length,
-      verified: m.verified,
-    })),
+    catalog: catalog.map((m) => {
+      const { supportsOAuth, supportsApiKey } = getIntegrationAuthMethods(m);
+      return {
+        slug: m.slug,
+        name: m.name,
+        description: m.description,
+        category: m.category,
+        icon: m.icon,
+        logoDomain: m.logoDomain,
+        authKind: m.authKind,
+        supportsOAuth,
+        supportsApiKey,
+        requiresInstanceDomain: m.baseUrl.includes("{{instanceDomain}}"),
+        actionCount: m.actions.length,
+        triggerCount: m.triggers.length,
+        verified: m.verified,
+        docsUrl: m.docsUrl,
+      };
+    }),
     categories: INTEGRATION_CATALOG_CATEGORIES,
     total: catalog.length,
   });
@@ -123,41 +131,64 @@ catalogRouter.get("/:slug", (req, res) => {
 export const oauthCallbackRouter = Router();
 
 /**
+ * Build the dashboard URL the browser is redirected to after the OAuth2
+ * round-trip completes. Mirrors oauthBridgeRoutes.dashboardRedirect but targets
+ * the Connections → Integrations tab that actually renders the catalog.
+ */
+function catalogOAuthRedirect(params: {
+  slug: string;
+  status: "success" | "error";
+  message?: string;
+}): string {
+  const base = (process.env.DASHBOARD_APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+  const url = new URL(`${base}/connections`);
+  url.searchParams.set("tab", "integrations");
+  url.searchParams.set("provider", params.slug);
+  url.searchParams.set("status", params.status);
+  if (params.message) url.searchParams.set("message", params.message);
+  return url.toString();
+}
+
+/**
  * GET /api/integrations/oauth2/:slug/callback
- * Exchanges the authorization code for tokens and stores the connection.
- * Returns the new IntegrationConnectionPublic record.
+ * Exchanges the authorization code for tokens, stores the connection, and
+ * redirects the browser back to the dashboard. Client credentials + instance
+ * domain are read from the PKCE state captured at authorize time (a provider
+ * redirect carries only code + state), so no secrets travel on this URL.
  */
 oauthCallbackRouter.get("/:slug/callback", asyncHandler(async (req, res) => {
   const manifest = getIntegrationBySlug(req.params.slug);
   if (!manifest) { res.status(404).json({ error: `Integration not found: ${req.params.slug}` }); return; }
   if (!manifest.oauth2Config) { res.status(400).json({ error: `Integration "${manifest.slug}" does not use OAuth2` }); return; }
 
-  const { code, state, instanceDomain, clientSecret, clientId, label } = req.query as Record<string, string>;
-  if (!code) { res.status(400).json({ error: "code query param is required" }); return; }
-  if (!state) { res.status(400).json({ error: "state query param is required" }); return; }
-  if (!clientId) { res.status(400).json({ error: "clientId query param is required (forwarded from authorize step)" }); return; }
+  const { code, state, label } = req.query as Record<string, string>;
+  if (!code) {
+    res.redirect(catalogOAuthRedirect({ slug: manifest.slug, status: "error", message: "Missing authorization code" }));
+    return;
+  }
+  if (!state) {
+    res.redirect(catalogOAuthRedirect({ slug: manifest.slug, status: "error", message: "Missing state" }));
+    return;
+  }
 
   try {
     const { credentials, userId } = await completeOAuth2PkceFlow({
       code,
       state,
       oauth2Config: manifest.oauth2Config,
-      clientId,
-      clientSecret,
-      instanceDomain,
     });
 
-    const conn = await integrationCredentialStore.create({
+    await integrationCredentialStore.create({
       userId,
       integrationSlug: manifest.slug,
       label: label ?? `${manifest.name} (OAuth2)`,
       credentials,
     });
 
-    res.status(201).json(conn);
+    res.redirect(catalogOAuthRedirect({ slug: manifest.slug, status: "success" }));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(400).json({ error: msg });
+    res.redirect(catalogOAuthRedirect({ slug: manifest.slug, status: "error", message: msg }));
   }
 }));
 
@@ -304,7 +335,7 @@ router.get("/oauth2/:slug/authorize", (req, res) => {
   if (!manifest) { res.status(404).json({ error: `Integration not found: ${req.params.slug}` }); return; }
   if (!manifest.oauth2Config) { res.status(400).json({ error: `Integration "${manifest.slug}" does not use OAuth2` }); return; }
 
-  const { clientId, redirectUri, instanceDomain } = req.query as Record<string, string>;
+  const { clientId, clientSecret, redirectUri, instanceDomain } = req.query as Record<string, string>;
   if (!clientId) { res.status(400).json({ error: "clientId query param is required" }); return; }
   if (!redirectUri) { res.status(400).json({ error: "redirectUri query param is required" }); return; }
 
@@ -314,6 +345,7 @@ router.get("/oauth2/:slug/authorize", (req, res) => {
       userId,
       redirectUri,
       clientId,
+      clientSecret: clientSecret || undefined,
       instanceDomain,
     });
     res.json(result);

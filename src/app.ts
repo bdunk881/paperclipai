@@ -40,6 +40,11 @@ import envVarRoutes from "./envVars/envVarRoutes";
 import securityRoutes from "./security/securityRoutes";
 import mfaRoutes from "./security/mfaRoutes";
 import { getMfaService } from "./security/mfaService";
+import { SecurityServiceError } from "./security/securityService";
+import {
+  isSupabaseSessionMintingConfigured,
+  mintSupabaseSessionForUser,
+} from "./security/supabaseSessionMinter";
 import sentryTestRoutes from "./debug/sentryTestRoute";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
 import mcpRoutes from "./mcp/mcpRoutes";
@@ -1047,6 +1052,83 @@ app.get(
         error instanceof Error ? error.message : error,
       );
       res.redirect(302, `${dashboard}/?mfa=link_invalid`);
+    }
+  }),
+);
+// Passwordless passkey (WebAuthn) first-factor login. PUBLIC — the caller has
+// no session yet, so these MUST be registered BEFORE the requireAuth-gated
+// /api/mfa mount below. The signed assertion proves possession of a registered
+// discoverable credential, which we resolve to a user and exchange for a real
+// Supabase session. A passkey is phish-resistant, so verify also sets the AAL2
+// attestation cookie — the user lands fully stepped-up.
+app.post(
+  "/api/mfa/webauthn/login/options",
+  asyncHandler(async (_req, res) => {
+    try {
+      const { loginId, options } = await getMfaService().beginWebauthnLogin();
+      res.json({ loginId, options });
+    } catch (error) {
+      if (error instanceof SecurityServiceError) {
+        res.status(error.statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      throw error;
+    }
+  }),
+);
+app.post(
+  "/api/mfa/webauthn/login/verify",
+  asyncHandler(async (req, res) => {
+    const body = (req.body ?? {}) as {
+      loginId?: unknown;
+      credentialId?: unknown;
+      response?: unknown;
+    };
+    const loginId = typeof body.loginId === "string" ? body.loginId : "";
+    const credentialId = typeof body.credentialId === "string" ? body.credentialId : "";
+    if (!loginId || !credentialId || !body.response || typeof body.response !== "object") {
+      res.status(400).json({ error: "loginId, credentialId and response are required", code: "invalid_payload" });
+      return;
+    }
+    // Verifying the assertion alone is cheap, but minting a session needs the
+    // service-role + anon keys. Fail fast with a clear 503 if either is absent
+    // rather than verifying the passkey and then dead-ending.
+    if (!isSupabaseSessionMintingConfigured()) {
+      res.status(503).json({
+        error: "Passwordless passkey login is not available in this environment.",
+        code: "passwordless_login_unavailable",
+      });
+      return;
+    }
+    try {
+      const { userId, attestation } = await getMfaService().finishWebauthnLogin(
+        loginId,
+        body.response,
+        credentialId,
+      );
+      const session = await mintSupabaseSessionForUser(userId);
+      res.setHeader(
+        "Set-Cookie",
+        buildAal2AttestationCookieHeader(attestation.token, attestation.maxAgeSeconds),
+      );
+      res.json({
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        expiresAt: session.expiresAt,
+        user: session.user,
+      });
+    } catch (error) {
+      if (error instanceof SecurityServiceError) {
+        res.status(error.statusCode).json({ error: error.message, code: error.code });
+        return;
+      }
+      // Session-minting failures are server-side (bad keys, Supabase down).
+      // Don't leak internals; log and return a generic 502.
+      console.warn(
+        "[app] passwordless passkey login failed",
+        error instanceof Error ? error.message : error,
+      );
+      res.status(502).json({ error: "Could not complete passkey sign-in. Try again.", code: "login_failed" });
     }
   }),
 );

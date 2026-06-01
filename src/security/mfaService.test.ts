@@ -242,6 +242,66 @@ describe("MfaService", () => {
     expect(stored).toBe("AUTH_CHALLENGE");
   });
 
+  // Passwordless first-factor login (discoverable credential) -----------------
+
+  it("logs in passwordless: resolves the credential to its user and mints AAL2", async () => {
+    const store = new InMemoryMfaChallengeStore();
+    const webauthn = makeWebauthnStub();
+    const service = new MfaService({
+      repository: repo,
+      webauthn,
+      totp: makeTotpStub(),
+      challengeStore: store,
+    });
+    // Enroll a passkey for u-1 so there's a discoverable credential to resolve.
+    const ctx = { userId: "u-1" };
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await service.finishWebauthnRegistration(ctx, { id: "cred-1" }, "MacBook");
+
+    const { loginId, options } = await service.beginWebauthnLogin();
+    // Discoverable ceremony → no allowCredentials list leaks the user set.
+    expect(options.allowCredentials).toEqual([]);
+    expect(await store.consume(`login:${loginId}`)).toBe("AUTH_CHALLENGE");
+
+    // (consume above drained it; start a fresh login for the finish path)
+    const second = await service.beginWebauthnLogin();
+    const result = await service.finishWebauthnLogin(second.loginId, { id: "cred-1" }, "cred-1");
+    expect(result.userId).toBe("u-1");
+    expect(result.attestation.token).toBeTruthy();
+    const verified = verifyAal2AttestationCookie(result.attestation.token, "u-1");
+    expect(verified.valid).toBe(true);
+  });
+
+  it("rejects passwordless login for an unknown credential", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    const { loginId } = await service.beginWebauthnLogin();
+    await expect(
+      service.finishWebauthnLogin(loginId, { id: "nope" }, "nope"),
+    ).rejects.toThrow(/unknown credential/i);
+  });
+
+  it("rejects passwordless login when the challenge is missing or expired", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    await expect(
+      service.finishWebauthnLogin("never-issued", { id: "cred-1" }, "cred-1"),
+    ).rejects.toThrow(/challenge/i);
+  });
+
+  it("rejects passwordless login when the signature does not verify", async () => {
+    const webauthn = makeWebauthnStub({
+      verifyAuthenticationResponse: jest.fn(async () => ({ verified: false, newSignCount: 0n })),
+    });
+    const service = new MfaService({ repository: repo, webauthn, totp: makeTotpStub() });
+    const ctx = { userId: "u-1" };
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+    await service.finishWebauthnRegistration(ctx, { id: "cred-1" }, "MacBook");
+
+    const { loginId } = await service.beginWebauthnLogin();
+    await expect(
+      service.finishWebauthnLogin(loginId, { id: "cred-1" }, "cred-1"),
+    ).rejects.toThrow(/verification failed/i);
+  });
+
   it("treats a retried registration verify as success once the credential already exists", async () => {
     const webauthn = makeWebauthnStub();
     const service = new MfaService({ repository: repo, webauthn, totp: makeTotpStub() });
@@ -411,6 +471,64 @@ describe("MfaService", () => {
     const ctx = { userId: "u-1" };
     await service.issueRecoveryCodes(ctx, 3);
     await expect(service.consumeRecoveryCode(ctx, "BOGUS-CODE-1234")).rejects.toThrow();
+  });
+
+  it("resets the password out-of-band with a valid recovery code (lost-device path)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+
+    // The recovery code is single-use: a second attempt with it fails.
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "another-pass-123"),
+    ).rejects.toThrow(/invalid/i);
+  });
+
+  it("rejects a weak password before consuming the recovery code", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "short"),
+    ).rejects.toThrow(/at least 8/i);
+    expect(passwordResetter).not.toHaveBeenCalled();
+
+    // The code wasn't burned by the failed attempt — it still works.
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+  });
+
+  it("does not set a password when the recovery code is invalid", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, "BOGUS-CODE-1234", "brand-new-pass-123"),
+    ).rejects.toThrow();
+    expect(passwordResetter).not.toHaveBeenCalled();
   });
 
   it("delegates TOTP enrollment to the Supabase adapter", async () => {

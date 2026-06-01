@@ -104,6 +104,35 @@ describe("GET /api/integrations/catalog", () => {
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(0);
   });
+
+  it("exposes a logo.dev domain for every catalog entry", async () => {
+    const res = await request(app).get("/api/integrations/catalog");
+    expect(res.status).toBe(200);
+    for (const entry of res.body.catalog as Array<{ slug: string; logoDomain?: string }>) {
+      expect(typeof entry.logoDomain).toBe("string");
+      expect(entry.logoDomain).toMatch(/\./); // looks like a domain
+    }
+  });
+
+  it("advertises OAuth and/or API-key auth per integration honestly", async () => {
+    const res = await request(app).get("/api/integrations/catalog");
+    const bySlug = Object.fromEntries(
+      (res.body.catalog as Array<{ slug: string; supportsOAuth: boolean; supportsApiKey: boolean }>)
+        .map((i) => [i.slug, i]),
+    );
+    // Every entry must support at least one connection method.
+    for (const entry of Object.values(bySlug)) {
+      expect(entry.supportsOAuth || entry.supportsApiKey).toBe(true);
+    }
+    // OAuth-primary services that also accept a static token expose both.
+    expect(bySlug.hubspot).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    expect(bySlug.slack).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    // Token-primary services that also offer OAuth expose both.
+    expect(bySlug.github).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    expect(bySlug.linear).toMatchObject({ supportsOAuth: true, supportsApiKey: true });
+    // OAuth-only service stays OAuth-only.
+    expect(bySlug.salesforce).toMatchObject({ supportsOAuth: true, supportsApiKey: false });
+  });
 });
 
 describe("GET /api/integrations/catalog/:slug", () => {
@@ -482,6 +511,33 @@ describe("GET /api/integrations/triggers/subscriptions/:id/events", () => {
 // OAuth2 callback — userId must come from PKCE state, not X-User-Id header
 // ---------------------------------------------------------------------------
 
+describe("GET /api/integrations/oauth2/:slug/authorize", () => {
+  beforeEach(() => {
+    pkceStateMap.clear();
+  });
+
+  it("captures the client secret in PKCE state but never leaks it in the redirect URL", async () => {
+    const res = await request(app)
+      .get(
+        `/api/integrations/oauth2/hubspot/authorize?clientId=hs-id&clientSecret=hs-secret&redirectUri=${encodeURIComponent(
+          "http://localhost/cb",
+        )}`,
+      )
+      .set("Authorization", "Bearer test")
+      .set("X-User-Id", "user-1");
+
+    expect(res.status).toBe(200);
+    expect(res.body.authorizationUrl).toContain("client_id=hs-id");
+    // The confidential client secret must stay server-side.
+    expect(res.body.authorizationUrl).not.toContain("hs-secret");
+
+    const states = Array.from(pkceStateMap.values());
+    expect(
+      states.some((s) => s.clientId === "hs-id" && s.clientSecret === "hs-secret"),
+    ).toBe(true);
+  });
+});
+
 describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state", () => {
   const mockTokenResponse = {
     ok: true,
@@ -501,6 +557,7 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
       userId: pkceUserId,
       codeVerifier: "test-verifier",
       redirectUri: "http://localhost/callback",
+      clientId: "hs-client",
       createdAt: Date.now(),
     });
 
@@ -508,15 +565,20 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
     global.fetch = jest.fn().mockResolvedValue(mockTokenResponse);
 
     const res = await request(app)
-      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}&clientId=hs-client`)
+      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}`)
       .set("X-User-Id", "attacker-user");
 
     global.fetch = origFetch;
 
-    expect(res.status).toBe(201);
-    // Connection must be owned by the PKCE state user, not the forged header
-    expect(res.body.userId).toBe(pkceUserId);
-    expect(res.body.userId).not.toBe("attacker-user");
+    // Browser redirect back to the dashboard on success.
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("status=success");
+
+    // Connection must be owned by the PKCE state user, not the forged header.
+    const ownerConnections = await integrationCredentialStore.list(pkceUserId, "hubspot");
+    expect(ownerConnections).toHaveLength(1);
+    const attackerConnections = await integrationCredentialStore.list("attacker-user", "hubspot");
+    expect(attackerConnections).toHaveLength(0);
   });
 
   it("normal flow works without X-User-Id header", async () => {
@@ -527,6 +589,7 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
       userId: pkceUserId,
       codeVerifier: "test-verifier",
       redirectUri: "http://localhost/callback",
+      clientId: "hs-client",
       createdAt: Date.now(),
     });
 
@@ -534,12 +597,14 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
     global.fetch = jest.fn().mockResolvedValue(mockTokenResponse);
 
     const res = await request(app)
-      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}&clientId=hs-client`);
+      .get(`/api/integrations/oauth2/hubspot/callback?code=test-code&state=${stateKey}`);
     // No X-User-Id header — should still succeed
 
     global.fetch = origFetch;
 
-    expect(res.status).toBe(201);
-    expect(res.body.userId).toBe(pkceUserId);
+    expect(res.status).toBe(302);
+    expect(res.headers.location).toContain("status=success");
+    const ownerConnections = await integrationCredentialStore.list(pkceUserId, "hubspot");
+    expect(ownerConnections).toHaveLength(1);
   });
 });

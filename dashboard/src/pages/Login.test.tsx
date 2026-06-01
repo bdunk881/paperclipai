@@ -9,8 +9,9 @@ const {
   sendSupabaseMagicLinkMock,
   signInWithSupabaseOAuthMock,
   isSupabaseAuthConfiguredMock,
-  signInWithSupabasePasskeyMock,
-  supabasePasskeysEnabledMock,
+  setSupabaseSessionFromTokensMock,
+  loginWithPasskeyMock,
+  isWebauthnAvailableMock,
   writeStoredAuthUserMock,
 } = vi.hoisted(() => ({
   signInWithSupabasePasswordMock: vi.fn(),
@@ -18,9 +19,10 @@ const {
   sendSupabaseMagicLinkMock: vi.fn(),
   signInWithSupabaseOAuthMock: vi.fn(),
   isSupabaseAuthConfiguredMock: vi.fn(() => true),
-  signInWithSupabasePasskeyMock: vi.fn(),
-  // HEL-311: default OFF so existing tests see no passkey button.
-  supabasePasskeysEnabledMock: vi.fn(() => false),
+  setSupabaseSessionFromTokensMock: vi.fn(),
+  loginWithPasskeyMock: vi.fn(),
+  // Default OFF so unrelated tests don't render the passkey button.
+  isWebauthnAvailableMock: vi.fn(() => false),
   writeStoredAuthUserMock: vi.fn(),
 }));
 
@@ -30,9 +32,13 @@ vi.mock("../auth/supabaseAuth", () => ({
   sendSupabaseMagicLink: sendSupabaseMagicLinkMock,
   signInWithSupabaseOAuth: signInWithSupabaseOAuthMock,
   isSupabaseAuthConfigured: isSupabaseAuthConfiguredMock,
-  signInWithSupabasePasskey: signInWithSupabasePasskeyMock,
-  supabasePasskeysEnabled: supabasePasskeysEnabledMock,
+  setSupabaseSessionFromTokens: setSupabaseSessionFromTokensMock,
   mapSupabaseAuthError: (err: unknown) => (err instanceof Error ? err.message : "Error"),
+}));
+
+vi.mock("../auth/mfa", () => ({
+  loginWithPasskey: loginWithPasskeyMock,
+  isWebauthnAvailable: isWebauthnAvailableMock,
 }));
 
 vi.mock("../auth/authStorage", () => ({
@@ -43,8 +49,8 @@ describe("Login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     isSupabaseAuthConfiguredMock.mockReturnValue(true);
-    // HEL-311: default the passkey spike flag OFF; specific tests opt in.
-    supabasePasskeysEnabledMock.mockReturnValue(false);
+    // Default the passkey button OFF; specific tests opt in.
+    isWebauthnAvailableMock.mockReturnValue(false);
     window.history.replaceState({}, "", "/login");
     // HEL-284: cooldown is sessionStorage-backed, so reset between tests
     // or one test's cooldown leaks into the next.
@@ -243,10 +249,10 @@ describe("Login", () => {
     });
   });
 
-  // HEL-311 spike --------------------------------------------------------
+  // Passwordless passkey login --------------------------------------------
 
-  it("hides the Supabase passkey button when the spike flag is off", () => {
-    supabasePasskeysEnabledMock.mockReturnValue(false);
+  it("hides the passkey button when WebAuthn is unavailable", () => {
+    isWebauthnAvailableMock.mockReturnValue(false);
     render(
       <MemoryRouter initialEntries={["/login"]}>
         <Routes>
@@ -254,15 +260,49 @@ describe("Login", () => {
         </Routes>
       </MemoryRouter>
     );
-    expect(screen.queryByRole("button", { name: /sign in with a supabase passkey/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /sign in with a passkey/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows and runs the Supabase passkey sign-in when the spike flag is on", async () => {
-    supabasePasskeysEnabledMock.mockReturnValue(true);
-    signInWithSupabasePasskeyMock.mockResolvedValueOnce({
-      session: { user: { id: "u-1", email: "user@example.com", name: "User" } },
-      aal: { currentLevel: "aal1", nextLevel: "aal2", rawAalClaim: "aal1" },
+  it("verifies the passkey and adopts the minted Supabase session", async () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    loginWithPasskeyMock.mockResolvedValueOnce({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: null,
+      user: { id: "u-1", email: "user@example.com" },
     });
+    setSupabaseSessionFromTokensMock.mockResolvedValueOnce({
+      accessToken: "access-1",
+      refreshToken: "refresh-1",
+      expiresAt: Date.now() + 60_000,
+      user: { id: "u-1", email: "user@example.com", name: "User" },
+      authProvider: "supabase",
+    });
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Dashboard Home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /sign in with a passkey/i }));
+
+    await waitFor(() => {
+      expect(loginWithPasskeyMock).toHaveBeenCalledTimes(1);
+      expect(setSupabaseSessionFromTokensMock).toHaveBeenCalledWith("access-1", "refresh-1");
+      expect(writeStoredAuthUserMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("Dashboard Home")).toBeInTheDocument();
+    });
+  });
+
+  it("surfaces a friendly message when the passkey ceremony is cancelled", async () => {
+    isWebauthnAvailableMock.mockReturnValue(true);
+    const cancelled = new DOMException("user cancelled", "NotAllowedError");
+    loginWithPasskeyMock.mockRejectedValueOnce(cancelled);
     render(
       <MemoryRouter initialEntries={["/login"]}>
         <Routes>
@@ -271,13 +311,11 @@ describe("Login", () => {
       </MemoryRouter>
     );
 
-    const button = screen.getByRole("button", { name: /sign in with a supabase passkey/i });
-    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("button", { name: /sign in with a passkey/i }));
 
     await waitFor(() => {
-      expect(signInWithSupabasePasskeyMock).toHaveBeenCalledTimes(1);
-      // The resulting AAL is surfaced so the spike can read aal1-vs-aal2.
-      expect(screen.getByText(/aal=aal1/i)).toBeInTheDocument();
+      expect(screen.getByText(/cancelled or timed out/i)).toBeInTheDocument();
     });
+    expect(setSupabaseSessionFromTokensMock).not.toHaveBeenCalled();
   });
 });

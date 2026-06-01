@@ -19,7 +19,7 @@
  * all prior codes).
  */
 
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { SecurityServiceError } from "./securityService";
 import { auditService } from "../auditing/auditService";
 import { isAutoflowStaff } from "../admin/staffAuth";
@@ -43,6 +43,10 @@ import {
   REQUIRE_APP_MFA_FOR_OAUTH_USERS,
   isWorkspaceFlagEnabled as defaultWorkspaceFlagChecker,
 } from "./workspaceFeatureFlags";
+import {
+  getSupabaseAdminClient,
+  isSupabaseAdminConfigured,
+} from "../adminConsole/supabaseAdminClient";
 import {
   getDefaultMfaChallengeStore,
   type MfaChallengeStore,
@@ -235,6 +239,36 @@ export class DefaultRecoveryCodeHasher implements RecoveryCodeHasher {
   }
 }
 
+/**
+ * Sets a user's password out-of-band, bypassing gotrue's AAL2 requirement.
+ *
+ * Recovery codes are app-owned, so consuming one does NOT bump the Supabase
+ * JWT to aal2 — only native TOTP/phone does. A user who lost their
+ * authenticator therefore can't satisfy gotrue's `updateUser` from a recovery
+ * session. The lost-device password reset is instead mediated server-side:
+ * verify a recovery code, then set the password via the service-role admin
+ * API (which is not subject to the AAL2 gate).
+ */
+export type RecoverySessionPasswordResetter = (
+  userId: string,
+  newPassword: string,
+) => Promise<void>;
+
+async function defaultPasswordResetter(userId: string, newPassword: string): Promise<void> {
+  if (!isSupabaseAdminConfigured()) {
+    throw new SecurityServiceError(
+      "Password reset is unavailable in this environment.",
+      503,
+      "admin_not_configured",
+    );
+  }
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword });
+  if (error) {
+    throw new SecurityServiceError(error.message, 502, "password_update_failed");
+  }
+}
+
 export interface MfaServiceDeps {
   repository?: MfaRepository;
   webauthn?: WebauthnAdapter | null;
@@ -273,6 +307,11 @@ export interface MfaServiceDeps {
    * `<base>/api/mfa/magic-link/verify`. Defaults to `PAPERCLIP_API_URL`.
    */
   magicLinkApiBaseUrl?: string;
+  /**
+   * Out-of-band password setter for the lost-device recovery reset. Defaults
+   * to the service-role admin API; tests inject a capturing fake.
+   */
+  passwordResetter?: RecoverySessionPasswordResetter;
 }
 
 export interface GetPolicyOptions {
@@ -459,6 +498,7 @@ export class MfaService {
   // HEL-282: email second-factor sender + magic-link base URL.
   private emailSender: MfaEmailSender;
   private magicLinkApiBaseUrl: string;
+  private passwordResetter: RecoverySessionPasswordResetter;
 
   constructor(deps: MfaServiceDeps = {}) {
     this.repository = deps.repository ?? getDefaultMfaRepository();
@@ -476,6 +516,7 @@ export class MfaService {
       deps.magicLinkApiBaseUrl ??
       process.env.PAPERCLIP_API_URL ??
       "http://localhost:3000";
+    this.passwordResetter = deps.passwordResetter ?? defaultPasswordResetter;
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -676,6 +717,96 @@ export class MfaService {
     };
   }
 
+  // ---- WebAuthn passwordless login (HEL: discoverable first-factor) ---------
+  //
+  // Unlike `beginWebauthnAuthentication` (step-up — requires an existing
+  // session and an `allowCredentials` list scoped to the signed-in user),
+  // these run PRE-AUTH. We generate options with an empty `allowCredentials`
+  // so the authenticator offers its discoverable (resident-key) credentials,
+  // resolve the asserted credential to its owning user globally, verify the
+  // signature against the stored public key, and hand the resolved `userId`
+  // back to the route so it can mint a Supabase session. A passkey is a
+  // phish-resistant strong factor, so a successful login also mints the AAL2
+  // attestation — the user lands fully stepped-up, no second prompt.
+
+  async beginWebauthnLogin(): Promise<{
+    loginId: string;
+    options: WebauthnAuthenticationOptions;
+  }> {
+    if (!this.webauthn) {
+      throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
+    }
+    const options = await this.webauthn.generateAuthenticationOptions({
+      rpID: this.rpId,
+      // Empty → discoverable-credential ceremony: the browser/authenticator
+      // picks a resident key bound to this RP without us naming the user.
+      allowCredentials: [],
+    });
+    // No user to key the challenge on yet, so mint an opaque login id and
+    // bind the challenge to it. The client echoes the id back on verify.
+    const loginId = randomUUID();
+    await this.challengeStore.remember(`login:${loginId}`, options.challenge);
+    return { loginId, options };
+  }
+
+  async finishWebauthnLogin(
+    loginId: string,
+    response: unknown,
+    rawCredentialId: string,
+  ): Promise<{ userId: string; attestation: MintedAal2Attestation }> {
+    if (!this.webauthn) {
+      throw new SecurityServiceError("WebAuthn not configured", 503, "webauthn_unavailable");
+    }
+    const expectedChallenge = await this.challengeStore.consume(`login:${loginId}`);
+    if (!expectedChallenge) {
+      throw new SecurityServiceError("Login challenge expired or missing", 400, "challenge_missing");
+    }
+    const credential = await this.repository.findWebauthnCredentialByCredentialId(rawCredentialId);
+    if (!credential) {
+      // No user context to audit against — the mint/throw is the record.
+      throw new SecurityServiceError("Unknown credential", 400, "unknown_credential");
+    }
+    const verification = await this.webauthn.verifyAuthenticationResponse({
+      expectedChallenge,
+      expectedOrigin: this.origin,
+      expectedRPID: this.rpId,
+      response,
+      authenticator: {
+        credentialId: credential.credentialId,
+        publicKey: credential.publicKey,
+        signCount: credential.signCount,
+      },
+    });
+    if (!verification.verified) {
+      await recordAudit({ userId: credential.userId }, "mfa.verify.failure", {
+        method: "webauthn",
+        reason: "signature_invalid",
+        context: "passwordless_login",
+      });
+      throw new SecurityServiceError("Passkey verification failed", 401, "verification_failed");
+    }
+    const now = new Date();
+    // The resolved user scopes the sign-count UPDATE back under user_isolation.
+    await this.repository.updateWebauthnSignCount(
+      credential.userId,
+      credential.credentialId,
+      verification.newSignCount,
+      now,
+    );
+    await this.repository.upsertPolicy(credential.userId, {
+      lastVerifiedAt: now,
+      lastVerifiedMethod: "webauthn",
+    });
+    await recordAudit({ userId: credential.userId }, "mfa.login.passkey", {
+      method: "webauthn",
+      credentialId: credential.credentialId,
+    });
+    return {
+      userId: credential.userId,
+      attestation: mintAal2Attestation({ userId: credential.userId, method: "webauthn" }),
+    };
+  }
+
   async removeWebauthnCredential(ctx: MfaServiceContext, credentialId: string): Promise<void> {
     const deleted = await this.repository.deleteWebauthnCredential(ctx.userId, credentialId);
     if (!deleted) {
@@ -833,10 +964,10 @@ export class MfaService {
     return { codes, count };
   }
 
-  async consumeRecoveryCode(
+  private async consumeRecoveryCodeOrThrow(
     ctx: MfaServiceContext,
     plaintext: string,
-  ): Promise<{ attestation: MintedAal2Attestation }> {
+  ): Promise<void> {
     const normalized = plaintext.trim().toUpperCase().replace(/\s+/g, "");
     const consumed = await this.repository.consumeRecoveryCode(ctx.userId, async (hash) => {
       return this.hasher.compare(normalized, hash);
@@ -850,9 +981,41 @@ export class MfaService {
       lastVerifiedMethod: "recovery_code",
     });
     await recordAudit(ctx, "mfa.recovery_code.used", {});
+  }
+
+  async consumeRecoveryCode(
+    ctx: MfaServiceContext,
+    plaintext: string,
+  ): Promise<{ attestation: MintedAal2Attestation }> {
+    await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
     return {
       attestation: mintAal2Attestation({ userId: ctx.userId, method: "recovery_code" }),
     };
+  }
+
+  /**
+   * Lost-device password reset: verify a recovery code, then set the new
+   * password out-of-band via the admin API. Used by the password-recovery
+   * page when the user has a verified native factor (so gotrue blocks the
+   * aal1 `updateUser`) but can't produce a TOTP code. The recovery email link
+   * proves email control; the recovery code is the second factor — together
+   * they preserve MFA integrity without an authenticator.
+   */
+  async resetPasswordWithRecoveryCode(
+    ctx: MfaServiceContext,
+    plaintext: string,
+    newPassword: string,
+  ): Promise<void> {
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      throw new SecurityServiceError(
+        "Password must be at least 8 characters.",
+        400,
+        "weak_password",
+      );
+    }
+    await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
+    await this.passwordResetter(ctx.userId, newPassword);
+    await recordAudit(ctx, "mfa.recovery_code.password_reset", {});
   }
 
   // ---- Email OTP + magic link (HEL-282) ------------------------------------

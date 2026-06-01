@@ -29,6 +29,15 @@
  *         says "Set up via MCP" and links to the MCP server registry
  *         with a description of the path.
  *   - Connected providers show a "Manage" CTA + a "Disconnect" link.
+ *
+ * Catalog source (integration-catalog-oauth-keys):
+ *   The provider list is now driven by the backend catalog
+ *   (GET /api/integrations/catalog) — the single source of truth for each
+ *   integration's verified logo.dev domain and its honest OAuth / API-key
+ *   capability flags. A small SUPPLEMENTAL_ENTRIES list covers bespoke
+ *   connectors (Apollo, Composio) and custom-MCP-only tools (Discord,
+ *   Sanity) that don't live in the REST catalog. Live one-click connect
+ *   stays gated by SLUG_TO_LIVE_PROVIDER (the wired providers).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -53,12 +62,25 @@ import {
   type ProviderKey,
   type ProviderStatus,
 } from "../integrations/liveConnectorCatalog";
+import {
+  fetchIntegrationCatalog,
+  type CatalogIntegration,
+} from "../api/integrationCatalogApi";
 
 interface CatalogEntry {
   id: string;
   name: string;
   category: string;
   description: string;
+  /** Verified logo.dev domain for the brand mark, e.g. "stripe.com". */
+  logoDomain?: string;
+  /**
+   * Whether the integration advertises an OAuth flow / a static API key.
+   * Sourced from the backend manifest (honest per-integration flags) and
+   * shown as a capability hint on the row.
+   */
+  supportsOAuth: boolean;
+  supportsApiKey: boolean;
   /**
    * Optional live provider key — when set, this row supports OAuth
    * and/or API-key connection via /api/integrations endpoints. When
@@ -76,6 +98,153 @@ interface CatalogEntry {
   };
 }
 
+/**
+ * Maps backend catalog slugs to the live-connector provider key for the
+ * integrations that are actually wired for one-click connect/disconnect.
+ * Slugs not listed here fall through to the "Set up via MCP" path.
+ */
+const SLUG_TO_LIVE_PROVIDER: Record<string, ProviderKey> = {
+  slack: "slack",
+  gmail: "gmail",
+  "microsoft-teams": "teams",
+  hubspot: "hubspot",
+  linear: "linear",
+  sentry: "sentry",
+  stripe: "stripe",
+};
+
+/** Where-to-find-the-key copy for the API-key modal, keyed by catalog id. */
+const API_KEY_HELP: Record<string, CatalogEntry["apiKeyHelp"]> = {
+  linear: {
+    where: "Linear → Settings → API → Personal API keys",
+    docsUrl: "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
+    placeholder: "lin_api_…",
+  },
+  stripe: {
+    where: "Stripe Dashboard → Developers → API keys → Restricted keys",
+    docsUrl: "https://stripe.com/docs/keys",
+    placeholder: "rk_live_… (restricted key recommended)",
+  },
+  apollo: {
+    where: "Apollo → Profile → API → Settings",
+    docsUrl: "https://apolloio.github.io/apollo-api-docs/?shell#authentication",
+    placeholder: "Paste your Apollo API key",
+  },
+  composio: {
+    where: "Composio Dashboard → Settings → API keys",
+    docsUrl: "https://docs.composio.dev/",
+    placeholder: "Paste your Composio API key",
+  },
+};
+
+/** Backend category enum → human-friendly section heading. */
+const CATEGORY_LABELS: Record<string, string> = {
+  analytics: "Analytics",
+  calendar: "Calendar",
+  communication: "Communication",
+  crm: "CRM",
+  devtools: "Developer Tools",
+  ecommerce: "E-commerce",
+  esign: "E-signature",
+  finance: "Finance",
+  hr: "HR",
+  identity: "Identity",
+  itsm: "ITSM",
+  marketing: "Marketing",
+  productivity: "Productivity",
+  storage: "Storage",
+  support: "Support",
+};
+
+function categoryLabel(category: string): string {
+  return CATEGORY_LABELS[category] ?? category;
+}
+
+/**
+ * Providers shown in the marketplace that do not live in the backend REST
+ * catalog (bespoke connectors + custom-MCP-only tools). Kept here so the
+ * catalog refactor doesn't drop them.
+ */
+const SUPPLEMENTAL_ENTRIES: CatalogEntry[] = [
+  {
+    id: "apollo",
+    name: "Apollo",
+    category: "Sales",
+    description: "Prospect data, lead enrichment, and outbound list building.",
+    logoDomain: "apollo.io",
+    supportsOAuth: true,
+    supportsApiKey: true,
+    liveProviderKey: "apollo",
+    apiKeyHelp: API_KEY_HELP.apollo,
+  },
+  {
+    id: "composio",
+    name: "Composio",
+    category: "Automation",
+    description: "Connected accounts, trigger fan-out, tool execution via API key.",
+    logoDomain: "composio.dev",
+    supportsOAuth: false,
+    supportsApiKey: true,
+    liveProviderKey: "composio",
+    apiKeyHelp: API_KEY_HELP.composio,
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    category: "Communication",
+    description: "Send notifications and manage community interactions. Custom MCP today.",
+    logoDomain: "discord.com",
+    supportsOAuth: true,
+    supportsApiKey: true,
+  },
+  {
+    id: "sanity",
+    name: "Sanity",
+    category: "Content",
+    description: "Query and mutate datasets in your Sanity CMS.",
+    logoDomain: "sanity.io",
+    supportsOAuth: false,
+    supportsApiKey: true,
+  },
+];
+
+/** Map one backend catalog entry into a marketplace row. */
+function mapCatalogEntry(item: CatalogIntegration): CatalogEntry {
+  const liveProviderKey = SLUG_TO_LIVE_PROVIDER[item.slug];
+  return {
+    id: item.slug,
+    name: item.name,
+    category: categoryLabel(item.category),
+    description: item.description,
+    logoDomain: item.logoDomain,
+    supportsOAuth: item.supportsOAuth,
+    supportsApiKey: item.supportsApiKey,
+    liveProviderKey,
+    apiKeyHelp: API_KEY_HELP[item.slug],
+  };
+}
+
+/**
+ * Build the displayed catalog: backend REST catalog entries first, then any
+ * supplemental providers not already present (deduped by id).
+ */
+function buildCatalog(backend: CatalogIntegration[]): CatalogEntry[] {
+  const entries = backend.map(mapCatalogEntry);
+  const seen = new Set(entries.map((e) => e.id));
+  for (const extra of SUPPLEMENTAL_ENTRIES) {
+    if (!seen.has(extra.id)) entries.push(extra);
+  }
+  return entries;
+}
+
+/** Capability hint shown under a row, e.g. "OAuth · API key". */
+function authCapabilityLabel(entry: CatalogEntry): string {
+  const methods: string[] = [];
+  if (entry.supportsOAuth) methods.push("OAuth");
+  if (entry.supportsApiKey) methods.push("API key");
+  return methods.join(" · ");
+}
+
 interface RegisteredIntegration {
   id: string;
   name: string;
@@ -84,128 +253,6 @@ interface RegisteredIntegration {
   createdAt: string;
 }
 
-const CATALOG: CatalogEntry[] = [
-  // Communication
-  {
-    id: "slack",
-    name: "Slack",
-    category: "Communication",
-    description: "Send messages, read channels, and notify the team when work needs attention.",
-    liveProviderKey: "slack",
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    category: "Communication",
-    description: "Read and send email from a workspace mailbox.",
-    liveProviderKey: "gmail",
-  },
-  {
-    id: "teams",
-    name: "Microsoft Teams",
-    category: "Communication",
-    description: "Post to channels, send chats, and read Graph-backed team data.",
-    liveProviderKey: "teams",
-  },
-  {
-    id: "discord",
-    name: "Discord",
-    category: "Communication",
-    description: "Send notifications and manage community interactions. Custom MCP today.",
-  },
-  // CRM
-  {
-    id: "hubspot",
-    name: "HubSpot",
-    category: "CRM",
-    description: "Sync contacts, companies, deals, and enrich records from HubSpot.",
-    liveProviderKey: "hubspot",
-  },
-  // Sales
-  {
-    id: "apollo",
-    name: "Apollo",
-    category: "Sales",
-    description: "Prospect data, lead enrichment, and outbound list building.",
-    liveProviderKey: "apollo",
-    apiKeyHelp: {
-      where: "Apollo → Profile → API → Settings",
-      docsUrl: "https://apolloio.github.io/apollo-api-docs/?shell#authentication",
-      placeholder: "Paste your Apollo API key",
-    },
-  },
-  // Project / dev
-  {
-    id: "linear",
-    name: "Linear",
-    category: "Project Management",
-    description: "Issue tracking and project sync with PKCE OAuth + API-key fallback.",
-    liveProviderKey: "linear",
-    apiKeyHelp: {
-      where: "Linear → Settings → API → Personal API keys",
-      docsUrl: "https://developers.linear.app/docs/graphql/working-with-the-graphql-api",
-      placeholder: "lin_api_…",
-    },
-  },
-  {
-    id: "github",
-    name: "GitHub",
-    category: "Developer Tools",
-    description: "Read/write repos, issues, PRs, code search. Custom MCP today.",
-  },
-  {
-    id: "sentry",
-    name: "Sentry",
-    category: "Developer Tools",
-    description: "Issues, releases, project health with signed webhooks.",
-    liveProviderKey: "sentry",
-  },
-  // Payments
-  {
-    id: "stripe",
-    name: "Stripe",
-    category: "Payments",
-    description: "Customers, subscriptions, invoices, payment workflow triggers.",
-    liveProviderKey: "stripe",
-    apiKeyHelp: {
-      where: "Stripe Dashboard → Developers → API keys → Restricted keys",
-      docsUrl: "https://stripe.com/docs/keys",
-      placeholder: "rk_live_… (restricted key recommended)",
-    },
-  },
-  // Productivity / content
-  {
-    id: "notion",
-    name: "Notion",
-    category: "Productivity",
-    description: "Pages, databases, blocks. Custom MCP today.",
-  },
-  {
-    id: "intercom",
-    name: "Intercom",
-    category: "Support",
-    description: "Customer data, conversations, articles. Custom MCP today.",
-  },
-  {
-    id: "sanity",
-    name: "Sanity",
-    category: "Content",
-    description: "Query and mutate datasets in your Sanity CMS.",
-  },
-  // Misc
-  {
-    id: "composio",
-    name: "Composio",
-    category: "Automation",
-    description: "Connected accounts, trigger fan-out, tool execution via API key.",
-    liveProviderKey: "composio",
-    apiKeyHelp: {
-      where: "Composio Dashboard → Settings → API keys",
-      docsUrl: "https://docs.composio.dev/",
-      placeholder: "Paste your Composio API key",
-    },
-  },
-];
 
 const API_BASE = getApiBasePath();
 const REGISTRY_ROUTE = "/settings/mcp-servers";
@@ -228,6 +275,23 @@ export default function IntegrationsHub() {
   const [loadingLiveStatuses, setLoadingLiveStatuses] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [connectModal, setConnectModal] = useState<ConnectModalState | null>(null);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { catalog: backend } = await fetchIntegrationCatalog();
+        if (!cancelled) setCatalog(buildCatalog(backend));
+      } catch {
+        // Keep the page usable if the catalog endpoint is unreachable.
+        if (!cancelled) setCatalog([...SUPPLEMENTAL_ENTRIES]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadLiveStatuses = useCallback(async () => {
     try {
@@ -283,13 +347,13 @@ export default function IntegrationsHub() {
 
   const grouped = useMemo(() => {
     const groups = new Map<string, CatalogEntry[]>();
-    for (const entry of CATALOG) {
+    for (const entry of catalog) {
       const list = groups.get(entry.category) ?? [];
       list.push(entry);
       groups.set(entry.category, list);
     }
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, []);
+  }, [catalog]);
 
   const connectedCount = useMemo(() => {
     if (!liveStatuses) return 0;
@@ -383,7 +447,7 @@ export default function IntegrationsHub() {
             Tools your agents can use
           </h1>
           <div className="af2-page-head-meta">
-            {connectedCount} connected · {CATALOG.length} available · {registered.length} custom
+            {connectedCount} connected · {catalog.length} available · {registered.length} custom
             MCP {registered.length === 1 ? "server" : "servers"} registered.
           </div>
         </div>
@@ -449,6 +513,7 @@ export default function IntegrationsHub() {
                   >
                     <CompanyLogo
                       integrationId={entry.id}
+                      domain={entry.logoDomain}
                       name={entry.name}
                       size={32}
                       theme={resolvedTheme}
@@ -477,6 +542,22 @@ export default function IntegrationsHub() {
                       >
                         {entry.description}
                       </div>
+                      {authCapabilityLabel(entry) ? (
+                        <div
+                          className="af2-muted"
+                          style={{
+                            fontSize: 11,
+                            marginTop: 3,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            opacity: 0.85,
+                          }}
+                        >
+                          <KeyRound size={11} />
+                          {authCapabilityLabel(entry)}
+                        </div>
+                      ) : null}
                     </div>
                     <div>
                       {connected ? (

@@ -134,6 +134,49 @@ export async function finishWebauthnAuthentication(
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
 }
 
+// ---- WebAuthn passwordless login (public, pre-auth) -------------------------
+// No bearer token: the signed assertion is the proof. On success the backend
+// resolves the credential to a user, mints a Supabase session, and returns the
+// tokens for the dashboard's Supabase client to adopt.
+
+export interface WebauthnLoginOptions {
+  loginId: string;
+  /** PublicKeyCredentialRequestOptionsJSON from the backend. */
+  options: unknown;
+}
+
+export async function beginWebauthnLogin(): Promise<WebauthnLoginOptions> {
+  const res = await trackedFetch(`${BASE}/webauthn/login/options`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not start passkey sign-in"));
+  return res.json() as Promise<WebauthnLoginOptions>;
+}
+
+export interface WebauthnLoginResult {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number | null;
+  user: { id: string; email: string | null };
+}
+
+export async function finishWebauthnLogin(
+  loginId: string,
+  response: unknown,
+  credentialId: string,
+): Promise<WebauthnLoginResult> {
+  const res = await trackedFetch(`${BASE}/webauthn/login/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ loginId, response, credentialId }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Passkey sign-in failed"));
+  return res.json() as Promise<WebauthnLoginResult>;
+}
+
 export async function removeWebauthnCredential(
   accessToken: string,
   credentialId: string,
@@ -220,6 +263,27 @@ export async function consumeRecoveryCode(
   });
   if (!res.ok) throw new Error(await readError(res, "Recovery code rejected"));
   return res.json() as Promise<{ verified: true; expiresAt: number }>;
+}
+
+/**
+ * Lost-device password reset from a recovery (aal1) session: verify a recovery
+ * code and set the new password server-side. Used by the recovery page when
+ * the user has a verified factor (so gotrue blocks the aal1 `updateUser`) but
+ * can't produce an authenticator code. `accessToken` is the recovery session's
+ * token.
+ */
+export async function resetPasswordWithRecoveryCode(
+  accessToken: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await trackedFetch(`${BASE}/recovery-codes/reset-password`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ code, newPassword }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not reset your password"));
 }
 
 // ---- Email OTP (HEL-282) ----------------------------------------------------

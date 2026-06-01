@@ -121,6 +121,11 @@ const recoveryConsumeSchema = z.object({
   code: z.string().min(8),
 });
 
+const recoveryResetPasswordSchema = z.object({
+  code: z.string().min(8),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 // HEL-282: email-OTP code is exactly 6 digits.
 const emailOtpVerifySchema = z.object({
   code: z.string().trim().regex(/^\d{6}$/, "Code must be 6 digits"),
@@ -377,6 +382,31 @@ export function createMfaRoutes(service: MfaService = getMfaService()): Router {
         const { attestation } = await service.consumeRecoveryCode(buildContext(req), parsed.data.code);
         setAttestationCookie(res, attestation.token, attestation.maxAgeSeconds);
         res.json({ verified: true, expiresAt: attestation.expiresAt });
+      } catch (error) {
+        sendError(res, error);
+      }
+    }),
+  );
+
+  // Lost-device password reset. NOT behind requireAAL2: the recovery session
+  // is aal1 by definition, and gotrue won't let it set a password when a
+  // verified factor exists. The recovery code is the second factor here, and
+  // the password is set out-of-band via the admin API inside the service.
+  router.post(
+    "/recovery-codes/reset-password",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const parsed = recoveryResetPasswordSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid payload" });
+        return;
+      }
+      try {
+        await service.resetPasswordWithRecoveryCode(
+          buildContext(req),
+          parsed.data.code,
+          parsed.data.newPassword,
+        );
+        res.json({ ok: true });
       } catch (error) {
         sendError(res, error);
       }

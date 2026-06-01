@@ -78,6 +78,23 @@ describe("PostgresMfaRepository (HEL-298 RLS context wrapping)", () => {
     expect(params).toEqual(["cred-abc", "u-1"]);
   });
 
+  it("findWebauthnCredentialByCredentialId runs under platform-admin context, keyed by credential_id only", async () => {
+    await repo.findWebauthnCredentialByCredentialId("cred-global");
+    const calls = sqlCalls();
+    // Pre-auth lookup: no app.current_user_id (no session), but the
+    // platform-admin GUC so the admin_read SELECT policy permits a global read.
+    expect(calls.some((s) => s.includes("set_config('app.is_platform_admin'"))).toBe(true);
+    expect(calls.some((s) => s.includes("set_config('app.current_user_id'"))).toBe(false);
+    const selectCall = clientQueryMock.mock.calls.find(([sql]) =>
+      (sql as string).includes("FROM mfa_webauthn_credentials"),
+    );
+    expect(selectCall).toBeDefined();
+    const [sql, params] = selectCall as [string, unknown[]];
+    expect(sql).toContain("WHERE credential_id = $1");
+    expect(sql).not.toContain("user_id = $");
+    expect(params).toEqual(["cred-global"]);
+  });
+
   it("insertWebauthnCredential uses the input.userId for the GUC", async () => {
     clientQueryMock.mockImplementation(async (sql: string) => {
       if (sql.startsWith("INSERT INTO mfa_webauthn_credentials")) {

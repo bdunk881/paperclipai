@@ -89,15 +89,31 @@ scripting parity across projects.
 | `{{ .NewEmail }}` | The requested new address (change-email only). |
 | `{{ .RedirectTo }}` | The app-supplied redirect target, if used. |
 
-## Rendering / client notes
+## Theme & rendering notes
 
-Templates use a single `<table>` layout, `max-width:600px`, inline styles, and a
-web-safe font stack — the email-client-safe baseline. They are intentionally a
-**light card on a neutral background with an obsidian header**, not full
-dark-mode: several mail clients (notably Outlook and some auto dark-mode
-implementations) render dark backgrounds and large dark blocks unpredictably, so
-a light body with the indigo (`#6366f1`) CTA is the safer, more consistent
-choice while staying on-brand.
+Templates follow the AutoFlow **v2 "Workplace"** design system
+(`docs/design/v2/styles.css`) — warm editorial, light by default:
+
+| Role | Value |
+|---|---|
+| Page background (paper) | `#f6f1e7` |
+| Card | `#ffffff`, 12px radius, `#e3d9c2` border |
+| Heading ink | `#1a1410` |
+| Body text | `#6b5a48` |
+| Muted / footer | `#94836e` |
+| Primary CTA (clay/terracotta) | `#c2502b`, 6px radius, white text |
+| Rules / borders | `#e3d9c2` |
+| Display / headings + wordmark | serif: `Fraunces` → `Source Serif 4` → `Georgia` |
+| Body | sans: `Geist` → `Inter` → system |
+| Code (reauthentication) | mono: `JetBrains Mono` → system mono |
+
+Implementation is the email-client-safe baseline: single `<table>` layout,
+`max-width:600px`, all styles inline, web-safe font fallbacks. Email clients
+won't load `Fraunces`/`Geist` web fonts, so headings render in **Georgia** (a
+classic editorial serif) and body in the system sans — both intentional and
+on-brand. The design stays **light** (not dark-mode) because several clients
+(notably Outlook and some auto dark-mode implementations) render dark
+backgrounds unpredictably.
 
 ## SMTP (follow-up, not configured here)
 

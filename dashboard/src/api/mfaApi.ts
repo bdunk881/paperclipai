@@ -286,6 +286,25 @@ export async function resetPasswordWithRecoveryCode(
   if (!res.ok) throw new Error(await readError(res, "Could not reset your password"));
 }
 
+/**
+ * Set the password using an already-minted AAL2 attestation (e.g. right after
+ * a passkey / email-OTP / magic-link verify on this device). The backend route
+ * is `requireAAL2`-gated and reads the attestation from the HttpOnly cookie, so
+ * no factor is passed here. `accessToken` is the recovery session's token.
+ */
+export async function resetPasswordWithAttestation(
+  accessToken: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await trackedFetch(`${BASE}/account/reset-password`, {
+    method: "POST",
+    headers: authHeaders(accessToken, { "Content-Type": "application/json" }),
+    credentials: "include",
+    body: JSON.stringify({ newPassword }),
+  });
+  if (!res.ok) throw new Error(await readError(res, "Could not reset your password"));
+}
+
 // ---- Email OTP (HEL-282) ----------------------------------------------------
 
 /** Send the enrollment code to the user's verified email. */

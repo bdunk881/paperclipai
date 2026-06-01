@@ -1001,11 +1001,7 @@ export class MfaService {
    * proves email control; the recovery code is the second factor — together
    * they preserve MFA integrity without an authenticator.
    */
-  async resetPasswordWithRecoveryCode(
-    ctx: MfaServiceContext,
-    plaintext: string,
-    newPassword: string,
-  ): Promise<void> {
+  private assertStrongPassword(newPassword: string): void {
     if (typeof newPassword !== "string" || newPassword.length < 8) {
       throw new SecurityServiceError(
         "Password must be at least 8 characters.",
@@ -1013,9 +1009,35 @@ export class MfaService {
         "weak_password",
       );
     }
+  }
+
+  async resetPasswordWithRecoveryCode(
+    ctx: MfaServiceContext,
+    plaintext: string,
+    newPassword: string,
+  ): Promise<void> {
+    this.assertStrongPassword(newPassword);
     await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
     await this.passwordResetter(ctx.userId, newPassword);
     await recordAudit(ctx, "mfa.recovery_code.password_reset", {});
+  }
+
+  /**
+   * Set the current user's password out-of-band, for callers that have
+   * ALREADY proven AAL2 by another means — the route is gated by
+   * `requireAAL2`, which accepts the app-owned attestation cookie minted by a
+   * passkey / email-OTP / magic-link verify. Unlike `resetPasswordWithRecoveryCode`
+   * this consumes no factor itself; the attestation is the proof. Used by the
+   * password-recovery page's passkey step-up (the recovery session is aal1, so
+   * gotrue's own `updateUser` would reject it).
+   */
+  async setPasswordForCurrentUser(
+    ctx: MfaServiceContext,
+    newPassword: string,
+  ): Promise<void> {
+    this.assertStrongPassword(newPassword);
+    await this.passwordResetter(ctx.userId, newPassword);
+    await recordAudit(ctx, "mfa.account.password_reset", {});
   }
 
   // ---- Email OTP + magic link (HEL-282) ------------------------------------

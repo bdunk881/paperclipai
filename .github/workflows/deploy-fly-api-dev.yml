@@ -117,6 +117,15 @@ jobs:
           if [[ -z "${UPSTASH_REDIS_URL:-}" && -z "${REDIS_URL:-}" ]]; then
             echo "::warning::Neither UPSTASH_REDIS_URL nor REDIS_URL is in Infisical's dev env — the BullMQ worker process will exit on boot and agent presence will be a no-op. Add the TCP/rediss:// endpoint to Infisical to enable durable runs."
           fi
+          # HEL-392: APP_JWT_SECRET is required for AAL2 attestation minting
+          # (passkey/TOTP enrollment + step-up) and social-auth/deref token
+          # signing. Without it, passkey registration returns 500 and OAuth login
+          # fails. dev has no runtime Infisical wrapping, so it must live in
+          # Infisical's dev env to be forwarded to Fly below.
+          if [[ -z "${APP_JWT_SECRET:-}" ]]; then
+            echo "::warning::APP_JWT_SECRET is not in Infisical's dev env — passkey/TOTP enrollment will 500 ('APP_JWT_SECRET must be configured to mint AAL2 attestations') and OAuth login will fail. Add APP_JWT_SECRET to Infisical's dev env."
+          fi
+          echo "[verify] APP_JWT_SECRET present: $([ -n "${APP_JWT_SECRET:-}" ] && echo yes || echo no)"
           echo "[verify] Upstash REST URL present: $([ -n "${UPSTASH_REDIS_REST_URL:-}" ] && echo yes || echo no)"
           echo "[verify] Upstash REST token present: $([ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ] && echo yes || echo no)"
           echo "[verify] Upstash TCP URL present: $([ -n "${UPSTASH_REDIS_URL:-}" ] && echo yes || echo no)"
@@ -189,6 +198,13 @@ jobs:
           # dev has no runtime wrapping, so it must be forwarded here or
           # requireCfWorker returns 503 ("CF_WORKER_SHARED_SECRET is not configured").
           [[ -n "${CF_WORKER_SHARED_SECRET:-}" ]] && args+=( "CF_WORKER_SHARED_SECRET=${CF_WORKER_SHARED_SECRET}" )
+          # HEL-392: APP_JWT_SECRET — HS256 secret that (1) mints AAL2 attestation
+          # JWTs after passkey/TOTP enrollment and step-up (requireAAL2.ts) and
+          # (2) signs social-auth + deref tokens (appAuthTokens.ts). Prod/staging
+          # get it via runtime Infisical wrapping; dev has none, so it MUST be
+          # forwarded here or passkey registration 500s ("APP_JWT_SECRET must be
+          # configured to mint AAL2 attestations") and OAuth login breaks.
+          [[ -n "${APP_JWT_SECRET:-}" ]] && args+=( "APP_JWT_SECRET=${APP_JWT_SECRET}" )
 
           flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 

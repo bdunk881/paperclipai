@@ -17,14 +17,17 @@ import {
   type SupabaseTotpFactor,
 } from "../auth/supabaseAuth";
 import {
+  challengeEmailOtp,
+  challengeMagicLink,
   getMfaPolicy,
   resetPasswordWithAttestation,
   resetPasswordWithRecoveryCode,
+  verifyEmailOtp,
 } from "../api/mfaApi";
 import { isWebauthnAvailable, verifyPasskey } from "../auth/mfa";
 import { useAuthCooldown } from "../auth/useAuthCooldown";
 
-type StepUpMethod = "passkey" | "totp" | "recovery";
+type StepUpMethod = "passkey" | "totp" | "email_otp" | "magic_link" | "recovery";
 
 const PASSWORD_RESET_COOLDOWN_KEY = "autoflow.auth.passwordResetCooldown";
 
@@ -49,7 +52,12 @@ export default function ResetPassword() {
   const [stepUpRequired, setStepUpRequired] = useState(false);
   const [stepUpMethod, setStepUpMethod] = useState<StepUpMethod>("totp");
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [hasEmailOtp, setHasEmailOtp] = useState(false);
+  const [hasMagicLink, setHasMagicLink] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(
     authError ? decodeURIComponent(authError.replace(/\+/g, " ")) : "",
@@ -139,23 +147,41 @@ export default function ResetPassword() {
           return;
         }
 
-        // Does the account have a passkey we can use on this device? Passkeys
-        // are app-owned, so this comes from the policy, not the Supabase AAL.
+        // Which app-owned factors does the account have? Passkeys / email-OTP /
+        // magic-link aren't in the Supabase AAL, so they come from the policy.
         let canPasskey = false;
+        let emailOtp = false;
+        let magicLink = false;
         try {
           const session = await getSupabaseStoredSession();
           if (session?.accessToken) {
             const policy = await getMfaPolicy(session.accessToken);
             canPasskey = policy.hasWebauthn && isWebauthnAvailable();
+            emailOtp = policy.hasEmailOtp;
+            magicLink = policy.hasMagicLink;
           }
         } catch {
-          // Ignore — passkey simply won't be offered.
+          // Ignore — those methods simply won't be offered.
         }
         if (!active) {
           return;
         }
         setPasskeyAvailable(canPasskey);
-        setStepUpMethod(canPasskey ? "passkey" : totp ? "totp" : "recovery");
+        setHasEmailOtp(emailOtp);
+        setHasMagicLink(magicLink);
+        // Preferred order: passkey → authenticator → email code → email link →
+        // recovery code (last resort).
+        setStepUpMethod(
+          canPasskey
+            ? "passkey"
+            : totp
+              ? "totp"
+              : emailOtp
+                ? "email_otp"
+                : magicLink
+                  ? "magic_link"
+                  : "recovery",
+        );
       } catch {
         // Non-fatal: if the probe fails we still let the user try, and the
         // mapped gotrue error explains the authenticator requirement.
@@ -240,6 +266,44 @@ export default function ResetPassword() {
     return token;
   }
 
+  // Switching methods clears the per-method "sent" state so a stale
+  // emailed-code / link prompt doesn't carry over.
+  function switchMethod(next: StepUpMethod) {
+    setError("");
+    setEmailOtpSent(false);
+    setMagicLinkSent(false);
+    setEmailCode("");
+    setStepUpMethod(next);
+  }
+
+  async function handleSendEmailCode() {
+    setError("");
+    setBusy(true);
+    try {
+      const token = await requireRecoveryToken();
+      await challengeEmailOtp(token);
+      setEmailOtpSent(true);
+    } catch (sendError) {
+      setError(mapSupabaseAuthError(sendError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendMagicLink() {
+    setError("");
+    setBusy(true);
+    try {
+      const token = await requireRecoveryToken();
+      await challengeMagicLink(token);
+      setMagicLinkSent(true);
+    } catch (sendError) {
+      setError(mapSupabaseAuthError(sendError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleCompleteReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newPassword.trim() || newPassword.length < 8) {
@@ -262,6 +326,10 @@ export default function ResetPassword() {
       setError("Enter the 6-digit code from your authenticator app.");
       return;
     }
+    if (stepUpRequired && stepUpMethod === "email_otp" && !/^\d{6}$/.test(emailCode.trim())) {
+      setError("Enter the 6-digit code we emailed you.");
+      return;
+    }
 
     setBusy(true);
     setError("");
@@ -276,6 +344,18 @@ export default function ResetPassword() {
         // password via the requireAAL2-gated backend endpoint.
         const token = await requireRecoveryToken();
         await verifyPasskey(token);
+        await resetPasswordWithAttestation(token, newPassword);
+      } else if (stepUpMethod === "email_otp") {
+        // Email-OTP is app-owned: verifying the code mints the attestation,
+        // then the password is set via the same requireAAL2-gated endpoint.
+        const token = await requireRecoveryToken();
+        await verifyEmailOtp(token, emailCode.trim());
+        await resetPasswordWithAttestation(token, newPassword);
+      } else if (stepUpMethod === "magic_link") {
+        // Magic-link verification happens by clicking the emailed link (which
+        // sets the attestation cookie on this device); we then set the
+        // password. If the link wasn't clicked the endpoint 401s.
+        const token = await requireRecoveryToken();
         await resetPasswordWithAttestation(token, newPassword);
       } else if (stepUpMethod === "recovery") {
         // Lost-device path: recovery codes are app-owned, so the password is
@@ -454,52 +534,109 @@ export default function ResetPassword() {
                 </label>
               ) : null}
 
-              <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
-                {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
-                {stepUpRequired && stepUpMethod === "passkey"
-                  ? busy
-                    ? "Waiting for device…"
-                    : "Verify with passkey & update password"
-                  : busy
-                    ? "Updating…"
-                    : "Update password"}
-              </button>
+              {stepUpRequired && stepUpMethod === "email_otp" ? (
+                emailOtpSent ? (
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.14em] text-af2-ink-3">
+                      Email code
+                    </span>
+                    <input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={emailCode}
+                      onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, ""))}
+                      disabled={busy || !configured}
+                      className="auth-input"
+                      placeholder="6-digit code"
+                    />
+                    <span className="mt-1.5 block text-xs leading-5 text-af2-ink-3">
+                      Enter the 6-digit code we emailed you to confirm this change.
+                    </span>
+                  </label>
+                ) : (
+                  <p className="text-xs leading-5 text-af2-ink-3">
+                    Your account has two-factor authentication enabled. We'll email you a 6-digit
+                    code to confirm this change.
+                  </p>
+                )
+              ) : null}
+
+              {stepUpRequired && stepUpMethod === "magic_link" ? (
+                magicLinkSent ? (
+                  <p className="text-xs leading-5 text-af2-ink-3">
+                    We emailed you a verification link. Open it on this device, then continue below
+                    to set your new password.
+                  </p>
+                ) : (
+                  <p className="text-xs leading-5 text-af2-ink-3">
+                    Your account has two-factor authentication enabled. We'll email you a
+                    verification link to confirm this change.
+                  </p>
+                )
+              ) : null}
+
+              {stepUpRequired && stepUpMethod === "email_otp" && !emailOtpSent ? (
+                <button
+                  type="button"
+                  onClick={handleSendEmailCode}
+                  disabled={busy || !configured}
+                  className="auth-primary-button mt-2"
+                >
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                  {busy ? "Sending…" : "Email me a code"}
+                </button>
+              ) : stepUpRequired && stepUpMethod === "magic_link" && !magicLinkSent ? (
+                <button
+                  type="button"
+                  onClick={handleSendMagicLink}
+                  disabled={busy || !configured}
+                  className="auth-primary-button mt-2"
+                >
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                  {busy ? "Sending…" : "Email me a link"}
+                </button>
+              ) : (
+                <button type="submit" disabled={busy || !configured} className="auth-primary-button mt-2">
+                  {busy ? <Loader2 size={18} className="animate-spin" /> : <ArrowRight size={18} />}
+                  {stepUpRequired && stepUpMethod === "passkey"
+                    ? busy
+                      ? "Waiting for device…"
+                      : "Verify with passkey & update password"
+                    : stepUpRequired && stepUpMethod === "magic_link"
+                      ? busy
+                        ? "Updating…"
+                        : "I've opened the link — update password"
+                      : busy
+                        ? "Updating…"
+                        : "Update password"}
+                </button>
+              )}
 
               {stepUpRequired ? (
                 <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-af2-ink-3">
                   {passkeyAvailable && stepUpMethod !== "passkey" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError("");
-                        setStepUpMethod("passkey");
-                      }}
-                      className="underline"
-                    >
+                    <button type="button" onClick={() => switchMethod("passkey")} className="underline">
                       Use a passkey
                     </button>
                   ) : null}
                   {totpFactor && stepUpMethod !== "totp" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError("");
-                        setStepUpMethod("totp");
-                      }}
-                      className="underline"
-                    >
+                    <button type="button" onClick={() => switchMethod("totp")} className="underline">
                       Use your authenticator app
                     </button>
                   ) : null}
+                  {hasEmailOtp && stepUpMethod !== "email_otp" ? (
+                    <button type="button" onClick={() => switchMethod("email_otp")} className="underline">
+                      Email me a code
+                    </button>
+                  ) : null}
+                  {hasMagicLink && stepUpMethod !== "magic_link" ? (
+                    <button type="button" onClick={() => switchMethod("magic_link")} className="underline">
+                      Email me a link
+                    </button>
+                  ) : null}
                   {stepUpMethod !== "recovery" ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError("");
-                        setStepUpMethod("recovery");
-                      }}
-                      className="underline"
-                    >
+                    <button type="button" onClick={() => switchMethod("recovery")} className="underline">
                       Lost your device? Use a recovery code
                     </button>
                   ) : null}

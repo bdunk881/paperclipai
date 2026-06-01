@@ -220,6 +220,12 @@ export function mapSupabaseAuthError(error: unknown): string {
   if (normalized.includes("pkce") && normalized.includes("code verifier")) {
     return "This sign-in link must be opened in the same browser where you started it. Request a new link, or sign in with email and password.";
   }
+  if (normalized.includes("aal2") && normalized.includes("required")) {
+    // gotrue blocks password/email changes from an aal1 recovery session when
+    // MFA is enabled. The recovery page now prompts for an authenticator code,
+    // so this only surfaces if that step-up didn't complete.
+    return "Enter the code from your authenticator app to confirm it's you, then set your new password.";
+  }
 
   return message;
 }
@@ -386,6 +392,81 @@ export async function updateSupabasePassword(newPassword: string): Promise<void>
   const client = requireSupabaseClient();
   const { error } = await client.auth.updateUser({ password: newPassword });
 
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export interface SupabaseTotpFactor {
+  id: string;
+  friendlyName: string | null;
+}
+
+export interface SupabaseAalStatus {
+  currentLevel: string | null;
+  nextLevel: string | null;
+  /** Verified TOTP factors the session can use to step up to aal2. */
+  totpFactors: SupabaseTotpFactor[];
+}
+
+/**
+ * Reads the current Supabase AAL plus the user's verified TOTP factors.
+ *
+ * Used by the password-recovery flow: a recovery session lands at aal1, and
+ * gotrue rejects `updateUser({ password })` with "AAL2 session is required to
+ * update email or password when MFA is enabled" whenever a verified native
+ * factor exists. We need to know (a) that a step-up is required and (b) which
+ * TOTP factor to challenge. Only native TOTP re-mints the session JWT with
+ * `aal: "aal2"` — the app-owned attestation cookie wouldn't satisfy gotrue.
+ */
+export async function getSupabaseAalStatus(): Promise<SupabaseAalStatus> {
+  const client = requireSupabaseClient();
+
+  const { data: aal, error: aalError } =
+    await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aalError) {
+    throw new Error(aalError.message);
+  }
+
+  let totpFactors: SupabaseTotpFactor[] = [];
+  try {
+    const { data: factors, error: factorsError } = await client.auth.mfa.listFactors();
+    if (!factorsError && factors) {
+      totpFactors = (factors.totp ?? [])
+        .filter((factor) => factor.status === "verified")
+        .map((factor) => ({ id: factor.id, friendlyName: factor.friendly_name ?? null }));
+    }
+  } catch {
+    // listFactors needs a live session; if it fails we simply offer no TOTP
+    // step-up and fall back to the mapped gotrue error.
+  }
+
+  return {
+    currentLevel: aal?.currentLevel ?? null,
+    nextLevel: aal?.nextLevel ?? null,
+    totpFactors,
+  };
+}
+
+/**
+ * True when the session must climb to aal2 before a sensitive update
+ * (password / email change) will be accepted by gotrue.
+ */
+export function aalStepUpRequired(status: SupabaseAalStatus): boolean {
+  return status.nextLevel === "aal2" && status.currentLevel !== "aal2";
+}
+
+/**
+ * Challenge + verify a TOTP factor to upgrade the *current* Supabase session
+ * to aal2. Unlike the app-owned attestation cookie, this re-mints the session
+ * JWT with `aal: "aal2"`, which is exactly what gotrue's `updateUser` checks.
+ */
+export async function verifySupabaseTotpStepUp(
+  factorId: string,
+  code: string,
+): Promise<void> {
+  const client = requireSupabaseClient();
+  const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code });
   if (error) {
     throw new Error(error.message);
   }

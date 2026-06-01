@@ -413,6 +413,64 @@ describe("MfaService", () => {
     await expect(service.consumeRecoveryCode(ctx, "BOGUS-CODE-1234")).rejects.toThrow();
   });
 
+  it("resets the password out-of-band with a valid recovery code (lost-device path)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+
+    // The recovery code is single-use: a second attempt with it fails.
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "another-pass-123"),
+    ).rejects.toThrow(/invalid/i);
+  });
+
+  it("rejects a weak password before consuming the recovery code", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "short"),
+    ).rejects.toThrow(/at least 8/i);
+    expect(passwordResetter).not.toHaveBeenCalled();
+
+    // The code wasn't burned by the failed attempt — it still works.
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+  });
+
+  it("does not set a password when the recovery code is invalid", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" };
+    await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, "BOGUS-CODE-1234", "brand-new-pass-123"),
+    ).rejects.toThrow();
+    expect(passwordResetter).not.toHaveBeenCalled();
+  });
+
   it("delegates TOTP enrollment to the Supabase adapter", async () => {
     const totp = makeTotpStub();
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });

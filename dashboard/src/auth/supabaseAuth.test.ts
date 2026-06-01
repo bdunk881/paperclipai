@@ -13,6 +13,11 @@ const mockAuthClient = {
   // HEL-76 follow-up: PKCE magic-link / OAuth callbacks need this to exchange
   // the `?code=...` query param for a session before getSession returns.
   exchangeCodeForSession: vi.fn(),
+  mfa: {
+    getAuthenticatorAssuranceLevel: vi.fn(),
+    listFactors: vi.fn(),
+    challengeAndVerify: vi.fn(),
+  },
 };
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -448,6 +453,76 @@ describe("password recovery helpers", () => {
     const { updateSupabasePassword } = await import("./supabaseAuth");
     await updateSupabasePassword("new-password-123");
     expect(mockAuthClient.updateUser).toHaveBeenCalledWith({ password: "new-password-123" });
+  });
+
+  it("maps gotrue's AAL2-required error to authenticator copy", async () => {
+    const { mapSupabaseAuthError } = await import("./supabaseAuth");
+    const message = mapSupabaseAuthError(
+      new Error("AAL2 session is required to update email or password when MFA is enabled."),
+    );
+    expect(message).toMatch(/authenticator app/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MFA step-up helpers for password recovery
+// ---------------------------------------------------------------------------
+describe("recovery MFA step-up helpers", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://proj.supabase.co");
+    vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "anon-key");
+  });
+
+  it("reports verified TOTP factors and the current AAL", async () => {
+    mockAuthClient.mfa.getAuthenticatorAssuranceLevel.mockResolvedValue({
+      data: { currentLevel: "aal1", nextLevel: "aal2" },
+      error: null,
+    });
+    mockAuthClient.mfa.listFactors.mockResolvedValue({
+      data: {
+        totp: [
+          { id: "f-verified", friendly_name: "Phone", status: "verified" },
+          { id: "f-pending", friendly_name: "Old", status: "unverified" },
+        ],
+      },
+      error: null,
+    });
+
+    const { getSupabaseAalStatus, aalStepUpRequired } = await import("./supabaseAuth");
+    const status = await getSupabaseAalStatus();
+    expect(status.currentLevel).toBe("aal1");
+    expect(status.nextLevel).toBe("aal2");
+    expect(status.totpFactors).toEqual([{ id: "f-verified", friendlyName: "Phone" }]);
+    expect(aalStepUpRequired(status)).toBe(true);
+  });
+
+  it("does not require step-up when already aal2", async () => {
+    const { aalStepUpRequired } = await import("./supabaseAuth");
+    expect(
+      aalStepUpRequired({ currentLevel: "aal2", nextLevel: "aal2", totpFactors: [] }),
+    ).toBe(false);
+    expect(
+      aalStepUpRequired({ currentLevel: "aal1", nextLevel: "aal1", totpFactors: [] }),
+    ).toBe(false);
+  });
+
+  it("challenges and verifies a TOTP factor to reach aal2", async () => {
+    mockAuthClient.mfa.challengeAndVerify.mockResolvedValue({ data: {}, error: null });
+    const { verifySupabaseTotpStepUp } = await import("./supabaseAuth");
+    await verifySupabaseTotpStepUp("f-1", "123456");
+    expect(mockAuthClient.mfa.challengeAndVerify).toHaveBeenCalledWith({
+      factorId: "f-1",
+      code: "123456",
+    });
+  });
+
+  it("throws when the TOTP step-up is rejected", async () => {
+    mockAuthClient.mfa.challengeAndVerify.mockResolvedValue({
+      data: null,
+      error: { message: "Invalid TOTP code entered" },
+    });
+    const { verifySupabaseTotpStepUp } = await import("./supabaseAuth");
+    await expect(verifySupabaseTotpStepUp("f-1", "000000")).rejects.toThrow(/invalid totp/i);
   });
 });
 

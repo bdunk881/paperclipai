@@ -1,14 +1,17 @@
 /**
- * MFA enrollment wizard route (HEL-mfa, refactored in HEL-281).
+ * MFA enrollment wizard route (HEL-mfa; enforcement hardened in HEL-389).
  *
- * Mounted at /onboarding/mfa as a deep-link fallback. The default
- * post-signin enrollment surface is now the global
- * `<MfaEnrollmentSheet>` overlay — this page is only reached by:
+ * Mounted at /onboarding/mfa under `AuthOnlyRoute` (no `<Layout/>`). This is
+ * the enforcement surface: `MfaEnforcementGate` hard-redirects any
+ * authenticated user who requires app MFA but has no factor here, so the
+ * dashboard (and its global Ctrl/⌘+K command palette) never mounts until
+ * enrollment completes. Also reached by:
  *   - Users who deliberately navigate to /onboarding/mfa.
  *   - SecuritySettings' "Set up MFA now" / "Add a passkey" CTAs.
  *
- * The step machine itself lives in `auth/MfaEnrollmentFlow` so the
- * sheet and the page share the same logic.
+ * On completion we navigate back to `state.from` (the route the gate
+ * intercepted, defaulting to "/"). The step machine itself lives in
+ * `auth/MfaEnrollmentFlow`.
  */
 
 import { useLocation, useNavigate } from "react-router-dom";

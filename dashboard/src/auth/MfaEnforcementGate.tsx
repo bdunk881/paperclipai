@@ -1,29 +1,39 @@
 /**
- * Hard-cutover MFA enrollment gate (HEL-mfa).
+ * Hard-cutover MFA enrollment gate (HEL-mfa, hardened in HEL-389).
  *
- * Wraps `PrivateRoute` so authenticated users without ANY MFA factor are
+ * Wraps `PrivateRoute` so an authenticated user without ANY MFA factor is
  * redirected to `/onboarding/mfa` before they can reach a protected route.
  * Per the project decision: no grace period for existing users — first
  * login after MFA ships forces enrollment.
  *
+ * HEL-389: this is a HARD gate. When enrollment is required we render a
+ * `<Navigate>` to the standalone wizard (mounted under `AuthOnlyRoute`, with
+ * no `<Layout/>`), so the dashboard — and its global Ctrl/⌘+K command
+ * palette — never mount. The previous design (HEL-281) rendered the
+ * dashboard behind a dismissible scrim, which let a user reach the app via
+ * the command palette / Tab focus before enrolling. Rendering children at
+ * all while a factor is missing is the bug; we redirect instead.
+ *
  * Behavior:
  *   - While the policy is loading, render nothing (no flash to onboarding).
- *   - If `MFA_ENFORCEMENT_DISABLED` is set in localStorage (dev escape
- *     hatch — set manually in the console), skip the gate.
- *   - If policy.hasAnyFactor is false → redirect to /onboarding/mfa with
- *     `state.from` so the wizard can bounce back to the original target.
- *   - Once the user has enrolled, the wizard's success handler invalidates
- *     the policy query and the gate becomes a no-op.
+ *   - DEV ONLY: if `localStorage["autoflow.mfa.enforcement"] === "off"`, skip
+ *     the gate (manual console escape hatch for local work). The flag is
+ *     ignored in production builds — the gate cannot be skipped client-side.
+ *   - If policy requires app MFA and the user has no factor → redirect to
+ *     `/onboarding/mfa` with `state.from` so the wizard can bounce back to
+ *     the original target on completion.
+ *   - On a policy-fetch error, fail open (render children): a transient
+ *     `/api/mfa/policy` outage must not lock users out of the whole app, and
+ *     the server's `requireAAL2` still gates every sensitive action.
+ *   - Once the user enrolls, the wizard navigates back to `from`; the gate
+ *     remounts on that route, re-fetches policy, sees a factor, and renders
+ *     children.
  */
 
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { getMfaPolicy, type MfaPolicy } from "../api/mfaApi";
 import { useAuth } from "../context/AuthContext";
-import {
-  ENROLLMENT_COMPLETED_EVENT,
-  emitEnrollmentRequired,
-} from "./enrollmentEvents";
 
 type PolicyState =
   | { status: "loading" }
@@ -31,6 +41,9 @@ type PolicyState =
   | { status: "error"; message: string };
 
 function isDevBypassEnabled(): boolean {
+  // Honored only in dev builds. In production the gate cannot be skipped
+  // client-side via this flag (HEL-389).
+  if (!import.meta.env.DEV) return false;
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem("autoflow.mfa.enforcement") === "off";
@@ -43,7 +56,6 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
   const { user, requireAccessToken } = useAuth();
   const location = useLocation();
   const [state, setState] = useState<PolicyState>({ status: "loading" });
-  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Key the fetch effect on user.id (a primitive), NOT the user object
   // itself. AuthContext memoizes user in production, but defensive callers
@@ -69,20 +81,12 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [userId, requireAccessToken, refreshCounter]);
-
-  // HEL-281: when the global enrollment sheet completes, re-fetch policy
-  // so the gate flips from "needs enrollment" to "factor present" and
-  // future renders skip the emit.
-  useEffect(() => {
-    const handler = () => setRefreshCounter((n) => n + 1);
-    window.addEventListener(ENROLLMENT_COMPLETED_EVENT, handler);
-    return () => window.removeEventListener(ENROLLMENT_COMPLETED_EVENT, handler);
-  }, []);
+  }, [userId, requireAccessToken]);
 
   // Pages that ARE the enrollment / challenge flow must not be wrapped by
   // the gate or they'd redirect-loop. The router only mounts the gate on
-  // protected app routes, but defensively short-circuit anyway.
+  // protected app routes (and `/onboarding/mfa` is an `AuthOnlyRoute`), but
+  // defensively short-circuit anyway.
   if (location.pathname.startsWith("/onboarding/mfa")) {
     return <>{children}</>;
   }
@@ -102,42 +106,16 @@ export function MfaEnforcementGate({ children }: { children: React.ReactNode }) 
     return <>{children}</>;
   }
 
-  // HEL-280 + HEL-281: the server tells us whether app-side MFA is
-  // required for this session. OAuth users come back with
-  // requiresAppMfa=false (unless their workspace flipped the override
-  // flag on), so we skip the prompt. Password/magic-link users without
-  // a factor get the global enrollment sheet (HEL-281) — we emit an
-  // event that <MfaEnrollmentSheet> listens for, then ALWAYS render
-  // children so the dashboard stays visible behind the scrim instead of
-  // <Navigate>-ing to an empty page.
-  return (
-    <>
-      <EnrollmentEmitter
-        shouldEmit={state.policy.requiresAppMfa && !state.policy.hasAnyFactor}
-        from={`${location.pathname}${location.search}${location.hash}`}
-      />
-      {children}
-    </>
-  );
-}
+  // HEL-280: the server tells us whether app-side MFA is required for this
+  // session. OAuth users come back with requiresAppMfa=false (unless their
+  // workspace flipped the override flag on), so we skip enrollment for them.
+  // Any user who DOES require app MFA but has no factor is hard-redirected
+  // to the standalone enrollment wizard — the dashboard never mounts until a
+  // factor exists (HEL-389).
+  if (state.policy.requiresAppMfa && !state.policy.hasAnyFactor) {
+    const from = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to="/onboarding/mfa" state={{ from }} replace />;
+  }
 
-/**
- * Emits the enrollment-required event exactly once per "policy says
- * enrollment needed" transition. Lives in a child component so the
- * effect's deps depend on `shouldEmit` and re-fire when the policy
- * flips. Without this split the gate would re-emit on every parent
- * render.
- */
-function EnrollmentEmitter({
-  shouldEmit,
-  from,
-}: {
-  shouldEmit: boolean;
-  from: string;
-}) {
-  useEffect(() => {
-    if (!shouldEmit) return;
-    emitEnrollmentRequired({ from });
-  }, [shouldEmit, from]);
-  return null;
+  return <>{children}</>;
 }

@@ -1,13 +1,12 @@
 /**
- * Headless MFA enrollment flow (HEL-281).
+ * Headless MFA enrollment flow.
  *
- * Extracted from the original `MfaEnrollmentWizard` body so the same
- * three-step state machine (choose → enroll → recovery codes) can run
- * inside either:
- *   - the full-page `/onboarding/mfa` route, or
- *   - the global `<MfaEnrollmentSheet>` overlay introduced by HEL-281.
+ * Extracted from the original `MfaEnrollmentWizard` body so the multi-step
+ * state machine (choose → enroll → recovery codes) is reusable. It renders
+ * inside the full-page `/onboarding/mfa` route, where `MfaEnforcementGate`
+ * hard-redirects unenrolled users (HEL-389).
  *
- * No page chrome here — wrappers supply their own header/scrim/layout.
+ * No page chrome here — the wrapper supplies its own header/layout.
  */
 
 import { useEffect, useMemo, useState } from "react";

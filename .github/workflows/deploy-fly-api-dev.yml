@@ -92,7 +92,13 @@ jobs:
           fi
           # Critical runtime env vars the Express server reads from process.env.
           # All sourced from Infisical's dev env via the secrets-action step above.
-          for v in DATABASE_URL DEV_SUPABASE_URL DEV_SUPABASE_PUBLISHABLE_KEY; do
+          # HEL-393: DEV_SUPABASE_SECRET_KEY is the Supabase service-role key.
+          # Passwordless passkey login mints a Supabase session after verifying the
+          # WebAuthn assertion (supabaseSessionMinter.ts), which needs the
+          # service-role key; without it app.ts returns a hard 503 and passkey
+          # sign-in is unusable. Required so a missing/misnamed key fails the deploy
+          # loudly instead of silently disabling it.
+          for v in DATABASE_URL DEV_SUPABASE_URL DEV_SUPABASE_PUBLISHABLE_KEY DEV_SUPABASE_SECRET_KEY; do
             if [[ -z "${!v:-}" ]]; then
               echo "::error::Missing required Infisical secret in dev env: $v"
               exit 1
@@ -178,7 +184,14 @@ jobs:
           args+=( "DATABASE_URL=${DATABASE_URL}" )
           args+=( "SUPABASE_URL=${DEV_SUPABASE_URL}" )
           args+=( "SUPABASE_PUBLISHABLE_KEY=${DEV_SUPABASE_PUBLISHABLE_KEY}" )
-          [[ -n "${DEV_SUPABASE_SECRET_KEY:-}" ]] && args+=( "SUPABASE_SECRET_KEY=${DEV_SUPABASE_SECRET_KEY}" )
+          # HEL-393: the service-role key MUST land under SUPABASE_SERVICE_ROLE_KEY
+          # — that's the only name supabaseAdminClient.ts reads. Forwarding it as
+          # SUPABASE_SECRET_KEY (nothing reads that) silently disabled Supabase
+          # session minting, so passwordless passkey login dead-ended with a 503
+          # ("Passwordless passkey login is not available in this environment.")
+          # at app.ts's isSupabaseSessionMintingConfigured() gate. Hard-required
+          # in the verify step above, so this is always present.
+          args+=( "SUPABASE_SERVICE_ROLE_KEY=${DEV_SUPABASE_SECRET_KEY}" )
           [[ -n "${DATABASE_URL_UNPOOLED:-}" ]] && args+=( "DATABASE_URL_UNPOOLED=${DATABASE_URL_UNPOOLED}" )
           [[ -n "${SENTRY_DSN:-}" ]] && args+=( "SENTRY_DSN=${SENTRY_DSN}" )
           [[ -n "${GOOGLE_CLIENT_ID:-}" ]] && args+=( "GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" )

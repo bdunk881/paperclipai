@@ -385,6 +385,20 @@ const EMAIL_FACTOR_SENDS_PER_HOUR = 5; // per-user send rate limit
 const MAGIC_LINK_TOKEN_BYTES = 32; // 256 bits of entropy
 const REGISTRATION_IDEMPOTENCY_WINDOW_MS = 60 * 1000;
 
+/**
+ * HEL-396: true when an error is the Postgres foreign-key violation raised by
+ * inserting a passkey for a `user_id` that has no `auth.users` row — i.e. the
+ * `mfa_webauthn_credentials_user_id_fkey` constraint added in HEL-395. `pg`
+ * surfaces this as a `DatabaseError` with `code === "23503"` and the
+ * constraint name; we match both so an unrelated 23503 elsewhere doesn't get
+ * mistranslated.
+ */
+function isMissingUserFkViolation(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; constraint?: unknown };
+  return e.code === "23503" && e.constraint === "mfa_webauthn_credentials_user_id_fkey";
+}
+
 function formatPolicy(
   policy: UserMfaPolicyRow | null,
   credentials: WebauthnCredentialRow[],
@@ -618,16 +632,33 @@ export class MfaService {
       await recordAudit(ctx, "mfa.enroll.passkey.failed", { reason: "verification_failed" });
       throw new SecurityServiceError("Passkey registration failed", 400, "registration_failed");
     }
-    await this.repository.insertWebauthnCredential({
-      userId: ctx.userId,
-      credentialId: verification.credentialId,
-      publicKey: verification.publicKey,
-      signCount: verification.signCount,
-      transports: verification.transports,
-      aaguid: verification.aaguid,
-      backedUp: verification.backedUp,
-      deviceName: deviceName ?? null,
-    });
+    try {
+      await this.repository.insertWebauthnCredential({
+        userId: ctx.userId,
+        credentialId: verification.credentialId,
+        publicKey: verification.publicKey,
+        signCount: verification.signCount,
+        transports: verification.transports,
+        aaguid: verification.aaguid,
+        backedUp: verification.backedUp,
+        deviceName: deviceName ?? null,
+      });
+    } catch (err) {
+      // HEL-396: the passkey verified, but our authenticated `sub` no longer
+      // resolves to an `auth.users` row — the FK added in HEL-395 rejects the
+      // insert (Postgres 23503). This happens with a stale browser session for
+      // a since-deleted account. It's permanent for this session, so surface an
+      // actionable 401 ("sign in again") instead of leaking a raw 500. Mirrors
+      // the `passkey_account_unlinked` handling on the login path (HEL-394).
+      if (isMissingUserFkViolation(err)) {
+        throw new SecurityServiceError(
+          "Your session is for an account that no longer exists. Sign in again to set up a passkey.",
+          401,
+          "session_user_missing",
+        );
+      }
+      throw err;
+    }
     const now = new Date();
     await this.repository.upsertPolicy(ctx.userId, {
       hasWebauthn: true,

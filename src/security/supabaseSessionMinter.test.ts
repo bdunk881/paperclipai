@@ -24,6 +24,7 @@ jest.mock("@supabase/supabase-js", () => ({
 import {
   isSupabaseSessionMintingConfigured,
   mintSupabaseSessionForUser,
+  SupabaseUserNotFoundError,
 } from "./supabaseSessionMinter";
 
 describe("supabaseSessionMinter", () => {
@@ -69,6 +70,14 @@ describe("supabaseSessionMinter", () => {
       expiresAt: 999,
       user: { id: "u-1", email: "u@example.com" },
     });
+  });
+
+  it("throws SupabaseUserNotFoundError when the account is gone (orphaned passkey)", async () => {
+    getUserByIdMock.mockResolvedValue({ data: { user: null }, error: { message: "404: User not found" } });
+    const err = await mintSupabaseSessionForUser("2b4a7dfb").catch((e) => e);
+    expect(err).toBeInstanceOf(SupabaseUserNotFoundError);
+    expect((err as SupabaseUserNotFoundError).userId).toBe("2b4a7dfb");
+    expect(generateLinkMock).not.toHaveBeenCalled();
   });
 
   it("throws when the user has no email", async () => {

@@ -33,6 +33,23 @@ export interface MintedSupabaseSession {
   user: { id: string; email: string | null };
 }
 
+/**
+ * Thrown when the WebAuthn-verified credential resolves to a Supabase user that
+ * no longer exists (admin.getUserById 404s). This is a *permanent*, dead-end
+ * state — the passkey is orphaned (its account was deleted) — so callers should
+ * treat it as non-retryable and distinct from a transient minting failure, and
+ * may prune the dangling credential. HEL-394.
+ */
+export class SupabaseUserNotFoundError extends Error {
+  constructor(
+    readonly userId: string,
+    readonly reason?: string,
+  ) {
+    super(`Supabase user not found for id ${userId}${reason ? `: ${reason}` : ""}`);
+    this.name = "SupabaseUserNotFoundError";
+  }
+}
+
 function readUrl(): string | null {
   const url = process.env.SUPABASE_URL ?? process.env.PRODUCTION_SUPABASE_URL ?? null;
   return url && url.trim().length > 0 ? url.trim() : null;
@@ -62,8 +79,14 @@ export async function mintSupabaseSessionForUser(
 
   const admin = getSupabaseAdminClient();
   const { data: userData, error: userErr } = await admin.auth.admin.getUserById(userId);
-  if (userErr || !userData?.user?.email) {
-    throw new Error(`Could not resolve email for user ${userId}: ${userErr?.message ?? "no email"}`);
+  // Distinguish "the account is gone" (orphaned passkey — permanent) from
+  // "the account exists but has no email" (a different, unexpected edge). The
+  // former is the common, actionable case the caller surfaces specifically.
+  if (userErr || !userData?.user) {
+    throw new SupabaseUserNotFoundError(userId, userErr?.message);
+  }
+  if (!userData.user.email) {
+    throw new Error(`Could not resolve email for user ${userId}: no email`);
   }
   const email = userData.user.email;
 

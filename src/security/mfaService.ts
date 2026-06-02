@@ -826,6 +826,22 @@ export class MfaService {
     await recordAudit(ctx, "mfa.disable.passkey", { credentialId });
   }
 
+  /**
+   * HEL-394: best-effort removal of a passkey whose owning account no longer
+   * exists (e.g. the Supabase user was deleted), discovered during passwordless
+   * login. Unlike `removeWebauthnCredential` this skips audit + policy
+   * bookkeeping — there is no live user to scope them to — and just drops the
+   * row so the discoverable-credential picker stops offering a credential that
+   * can never authenticate. Returns whether a row was deleted; the caller
+   * treats any failure as non-fatal.
+   */
+  async pruneOrphanedWebauthnCredential(
+    userId: string,
+    credentialId: string,
+  ): Promise<boolean> {
+    return this.repository.deleteWebauthnCredential(userId, credentialId);
+  }
+
   // ---- TOTP (Supabase native) ----------------------------------------------
 
   async beginTotpEnrollment(

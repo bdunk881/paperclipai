@@ -44,6 +44,7 @@ import { SecurityServiceError } from "./security/securityService";
 import {
   isSupabaseSessionMintingConfigured,
   mintSupabaseSessionForUser,
+  SupabaseUserNotFoundError,
 } from "./security/supabaseSessionMinter";
 import sentryTestRoutes from "./debug/sentryTestRoute";
 import { createHostedFreeRoutes } from "./hostedFreeModels/hostedFreeRoutes";
@@ -1122,12 +1123,43 @@ app.post(
         res.status(error.statusCode).json({ error: error.message, code: error.code });
         return;
       }
-      // Session-minting failures are server-side (bad keys, Supabase down).
-      // Don't leak internals; log and return a generic 502.
+      // HEL-394: the passkey verified, but it resolves to a Supabase user that
+      // no longer exists — an orphaned credential. This is permanent, so don't
+      // tell the user to "try again". Best-effort prune the dead credential so
+      // the browser stops offering it, capture for visibility, and explain.
+      if (error instanceof SupabaseUserNotFoundError) {
+        try {
+          await getMfaService().pruneOrphanedWebauthnCredential(error.userId, credentialId);
+        } catch (pruneErr) {
+          console.warn(
+            "[app] failed to prune orphaned passkey credential",
+            pruneErr instanceof Error ? pruneErr.message : pruneErr,
+          );
+        }
+        Sentry.captureException(error, {
+          level: "warning",
+          tags: { endpoint: "/api/mfa/webauthn/login/verify", code: "passkey_account_unlinked" },
+          fingerprint: ["passkey_account_unlinked"],
+        });
+        res.status(401).json({
+          error:
+            "This passkey is no longer linked to an account. Sign in another way and re-register it.",
+          code: "passkey_account_unlinked",
+        });
+        return;
+      }
+      // Unknown server-side minting failure (bad keys, Supabase down, etc.).
+      // Keep the generic 502, but capture it (HEL-394) — previously this path
+      // only console.warn'd, leaving 5xx spikes invisible in Sentry.
       console.warn(
         "[app] passwordless passkey login failed",
         error instanceof Error ? error.message : error,
       );
+      Sentry.captureException(error, {
+        level: "error",
+        tags: { endpoint: "/api/mfa/webauthn/login/verify", code: "login_failed" },
+        fingerprint: ["passkey_login_mint_failed"],
+      });
       res.status(502).json({ error: "Could not complete passkey sign-in. Try again.", code: "login_failed" });
     }
   }),

@@ -195,6 +195,38 @@ describe("MfaService", () => {
     expect(policy.lastVerifiedMethod).toBe("webauthn");
   });
 
+  it("translates a missing-user FK violation on enroll into a 401 session_user_missing (HEL-396)", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    const ctx = { userId: "u-deleted" };
+    await service.beginWebauthnRegistration(ctx, "ghost@example.com");
+
+    // Simulate HEL-395's FK rejecting an insert whose user_id no longer exists
+    // in auth.users (the stale-session-for-a-deleted-account case). `pg`
+    // surfaces this as a DatabaseError with code 23503 + the constraint name.
+    const fkError = Object.assign(
+      new Error('insert ... violates foreign key constraint "mfa_webauthn_credentials_user_id_fkey"'),
+      { code: "23503", constraint: "mfa_webauthn_credentials_user_id_fkey" },
+    );
+    jest.spyOn(repo, "insertWebauthnCredential").mockRejectedValueOnce(fkError);
+
+    await expect(
+      service.finishWebauthnRegistration(ctx, { mockResponse: true }, "MacBook"),
+    ).rejects.toMatchObject({ statusCode: 401, code: "session_user_missing" });
+  });
+
+  it("propagates a non-FK insert error from enroll unchanged (HEL-396)", async () => {
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
+    const ctx = { userId: "u-1" };
+    await service.beginWebauthnRegistration(ctx, "alice@example.com");
+
+    const boom = new Error("db is on fire");
+    jest.spyOn(repo, "insertWebauthnCredential").mockRejectedValueOnce(boom);
+
+    await expect(
+      service.finishWebauthnRegistration(ctx, { mockResponse: true }, "MacBook"),
+    ).rejects.toBe(boom);
+  });
+
   it("rejects finish without a prior begin (no challenge stored)", async () => {
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp: makeTotpStub() });
     await expect(

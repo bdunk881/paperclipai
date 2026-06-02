@@ -32,6 +32,7 @@
  */
 
 import { Router, type Response } from "express";
+import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { asyncHandler } from "../middleware/asyncHandler";
@@ -78,6 +79,16 @@ function buildContext(req: AuthenticatedRequest): MfaServiceContext {
 
 function sendError(res: Response, error: unknown): void {
   if (error instanceof SecurityServiceError) {
+    // HEL-396: a SecurityServiceError carrying a 5xx is still a genuine
+    // server-side failure (e.g. bad keys, Supabase down) — capture it. The
+    // common 4xx (validation, step-up, the new 401 session_user_missing) are
+    // expected and are NOT captured.
+    if (error.statusCode >= 500) {
+      Sentry.captureException(error, {
+        level: "error",
+        tags: { kind: "mfa_5xx", code: error.code },
+      });
+    }
     res.status(error.statusCode).json({
       error: error.message,
       code: error.code,
@@ -88,6 +99,14 @@ function sendError(res: Response, error: unknown): void {
   }
   const message = error instanceof Error ? error.message : "Unknown MFA error";
   console.warn("[mfaRoutes]", message);
+  // HEL-396: previously this path only console.warn'd, so raw 500s (e.g. the
+  // register/verify FK violation that broke passkey enrollment) were invisible
+  // in Sentry — HEL-394 had only instrumented the login-verify path. Capture
+  // every unexpected 5xx here so the whole MFA surface is alertable.
+  Sentry.captureException(error instanceof Error ? error : new Error(message), {
+    level: "error",
+    tags: { kind: "mfa_5xx" },
+  });
   res.status(500).json({ error: "MFA operation failed", code: "mfa_error" });
 }
 

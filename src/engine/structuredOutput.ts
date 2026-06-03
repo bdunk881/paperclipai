@@ -83,13 +83,12 @@ export function extractStructuredOutput<T = unknown>(
   let lastErr: unknown = null;
   for (const candidate of attempts) {
     if (!candidate) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(candidate);
-    } catch (err) {
-      lastErr = err;
+    const parsedResult = parseJsonAllowingTrailing(candidate);
+    if (!parsedResult.ok) {
+      lastErr = parsedResult.error;
       continue;
     }
+    const parsed = parsedResult.value;
     if (options.schema) {
       try {
         return options.schema.parse(parsed) as T;
@@ -110,6 +109,52 @@ export function extractStructuredOutput<T = unknown>(
   throw new Error(
     `Could not extract JSON from model response${labelSuffix}: ${reason || "no JSON candidate found"}`,
   );
+}
+
+/**
+ * HEL-475: `JSON.parse`, but tolerant of trailing content after a complete JSON
+ * value. gemini-2.5-pro routinely returns a complete object followed by extra
+ * text (a second object, a continuation) even in JSON mode — which makes V8
+ * throw "Unexpected non-whitespace character after JSON at position N". When
+ * that happens, parse the valid prefix `candidate.slice(0, N)` — the leading
+ * complete value the model intended. This is more robust than brace-counting
+ * for large/odd responses, and the leading value is what the schema validates.
+ *
+ * Only the trailing-content error is recovered: a genuine syntax error inside
+ * the value, or a truncated ("Unexpected end of JSON input") response, returns
+ * `ok:false` so the caller still surfaces a real failure.
+ */
+function parseJsonAllowingTrailing(
+  candidate: string,
+): { ok: true; value: unknown } | { ok: false; error: unknown } {
+  try {
+    return { ok: true, value: JSON.parse(candidate) };
+  } catch (err) {
+    const pos = trailingContentPosition(err);
+    if (pos !== null && pos > 0 && pos <= candidate.length) {
+      try {
+        return { ok: true, value: JSON.parse(candidate.slice(0, pos)) };
+      } catch {
+        // The prefix didn't parse either — fall through to the original error.
+      }
+    }
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * Pull position N out of V8's
+ * "Unexpected non-whitespace character after JSON at position N (line …)" — the
+ * index where the trailing (non-JSON) content begins. Returns null for any
+ * other parse error (truncation, a syntax error inside the value, …) so those
+ * are NOT silently swallowed.
+ */
+function trailingContentPosition(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const match = /after JSON at position (\d+)/i.exec(err.message);
+  if (!match) return null;
+  const n = Number.parseInt(match[1], 10);
+  return Number.isFinite(n) ? n : null;
 }
 
 function buildAttempts(rawText: string): string[] {

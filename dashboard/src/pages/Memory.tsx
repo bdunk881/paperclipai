@@ -21,9 +21,11 @@ import { listAgents, type Agent } from "../api/agentApi";
 import { listMissions, type Mission } from "../api/missionsApi";
 import { listControlPlaneTeams, type ControlPlaneTeam } from "../api/controlPlane";
 import {
+  createInstruction,
   listInstructions,
   listKnowledgeItems,
   listEpisodes,
+  updateInstruction,
   type Episode,
   type Instruction,
   type KnowledgeItem,
@@ -258,6 +260,7 @@ function InstructionsTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -270,6 +273,9 @@ function InstructionsTab({
         agentId: scopeFilter.agentId,
       });
       setItems(list);
+      // HEL-408: seed the editor with the scope's existing instruction so a
+      // Save doesn't overwrite it with an empty body.
+      setBody(list[0]?.body ?? "");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -282,6 +288,38 @@ function InstructionsTab({
   }, [refresh]);
 
   const headline = items.length > 0 ? items[0].title : scopeLabel;
+  const existing = items[0];
+
+  // HEL-408: persist the textarea. Updates the scope's existing instruction
+  // or creates one for this scope. (The Save button used to be inert.)
+  const handleSave = async () => {
+    const trimmed = body.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const token = await requireAccessToken();
+      if (existing) {
+        await updateInstruction(existing.id, { body: trimmed }, token);
+      } else {
+        await createInstruction(
+          {
+            title: scopeLabel || "Standing instructions",
+            body: trimmed,
+            kind: "instruction",
+            mission_id: scopeFilter.missionId ?? undefined,
+            agent_id: scopeFilter.agentId ?? undefined,
+          },
+          token,
+        );
+      }
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="card">
@@ -317,8 +355,14 @@ function InstructionsTab({
           font: "inherit",
         }}
       />
-      <button type="button" className="btn primary" style={{ marginTop: 8 }}>
-        Save
+      <button
+        type="button"
+        className="btn primary"
+        style={{ marginTop: 8 }}
+        onClick={handleSave}
+        disabled={saving || loading || !body.trim()}
+      >
+        {saving ? "Saving…" : "Save"}
       </button>
     </div>
   );

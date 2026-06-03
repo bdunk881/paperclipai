@@ -9,14 +9,45 @@ const USER_A = "user-alice";
 const USER_B = "user-bob";
 
 function asUser(userId: string) {
-  return { "x-user-id": userId };
+  return { authorization: `Bearer ${userId}` };
+}
+
+function requireTestAuth(
+  req: express.Request & { auth?: { sub: string; email: string } },
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  const authorization = req.headers.authorization;
+  if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Missing or malformed Authorization header." });
+    return;
+  }
+
+  const userId = authorization.slice("Bearer ".length).trim();
+  if (!userId) {
+    res.status(401).json({ error: "Missing or malformed Authorization header." });
+    return;
+  }
+
+  req.auth = { sub: userId, email: `${userId}@example.test` };
+  next();
+}
+
+function resolveTestWorkspace(
+  req: express.Request & { workspaceId?: string; workspace?: { id: string; role: string } },
+  _res: express.Response,
+  next: express.NextFunction,
+) {
+  req.workspaceId = "test-workspace-id";
+  req.workspace = { id: "test-workspace-id", role: "developer" };
+  next();
 }
 
 function createTestApp() {
   const app = express();
   app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
   app.use(express.json());
-  app.use("/api/connectors/google-workspace", googleWorkspaceRoutes);
+  app.use("/api/connectors/google-workspace", requireTestAuth, resolveTestWorkspace, googleWorkspaceRoutes);
   return app;
 }
 
@@ -25,6 +56,16 @@ beforeEach(() => {
 });
 
 describe("Google Workspace connector credential entry", () => {
+  it("rejects credential routes without an authenticated session", async () => {
+    const app = createTestApp();
+    const res = await request(app)
+      .get("/api/connectors/google-workspace/credentials")
+      .set("X-User-Id", USER_A);
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe("Missing or malformed Authorization header.");
+  });
+
   it("creates OAuth credentials and never returns raw secret", async () => {
     const app = createTestApp();
     const res = await request(app)
@@ -61,6 +102,32 @@ describe("Google Workspace connector credential entry", () => {
     expect(res.body.apiKeyMasked).toBe("****3456");
     expect(res.body.apiKeyEncrypted).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain("123456");
+  });
+
+  it("uses authenticated user identity instead of X-User-Id", async () => {
+    const app = createTestApp();
+    await request(app)
+      .post("/api/connectors/google-workspace/credentials")
+      .set(asUser(USER_A))
+      .set("X-User-Id", USER_B)
+      .send({ authMethod: "api_key", label: "Alice key", apiKey: "alice-google-key-1111" });
+
+    const listA = await request(app)
+      .get("/api/connectors/google-workspace/credentials")
+      .set(asUser(USER_A));
+
+    expect(listA.status).toBe(200);
+    expect(listA.body.total).toBe(1);
+    expect(listA.body.credentials[0].userId).toBe(USER_A);
+    expect(listA.body.credentials[0].label).toBe("Alice key");
+
+    const spoofedListB = await request(app)
+      .get("/api/connectors/google-workspace/credentials")
+      .set(asUser(USER_B))
+      .set("X-User-Id", USER_A);
+
+    expect(spoofedListB.status).toBe(200);
+    expect(spoofedListB.body.total).toBe(0);
   });
 
   it("lists only current user's credentials", async () => {

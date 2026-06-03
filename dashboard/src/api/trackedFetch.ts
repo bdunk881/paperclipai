@@ -103,6 +103,16 @@ export async function trackedFetch(
     ...init,
     headers: withActiveWorkspaceHeader(init?.headers),
     signal: controller.signal,
+    // HEL-424: send the app-issued AAL2 attestation cookie
+    // (autoflow_aal2_attestation) on cross-origin API calls. The dashboard
+    // and API live on different sub-origins, so cookies only ride a fetch
+    // with credentials:"include". Passkeys aren't a Supabase factor, so the
+    // attestation cookie is the ONLY way a passkey session satisfies
+    // requireAAL2 — without this, only mfaApi.ts (which sets it per call)
+    // worked, and passkey users hit a 401 / step-up loop on every gated
+    // route (e.g. GET/POST /api/llm-credentials). The API already sends
+    // `Access-Control-Allow-Credentials: true` with an explicit origin.
+    credentials: init?.credentials ?? "include",
   };
   const url =
     typeof input === "string"

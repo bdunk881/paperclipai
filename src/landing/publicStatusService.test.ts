@@ -100,9 +100,22 @@ describe("computePublicStatus", () => {
     expect(listMachinesForApps).toHaveBeenCalledTimes(1);
   });
 
-  it("records a transition row when a component flips level", async () => {
+  // HEL-465: the previous-level comparison now lives in Postgres (a guarded
+  // INSERT … WHERE (latest level) IS DISTINCT FROM $3) instead of a per-process
+  // memo, so the writer is correct across restarts and across the 2 Fly
+  // machines. The app issues the guarded statement every snapshot; the DB — not
+  // the process — decides whether a row is actually written.
+  function apiInsertCalls() {
+    return queryMock.mock.calls.filter(
+      (c) =>
+        String(c[0]).includes("INSERT INTO public_status_events") &&
+        Array.isArray(c[1]) &&
+        c[1][0] === "api",
+    );
+  }
+
+  it("issues a DB-guarded transition insert carrying the current snapshot", async () => {
     process.env.FLY_API_TOKEN = "test";
-    // First snapshot: all up.
     listMachinesForApps.mockResolvedValueOnce([
       { appName: "autoflow-api-production", machines: [
         { id: "abc", state: "started", region: "iad" },
@@ -110,12 +123,25 @@ describe("computePublicStatus", () => {
     ]);
     await computePublicStatus(1000);
     await flushTransitionsWriter();
-    // First observation should NOT write — the cold-start contract is
-    // "establish baseline silently."
-    const firstInserts = queryMock.mock.calls.filter((c) =>
-      String(c[0]).includes("INSERT INTO public_status_events"),
-    );
-    expect(firstInserts).toHaveLength(0);
+
+    const apiInserts = apiInsertCalls();
+    expect(apiInserts).toHaveLength(1);
+    expect(apiInserts[0][1]).toEqual(["api", "Core API", "operational", null]);
+    // The guard delegates "did the level change?" to the shared table, so the
+    // decision is identical on every instance and survives a restart.
+    expect(String(apiInserts[0][0])).toContain("IS DISTINCT FROM");
+    expect(String(apiInserts[0][0])).toContain("ORDER BY recorded_at DESC");
+  });
+
+  it("records the new level on a flip, leaving same-level dedup to the DB guard", async () => {
+    process.env.FLY_API_TOKEN = "test";
+    listMachinesForApps.mockResolvedValueOnce([
+      { appName: "autoflow-api-production", machines: [
+        { id: "abc", state: "started", region: "iad" },
+      ] },
+    ]);
+    await computePublicStatus(1000);
+    await flushTransitionsWriter();
 
     // Second snapshot: machine stopped → component flips to down.
     listMachinesForApps.mockResolvedValueOnce([
@@ -126,25 +152,14 @@ describe("computePublicStatus", () => {
     await computePublicStatus(60_000);
     await flushTransitionsWriter();
 
-    const inserts = queryMock.mock.calls.filter((c) =>
-      String(c[0]).includes("INSERT INTO public_status_events"),
-    );
-    expect(inserts).toHaveLength(1);
-    expect(inserts[0][1]).toEqual(["api", "Core API", "down", null]);
-  });
-
-  it("does not write transitions when the level stays the same", async () => {
-    process.env.FLY_API_TOKEN = "test";
-    const machines = [{ id: "abc", state: "started", region: "iad" }];
-    listMachinesForApps.mockResolvedValue([
-      { appName: "autoflow-api-production", machines },
+    // One guarded insert per snapshot, each carrying that snapshot's level; the
+    // guard subquery (not the app) suppresses the row when the level is unchanged.
+    expect(apiInsertCalls().map((c) => c[1])).toEqual([
+      ["api", "Core API", "operational", null],
+      ["api", "Core API", "down", null],
     ]);
-    await computePublicStatus(1000);
-    await computePublicStatus(60_000);
-    await flushTransitionsWriter();
-    const inserts = queryMock.mock.calls.filter((c) =>
-      String(c[0]).includes("INSERT INTO public_status_events"),
-    );
-    expect(inserts).toHaveLength(0);
+    for (const call of apiInsertCalls()) {
+      expect(String(call[0])).toContain("IS DISTINCT FROM");
+    }
   });
 });

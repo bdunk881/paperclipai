@@ -155,50 +155,52 @@ function overallLevel(components: PublicComponentStatus[]): PublicStatusLevel {
   return "operational";
 }
 
-interface LastLevelByComponent {
-  [componentId: string]: PublicStatusLevel;
-}
-
-// allowlist: process-local memo of the previous status snapshot, used only to detect transitions for incident-timeline recording (the source of truth is the public_status_events table itself)
-const lastLevelByComponent: LastLevelByComponent = {};
-
 /**
- * Best-effort writer for the incident timeline. Inserts a row when a
- * component's level differs from the last snapshot we observed. Swallows
- * write failures — the status feed must never be blocked by the timeline
- * table being unavailable.
+ * Best-effort writer for the incident timeline (HEL-465).
+ *
+ * Records a row when a component's level differs from the most recent level
+ * already stored for that component. The previous level is read from the
+ * `public_status_events` table itself — NOT a process-local memo — so the
+ * writer is correct across restarts (a fresh process sees the real last
+ * level instead of a blank slate) and across multiple Fly instances (every
+ * machine compares against the same shared row rather than its own in-memory
+ * copy, which previously produced a duplicate timeline row on every flip).
+ *
+ * Compare-and-insert is a single atomic statement: the guard subquery
+ * (`… IS DISTINCT FROM $3`) is evaluated server-side, so a same-level
+ * snapshot writes nothing and the first-ever observation records one baseline
+ * row. Under concurrent flips on the exact same ~30s cache tick two instances
+ * could still both pass the guard against committed state and double-insert;
+ * that residual window is acceptable for this best-effort, low-volume feed and
+ * could be tightened with a per-component advisory lock if it ever matters.
+ *
+ * Swallows write failures per component — the status feed must never be
+ * blocked by the timeline table being unavailable.
  */
 async function recordTransitions(components: PublicComponentStatus[]): Promise<void> {
   if (!isPostgresConfigured()) return;
-  const newTransitions = components.filter((c) => {
-    const prev = lastLevelByComponent[c.id];
-    if (prev === undefined) {
-      lastLevelByComponent[c.id] = c.level;
-      return false; // first observation — don't generate spurious "transition" rows on cold start
-    }
-    if (prev === c.level) return false;
-    lastLevelByComponent[c.id] = c.level;
-    return true;
-  });
-  if (newTransitions.length === 0) return;
-
-  try {
-    const pool = getPostgresPool();
-    // One INSERT per transition; volume is tiny (only on flip), so the
-    // per-row cost is fine.
-    for (const c of newTransitions) {
+  const pool = getPostgresPool();
+  for (const c of components) {
+    try {
       await pool.query(
         `INSERT INTO public_status_events (component_id, component_name, level, message)
-           VALUES ($1, $2, $3, $4)`,
+         SELECT $1, $2, $3, $4
+         WHERE (
+           SELECT level
+             FROM public_status_events
+            WHERE component_id = $1
+            ORDER BY recorded_at DESC
+            LIMIT 1
+         ) IS DISTINCT FROM $3`,
         [c.id, c.name, c.level, c.message ?? null],
       );
+    } catch (err) {
+      console.warn(
+        `[public-status] failed to record transition for ${c.id}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
-  } catch (err) {
-    console.warn(
-      `[public-status] failed to record ${newTransitions.length} transition(s): ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-    );
   }
 }
 
@@ -281,7 +283,6 @@ export async function listRecentStatusEvents(limit = 50): Promise<PublicStatusEv
 
 export function __resetPublicStatusCacheForTests(): void {
   cache = null;
-  for (const k of Object.keys(lastLevelByComponent)) delete lastLevelByComponent[k];
 }
 
 // Touch unused imports to satisfy strict noUnused checks until/unless the

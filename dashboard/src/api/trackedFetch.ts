@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react";
 import { withActiveWorkspaceHeader } from "../workspaces/workspaceStorage";
+import { emitStepUpRequired, awaitStepUp } from "../auth/stepUpEvents";
 
 function normalizeEndpoint(url: string): string {
   return (
@@ -54,6 +55,21 @@ function makeCooldownResponse(): Response {
   );
 }
 
+/**
+ * HEL-441: detect the backend's `{ error: "mfa_step_up_required" }` 401. Peek
+ * the body via a clone so the caller can still read the original response when
+ * we don't retry (e.g. the user cancels the step-up challenge).
+ */
+async function isStepUpRequiredResponse(res: Response): Promise<boolean> {
+  if (res.status !== 401) return false;
+  try {
+    const body = (await res.clone().json()) as { error?: unknown };
+    return body?.error === "mfa_step_up_required";
+  } catch {
+    return false;
+  }
+}
+
 export interface TrackedFetchOptions {
   /**
    * Per-call override for the default 15s abort timeout. Useful for
@@ -65,6 +81,12 @@ export interface TrackedFetchOptions {
    * so a misuse can't lock the dashboard's spinner forever.
    */
   timeoutMs?: number;
+  /**
+   * Internal (HEL-441): set on the single automatic retry issued after a
+   * step-up challenge is satisfied. Prevents a still-`mfa_step_up_required`
+   * 401 from looping the modal.
+   */
+  _isStepUpRetry?: boolean;
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
@@ -134,6 +156,25 @@ export async function trackedFetch(
     statusCode = res.status;
     if (statusCode === 429) {
       recordRetryAfter(res.headers);
+    }
+    // HEL-441: step-up self-heal. A 401 with body `{error:"mfa_step_up_required"}`
+    // means the backend wants a fresh AAL2 second factor — e.g. a passkey user
+    // whose 15-min attestation lapsed hitting a gated mutation. Open the global
+    // <MfaStepUpModal>, wait for the user to satisfy it, then retry the request
+    // ONCE; the freshly minted attestation cookie rides the retry via
+    // credentials:"include". On cancel, surface the original 401 to the caller.
+    // The retry carries `_isStepUpRetry`, so a still-401 can't loop. Register
+    // the awaitStepUp listener BEFORE emitting to avoid a same-tick miss.
+    if (statusCode === 401 && !options?._isStepUpRetry && (await isStepUpRequiredResponse(res))) {
+      window.clearTimeout(timeoutHandle);
+      const satisfied = awaitStepUp();
+      emitStepUpRequired();
+      try {
+        await satisfied;
+      } catch {
+        return res;
+      }
+      return trackedFetch(input, init, { ...options, _isStepUpRetry: true });
     }
     return res;
   } catch (err) {

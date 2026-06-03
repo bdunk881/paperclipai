@@ -26,7 +26,9 @@ Anything failing either test is a finding.
 | ID | Finding | Sev | Tests failed | Ticket |
 |----|---------|-----|--------------|--------|
 | B1 | Sweep coordinators double-fire across instances | Urgent | multi-instance | [HEL-458](https://linear.app/helloautoflow/issue/HEL-458) |
+| B11 | Connector credential stores in-memory (connections lost on restart / cross-instance) | Urgent | restart, multi-instance | [HEL-470](https://linear.app/helloautoflow/issue/HEL-470) |
 | B2 | Webhook replay caches in-process (~13 connectors) | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
+| B10 | OAuth/PKCE handshake state in-memory (callback fails cross-instance) | High | restart, multi-instance | [HEL-471](https://linear.app/helloautoflow/issue/HEL-471) |
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
 | B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
 | B9 | companyLifecycle reads a stale never-refreshed in-memory mirror | High | multi-instance | [HEL-469](https://linear.app/helloautoflow/issue/HEL-469) |
@@ -142,6 +144,30 @@ _Surfaced by Codex's PR review; this was **mis-classified as a NOT-finding** in 
 **Impact (High):** On the 2-machine prod API, pausing a company on instance A updates A's map + Postgres, but instance B (which preloaded the prior `active` state) keeps returning `isPaused() === false` **forever** (until B restarts). `startAgentExecution()` / `recordHeartbeat()` gates on B therefore keep **executing agents for a company that was paused** — defeating a control-plane safety/billing stop across roughly half of traffic, with continued spend.
 
 **Fix:** Read lifecycle state from Postgres on access (it's a tiny, indexed lookup), or add a short TTL / pub-sub invalidation to the cache so a pause on one instance is visible on the others within seconds. The simplest correct option is to drop the read cache and query `company_lifecycle` directly in `getState()`/`listAudit()`. **Also verify `src/controlPlane/controlPlaneStore.ts`** for the same preload-once read-cache pattern (it has a hydration path) and fold it in if present.
+
+### B11 — Legacy connector credential stores are in-memory · Urgent · security
+
+_Surfaced by Codex's PR review; the integrations layer was under-covered in the first pass._
+
+**Files:** `src/integrations/{linear,teams,shopify,docusign,posthog,intercom}/credentialStore.ts` — each keeps credentials in a module-level `store` `Map`, never persisted to Postgres (verified: zero `pool.query`/`queryPostgres`/Supabase references). Routers mounted in prod under `/api/integrations/*` (`src/app.ts:853-862`).
+
+**Tests failed:** restart + multi-instance.
+
+**Impact (breaks the MVP "connect tools" loop):** a completed Linear/Teams/Shopify/DocuSign/PostHog/Intercom connection (OAuth tokens / API keys) is **lost on the next deploy/restart** and **invisible on the other Fly machine**, so ~half of subsequent requests act as "not connected" and connector steps fail intermittently. The at-rest key also falls back to `randomBytes(32)` when `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` is unset, so it's ephemeral per process and differs per machine.
+
+**Fix:** Persist credentials to Postgres, encrypted with a stable key (reuse `src/secrets/keyVersionedSecretVault` / `src/controlPlane/secretsRepository`), keyed by workspace + connector + credential id, behind the existing `*CredentialStore` interfaces; in-memory only under `inMemoryAllowed()`. Audit every connector `credentialStore.ts` (cf. `google-workspace/credentialsStore.ts`, which already persists) and require the encryption key outside dev/test.
+
+### B10 — OAuth/PKCE handshake state is in-memory · High · security
+
+_Surfaced by Codex's PR review._
+
+**Files:** `src/integrations/authAdapters.ts:52-53` — `const pkceStateMap = new Map<string, PkceState>()` (10-min TTL, purged in-process); per-provider flows use the same process-local `stateStore` pattern (Slack/Intercom, Apollo/HubSpot). `/authorize` + public callbacks mounted in prod.
+
+**Tests failed:** restart + multi-instance.
+
+**Impact:** authorize runs on machine A (stores `state` in A's map); the provider redirects to the callback, which the LB routes to either machine → ~50% chance it lands on B, which has no record → **"invalid state"** even though the flow just started (a deploy within 10 min does the same). OAuth connector setup fails intermittently.
+
+**Fix:** Store handshake `state`/`code_verifier` in a shared TTL store (Redis `SET state … EX 600`, or a Postgres `oauth_handshakes` table cleaned on read/expiry), read back in the callback on any instance; in-memory only under `inMemoryAllowed()`. `code_verifier`/`clientSecret` are sensitive — encrypt at rest if persisted.
 
 ### Backend — verified NOT findings
 

@@ -144,7 +144,23 @@ Every code change starts in Linear. No untracked PRs.
 
 ### One-off PR → one Linear issue
 
-Before touching code or opening a PR, create (or confirm) a Linear issue in the Helloautoflow team. The PR then follows "Working a single ticket" below: branch name = Linear's `gitBranchName`, PR title `"<HEL-N> <issue title>"`, body opens with `Closes HEL-N`. Move the issue to `In Progress` at branch time, `Done` on merge.
+Before touching code or opening a PR, create (or confirm) a Linear issue in the Helloautoflow team. The PR then follows "Working a single ticket" below: branch name = Linear's `gitBranchName`, PR title `"<HEL-N> <issue title>"`, body opens with `Closes HEL-N`. Walk the issue through the status lifecycle below: `In Progress` when you pick up the work, `In Review` when the PR is open, `Done` on merge.
+
+### Status lifecycle (the Linear workflow states)
+
+Move every issue through these states honestly — the board is the shared source of truth for what each agent and human is doing. This is the canonical definition; `CLAUDE.md` mirrors it.
+
+| State | When it applies |
+|---|---|
+| **Triage** | Error-handling inbox: incoming Sentry alerts, prod/CI failures, and customer bug reports land here *before* they're understood or assigned. Sort each one into `Backlog` (with a type label + priority) or `Canceled` — nothing stays in Triage. |
+| **Backlog** | Filed and accepted, but **not started**. The default home for new work not yet queued for pickup. |
+| **Todo** | Queued and ready — next up for pickup. Optional staging lane; the Claude routine may auto-promote from here (see "Auto-promotion"). |
+| **In Progress** | An agent (or human) has **picked up the work** and is actively building. Move here the moment you branch off `dev`. |
+| **In Review** | The **PR is open and waiting for review/merge**. Move here when you push the PR — not before, not at merge. |
+| **Done** | The **PR has merged**. Only after merge — never on PR-open. |
+| **Canceled** | Won't-do, obsolete, or superseded — including **duplicates**. (Linear also has a dedicated **Duplicate** state; use it when an issue literally duplicates another, and link the original.) |
+
+Never skip `In Review`: jumping `In Progress` → `Done` hides the review gate.
 
 "One-off" = all of these are true:
 - One mergeable PR, no follow-up planned.
@@ -232,14 +248,16 @@ If the list is empty, exit cleanly. Do not pick up tickets without your label �
 5. **Run repo-defined tests and typechecks**: `npm test`, `npm run type-check`, `npm run lint` plus dashboard / landing equivalents if relevant.
 6. **Commit cleanly** (NEVER use `--no-verify` or `--no-gpg-sign`). Push the branch.
 7. **Open a PR into `dev`** via `gh pr create --base dev --title "<HEL-N> <issue title>" --body "Closes HEL-N\n\n<short summary>"`.
-8. **Comment the PR URL** on the Linear ticket.
-9. **Stop** — wait for CI / the next pickup cycle.
+8. **Move the ticket to `In Review`** and **comment the PR URL** on the Linear ticket.
+9. **Stop** — wait for CI / review / the next pickup cycle.
 
 ### When the PR is ready
 
+(The ticket is in `In Review` from the moment the PR opened — step 8.)
+
 - **PR merged** → set the Linear issue state to `Done` and proceed to auto-promote.
-- **PR open + CI failing** → comment a concise failure summary on the Linear issue, add label `ci-failure`. STOP for this run; do not pick a new ticket.
-- **PR open + CI green and not yet merged** → comment "PR ready for review/merge: <url>". STOP.
+- **PR open + CI failing** → comment a concise failure summary on the Linear issue, add label `ci-failure`. Leave it in `In Review`. STOP for this run; do not pick a new ticket.
+- **PR open + CI green and not yet merged** → comment "PR ready for review/merge: <url>". Leave it in `In Review`. STOP.
 
 ### Auto-promotion (only after marking Done)
 

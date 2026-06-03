@@ -8,6 +8,7 @@
  * HEL-24's existing endpoint.
  */
 
+import { errorFromApiPayload, type ApiErrorPayload } from "../lib/userFacingError";
 import { getApiBasePath } from "./baseUrl";
 import { trackedFetch } from "./trackedFetch";
 import type { TeamAssemblyRoleLibraryEntry } from "./client";
@@ -291,10 +292,21 @@ export async function generateHiringPlan(
     },
     { timeoutMs: GENERATE_PLAN_TIMEOUT_MS },
   );
-  return parseJsonOrError<GeneratedPlanResponse>(
+  return parseGeneratePlanJsonOrError<GeneratedPlanResponse>(
     response,
     `Failed to generate hiring plan: ${response.status}`,
   );
+}
+
+async function parseGeneratePlanJsonOrError<T>(
+  response: Response,
+  fallback: string,
+): Promise<T> {
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as ApiErrorPayload | null;
+    throw errorFromApiPayload(payload, fallback);
+  }
+  return response.json() as Promise<T>;
 }
 
 /**

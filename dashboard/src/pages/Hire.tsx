@@ -25,6 +25,7 @@ import {
 import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { getHostedFreeCatalog } from "../api/hostedFreeModelsApi";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { formatUserFacingError } from "../lib/userFacingError";
 import { teamLinkForMission } from "../lib/missionNavigation";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";
@@ -287,7 +288,7 @@ export default function Hire() {
       });
       navigate(`/hire/plan/${mission.id}/${plan.hiringPlanId}`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to regenerate plan");
+      toast.error(formatUserFacingError(err, "Failed to regenerate plan"));
     } finally {
       setRegeneratingMissionId(null);
     }
@@ -325,7 +326,7 @@ export default function Hire() {
           navigate(`/hire/plan/${created.id}/${plan.hiringPlanId}`);
           return;
         } catch (planErr) {
-          const planMsg = planErr instanceof Error ? planErr.message : String(planErr);
+          const planMsg = formatUserFacingError(planErr, "Plan generation failed");
           setNotice(
             `Mission saved as a draft, but plan generation failed: ${planMsg}. You can retry from past missions below.`,
           );

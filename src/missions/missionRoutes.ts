@@ -35,6 +35,7 @@ import {
   type TeamAssemblyRequest,
   type TeamAssemblyResult,
 } from "../goals/teamAssembly";
+import { buildHiringPlanUserError } from "../errors/userFacingError";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "../engine/llmProviders";
 import { listConnectorHealth } from "../connectors/health";
@@ -975,13 +976,17 @@ export function createMissionRoutes(
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[missions] plan parse failed: ${msg}`);
+      const userError = buildHiringPlanUserError(msg, "parse");
+      console.error(
+        `[missions] plan parse failed [ref=${userError.reference}]: ${msg}`,
+      );
       Sentry.captureException(err, {
         tags: {
           route: "POST /api/missions/:missionId/generate-plan",
           phase: "parse",
           provider: resolved.config.provider,
           model: assemblyModel,
+          reference: userError.reference,
         },
         contexts: {
           mission: { workspaceId, userId, missionId },
@@ -990,11 +995,7 @@ export function createMissionRoutes(
           llm_response: { excerpt: rawText.slice(0, 500) },
         },
       });
-      res.status(502).json({
-        error: `Plan parse failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
-        provider: resolved.config.provider,
-        model: assemblyModel,
-      });
+      res.status(502).json(userError);
       return;
     }
 

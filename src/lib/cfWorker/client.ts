@@ -58,8 +58,20 @@ export async function callWorker<T>(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const start = Date.now();
 
+  // HEL-427: authenticate to the worker. Its rate-limit routes now require
+  // `Authorization: Bearer <CF_WORKER_SHARED_SECRET>`; attach it here so every
+  // worker call is authenticated. The same secret must be set on the worker
+  // (`wrangler secret put`) and this backend's env. If it's unset the header
+  // is omitted and the (fail-closed) worker rejects — rate-limit consume is
+  // fail-open, so traffic still flows during rollout.
+  const headers = new Headers(init.headers);
+  const sharedSecret = process.env.CF_WORKER_SHARED_SECRET;
+  if (sharedSecret) {
+    headers.set("Authorization", `Bearer ${sharedSecret}`);
+  }
+
   try {
-    const res = await fetch(`${baseUrl}${path}`, { ...init, signal: controller.signal });
+    const res = await fetch(`${baseUrl}${path}`, { ...init, headers, signal: controller.signal });
     const durationMs = Date.now() - start;
     if (!res.ok) {
       logCfWorker({

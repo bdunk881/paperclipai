@@ -89,4 +89,40 @@ describe("callWorker", () => {
       callWorker("/__health", { method: "GET" }, { onFailure: "fail-closed" }),
     ).rejects.toThrow(/CF_WORKER_BASE_URL is not configured/);
   });
+
+  it("attaches Authorization: Bearer <secret> when CF_WORKER_SHARED_SECRET is set (HEL-427)", async () => {
+    process.env.CF_WORKER_SHARED_SECRET = "shh";
+    const spy = mockFetchResolving(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await callWorker("/rate-limit/consume", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    const init = spy.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBe("Bearer shh");
+    // The caller's existing headers are preserved.
+    expect(headers.get("content-type")).toBe("application/json");
+    delete process.env.CF_WORKER_SHARED_SECRET;
+  });
+
+  it("omits Authorization when CF_WORKER_SHARED_SECRET is unset (HEL-427)", async () => {
+    delete process.env.CF_WORKER_SHARED_SECRET;
+    const spy = mockFetchResolving(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    await callWorker("/rate-limit/consume", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    const init = spy.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Headers;
+    expect(headers.get("Authorization")).toBeNull();
+  });
 });

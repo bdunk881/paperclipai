@@ -70,7 +70,53 @@ async function readJson(request: Request): Promise<unknown> {
   }
 }
 
+/**
+ * Constant-time string comparison so the bearer-token check doesn't leak the
+ * secret via response timing. Workers has no crypto.timingSafeEqual for
+ * strings, so XOR equal-length byte encodings.
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+
+/**
+ * HEL-427: the rate-limit routes mutate shared Durable Object counters, so
+ * they must be authenticated — otherwise any internet caller can exhaust a
+ * key's limit (DoS) or refund-spam to bypass it. Require
+ * `Authorization: Bearer <CF_WORKER_SHARED_SECRET>`. Fails CLOSED when the
+ * secret isn't configured: an unguarded counter is worse than degraded
+ * rate-limiting (the backend caller fails open, so traffic still flows).
+ */
+export function isWorkerRequestAuthorized(
+  authHeader: string | null,
+  secret: string | undefined,
+): boolean {
+  if (!secret || !authHeader) return false;
+  return constantTimeEqual(authHeader, `Bearer ${secret}`);
+}
+
+function denyUnauthorized(env: WorkerEnv): Response {
+  if (!env.CF_WORKER_SHARED_SECRET) {
+    console.warn(
+      JSON.stringify({
+        evt: "cf_worker_auth_misconfigured",
+        reason: "CF_WORKER_SHARED_SECRET is not set; denying rate-limit requests",
+      }),
+    );
+  }
+  return Response.json({ error: "Unauthorized" }, { status: 401 });
+}
+
 async function handleRateLimitConsume(request: Request, env: WorkerEnv): Promise<Response> {
+  if (!isWorkerRequestAuthorized(request.headers.get("Authorization"), env.CF_WORKER_SHARED_SECRET)) {
+    return denyUnauthorized(env);
+  }
   const body = parseRateLimiterBody(await readJson(request));
   if (!body) {
     return Response.json({ error: "Invalid rate limit request" }, { status: 400 });
@@ -89,6 +135,9 @@ async function handleRateLimitConsume(request: Request, env: WorkerEnv): Promise
 }
 
 async function handleRateLimitRefund(request: Request, env: WorkerEnv): Promise<Response> {
+  if (!isWorkerRequestAuthorized(request.headers.get("Authorization"), env.CF_WORKER_SHARED_SECRET)) {
+    return denyUnauthorized(env);
+  }
   const body = parseRateLimiterBody(await readJson(request));
   if (!body) {
     return Response.json({ error: "Invalid rate limit refund request" }, { status: 400 });

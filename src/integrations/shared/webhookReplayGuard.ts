@@ -17,7 +17,8 @@
 
 import { getRedisClient } from "../../queue/redisClient";
 
-// dev/test fallback (and Redis-error degrade path): key -> expiry epoch ms.
+// allowlist: dev/test + Redis-error degrade fallback; Redis is the
+// cross-instance source of truth in prod. key -> expiry epoch ms.
 const memoryReplay = new Map<string, number>();
 
 function pruneMemory(now: number): void {

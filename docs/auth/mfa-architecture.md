@@ -59,7 +59,9 @@ is absent unless `AUTOFLOW_ALLOW_INMEMORY=true`.
 request if **ANY** of:
 
 1. **`checkSupabaseAal2` (L128)** — `aal==="aal2"` AND a `totp`/`webauthn`/`phone` `amr` entry within
-   `MFA_STEP_UP_TTL_SECONDS` (default 15 min).
+   `MFA_STEP_UP_TTL_SECONDS` (default **4 hours** — raised from 15 min in HEL-442 so passkey users, whose
+   AAL2 lives only in the attestation cookie, stop re-stepping-up every 15 min of normal use; bounds how
+   long a stolen session stays AAL2-privileged. Governs both this window and the attestation cookie Max-Age).
 2. **`checkOauthShortcut` (L185)** — `amr` contains `{method:"oauth"}`; trusted unless the workspace flag
    `require_app_mfa_for_oauth_users` is set, and trusted **unconditionally when no workspaceId is bound**
    (L190). ⚠️ See [HEL-339](https://linear.app/helloautoflow/issue/HEL-339).

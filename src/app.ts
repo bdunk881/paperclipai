@@ -662,11 +662,17 @@ app.use("/api/debug/sentry-test", sentryTestRoutes);
 // ---------------------------------------------------------------------------
 // LLM Config API — BYOLLM provider credentials
 // ---------------------------------------------------------------------------
-app.use("/api/llm-configs", requireAuth, requireAAL2, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+// HEL-440: AAL2 step-up is applied per-route INSIDE llmConfigRoutes (on the
+// create/update/setDefault/delete mutations), NOT at this mount. Gating the
+// whole router — the GET list included — meant a passkey user whose 15-min
+// AAL2 attestation lapsed got a silent 401 on a routine read (Providers page,
+// /hire model selector), recoverable only by a full re-login (HEL-435). The
+// list returns masked metadata only, so requireAuth + role is sufficient.
+app.use("/api/llm-configs", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 // HEL-117: canonical noun alias (table is `llm_credentials` in migration 025).
 // Both paths resolve to the same router until the dashboard fully migrates;
 // then `/api/llm-configs` becomes a legacy alias for one release before removal.
-app.use("/api/llm-credentials", requireAuth, requireAAL2, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
+app.use("/api/llm-credentials", requireAuth, workspaceResolver, requireRole("admin", "developer"), llmConfigRoutes);
 
 // HEL-todo Phase-2a: tier routing matrix (workspaces.tier_routing JSONB,
 // migration 033). GET/PATCH the customer-visible Lite/Standard/Power
@@ -2077,7 +2083,7 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefaultAsync(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -2160,8 +2166,8 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
-      : await llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecryptedAsync(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefaultAsync(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -2254,7 +2260,7 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
     return;
   }
 
-  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefaultAsync(userId);
   if (!resolved) {
     res.status(422).json({
       error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",

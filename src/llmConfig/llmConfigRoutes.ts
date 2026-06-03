@@ -14,6 +14,7 @@ import {
 import { llmConfigStore, LLMProvider } from "./llmConfigStore";
 import { requireEntitlement } from "../middleware/requireEntitlement";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { requireAAL2 } from "../middleware/requireAAL2";
 import { getWorkspaceTierMatrix, setWorkspaceTierMatrix } from "./tierRouter";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 
@@ -166,12 +167,19 @@ function validateProviderConfig(params: {
 
 const router = Router();
 
+// HEL-440: every MUTATION on this router (create / update / setDefault /
+// delete) requires a fresh AAL2 step-up — these rotate credentials or change
+// routing. The GET list below is intentionally NOT gated (masked reads only);
+// see the mount note in app.ts. requireAAL2 previously sat on the router mount
+// and caught the GET too, silently 401-looping returning passkey users whose
+// 15-min attestation had lapsed (HEL-435).
+//
 // HEL-71: BYOK (bring-your-own-key) is gated behind the workspace's
 // `byokAllowed` entitlement. Free Explore + Flow tiers have it off; Automate
 // and Scale have it on. Reads default to the active plan via entitlementStore;
 // 402 on deny carries the structured payload the dashboard can surface as an
 // "Upgrade to Automate" CTA.
-router.post("/", requireEntitlement("byokAllowed"), (req: AuthenticatedRequest, res: Response) => {
+router.post("/", requireAAL2, requireEntitlement("byokAllowed"), (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -253,7 +261,7 @@ router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res: Response) =>
   res.json({ configs, total: configs.length });
 }));
 
-router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
+router.patch("/:id/default", requireAAL2, (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -269,7 +277,7 @@ router.patch("/:id/default", (req: AuthenticatedRequest, res: Response) => {
   res.json(updated);
 });
 
-router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
+router.patch("/:id", requireAAL2, (req: AuthenticatedRequest, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -349,6 +357,7 @@ router.patch("/:id", (req: AuthenticatedRequest, res: Response) => {
 
 router.delete(
   "/:id",
+  requireAAL2,
   asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
     const userId = getUserId(req);
     if (!userId) {

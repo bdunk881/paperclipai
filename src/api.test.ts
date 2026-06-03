@@ -226,20 +226,25 @@ describe("Apollo OAuth callback routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /api/templates", () => {
-  it("returns 200 with a templates array", async () => {
+  it("returns 401 without an Authorization header (HEL-398)", async () => {
     const res = await request(app).get("/api/templates");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 200 with a templates array", async () => {
+    const res = await request(app).get("/api/templates").set(asAuth());
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.templates)).toBe(true);
   });
 
   it("returns all 13 templates when no category filter is applied", async () => {
-    const res = await request(app).get("/api/templates");
+    const res = await request(app).get("/api/templates").set(asAuth());
     expect(res.body.total).toBe(13);
     expect(res.body.templates).toHaveLength(13);
   });
 
   it("each template summary has required shape fields", async () => {
-    const res = await request(app).get("/api/templates");
+    const res = await request(app).get("/api/templates").set(asAuth());
     for (const t of res.body.templates) {
       expect(typeof t.id).toBe("string");
       expect(typeof t.name).toBe("string");
@@ -255,33 +260,33 @@ describe("GET /api/templates", () => {
   });
 
   it("filters by category=support", async () => {
-    const res = await request(app).get("/api/templates?category=support");
+    const res = await request(app).get("/api/templates?category=support").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.templates.every((t: { category: string }) => t.category === "support")).toBe(true);
     expect(res.body.total).toBe(res.body.templates.length);
   });
 
   it("filters by category=sales", async () => {
-    const res = await request(app).get("/api/templates?category=sales");
+    const res = await request(app).get("/api/templates?category=sales").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.templates.every((t: { category: string }) => t.category === "sales")).toBe(true);
   });
 
   it("filters by category=content", async () => {
-    const res = await request(app).get("/api/templates?category=content");
+    const res = await request(app).get("/api/templates?category=content").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.templates.every((t: { category: string }) => t.category === "content")).toBe(true);
   });
 
   it("returns empty templates array for unknown category", async () => {
-    const res = await request(app).get("/api/templates?category=unknown");
+    const res = await request(app).get("/api/templates?category=unknown").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.templates).toHaveLength(0);
     expect(res.body.total).toBe(0);
   });
 
   it("total matches templates array length", async () => {
-    const res = await request(app).get("/api/templates");
+    const res = await request(app).get("/api/templates").set(asAuth());
     expect(res.body.total).toBe(res.body.templates.length);
   });
 });
@@ -292,13 +297,13 @@ describe("GET /api/templates", () => {
 
 describe("GET /api/templates/:id", () => {
   it("returns 200 with full template for a known id", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot");
+    const res = await request(app).get("/api/templates/tpl-support-bot").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.id).toBe("tpl-support-bot");
   });
 
   it("returns full steps and configFields arrays", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot");
+    const res = await request(app).get("/api/templates/tpl-support-bot").set(asAuth());
     expect(Array.isArray(res.body.steps)).toBe(true);
     expect(res.body.steps.length).toBeGreaterThan(0);
     expect(Array.isArray(res.body.configFields)).toBe(true);
@@ -306,27 +311,27 @@ describe("GET /api/templates/:id", () => {
   });
 
   it("returns full template for lead enrichment", async () => {
-    const res = await request(app).get("/api/templates/tpl-lead-enrich");
+    const res = await request(app).get("/api/templates/tpl-lead-enrich").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.id).toBe("tpl-lead-enrich");
     expect(res.body.category).toBe("sales");
   });
 
   it("returns full template for content generator", async () => {
-    const res = await request(app).get("/api/templates/tpl-content-gen");
+    const res = await request(app).get("/api/templates/tpl-content-gen").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.id).toBe("tpl-content-gen");
     expect(res.body.category).toBe("content");
   });
 
   it("returns 404 with error message for unknown id", async () => {
-    const res = await request(app).get("/api/templates/tpl-does-not-exist");
+    const res = await request(app).get("/api/templates/tpl-does-not-exist").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
 
   it("each step in full template has required fields", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot");
+    const res = await request(app).get("/api/templates/tpl-support-bot").set(asAuth());
     for (const step of res.body.steps) {
       expect(typeof step.id).toBe("string");
       expect(typeof step.name).toBe("string");
@@ -338,7 +343,7 @@ describe("GET /api/templates/:id", () => {
   });
 
   it("full template includes sampleInput and expectedOutput", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot");
+    const res = await request(app).get("/api/templates/tpl-support-bot").set(asAuth());
     expect(res.body.sampleInput).toBeDefined();
     expect(typeof res.body.sampleInput).toBe("object");
     expect(res.body.expectedOutput).toBeDefined();
@@ -387,11 +392,11 @@ describe("POST /api/templates", () => {
     expect(createRes.body.id).toBe("tpl-custom-qa");
     expect(createRes.body.name).toBe("Custom QA Workflow");
 
-    const listRes = await request(app).get("/api/templates");
+    const listRes = await request(app).get("/api/templates").set(asAuth());
     expect(listRes.status).toBe(200);
     expect(listRes.body.templates.some((template: { id: string }) => template.id === "tpl-custom-qa")).toBe(true);
 
-    const getRes = await request(app).get("/api/templates/tpl-custom-qa");
+    const getRes = await request(app).get("/api/templates/tpl-custom-qa").set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.description).toBe("User-authored workflow template");
   });
@@ -450,26 +455,26 @@ describe("Approval tier policy API", () => {
 
 describe("GET /api/templates/:id/sample", () => {
   it("returns 200 with sampleInput and expectedOutput", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot/sample");
+    const res = await request(app).get("/api/templates/tpl-support-bot/sample").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.sampleInput).toBeDefined();
     expect(res.body.expectedOutput).toBeDefined();
   });
 
   it("sampleInput is a non-empty object", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot/sample");
+    const res = await request(app).get("/api/templates/tpl-support-bot/sample").set(asAuth());
     expect(Object.keys(res.body.sampleInput).length).toBeGreaterThan(0);
   });
 
   it("expectedOutput is a non-empty object", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot/sample");
+    const res = await request(app).get("/api/templates/tpl-support-bot/sample").set(asAuth());
     expect(Object.keys(res.body.expectedOutput).length).toBeGreaterThan(0);
   });
 
   it("sample endpoint works for all built-in templates", async () => {
     const ids = WORKFLOW_TEMPLATES.map((template) => template.id);
     for (const id of ids) {
-      const res = await request(app).get(`/api/templates/${id}/sample`);
+      const res = await request(app).get(`/api/templates/${id}/sample`).set(asAuth());
       expect(res.status).toBe(200);
       expect(res.body.sampleInput).toBeDefined();
       expect(res.body.expectedOutput).toBeDefined();
@@ -477,7 +482,7 @@ describe("GET /api/templates/:id/sample", () => {
   });
 
   it("returns 404 for unknown template id", async () => {
-    const res = await request(app).get("/api/templates/tpl-unknown/sample");
+    const res = await request(app).get("/api/templates/tpl-unknown/sample").set(asAuth());
     expect(res.status).toBe(404);
     expect(res.body.error).toMatch(/not found/i);
   });
@@ -571,7 +576,7 @@ describe("Portable workflow APIs", () => {
   });
 
   it("exports a built-in template in portable format", async () => {
-    const res = await request(app).get("/api/templates/tpl-support-bot/export");
+    const res = await request(app).get("/api/templates/tpl-support-bot/export").set(asAuth());
     expect(res.status).toBe(200);
     expect(res.body.format).toBe(PORTABLE_WORKFLOW_FORMAT);
     expect(res.body.schemaVersion).toBe(PORTABLE_WORKFLOW_SCHEMA_VERSION);
@@ -579,7 +584,7 @@ describe("Portable workflow APIs", () => {
   });
 
   it("imports a portable template and exposes it through the templates API", async () => {
-    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export").set(asAuth());
     const importedTemplate = {
       ...exportRes.body.template,
       id: "tpl-support-bot-clone",
@@ -599,11 +604,11 @@ describe("Portable workflow APIs", () => {
     expect(importRes.body.imported).toBe(true);
     expect(importRes.body.template.id).toBe("tpl-support-bot-clone");
 
-    const getRes = await request(app).get("/api/templates/tpl-support-bot-clone");
+    const getRes = await request(app).get("/api/templates/tpl-support-bot-clone").set(asAuth());
     expect(getRes.status).toBe(200);
     expect(getRes.body.name).toBe("Customer Support Bot Clone");
 
-    const listRes = await request(app).get("/api/templates");
+    const listRes = await request(app).get("/api/templates").set(asAuth());
     expect(listRes.body.total).toBe(14);
   });
 
@@ -618,7 +623,7 @@ describe("Portable workflow APIs", () => {
   });
 
   it("rejects interval_trigger templates without intervalMinutes", async () => {
-    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export").set(asAuth());
     const importedTemplate = {
       ...exportRes.body.template,
       id: "tpl-invalid-interval-trigger",
@@ -673,7 +678,7 @@ describe("Portable workflow APIs", () => {
   });
 
   it("rejects importing a template id that already exists", async () => {
-    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export");
+    const exportRes = await request(app).get("/api/templates/tpl-support-bot/export").set(asAuth());
     const res = await request(app)
       .post("/api/templates/import")
       .set(asAuth())
@@ -3186,11 +3191,11 @@ describe("Rate limiting", () => {
 
   it("enforces general API limits and returns Retry-After", async () => {
     for (let i = 0; i < 100; i += 1) {
-      const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+      const res = await request(app).get("/api/templates").set(asAuth("rate-limit-general-user")).set("X-User-Id", "rate-limit-general-user");
       expect(res.status).toBe(200);
     }
 
-    const blocked = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-general-user");
+    const blocked = await request(app).get("/api/templates").set(asAuth("rate-limit-general-user")).set("X-User-Id", "rate-limit-general-user");
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBeDefined();
     expect(Number(blocked.headers["retry-after"])).toBeGreaterThan(0);
@@ -3200,7 +3205,7 @@ describe("Rate limiting", () => {
     fetchSpy.mockRejectedValueOnce(new Error("worker unavailable"));
     const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
 
-    const res = await request(app).get("/api/templates").set("X-User-Id", "rate-limit-outage-user");
+    const res = await request(app).get("/api/templates").set(asAuth("rate-limit-outage-user")).set("X-User-Id", "rate-limit-outage-user");
 
     expect(res.status).toBe(200);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"event":"call_network_error"'));
@@ -3222,13 +3227,13 @@ describe("Content-Type and error handling", () => {
       "/api/runs",
     ];
     for (const ep of endpoints) {
-      const res = await request(app).get(ep);
+      const res = await request(app).get(ep).set(asAuth());
       expect(res.headers["content-type"]).toMatch(/application\/json/);
     }
   });
 
   it("404 responses use application/json", async () => {
-    const res = await request(app).get("/api/templates/tpl-nope");
+    const res = await request(app).get("/api/templates/tpl-nope").set(asAuth());
     expect(res.headers["content-type"]).toMatch(/application\/json/);
   });
 });

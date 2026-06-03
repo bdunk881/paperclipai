@@ -31,7 +31,7 @@
  *     can recall what this one learned
  *   - Activity-feed emit
  *
- * Cost + token usage flow into `runs` + `control_plane_spend_entries`
+ * Cost + token usage flow into `runs` + `spend_entries`
  * via the existing channels.
  */
 

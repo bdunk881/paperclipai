@@ -52,4 +52,22 @@ describe("createBudgetHook", () => {
     const decision = await hook.preToolUse?.({ toolName: "tool", toolInput: {} });
     expect(decision).toBeUndefined();
   });
+
+  // HEL-479 regression: the spend table was renamed control_plane_spend_entries
+  // → spend_entries (migration 021). The decision tests above mock pool.query,
+  // so they pass regardless of the table name; assert the emitted SQL targets
+  // the live table so the rename can't silently regress enforcement again.
+  it("queries the renamed spend_entries table (not control_plane_spend_entries)", async () => {
+    const query = jest.fn<(sql: string, params?: unknown[]) => Promise<QueryResult>>();
+    query
+      .mockResolvedValueOnce({ rows: [{ budget_monthly_usd: 100 }] } as unknown as QueryResult)
+      .mockResolvedValueOnce({ rows: [{ total: 10 }] } as unknown as QueryResult);
+    const pool = { query } as unknown as Pool;
+    const hook = createBudgetHook({ pool, workspaceId: WS, agentId: AGENT });
+    await hook.preToolUse?.({ toolName: "save_memory", toolInput: {} });
+
+    const spendSql = String(query.mock.calls[1]?.[0] ?? "");
+    expect(spendSql).toMatch(/\bFROM\s+spend_entries\b/);
+    expect(spendSql).not.toMatch(/control_plane_spend_entries/);
+  });
 });

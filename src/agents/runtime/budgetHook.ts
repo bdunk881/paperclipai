@@ -2,7 +2,7 @@
  * Budget enforcement hook factory.
  *
  * Returns an AgentHooks object whose `preToolUse` checks the agent's
- * remaining monthly budget against `control_plane_spend_entries` before
+ * remaining monthly budget against `spend_entries` before
  * each tool call. When the spend is over the cap, the hook returns
  * `{ continue: false, reason }` and the runtime surfaces a clean error
  * to the model instead of executing the call.
@@ -49,7 +49,7 @@ export function createBudgetHook(input: CreateBudgetHookInput): AgentHooks {
 
         const spend = await input.pool.query<SpendRow>(
           `SELECT COALESCE(SUM(cost_usd), 0) AS total
-             FROM control_plane_spend_entries
+             FROM spend_entries
             WHERE agent_id = $1::uuid
               AND workspace_id = $2::uuid
               AND recorded_at >= date_trunc('month', now())`,

@@ -91,7 +91,7 @@ describe("knowledgeStore", () => {
     expect(listed.length).toBeGreaterThan(0);
   });
 
-  it("falls back to in-memory results when postgres hydration fails", async () => {
+  it("falls back to in-memory results when postgres reads fail", async () => {
     mockedIsPostgresConfigured.mockReturnValue(true);
     mockedQueryPostgres.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
@@ -100,27 +100,30 @@ describe("knowledgeStore", () => {
 
     expect(mockedQueryPostgres).toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith(
-      "[knowledge] Postgres hydrate failed, falling back to in-memory:",
+      "[knowledge] Postgres read failed, falling back to in-memory:",
       "connect ECONNREFUSED"
     );
 
     errorSpy.mockRestore();
   });
 
-  it("falls back to in-memory on create when postgres persist fails", async () => {
+  it("surfaces persist failures on create instead of silently keeping data in-memory only (B15/HEL-493)", async () => {
     mockedIsPostgresConfigured.mockReturnValue(true);
     mockedQueryPostgres.mockRejectedValue(new Error("extension \"vector\" is not available"));
     const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    const base = await knowledgeStore.createKnowledgeBase({
-      userId: "qa-smoke-user",
-      name: "Smoke Test KB",
-    });
+    // Previously this swallowed the error and returned an in-memory-only base
+    // (lost on the next deploy / invisible cross-instance). It must now throw
+    // so the caller sees that the write did not persist.
+    await expect(
+      knowledgeStore.createKnowledgeBase({
+        userId: "qa-smoke-user",
+        name: "Smoke Test KB",
+      })
+    ).rejects.toThrow(/vector/);
 
-    expect(base).toBeDefined();
-    expect(base.name).toBe("Smoke Test KB");
     expect(errorSpy).toHaveBeenCalledWith(
-      "[knowledge] Postgres persist failed, falling back to in-memory:",
+      "[knowledge] Postgres persist failed:",
       expect.stringContaining("vector")
     );
 

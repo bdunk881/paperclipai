@@ -10,11 +10,19 @@ import {
   AgentMemoryTier,
 } from "./agentMemoryStore";
 import { asyncHandler } from "../middleware/asyncHandler";
+import {
+  consumeDailyUsage,
+  getDailyUsage,
+  __resetDailyUsageForTests,
+  __seedDailyUsageForTests,
+} from "../billing/usage/dailyUsageCounter";
 
 const router = Router({ mergeParams: true });
 const GIGABYTE = 1024 * 1024 * 1024;
-// allowlist: rolling counter / cached config; process-local by design
-const semanticSearchUsage = new Map<string, number>();
+// HEL-467 (B8): semantic-search daily limit is enforced via the shared
+// Postgres-backed dailyUsageCounter (Redis-cached), keyed by user id, so the
+// limit holds across instances and survives restarts.
+const SEMANTIC_SEARCH_METRIC = "semantic_search" as const;
 
 const TIER_POLICY: Record<
   AgentMemoryTier,
@@ -172,31 +180,25 @@ function rejectSharedFeature(
   return false;
 }
 
-function semanticSearchQuotaKey(userId: string): string {
-  return `${userId}:${new Date().toISOString().slice(0, 10)}`;
-}
-
-function consumeSemanticSearchQuota(tier: AgentMemoryTier, userId: string): boolean {
+async function consumeSemanticSearchQuota(tier: AgentMemoryTier, userId: string): Promise<boolean> {
   const limit = TIER_POLICY[tier].semanticSearchDailyLimit;
   if (!limit) {
     return true;
   }
-  const key = semanticSearchQuotaKey(userId);
-  const current = semanticSearchUsage.get(key) ?? 0;
+  const current = await getDailyUsage(SEMANTIC_SEARCH_METRIC, userId);
   if (current >= limit) {
     return false;
   }
-  semanticSearchUsage.set(key, current + 1);
+  await consumeDailyUsage(SEMANTIC_SEARCH_METRIC, userId, 1);
   return true;
 }
 
 export function resetAgentMemorySearchQuotaForTests(): void {
-  semanticSearchUsage.clear();
+  __resetDailyUsageForTests();
 }
 
 export function seedAgentMemorySearchQuotaForTests(userId: string, count: number, isoDate?: string): void {
-  const date = isoDate ?? new Date().toISOString().slice(0, 10);
-  semanticSearchUsage.set(`${userId}:${date}`, count);
+  __seedDailyUsageForTests(SEMANTIC_SEARCH_METRIC, userId, count, isoDate);
 }
 
 router.post("/", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
@@ -438,7 +440,7 @@ router.get("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     return;
   }
 
-  if (!consumeSemanticSearchQuota(tier, userId)) {
+  if (!(await consumeSemanticSearchQuota(tier, userId))) {
     res.status(429).json({
       error: `Daily semantic search quota exceeded for the ${tier} tier`,
       tier,

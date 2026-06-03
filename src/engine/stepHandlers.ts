@@ -237,7 +237,7 @@ export async function handleLlm(
     ? readWorkspaceIdFromCtx(ctx)
     : undefined;
   if (usedHostedFree && hostedFreeWorkspaceId) {
-    assertWithinHostedFreeCap(hostedFreeWorkspaceId);
+    await assertWithinHostedFreeCap(hostedFreeWorkspaceId);
   }
 
   // Determine the appropriate model tier for this step's complexity.
@@ -336,7 +336,7 @@ export async function handleLlm(
   const totalInputTokens = response.usage?.promptTokens ?? 0;
   const completionTokens = response.usage?.completionTokens ?? 0;
   if (usedHostedFree && hostedFreeWorkspaceId) {
-    recordHostedFreeTokens(hostedFreeWorkspaceId, totalInputTokens + completionTokens);
+    await recordHostedFreeTokens(hostedFreeWorkspaceId, totalInputTokens + completionTokens);
   }
 
   // Attempt to parse JSON; fall back to mapping text to the first
@@ -820,7 +820,7 @@ export async function handleAgent(
   // calls). The `workspaceId` variable above is already computed from
   // ctx for the control-plane bridge — re-use it here.
   if (agentUsedHostedFree && workspaceId) {
-    assertWithinHostedFreeCap(workspaceId);
+    await assertWithinHostedFreeCap(workspaceId);
   }
   const provider = getProvider({
     provider: resolved.config.provider,
@@ -1052,7 +1052,7 @@ export async function handleAgent(
   // so a single Agent step counts as one batch against the daily cap,
   // matching the way the cap surfaces in the dashboard.
   if (agentUsedHostedFree && workspaceId) {
-    recordHostedFreeTokens(workspaceId, totalPromptTokens + totalCompletionTokens);
+    await recordHostedFreeTokens(workspaceId, totalPromptTokens + totalCompletionTokens);
   }
   const costLog = buildCostLog("power", resolved.config.model, totalPromptTokens, totalCompletionTokens);
   if (bridgedExecution) {

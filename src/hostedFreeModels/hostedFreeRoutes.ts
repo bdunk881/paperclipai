@@ -52,7 +52,7 @@ export interface HostedFreeCatalogResponse {
 export function createHostedFreeRoutes(): Router {
   const router = Router();
 
-  router.get("/", (req: Request, res: Response) => {
+  router.get("/", async (req: Request, res: Response) => {
     const providers: HostedFreeProviderResponse[] = HOSTED_FREE_PROVIDERS.map((p) => ({
       id: p.id,
       tier: p.tier,
@@ -70,7 +70,7 @@ export function createHostedFreeRoutes(): Router {
     // but defensive), surface a zeroed usage snapshot.
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id ?? null;
     const usage = workspaceId
-      ? getHostedFreeUsage(workspaceId)
+      ? await getHostedFreeUsage(workspaceId)
       : null;
     const response: HostedFreeCatalogResponse = {
       providers,

@@ -29,7 +29,7 @@ Anything failing either test is a finding.
 | B2 | Webhook replay caches in-process (~13 connectors) | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
 | B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
-| B9 | companyLifecycle reads a stale never-refreshed in-memory mirror | High | multi-instance | [HEL-468](https://linear.app/helloautoflow/issue/HEL-468) |
+| B9 | companyLifecycle reads a stale never-refreshed in-memory mirror | High | multi-instance | [HEL-469](https://linear.app/helloautoflow/issue/HEL-469) |
 | F1 | Notification read/mute only in localStorage | Medium | other device | [HEL-461](https://linear.app/helloautoflow/issue/HEL-461) |
 | B4 | Admin rate limiter per-process | Low | restart, multi-instance | [HEL-462](https://linear.app/helloautoflow/issue/HEL-462) |
 | B5 | agentBus in-process EventEmitter | Low | multi-instance, restart | [HEL-463](https://linear.app/helloautoflow/issue/HEL-463) |

@@ -1,4 +1,5 @@
 import { ticketNotificationStore, TicketNotification } from "../tickets/ticketNotificationStore";
+import { CoordinatorLockKey, runWithAdvisoryLock } from "./coordinatorLock";
 
 type NotificationSender = (notification: TicketNotification) => Promise<void>;
 
@@ -29,32 +30,38 @@ export async function runTicketNotificationSweep(): Promise<{
   delivered: number;
   failed: number;
 }> {
-  const pending = await ticketNotificationStore.list({ status: "pending" });
-  let delivered = 0;
-  let failed = 0;
+  // B1/HEL-458: single-instance processing per tick so the 2-machine fleet
+  // can't double-deliver SLA escalations.
+  let result = { scanned: 0, delivered: 0, failed: 0 };
+  await runWithAdvisoryLock(CoordinatorLockKey.ticketNotification, async () => {
+    const pending = await ticketNotificationStore.list({ status: "pending" });
+    let delivered = 0;
+    let failed = 0;
 
-  for (const notification of pending) {
-    if (activeDeliveries.has(notification.id)) {
-      continue;
+    for (const notification of pending) {
+      if (activeDeliveries.has(notification.id)) {
+        continue;
+      }
+      activeDeliveries.add(notification.id);
+      try {
+        await senders[notification.channel](notification);
+        await ticketNotificationStore.markSent(notification.id);
+        delivered += 1;
+      } catch (error) {
+        await ticketNotificationStore.markFailed(notification.id, String(error));
+        failed += 1;
+      } finally {
+        activeDeliveries.delete(notification.id);
+      }
     }
-    activeDeliveries.add(notification.id);
-    try {
-      await senders[notification.channel](notification);
-      await ticketNotificationStore.markSent(notification.id);
-      delivered += 1;
-    } catch (error) {
-      await ticketNotificationStore.markFailed(notification.id, String(error));
-      failed += 1;
-    } finally {
-      activeDeliveries.delete(notification.id);
-    }
-  }
 
-  return {
-    scanned: pending.length,
-    delivered,
-    failed,
-  };
+    result = {
+      scanned: pending.length,
+      delivered,
+      failed,
+    };
+  });
+  return result;
 }
 
 export function startTicketNotificationCoordinator(intervalMs = 2_000): void {

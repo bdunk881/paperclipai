@@ -26,7 +26,7 @@ Anything failing either test is a finding.
 | ID | Finding | Sev | Tests failed | Ticket |
 |----|---------|-----|--------------|--------|
 | B1 | Sweep coordinators double-fire across instances | Urgent | multi-instance | [HEL-458](https://linear.app/helloautoflow/issue/HEL-458) |
-| B2 | Slack replay cache in-process | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
+| B2 | Webhook replay caches in-process (~13 connectors) | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
 | B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
 | F1 | Notification read/mute only in localStorage | Medium | other device | [HEL-461](https://linear.app/helloautoflow/issue/HEL-461) |
@@ -62,17 +62,16 @@ duplicate SLA escalations; duplicate routine runs/assignments.
 or `FOR UPDATE SKIP LOCKED`, or advisory-lock/leader-election, or move delivery onto
 BullMQ (Redis single-delivery). Keep the in-process Set only as a fast-path.
 
-### B2 — Slack webhook replay cache is in-process · High · security
+### B2 — Webhook replay caches are in-process (systemic, ~13 connectors) · High · security
 
-**File:** `src/integrations/slack/webhook.ts:5,30-48` — `const replayCache = new Set<string>()`
-keyed by `${timestamp}:${signature}`, evicted via `setTimeout`.
+_Originally scoped to Slack; broadened after Codex's PR review flagged Google Workspace. A full grep shows this is the **entire webhook-replay-protection layer**, not one connector._
 
-In-memory only → cleared on restart, not shared across machines. A captured,
-validly-signed Slack request can be replayed within the 5-minute HMAC window against a
-different machine (or after a deploy). HMAC + timestamp still bound the window, so this
-is defense-in-depth weakening rather than full bypass.
+**Files** — each declares a module-level `replayCache` (`Map`/`Set`) for signature/delivery-id dedup, evicted by a TTL sweep or `setTimeout`:
+`src/integrations/slack/webhook.ts:5`, `src/connectors/google-workspace/webhookRoutes.ts:8` (mounted in prod via `src/app.ts:578`), `src/integrations/stripe/webhook.ts:6`, `src/integrations/hubspot/webhook.ts:6`, `src/integrations/gmail/webhook.ts:10`, `src/integrations/intercom/webhook.ts:6`, `src/integrations/shopify/webhook.ts:6`, `src/integrations/composio/webhook.ts:6`, `src/integrations/teams/webhook.ts:6`, `src/integrations/linear/webhook.ts:6`, `src/integrations/sentry/webhook.ts:6`, `src/integrations/posthog/webhook.ts:6`, `src/integrations/docusign/webhook.ts:6`.
 
-**Fix:** Redis `SET key NX EX 300` on the replay key; reject if it already exists.
+In-memory only → cleared on restart, not shared across machines. A captured, validly-signed webhook can be replayed within the provider's signature window against a *different* Fly machine (or after a deploy) and accepted, because the dedupe set isn't shared. HMAC + timestamp windows still bound the attack, so this is defense-in-depth weakening rather than full bypass — but under the 2-machine prod topology the replay check provides little real protection. **Stripe** (payment events) and the CRM connectors are the highest-impact members.
+
+**Fix:** A single shared `webhookReplayGuard` helper backed by Redis (`SET key NX PX <window>`; reject when the key already exists), adopted by every connector in place of its per-process `replayCache`. Shared across instances, durable across restart. Keep an in-memory fallback for dev/test (`inMemoryAllowed()`).
 
 ### B3 — CRM compliance audit trail stored in a module-level array · High · security
 

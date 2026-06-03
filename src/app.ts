@@ -60,7 +60,6 @@ import knowledgeRoutes from "./knowledge/routes";
 import controlPlaneRoutes from "./controlPlane/controlPlaneRoutes";
 import companyRoutes from "./companies/companyRoutes";
 import hitlRoutes from "./hitl/hitlRoutes";
-import { buildObservabilityCsv, buildObservabilityResponse } from "./observability/service";
 import observabilityRoutes from "./observability/routes";
 import reportRoutes from "./reporting/reportRoutes";
 import ticketRoutes from "./tickets/ticketRoutes";
@@ -1993,32 +1992,11 @@ app.post(
   }),
 );
 
-app.get("/api/observability", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
-  const userId = req.auth?.sub;
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user required" });
-    return;
-  }
-
-  const runs = await runStore.list(undefined, userId);
-  // DASH-64.1: now async — see buildObservabilityResponse.
-  const response = await buildObservabilityResponse(userId, runs, {
-    agentId: typeof req.query.agentId === "string" ? req.query.agentId : undefined,
-    taskId: typeof req.query.taskId === "string" ? req.query.taskId : undefined,
-    search: typeof req.query.search === "string" ? req.query.search : undefined,
-    from: typeof req.query.from === "string" ? req.query.from : undefined,
-    to: typeof req.query.to === "string" ? req.query.to : undefined,
-  });
-
-  if (req.query.format === "csv") {
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", 'attachment; filename="observability-export.csv"');
-    res.send(buildObservabilityCsv(response.records));
-    return;
-  }
-
-  res.json(response);
-}));
+// HEL-481: removed the legacy inline `GET /api/observability` handler. It had
+// weaker auth (only requireAuth, no role/workspace gate) and read the global
+// in-memory run store. The canonical, workspace-scoped observability reads live
+// on observabilityRoutes (mounted above at /api/observability):
+// GET /api/observability/events, /events/stream, /throughput.
 
 // ---------------------------------------------------------------------------
 // Routing analytics API — recent classifier decisions for dashboarding

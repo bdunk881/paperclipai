@@ -183,39 +183,6 @@ describe("getObservabilityThroughput (non-mock)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getObservability
-// ---------------------------------------------------------------------------
-describe("getObservability", () => {
-  it("returns observability records on success", async () => {
-    const RESP = { records: [], total: 0, filters: { agents: [], tasks: [] }, aggregates: { totalCostUsd: 0, perAgent: [], perTask: [] } };
-    mockFetch(200, RESP);
-    const observability = await importWithoutMock();
-    const result = await observability.getObservability("tok", { agentId: "a1" });
-    expect(result).toEqual(RESP);
-  });
-
-  it("throws with error from response body on failure", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: false,
-      status: 403,
-      json: async () => ({ error: "Forbidden" }),
-    }));
-    const observability = await importWithoutMock();
-    await expect(observability.getObservability("tok")).rejects.toThrow("Forbidden");
-  });
-
-  it("throws with fallback message when body has no error field", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => null,
-    }));
-    const observability = await importWithoutMock();
-    await expect(observability.getObservability("tok")).rejects.toThrow(/500/);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // streamObservabilityEvents — non-mock error paths
 // ---------------------------------------------------------------------------
 describe("streamObservabilityEvents (non-mock) error paths", () => {

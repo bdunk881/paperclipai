@@ -19,6 +19,7 @@ import type { Pool } from "pg";
 import { getPostgresPool, isPostgresPersistenceEnabled } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
 import { ticketStore, type TicketAssignee } from "../tickets/ticketStore";
+import { CoordinatorLockKey, runWithAdvisoryLock } from "../engine/coordinatorLock";
 
 const DEFAULT_SWEEP_MS = 60_000;
 
@@ -46,50 +47,57 @@ export async function runPromptRoutineSweep(
     return { scanned: 0, fired: 0, failed: 0, ended: 0 };
   }
 
-  // First, flip ended routines so we don't fire them this sweep.
-  let ended = 0;
-  try {
-    const endedResult = await pool.query<{ mark_ended_prompt_routines: number }>(
-      "SELECT mark_ended_prompt_routines() AS mark_ended_prompt_routines",
-    );
-    ended = endedResult.rows[0]?.mark_ended_prompt_routines ?? 0;
-  } catch (err) {
-    console.warn("[prompt-routines] mark_ended sweep failed:", (err as Error).message);
-  }
-
-  let due: DueRoutineRow[] = [];
-  try {
-    const result = await pool.query<DueRoutineRow>(
-      `SELECT id, workspace_id, name, prompt, mission_id, agent_id, created_by
-         FROM list_due_prompt_routines()`,
-    );
-    due = result.rows;
-  } catch (err) {
-    console.warn("[prompt-routines] list_due query failed:", (err as Error).message);
-    return { scanned: 0, fired: 0, failed: 0, ended };
-  }
-
-  let fired = 0;
-  let failed = 0;
-
-  for (const row of due) {
-    if (inFlight.has(row.id)) continue;
-    inFlight.add(row.id);
+  // B1/HEL-458: only one instance fires due routines per tick, so the
+  // 2-machine fleet can't create duplicate assignments / double-fire.
+  let result = { scanned: 0, fired: 0, failed: 0, ended: 0 };
+  await runWithAdvisoryLock(CoordinatorLockKey.promptRoutine, async () => {
+    // First, flip ended routines so we don't fire them this sweep.
+    let ended = 0;
     try {
-      await fireRoutine(pool, row);
-      fired += 1;
-    } catch (err) {
-      failed += 1;
-      console.warn(
-        `[prompt-routines] fire failed for routine ${row.id}:`,
-        (err as Error).message,
+      const endedResult = await pool.query<{ mark_ended_prompt_routines: number }>(
+        "SELECT mark_ended_prompt_routines() AS mark_ended_prompt_routines",
       );
-    } finally {
-      inFlight.delete(row.id);
+      ended = endedResult.rows[0]?.mark_ended_prompt_routines ?? 0;
+    } catch (err) {
+      console.warn("[prompt-routines] mark_ended sweep failed:", (err as Error).message);
     }
-  }
 
-  return { scanned: due.length, fired, failed, ended };
+    let due: DueRoutineRow[] = [];
+    try {
+      const dueResult = await pool.query<DueRoutineRow>(
+        `SELECT id, workspace_id, name, prompt, mission_id, agent_id, created_by
+           FROM list_due_prompt_routines()`,
+      );
+      due = dueResult.rows;
+    } catch (err) {
+      console.warn("[prompt-routines] list_due query failed:", (err as Error).message);
+      result = { scanned: 0, fired: 0, failed: 0, ended };
+      return;
+    }
+
+    let fired = 0;
+    let failed = 0;
+
+    for (const row of due) {
+      if (inFlight.has(row.id)) continue;
+      inFlight.add(row.id);
+      try {
+        await fireRoutine(pool, row);
+        fired += 1;
+      } catch (err) {
+        failed += 1;
+        console.warn(
+          `[prompt-routines] fire failed for routine ${row.id}:`,
+          (err as Error).message,
+        );
+      } finally {
+        inFlight.delete(row.id);
+      }
+    }
+
+    result = { scanned: due.length, fired, failed, ended };
+  });
+  return result;
 }
 
 async function fireRoutine(pool: Pool, row: DueRoutineRow): Promise<void> {

@@ -370,7 +370,8 @@ async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
       );
     });
   } catch (err) {
-    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+    console.error("[knowledge] Postgres persist failed:", (err as Error).message);
+    throw err;
   }
 }
 
@@ -417,7 +418,8 @@ async function persistKnowledgeDocument(document: KnowledgeDocument): Promise<vo
       );
     });
   } catch (err) {
-    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+    console.error("[knowledge] Postgres persist failed:", (err as Error).message);
+    throw err;
   }
 }
 
@@ -479,7 +481,8 @@ async function persistKnowledgeChunk(chunk: KnowledgeChunk, embedding: number[])
       );
     });
   } catch (err) {
-    console.error("[knowledge] Postgres persist failed, falling back to in-memory:", (err as Error).message);
+    console.error("[knowledge] Postgres persist failed:", (err as Error).message);
+    throw err;
   }
 }
 
@@ -702,32 +705,32 @@ export const knowledgeStore = {
   },
 
   async listKnowledgeBases(userId: string): Promise<KnowledgeBase[]> {
-    const local = Array.from(knowledgeBases.values()).filter((base) => base.userId === userId);
-    if (local.length > 0 || !postgresPersistenceAvailable()) {
-      return local.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    // Postgres is the source of truth: read it whenever available so a base
+    // created on another instance (or before a deploy) is always visible.
+    // The in-memory Map is only a dev/test fallback (and a last resort if
+    // Postgres is unreachable).
+    if (postgresPersistenceAvailable()) {
+      try {
+        return await hydrateKnowledgeBasesFromPostgres(userId);
+      } catch (err) {
+        console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      }
     }
-    try {
-      return await hydrateKnowledgeBasesFromPostgres(userId);
-    } catch (err) {
-      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
-      return local;
-    }
+    return Array.from(knowledgeBases.values())
+      .filter((base) => base.userId === userId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
   async getKnowledgeBase(id: string, userId: string): Promise<KnowledgeBase | undefined> {
+    if (postgresPersistenceAvailable()) {
+      try {
+        return await hydrateKnowledgeBaseFromPostgres(userId, id);
+      } catch (err) {
+        console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      }
+    }
     const local = knowledgeBases.get(id);
-    if (local?.userId === userId) {
-      return local;
-    }
-    if (!postgresPersistenceAvailable()) {
-      return undefined;
-    }
-    try {
-      return await hydrateKnowledgeBaseFromPostgres(userId, id);
-    } catch (err) {
-      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
-      return undefined;
-    }
+    return local?.userId === userId ? local : undefined;
   },
 
   async updateKnowledgeBase(
@@ -830,57 +833,49 @@ export const knowledgeStore = {
   },
 
   async listDocuments(knowledgeBaseId: string, userId: string): Promise<KnowledgeDocument[]> {
-    const local = Array.from(knowledgeDocuments.values()).filter(
-      (document) => document.userId === userId && document.knowledgeBaseId === knowledgeBaseId
-    );
-    if (local.length > 0 || !postgresPersistenceAvailable()) {
-      return local.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (postgresPersistenceAvailable()) {
+      try {
+        return await hydrateDocumentsFromPostgres(userId, knowledgeBaseId);
+      } catch (err) {
+        console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      }
     }
-    try {
-      return await hydrateDocumentsFromPostgres(userId, knowledgeBaseId);
-    } catch (err) {
-      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
-      return local;
-    }
+    return Array.from(knowledgeDocuments.values())
+      .filter((document) => document.userId === userId && document.knowledgeBaseId === knowledgeBaseId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
   async getDocument(documentId: string, userId: string): Promise<KnowledgeDocument | undefined> {
+    if (postgresPersistenceAvailable()) {
+      try {
+        await ensureKnowledgeSchema();
+        return await withUserContext(getPostgresPool(), userId, async (client) => {
+          const result = await client.query<PersistedKnowledgeDocumentRow>(
+            `SELECT * FROM knowledge_documents WHERE id = $1 AND user_id = $2`,
+            [documentId, userId]
+          );
+          const row = result.rows[0];
+          return row ? mapKnowledgeDocument(row) : undefined;
+        });
+      } catch (err) {
+        console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      }
+    }
     const local = knowledgeDocuments.get(documentId);
-    if (local?.userId === userId) {
-      return local;
-    }
-    if (!postgresPersistenceAvailable()) {
-      return undefined;
-    }
-    try {
-      await ensureKnowledgeSchema();
-      return await withUserContext(getPostgresPool(), userId, async (client) => {
-        const result = await client.query<PersistedKnowledgeDocumentRow>(
-          `SELECT * FROM knowledge_documents WHERE id = $1 AND user_id = $2`,
-          [documentId, userId]
-        );
-        const row = result.rows[0];
-        return row ? mapKnowledgeDocument(row) : undefined;
-      });
-    } catch (err) {
-      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
-      return undefined;
-    }
+    return local?.userId === userId ? local : undefined;
   },
 
   async listChunks(documentId: string, userId: string): Promise<KnowledgeChunk[]> {
-    const local = Array.from(knowledgeChunks.values()).filter(
-      (chunk) => chunk.userId === userId && chunk.documentId === documentId
-    );
-    if (local.length > 0 || !postgresPersistenceAvailable()) {
-      return local.sort((a, b) => a.index - b.index);
+    if (postgresPersistenceAvailable()) {
+      try {
+        return await hydrateChunksFromPostgres(userId, documentId);
+      } catch (err) {
+        console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
+      }
     }
-    try {
-      return await hydrateChunksFromPostgres(userId, documentId);
-    } catch (err) {
-      console.error("[knowledge] Postgres hydrate failed, falling back to in-memory:", (err as Error).message);
-      return local;
-    }
+    return Array.from(knowledgeChunks.values())
+      .filter((chunk) => chunk.userId === userId && chunk.documentId === documentId)
+      .sort((a, b) => a.index - b.index);
   },
 
   async updateChunk(
@@ -1010,6 +1005,16 @@ export const knowledgeStore = {
       return [];
     }
 
+    // Postgres (pgvector) is authoritative when available; the in-memory
+    // cosine fallback below only runs in dev/test or if Postgres errors.
+    if (postgresPersistenceAvailable()) {
+      try {
+        return await searchPostgres(input);
+      } catch (err) {
+        console.error("[knowledge] Postgres search failed, falling back to in-memory:", (err as Error).message);
+      }
+    }
+
     const localChunks = Array.from(knowledgeChunks.values()).filter((chunk) => {
       if (chunk.userId !== input.userId) {
         return false;
@@ -1023,14 +1028,6 @@ export const knowledgeStore = {
       }
       return true;
     });
-
-    if (localChunks.length === 0 && postgresPersistenceAvailable()) {
-      try {
-        return await searchPostgres(input);
-      } catch (err) {
-        console.error("[knowledge] Postgres search failed, falling back to in-memory:", (err as Error).message);
-      }
-    }
 
     const limit = Math.min(Math.max(input.limit ?? 8, 1), 25);
     const minScore = Math.max(input.minScore ?? 0, 0);

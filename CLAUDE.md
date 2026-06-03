@@ -36,6 +36,13 @@ context. That's the point: a workflow keeps the main session clean on work too b
 for one conversation to coordinate, and codifies the orchestration so it's
 rerunnable.
 
+Two properties make a workflow the **default** for large work, not a fallback:
+it **fans the task across many subagents in parallel**, so reading large or numerous
+files never blows a single agent's context the way an inline grep/read pass does;
+and it applies an **agent-check mechanism** — agents adversarially cross-check each
+other's output, so the run **surfaces only what's correct and relevant** and filters
+the rest out before it reaches you.
+
 This is distinct from a single **subagent** or a **skill**, where Claude holds the
 plan turn by turn and every result lands in context. Use a *workflow* — not an
 ad-hoc subagent — for the two cases below.
@@ -72,6 +79,11 @@ command. Workflows are gated by an approval prompt before they run — review th
 planned phases, then approve. Reserve plain subagents and skills (`/verify`, `/run`,
 `/simplify`, the **Plan** subagent) for smaller, one-shot delegations that fit a
 single turn.
+
+> **Fallback only:** if Dynamic workflows are disabled on an instance (the
+> `/config` toggle is off, or the build is older than v2.1.154), fall back to the
+> read-only **Explore** / **general-purpose** subagent for sweeps — but on enabled
+> instances a workflow is the default, not the exception.
 
 ---
 

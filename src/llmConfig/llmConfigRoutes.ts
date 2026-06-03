@@ -261,30 +261,43 @@ router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res: Response) =>
   res.json({ configs, total: configs.length });
 }));
 
-router.patch("/:id/default", requireAAL2, (req: AuthenticatedRequest, res: Response) => {
+router.patch(
+  "/:id/default",
+  requireAAL2,
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const userId = getUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user is required" });
+      return;
+    }
+
+    // HEL-494: DB-backed so the default can be set on a config that wasn't
+    // created in this process (post-deploy / other Fly instance), and the
+    // flag is durably persisted rather than memory-only.
+    const updated = await llmConfigStore.setDefaultAsync(req.params.id, userId);
+    if (!updated) {
+      res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
+      return;
+    }
+
+    res.json(updated);
+  }),
+);
+
+router.patch(
+  "/:id",
+  requireAAL2,
+  asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const updated = llmConfigStore.setDefault(req.params.id, userId);
-  if (!updated) {
-    res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
-    return;
-  }
-
-  res.json(updated);
-});
-
-router.patch("/:id", requireAAL2, (req: AuthenticatedRequest, res: Response) => {
-  const userId = getUserId(req);
-  if (!userId) {
-    res.status(401).json({ error: "Authenticated user is required" });
-    return;
-  }
-
-  const existing = llmConfigStore.get(req.params.id, userId);
+  // HEL-494: getAsync falls back to Postgres (and hydrates the in-process
+  // bucket) so the lookup + subsequent update/getDecrypted work for configs
+  // not created in this process lifetime.
+  const existing = await llmConfigStore.getAsync(req.params.id, userId);
   if (!existing) {
     res.status(404).json({ error: `LLM config not found: ${req.params.id}` });
     return;
@@ -353,7 +366,8 @@ router.patch("/:id", requireAAL2, (req: AuthenticatedRequest, res: Response) => 
   }
 
   res.json(updated);
-});
+  }),
+);
 
 router.delete(
   "/:id",

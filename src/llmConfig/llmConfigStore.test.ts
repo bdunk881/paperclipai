@@ -163,6 +163,72 @@ describe("llmConfigStore async persistence", () => {
     expect(setConfigParams?.[0]).toBe("user-a");
   });
 
+  it("getAsync + setDefaultAsync work on a cold process / other instance (HEL-494/B16)", async () => {
+    mockIsPostgresConfigured.mockReturnValue(true);
+
+    const created = await createConfig({
+      userId: "user-a",
+      provider: "anthropic",
+      label: "Claude",
+      model: "claude-3-5-sonnet-20241022",
+      apiKey: "sk-ant-b16xxxx",
+    });
+    const insertParams = findInsertParams();
+    const persistedRecordJson = insertParams?.[5] as string | undefined;
+    const persistedRecord = persistedRecordJson
+      ? (JSON.parse(persistedRecordJson) as Record<string, unknown>)
+      : {};
+
+    // Simulate a fresh process / the other Fly machine: the in-process bucket
+    // is empty, the row only lives in Postgres.
+    llmConfigStore.clear();
+    clientQueryMock.mockReset();
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
+    stageSelectRows([
+      {
+        id: created.id,
+        user_id: "user-a",
+        record_data: {
+          ...persistedRecord,
+          id: created.id,
+          userId: "user-a",
+          authMethod: "anthropic",
+          label: "Claude",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+            credentialSummary: { apiKeyMasked: "****xxxx" },
+            apiKeyMasked: "****xxxx",
+            isDefault: true,
+          },
+        },
+      },
+    ]);
+
+    // The sync getter (in-process bucket only) misses on the cold process —
+    // this is exactly the 404 the PATCH routes used to return.
+    expect(llmConfigStore.get(created.id, "user-a")).toBeUndefined();
+
+    // The DB-backed getAsync finds it (used by PATCH /:id).
+    const fetched = await llmConfigStore.getAsync(created.id, "user-a");
+    expect(fetched?.id).toBe(created.id);
+
+    // setDefaultAsync (used by PATCH /:id/default) flips + durably persists.
+    const updated = await llmConfigStore.setDefaultAsync(created.id, "user-a");
+    expect(updated?.id).toBe(created.id);
+    expect(updated?.isDefault).toBe(true);
+
+    // The flag change was written back to Postgres (write-through upsert).
+    // store.update persists fire-and-forget, so let it flush first.
+    await new Promise((resolve) => setImmediate(resolve));
+    const persistWrite = clientQueryMock.mock.calls.find(([sql]) =>
+      String(sql).includes("INSERT INTO connector_credentials"),
+    );
+    expect(persistWrite).toBeDefined();
+  });
+
   it("promotes the latest persisted config when a legacy record has no default", async () => {
     mockIsPostgresConfigured.mockReturnValue(true);
     const createdAt = "2026-04-20T00:00:00.000Z";

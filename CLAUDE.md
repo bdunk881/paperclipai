@@ -24,13 +24,92 @@ Promotion `dev → staging → master` is a separate, human-gated step (see AGEN
 
 ---
 
+## Dynamic workflows — when to use them (mandatory)
+
+[Dynamic workflows](https://code.claude.com/docs/en/workflows) are a Claude Code
+feature (research preview — needs v2.1.154+; enable via the **Dynamic workflows**
+row in `/config`). A workflow is a **script Claude writes that orchestrates many
+subagents** — dozens to hundreds — running in the background while your session
+stays responsive. The plan lives in the *script*, not the chat, so intermediate
+results stay in script variables and only the **final result** lands in your
+context. That's the point: a workflow keeps the main session clean on work too big
+for one conversation to coordinate, and codifies the orchestration so it's
+rerunnable.
+
+Two properties make a workflow the **default** for large work, not a fallback:
+it **fans the task across many subagents in parallel**, so reading large or numerous
+files never blows a single agent's context the way an inline grep/read pass does;
+and it applies an **agent-check mechanism** — agents adversarially cross-check each
+other's output, so the run **surfaces only what's correct and relevant** and filters
+the rest out before it reaches you.
+
+This is distinct from a single **subagent** or a **skill**, where Claude holds the
+plan turn by turn and every result lands in context. Use a *workflow* — not an
+ad-hoc subagent — for the two cases below.
+
+**Always run as a dynamic workflow:**
+
+- **Code review.** Run review as a workflow so it applies a repeatable, adversarial
+  pattern — independent agents cross-checking each other's findings — instead of a
+  single eyeball pass, and **save it** so the same review runs on every branch.
+  Save to `.claude/workflows/` (shared in the repo) so every agent and human reviews
+  the same way; invoke a saved one as `/<name>`, or kick a one-off with
+  `ultracode: review this diff for correctness + tenancy bugs`.
+- **Large work sessions / codebase sweeps.** Whole-repo greps, audits, and
+  migrations — "audit every endpoint under `src/routes/` for missing auth checks," a
+  500-file rename, "where is X wired across the whole codebase." Trigger with the
+  `ultracode` keyword (or just ask "use a workflow"); the script fans the work across
+  many agents and returns the *conclusion*, not 40 inline greps that bury the session.
+
+**Also reach for a workflow for:**
+
+- **Cross-checked research** — the bundled `/deep-research <question>` workflow: fans
+  web searches across angles, cross-checks sources, returns a cited report (library
+  choices, external API behavior, post-cutoff facts).
+- **A hard plan worth several angles** — have a workflow draft the plan from
+  independent angles and weigh them before you commit (then post the approved plan to
+  the Linear ticket, per "Approved plans go in the ticket" below).
+- **Anything needing more agents than one conversation can coordinate**, or that you
+  want codified as a rerunnable script.
+
+How to drive them: `ultracode: <task>` (or "use a workflow") starts one for a single
+task; `/effort ultracode` lets Claude pick a workflow for every substantive task in
+the session; `/workflows` lists runs to watch, pause, or **save** (`s`) as a reusable
+command. Workflows are gated by an approval prompt before they run — review the
+planned phases, then approve. Reserve plain subagents and skills (`/verify`, `/run`,
+`/simplify`, the **Plan** subagent) for smaller, one-shot delegations that fit a
+single turn.
+
+> **Fallback only:** if Dynamic workflows are disabled on an instance (the
+> `/config` toggle is off, or the build is older than v2.1.154), fall back to the
+> read-only **Explore** / **general-purpose** subagent for sweeps — but on enabled
+> instances a workflow is the default, not the exception.
+
+---
+
 ## Linear ticket policy (mandatory for every PR)
 
 Every code change starts in Linear. No untracked PRs.
 
 ### One-off PR → one Linear issue
 
-Before touching code or opening a PR, create (or confirm) a Linear issue in the Helloautoflow team. The PR then follows AGENTS.md "Working a single ticket": branch name = Linear's `gitBranchName`, PR title `"<HEL-N> <issue title>"`, body opens with `Closes HEL-N`. Move the issue to `In Progress` at branch time, `Done` on merge.
+Before touching code or opening a PR, create (or confirm) a Linear issue in the Helloautoflow team. The PR then follows AGENTS.md "Working a single ticket": branch name = Linear's `gitBranchName`, PR title `"<HEL-N> <issue title>"`, body opens with `Closes HEL-N`. Walk the issue through the status lifecycle below: `In Progress` when you pick up the work, `In Review` when the PR is open, `Done` on merge.
+
+### Status lifecycle (the Linear workflow states)
+
+Move every issue through these states honestly — the board is how Brad and the other agents see what's happening without reading chat.
+
+| State | When it applies |
+|---|---|
+| **Triage** | Error-handling inbox: incoming Sentry alerts, prod/CI failures, and customer bug reports land here *before* they're understood or assigned. Sort each one into `Backlog` (with a type label + priority) or `Canceled`. Nothing stays in Triage. |
+| **Backlog** | Filed and accepted, but **not started**. The default home for new work that isn't queued for pickup yet. |
+| **Todo** | Queued and ready — next up for pickup (optional staging lane; the Claude routine may auto-promote from here). |
+| **In Progress** | An agent (or human) has **picked up the work** and is actively building. Move here the moment you branch off `dev`. |
+| **In Review** | The **PR is open and waiting for review/merge**. Move here when you push the PR — not before, not at merge. |
+| **Done** | The **PR has merged**. Only after merge — never on PR-open. |
+| **Canceled** | Won't-do, obsolete, or superseded — including **duplicates**. (Linear also has a dedicated **Duplicate** state; use it when an issue literally duplicates another and link the original.) |
+
+Never skip `In Review`: a merged-but-never-reviewed jump from `In Progress` straight to `Done` hides the review gate.
 
 "One-off" = all of these are true:
 - One mergeable PR, no follow-up planned.

@@ -29,6 +29,7 @@ Anything failing either test is a finding.
 | B2 | Webhook replay caches in-process (~13 connectors) | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
 | B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
+| B9 | companyLifecycle reads a stale never-refreshed in-memory mirror | High | multi-instance | [HEL-468](https://linear.app/helloautoflow/issue/HEL-468) |
 | F1 | Notification read/mute only in localStorage | Medium | other device | [HEL-461](https://linear.app/helloautoflow/issue/HEL-461) |
 | B4 | Admin rate limiter per-process | Low | restart, multi-instance | [HEL-462](https://linear.app/helloautoflow/issue/HEL-462) |
 | B5 | agentBus in-process EventEmitter | Low | multi-instance, restart | [HEL-463](https://linear.app/helloautoflow/issue/HEL-463) |
@@ -130,11 +131,24 @@ timeline rows; cold start → missed transition. Source of truth (the table) is 
 
 **Fix:** derive "changed since last" from the table's last row, or single-writer.
 
+### B9 — companyLifecycleStore serves a stale, never-refreshed in-memory mirror · High · security
+
+_Surfaced by Codex's PR review; this was **mis-classified as a NOT-finding** in the first pass — it persists to Postgres, but its **reads** come from an in-process cache that never refreshes._
+
+**File:** `src/controlPlane/companyLifecycleStore.ts:48-51, 145-153, 203-217`. The store keeps in-memory `lifecycleStates` / `lifecycleAudit` `Map`s, populated **once** by `ensurePreloaded()` (the `preloadPromise` is memoized for the life of the process and never re-run). `getState()` / `isPaused()` / `listAudit()` read **only** those maps; `applyAction()` writes to Postgres **and** the local map — but only in the process that handled the request.
+
+**Tests failed:** multi-instance (the writer persists durably, but other instances never see the change).
+
+**Impact (High):** On the 2-machine prod API, pausing a company on instance A updates A's map + Postgres, but instance B (which preloaded the prior `active` state) keeps returning `isPaused() === false` **forever** (until B restarts). `startAgentExecution()` / `recordHeartbeat()` gates on B therefore keep **executing agents for a company that was paused** — defeating a control-plane safety/billing stop across roughly half of traffic, with continued spend.
+
+**Fix:** Read lifecycle state from Postgres on access (it's a tiny, indexed lookup), or add a short TTL / pub-sub invalidation to the cache so a pause on one instance is visible on the others within seconds. The simplest correct option is to drop the read cache and query `company_lifecycle` directly in `getState()`/`listAudit()`. **Also verify `src/controlPlane/controlPlaneStore.ts`** for the same preload-once read-cache pattern (it has a hydration path) and fold it in if present.
+
 ### Backend — verified NOT findings
 
 - Main API rate limiter → Cloudflare Durable Object (`src/lib/cfWorker/rateLimiter.ts`). Distributed + durable.
 - Agent trace / workspace stream → Redis pub/sub in prod (`src/engine/agentTrace/tracePublisher.ts:68-80`, `streamPublisher.ts`); in-memory subscriber maps are dev/test fallback only.
-- `runStore`, `approvalStore`, `approvalNotificationStore`, `agentMemoryStore`, `notificationStore`, `controlPlaneStore`, `companyLifecycleStore`, `ticketStore` → Postgres in prod; `new Map()` fallback only when `AUTOFLOW_ALLOW_INMEMORY=true` (dev/test) — else they throw without `DATABASE_URL` (`src/db/postgres.ts:28`).
+- `runStore`, `approvalStore`, `approvalNotificationStore`, `agentMemoryStore`, `notificationStore`, `ticketStore` → Postgres in prod; `new Map()` fallback only when `AUTOFLOW_ALLOW_INMEMORY=true` (dev/test) — else they throw without `DATABASE_URL` (`src/db/postgres.ts:28`). _(These write through to AND read from Postgres each call — unlike `companyLifecycleStore`, see B9.)_
+- ⚠️ `companyLifecycleStore` — **moved to a finding (B9)**: it persists to Postgres but serves reads from a never-refreshed in-memory mirror. `controlPlaneStore` should be re-verified for the same preload-once read-cache pattern.
 - `src/admin/staffAuth.ts:29` `cachedStaffIds` → derived from the `AUTOFLOW_STAFF_USER_IDS` env var (immutable config).
 - `src/worker.ts:335` `setTimeout` → one-shot startup delay for `syncRepeatableJobs`.
 

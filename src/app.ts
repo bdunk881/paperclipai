@@ -1299,7 +1299,7 @@ app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
 // ---------------------------------------------------------------------------
 
 /** List all templates (optionally filtered by category) */
-app.get("/api/templates", (req, res) => {
+app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
   const { category } = req.query;
   let templates: WorkflowTemplate[];
 
@@ -1390,7 +1390,7 @@ app.get("/api/workflows/schema", (_req, res) => {
 });
 
 /** Get a single template with full definition */
-app.get("/api/templates/:id", (req, res) => {
+app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
   try {
     const template = getTemplate(req.params.id);
     res.json(template);
@@ -1400,7 +1400,7 @@ app.get("/api/templates/:id", (req, res) => {
 });
 
 /** Export a template in the portable AutoFlow workflow format */
-app.get("/api/templates/:id/export", (req, res) => {
+app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
   try {
     const template = getTemplate(req.params.id);
     res.json(createPortableWorkflowBundle(template));
@@ -1451,7 +1451,7 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
 }));
 
 /** Get sample data for a template (for dashboard preview) */
-app.get("/api/templates/:id/sample", (req, res) => {
+app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
   try {
     const template = getTemplate(req.params.id);
     res.json({

@@ -16,6 +16,7 @@
 
 import { Router, type Request, type Response } from "express";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
+import { asyncHandler } from "../middleware/asyncHandler";
 import {
   DEFAULT_HOSTED_FREE_PROVIDER_ID,
   HOSTED_FREE_PROVIDERS,
@@ -52,7 +53,7 @@ export interface HostedFreeCatalogResponse {
 export function createHostedFreeRoutes(): Router {
   const router = Router();
 
-  router.get("/", (req: Request, res: Response) => {
+  router.get("/", asyncHandler(async (req: Request, res: Response) => {
     const providers: HostedFreeProviderResponse[] = HOSTED_FREE_PROVIDERS.map((p) => ({
       id: p.id,
       tier: p.tier,
@@ -70,7 +71,7 @@ export function createHostedFreeRoutes(): Router {
     // but defensive), surface a zeroed usage snapshot.
     const workspaceId = (req as WorkspaceAwareRequest).workspace?.id ?? null;
     const usage = workspaceId
-      ? getHostedFreeUsage(workspaceId)
+      ? await getHostedFreeUsage(workspaceId)
       : null;
     const response: HostedFreeCatalogResponse = {
       providers,
@@ -96,7 +97,7 @@ export function createHostedFreeRoutes(): Router {
           },
     };
     res.json(response);
-  });
+  }));
 
   return router;
 }

@@ -304,14 +304,14 @@ describe("handleLlm", () => {
 
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { getHostedFreeUsage } = require("../hostedFreeModels/usageStore");
-      expect(getHostedFreeUsage("ws-hosted-free-2").usedTokens).toBe(3_500);
+      expect((await getHostedFreeUsage("ws-hosted-free-2")).usedTokens).toBe(3_500);
     });
 
     it("throws HostedFreeCapExceededError when the workspace has hit its daily cap", async () => {
       // Pre-fill the workspace's counter to the cap.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { recordHostedFreeTokens } = require("../hostedFreeModels/usageStore");
-      recordHostedFreeTokens("ws-hosted-free-3", 50_000);
+      await recordHostedFreeTokens("ws-hosted-free-3", 50_000);
       (getProvider as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({ text: "should not be called", usage: {} })
       );

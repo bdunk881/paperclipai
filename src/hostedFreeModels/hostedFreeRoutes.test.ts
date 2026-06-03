@@ -95,7 +95,7 @@ describe("GET /api/hosted-free-models", () => {
 
     it("returns the active workspace's daily usage when workspaceResolver populated req.workspace", async () => {
       const ws = "ws-route-test";
-      recordHostedFreeTokens(ws, 12_345);
+      await recordHostedFreeTokens(ws, 12_345);
       const res = await request(buildApp(ws)).get("/api/hosted-free-models");
       expect(res.body.usage).toMatchObject({
         workspaceId: ws,
@@ -109,7 +109,7 @@ describe("GET /api/hosted-free-models", () => {
 
     it("flips warning=true at >= 80% used", async () => {
       const ws = "ws-route-warn";
-      recordHostedFreeTokens(ws, 40_000); // exactly 80%
+      await recordHostedFreeTokens(ws, 40_000); // exactly 80%
       const res = await request(buildApp(ws)).get("/api/hosted-free-models");
       expect(res.body.usage.warning).toBe(true);
       expect(res.body.usage.exceeded).toBe(false);
@@ -117,7 +117,7 @@ describe("GET /api/hosted-free-models", () => {
 
     it("flips exceeded=true at the cap", async () => {
       const ws = "ws-route-exceeded";
-      recordHostedFreeTokens(ws, 50_000);
+      await recordHostedFreeTokens(ws, 50_000);
       const res = await request(buildApp(ws)).get("/api/hosted-free-models");
       expect(res.body.usage.exceeded).toBe(true);
       expect(res.body.usage.remainingTokens).toBe(0);

@@ -6,47 +6,31 @@
  * - Enforces a 50K token/day soft cap so one runaway workspace doesn't
  *   exhaust the shared GROQ_API_KEY / OPENCODE_ZEN_API_KEY budget.
  * - Resets at UTC midnight (day-key rollover, no separate cron needed).
- * - In-memory only — survives within a single API process. A workspace
- *   that genuinely hammers the cap loses its quota mid-day on every
- *   restart, but that's acceptable for B.2: the cap is a safety valve,
- *   not a billing source of truth. Postgres-backed durable usage lands
- *   if we ever need cross-process consistency.
+ *
+ * Durability (HEL-467 / B8): the counter is backed by Postgres (source of
+ * truth) with a Redis read-cache via `dailyUsageCounter`, so the cap is
+ * shared across instances and survives restarts. Previously this was a
+ * process-local `Map`, which gave each Fly machine its own allowance and
+ * reset the count on every deploy. The public API is therefore async.
  *
  * Engine hook (src/engine/stepHandlers.ts):
- *   - BEFORE each hosted-free call: assertWithinCap(workspaceId) throws
- *     HostedFreeCapExceededError when the workspace has hit the cap.
- *   - AFTER the call: recordTokensUsed(workspaceId, promptTokens +
- *     completionTokens).
+ *   - BEFORE each hosted-free call: `await assertWithinHostedFreeCap(workspaceId)`
+ *     throws HostedFreeCapExceededError when the workspace has hit the cap.
+ *   - AFTER the call: `await recordHostedFreeTokens(workspaceId, promptTokens +
+ *     completionTokens)`.
  */
+
+import {
+  consumeDailyUsage,
+  getDailyUsage,
+  usageDayKey,
+  __resetDailyUsageForTests,
+} from "../billing/usage/dailyUsageCounter";
 
 export const HOSTED_FREE_DAILY_TOKEN_CAP = 50_000;
 export const HOSTED_FREE_SOFT_WARNING_THRESHOLD = 0.8;
 
-interface UsageEntry {
-  dayKey: string;
-  tokens: number;
-}
-
-// allowlist: rolling counter / cached config; process-local by design
-const usageByWorkspace = new Map<string, UsageEntry>();
-
-function currentDayKey(now: Date = new Date()): string {
-  // UTC YYYY-MM-DD so the cap rolls over consistently regardless of the
-  // workspace owner's locale. Workspaces in PT see the cap reset at
-  // 16:00 / 17:00 local — fine for the safety valve.
-  return now.toISOString().slice(0, 10);
-}
-
-function entryFor(workspaceId: string, now: Date = new Date()): UsageEntry {
-  const dayKey = currentDayKey(now);
-  const existing = usageByWorkspace.get(workspaceId);
-  if (existing && existing.dayKey === dayKey) {
-    return existing;
-  }
-  const fresh: UsageEntry = { dayKey, tokens: 0 };
-  usageByWorkspace.set(workspaceId, fresh);
-  return fresh;
-}
+const METRIC = "hosted_free_tokens" as const;
 
 export interface HostedFreeUsageSnapshot {
   workspaceId: string;
@@ -60,21 +44,24 @@ export interface HostedFreeUsageSnapshot {
   exceeded: boolean;
 }
 
-export function getHostedFreeUsage(
-  workspaceId: string,
-  now: Date = new Date(),
-): HostedFreeUsageSnapshot {
-  const entry = entryFor(workspaceId, now);
-  const used = entry.tokens;
+function snapshotFor(workspaceId: string, used: number, now: Date): HostedFreeUsageSnapshot {
   return {
     workspaceId,
-    dayKey: entry.dayKey,
+    dayKey: usageDayKey(now),
     usedTokens: used,
     capTokens: HOSTED_FREE_DAILY_TOKEN_CAP,
     remainingTokens: Math.max(0, HOSTED_FREE_DAILY_TOKEN_CAP - used),
     warning: used / HOSTED_FREE_DAILY_TOKEN_CAP >= HOSTED_FREE_SOFT_WARNING_THRESHOLD,
     exceeded: used >= HOSTED_FREE_DAILY_TOKEN_CAP,
   };
+}
+
+export async function getHostedFreeUsage(
+  workspaceId: string,
+  now: Date = new Date(),
+): Promise<HostedFreeUsageSnapshot> {
+  const used = await getDailyUsage(METRIC, workspaceId, now);
+  return snapshotFor(workspaceId, used, now);
 }
 
 export class HostedFreeCapExceededError extends Error {
@@ -92,37 +79,35 @@ export class HostedFreeCapExceededError extends Error {
 }
 
 /**
- * Throws when this workspace has hit the hosted-free daily cap. Called
- * by the engine fallback BEFORE invoking a hosted-free provider so the
- * shared API key budget can't get drained by a single workspace.
+ * Throws when this workspace has hit the hosted-free daily cap. Called by the
+ * engine fallback BEFORE invoking a hosted-free provider so the shared API key
+ * budget can't get drained by a single workspace.
  */
-export function assertWithinHostedFreeCap(
+export async function assertWithinHostedFreeCap(
   workspaceId: string,
   now: Date = new Date(),
-): void {
-  const snapshot = getHostedFreeUsage(workspaceId, now);
+): Promise<void> {
+  const snapshot = await getHostedFreeUsage(workspaceId, now);
   if (snapshot.exceeded) {
     throw new HostedFreeCapExceededError(snapshot);
   }
 }
 
 /**
- * Increment this workspace's daily counter by `tokens` (prompt +
- * completion). Negative or non-finite inputs are clamped to 0 to keep
- * the counter monotonically non-decreasing across the day.
+ * Increment this workspace's daily counter by `tokens` (prompt + completion)
+ * and return the updated snapshot. Negative / non-finite inputs are clamped to
+ * 0 by the counter so the total stays monotonically non-decreasing.
  */
-export function recordHostedFreeTokens(
+export async function recordHostedFreeTokens(
   workspaceId: string,
   tokens: number,
   now: Date = new Date(),
-): HostedFreeUsageSnapshot {
-  const entry = entryFor(workspaceId, now);
-  const inc = Number.isFinite(tokens) && tokens > 0 ? Math.floor(tokens) : 0;
-  entry.tokens += inc;
-  return getHostedFreeUsage(workspaceId, now);
+): Promise<HostedFreeUsageSnapshot> {
+  const total = await consumeDailyUsage(METRIC, workspaceId, tokens, now);
+  return snapshotFor(workspaceId, total, now);
 }
 
-/** Test-only — clears the in-memory counter map. */
+/** Test-only — clears the in-memory counter fallback. */
 export function resetHostedFreeUsageForTests(): void {
-  usageByWorkspace.clear();
+  __resetDailyUsageForTests();
 }

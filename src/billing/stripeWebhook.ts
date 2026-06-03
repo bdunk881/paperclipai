@@ -204,6 +204,8 @@ async function handleEvent(event: Stripe.Event): Promise<void> {
       return handleCheckoutSessionCompleted(event.data.object as Stripe.Checkout.Session);
     case "customer.subscription.created":
       return handleSubscriptionCreated(event.data.object as Stripe.Subscription);
+    case "customer.subscription.updated":
+      return handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
     case "invoice.paid":
       return handleInvoicePaid(event.data.object as Stripe.Invoice);
     case "invoice.payment_failed":
@@ -486,6 +488,48 @@ async function handleSubscriptionCreated(stripeSub: Stripe.Subscription): Promis
   subscriptionStore.upsert(sub);
   await syncSubscriptionEntitlements(sub);
   console.log(`[stripe/webhook] subscription.created — recorded new ${tier} subscription ${stripeSub.id}`);
+}
+
+/**
+ * customer.subscription.updated — propagate price/status/trial/cancel-schedule
+ * changes made directly in Stripe (dashboard, an admin, or the Customer Portal)
+ * to our subscriptions + entitlements. HEL-503: previously unhandled, so a
+ * portal/admin plan change never reached the DB or the in-memory cache.
+ *
+ * Re-resolves the tier from the (possibly changed) price so an upgrade/downgrade
+ * updates entitlements — the key difference from subscription.created's
+ * already-provisioned branch, which only refreshes status/period.
+ */
+async function handleSubscriptionUpdated(stripeSub: Stripe.Subscription): Promise<void> {
+  const meta = (stripeSub.metadata ?? {}) as Record<string, string>;
+  const tier = resolveTier(meta, getSubscriptionItem(stripeSub)?.price?.id);
+
+  const existing = await subscriptionStore.getByStripeSubscriptionId(stripeSub.id);
+  if (!existing) {
+    // The update can arrive before created/checkout cached the record
+    // (out-of-order delivery). Build the cache from the event payload.
+    const created = buildSubscriptionRecord({ stripeSub, metadata: meta, tier });
+    subscriptionStore.upsert(created);
+    await syncSubscriptionEntitlements(created);
+    console.warn(`[stripe/webhook] subscription.updated — created missing subscription cache for ${stripeSub.id}`);
+    return;
+  }
+
+  const updated = await subscriptionStore.update(existing.id, {
+    tier,
+    status: stripeSub.status,
+    accessLevel: mapStripeStatusToAccess(stripeSub.status, stripeSub.cancel_at_period_end),
+    cancelAtPeriodEnd: stripeSub.cancel_at_period_end,
+    currentPeriodStart: getCurrentPeriodStart(stripeSub),
+    currentPeriodEnd: getCurrentPeriodEnd(stripeSub),
+    trialEnd: stripeSub.trial_end ? new Date(stripeSub.trial_end * 1000).toISOString() : null,
+  });
+  if (updated) {
+    await syncSubscriptionEntitlements(updated);
+  }
+  console.log(
+    `[stripe/webhook] subscription.updated — synced ${tier} subscription ${stripeSub.id} (status=${stripeSub.status})`,
+  );
 }
 
 /**

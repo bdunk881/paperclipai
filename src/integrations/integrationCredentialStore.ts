@@ -9,22 +9,18 @@
  * re-authenticate. The Map stays as a hot-path read cache; cache miss
  * falls back to the database.
  *
- * Encryption envelope (AES-256-GCM with the
- * INTEGRATION_CREDENTIAL_ENCRYPTION_KEY env var) is unchanged — the
- * ciphertext rides inside the JSON `record_data` blob. This is
- * intentionally NOT the CentralCredentialStore key envelope so that the
- * encryption-at-rest properties of existing in-memory data don't
- * silently change at deploy time. A future migration can move us onto
- * the connectorSecretVault rotation pattern once we have a backfill plan.
+ * HEL-454: new writes use the shared connectorSecretVault envelope, which
+ * carries key-version metadata and supports `_V2` / `_PREVIOUS` rotation.
+ * Existing rows that still contain the legacy integration AES-GCM envelope
+ * can be read when the legacy key is configured; read/update paths rewrap
+ * those rows into the connectorSecretVault envelope.
  */
 
 import {
-  createCipheriv,
   createDecipheriv,
-  randomBytes,
+  randomUUID,
   scryptSync,
-} from "crypto";
-import { randomUUID } from "node:crypto";
+} from "node:crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { withUserContext } from "../middleware/workspaceContext";
 import {
@@ -32,49 +28,93 @@ import {
   IntegrationConnectionPublic,
   IntegrationCredentials,
 } from "./integrationManifest";
+import { connectorSecretVault } from "./shared/credentialRegistry";
 
 // ---------------------------------------------------------------------------
-// Encryption helpers (AES-256-GCM)
+// Encryption helpers
 // ---------------------------------------------------------------------------
 
-const ENCRYPTION_KEY: Buffer = (() => {
-  const envKey = process.env.INTEGRATION_CREDENTIAL_ENCRYPTION_KEY ?? process.env.LLM_CONFIG_ENCRYPTION_KEY;
-  if (envKey) {
-    return scryptSync(envKey, "autoflow-integration-salt", 32) as Buffer;
-  }
-  // Dev/test fallback — not portable across process restarts
-  return randomBytes(32);
-})();
+type CredentialEnvelope = "connector_secret_vault" | "legacy_integration_aes_gcm";
+type DecryptedCredentials = {
+  credentials: IntegrationCredentials;
+  envelope: CredentialEnvelope;
+};
 
 function encryptCredentials(credentials: IntegrationCredentials): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  const plaintext = JSON.stringify(credentials);
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+  return connectorSecretVault.encrypt(JSON.stringify(credentials));
 }
 
-function decryptCredentials(ciphertext: string): IntegrationCredentials {
+function parseCredentialsPayload(plaintext: string): IntegrationCredentials {
+  const parsed = JSON.parse(plaintext) as unknown;
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Invalid integration credential payload");
+  }
+  return parsed as IntegrationCredentials;
+}
+
+function getLegacyCredentialKeys(): Buffer[] {
+  const seeds = [
+    process.env.INTEGRATION_CREDENTIAL_ENCRYPTION_KEY,
+    process.env.LLM_CONFIG_ENCRYPTION_KEY,
+  ]
+    .flatMap((value) => (value ?? "").split(","))
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return seeds.map((seed) => scryptSync(seed, "autoflow-integration-salt", 32) as Buffer);
+}
+
+function decryptLegacyCredentials(ciphertext: string): IntegrationCredentials | null {
   const parts = ciphertext.split(":");
-  if (parts.length !== 3) throw new Error("Invalid credential ciphertext format");
+  if (parts.length !== 3) {
+    return null;
+  }
+
   const [ivHex, tagHex, encHex] = parts;
   const iv = Buffer.from(ivHex, "hex");
   const tag = Buffer.from(tagHex, "hex");
   const enc = Buffer.from(encHex, "hex");
-  const decipher = createDecipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
-  decipher.setAuthTag(tag);
-  const plaintext = decipher.update(enc).toString("utf8") + decipher.final("utf8");
-  return JSON.parse(plaintext) as IntegrationCredentials;
+  for (const key of getLegacyCredentialKeys()) {
+    try {
+      const decipher = createDecipheriv("aes-256-gcm", key, iv);
+      decipher.setAuthTag(tag);
+      const plaintext = decipher.update(enc).toString("utf8") + decipher.final("utf8");
+      return parseCredentialsPayload(plaintext);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
+function decryptCredentials(ciphertext: string): DecryptedCredentials {
+  try {
+    return {
+      credentials: parseCredentialsPayload(connectorSecretVault.decrypt(ciphertext)),
+      envelope: "connector_secret_vault",
+    };
+  } catch (error) {
+    const legacyCredentials = decryptLegacyCredentials(ciphertext);
+    if (legacyCredentials) {
+      return {
+        credentials: legacyCredentials,
+        envelope: "legacy_integration_aes_gcm",
+      };
+    }
+    throw error;
+  }
+}
 // ---------------------------------------------------------------------------
 // Persistence layer (connector_credentials, service='integration_connection')
 // ---------------------------------------------------------------------------
 
 const SERVICE_KEY = "integration_connection";
+interface IntegrationConnectionStored extends IntegrationConnection {
+  keyVersion?: number;
+}
+
 // allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
-const cache = new Map<string, IntegrationConnection>();
+const cache = new Map<string, IntegrationConnectionStored>();
 
 function postgresAvailable(): boolean {
   if (isPostgresPersistenceEnabled()) return true;
@@ -90,9 +130,25 @@ interface PersistedRecord {
   createdAt: string;
   updatedAt: string;
   credentialsEncrypted: string;
+  encryptionEnvelope?: CredentialEnvelope;
+  keyVersion?: number;
 }
 
-function toRecord(conn: IntegrationConnection): PersistedRecord {
+function getCiphertextKeyVersion(ciphertext: string): number {
+  return connectorSecretVault.getCiphertextKeyVersion(ciphertext);
+}
+
+function getConnectorCiphertextKeyVersion(ciphertext: string): number | undefined {
+  try {
+    connectorSecretVault.decrypt(ciphertext);
+    return connectorSecretVault.getCiphertextKeyVersion(ciphertext);
+  } catch {
+    return undefined;
+  }
+}
+
+function toRecord(conn: IntegrationConnectionStored): PersistedRecord {
+  const keyVersion = conn.keyVersion ?? getConnectorCiphertextKeyVersion(conn.credentialsEncrypted);
   return {
     userId: conn.userId,
     integrationSlug: conn.integrationSlug,
@@ -101,10 +157,12 @@ function toRecord(conn: IntegrationConnection): PersistedRecord {
     createdAt: conn.createdAt,
     updatedAt: conn.updatedAt,
     credentialsEncrypted: conn.credentialsEncrypted,
+    encryptionEnvelope: keyVersion === undefined ? "legacy_integration_aes_gcm" : "connector_secret_vault",
+    keyVersion,
   };
 }
 
-function fromRow(row: { id: string; record_data: unknown }): IntegrationConnection {
+function fromRow(row: { id: string; record_data: unknown; key_version?: number | null }): IntegrationConnectionStored {
   const data =
     typeof row.record_data === "string"
       ? (JSON.parse(row.record_data) as PersistedRecord)
@@ -118,39 +176,42 @@ function fromRow(row: { id: string; record_data: unknown }): IntegrationConnecti
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
     credentialsEncrypted: data.credentialsEncrypted,
+    keyVersion: data.keyVersion ?? row.key_version ?? undefined,
   };
 }
 
-async function persistConnection(conn: IntegrationConnection): Promise<void> {
+async function persistConnection(conn: IntegrationConnectionStored): Promise<void> {
   if (!postgresAvailable()) return;
+  const record = toRecord(conn);
   await withUserContext(getPostgresPool(), conn.userId, async (client) => {
     await client.query(
-      `INSERT INTO connector_credentials (service, id, user_id, created_at, record_data)
-       VALUES ($1, $2, $3, $4, $5::jsonb)
+      `INSERT INTO connector_credentials (service, id, user_id, created_at, record_data, key_version)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
        ON CONFLICT (service, id) DO UPDATE
          SET user_id = EXCLUDED.user_id,
-             record_data = EXCLUDED.record_data`,
-      [SERVICE_KEY, conn.id, conn.userId, conn.createdAt, JSON.stringify(toRecord(conn))],
+             record_data = EXCLUDED.record_data,
+             key_version = EXCLUDED.key_version`,
+      [SERVICE_KEY, conn.id, conn.userId, conn.createdAt, JSON.stringify(record), record.keyVersion ?? null],
     );
   });
 }
 
-async function loadById(userId: string, id: string): Promise<IntegrationConnection | undefined> {
+async function loadById(userId: string, id: string): Promise<IntegrationConnectionStored | undefined> {
   if (!postgresAvailable()) return undefined;
   return withUserContext(getPostgresPool(), userId, async (client) => {
-    const result = await client.query<{ id: string; record_data: unknown }>(
-      `SELECT id, record_data FROM connector_credentials WHERE service = $1 AND id = $2`,
+    const result = await client.query<{ id: string; record_data: unknown; key_version?: number | null }>(
+      `SELECT id, record_data, key_version FROM connector_credentials WHERE service = $1 AND id = $2`,
       [SERVICE_KEY, id],
     );
     return result.rows[0] ? fromRow(result.rows[0]) : undefined;
   });
 }
 
-async function loadByUser(userId: string): Promise<IntegrationConnection[]> {
+async function loadByUser(userId: string): Promise<IntegrationConnectionStored[]> {
   if (!postgresAvailable()) return [];
   return withUserContext(getPostgresPool(), userId, async (client) => {
-    const result = await client.query<{ id: string; record_data: unknown }>(
-      `SELECT id, record_data FROM connector_credentials
+    const result = await client.query<{ id: string; record_data: unknown; key_version?: number | null }>(
+      `SELECT id, record_data, key_version FROM connector_credentials
         WHERE service = $1 AND user_id = $2 AND revoked_at IS NULL
         ORDER BY created_at DESC`,
       [SERVICE_KEY, userId],
@@ -169,10 +230,43 @@ async function deletePersisted(userId: string, id: string): Promise<void> {
   });
 }
 
-function toPublic(conn: IntegrationConnection): IntegrationConnectionPublic {
+function toPublic(conn: IntegrationConnectionStored): IntegrationConnectionPublic {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { credentialsEncrypted: _enc, ...pub } = conn;
+  const { credentialsEncrypted: _enc, keyVersion: _keyVersion, ...pub } = conn;
   return pub;
+}
+
+function withEncryptedCredentials(
+  conn: Omit<IntegrationConnectionStored, "credentialsEncrypted" | "keyVersion">,
+  credentials: IntegrationCredentials,
+): IntegrationConnectionStored {
+  const credentialsEncrypted = encryptCredentials(credentials);
+  return {
+    ...conn,
+    credentialsEncrypted,
+    keyVersion: getCiphertextKeyVersion(credentialsEncrypted),
+  };
+}
+
+async function decryptConnectionCredentials(
+  conn: IntegrationConnectionStored,
+): Promise<{ connection: IntegrationConnectionStored; credentials: IntegrationCredentials }> {
+  const decrypted = decryptCredentials(conn.credentialsEncrypted);
+  if (decrypted.envelope === "connector_secret_vault") {
+    cache.set(conn.id, conn);
+    return { connection: conn, credentials: decrypted.credentials };
+  }
+
+  const migrated = withEncryptedCredentials(
+    {
+      ...conn,
+      updatedAt: new Date().toISOString(),
+    },
+    decrypted.credentials,
+  );
+  cache.set(migrated.id, migrated);
+  await persistConnection(migrated);
+  return { connection: migrated, credentials: decrypted.credentials };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,16 +281,18 @@ export const integrationCredentialStore = {
     credentials: IntegrationCredentials;
   }): Promise<IntegrationConnectionPublic> {
     const now = new Date().toISOString();
-    const conn: IntegrationConnection = {
-      id: randomUUID(),
-      userId: params.userId,
-      integrationSlug: params.integrationSlug,
-      label: params.label,
-      isDefault: false,
-      createdAt: now,
-      updatedAt: now,
-      credentialsEncrypted: encryptCredentials(params.credentials),
-    };
+    const conn = withEncryptedCredentials(
+      {
+        id: randomUUID(),
+        userId: params.userId,
+        integrationSlug: params.integrationSlug,
+        label: params.label,
+        isDefault: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+      params.credentials,
+    );
     cache.set(conn.id, conn);
     await persistConnection(conn);
     return toPublic(conn);
@@ -241,7 +337,7 @@ export const integrationCredentialStore = {
   ): Promise<IntegrationConnectionPublic | undefined> {
     const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return undefined;
-    const updated: IntegrationConnection = {
+    const updated: IntegrationConnectionStored = {
       ...existing,
       ...patch,
       updatedAt: new Date().toISOString(),
@@ -258,11 +354,13 @@ export const integrationCredentialStore = {
   ): Promise<boolean> {
     const existing = cache.get(id) ?? (await loadById(userId, id));
     if (!existing || existing.userId !== userId) return false;
-    const current = decryptCredentials(existing.credentialsEncrypted);
+    const current = decryptCredentials(existing.credentialsEncrypted).credentials;
     const merged: IntegrationCredentials = { ...current, ...credentials };
-    const updated: IntegrationConnection = {
+    const credentialsEncrypted = encryptCredentials(merged);
+    const updated: IntegrationConnectionStored = {
       ...existing,
-      credentialsEncrypted: encryptCredentials(merged),
+      credentialsEncrypted,
+      keyVersion: getCiphertextKeyVersion(credentialsEncrypted),
       updatedAt: new Date().toISOString(),
     };
     cache.set(id, updated);
@@ -297,13 +395,17 @@ export const integrationCredentialStore = {
         conn.integrationSlug === target.integrationSlug &&
         conn.isDefault
       ) {
-        const cleared = { ...conn, isDefault: false, updatedAt: new Date().toISOString() };
+        const cleared: IntegrationConnectionStored = {
+          ...conn,
+          isDefault: false,
+          updatedAt: new Date().toISOString(),
+        };
         cache.set(conn.id, cleared);
         await persistConnection(cleared);
       }
     }
 
-    const updated: IntegrationConnection = {
+    const updated: IntegrationConnectionStored = {
       ...target,
       isDefault: true,
       updatedAt: new Date().toISOString(),
@@ -322,10 +424,10 @@ export const integrationCredentialStore = {
   > {
     const conn = cache.get(id) ?? (await loadById(userId, id));
     if (!conn || conn.userId !== userId) return undefined;
-    cache.set(conn.id, conn);
+    const decrypted = await decryptConnectionCredentials(conn);
     return {
-      connection: toPublic(conn),
-      credentials: decryptCredentials(conn.credentialsEncrypted),
+      connection: toPublic(decrypted.connection),
+      credentials: decrypted.credentials,
     };
   },
 
@@ -346,9 +448,10 @@ export const integrationCredentialStore = {
       (c) => c.integrationSlug === integrationSlug && c.isDefault,
     );
     if (!defaultConn) return undefined;
+    const decrypted = await decryptConnectionCredentials(defaultConn);
     return {
-      connection: toPublic(defaultConn),
-      credentials: decryptCredentials(defaultConn.credentialsEncrypted),
+      connection: toPublic(decrypted.connection),
+      credentials: decrypted.credentials,
     };
   },
 
@@ -359,5 +462,13 @@ export const integrationCredentialStore = {
       `DELETE FROM connector_credentials WHERE service = $1`,
       [SERVICE_KEY],
     );
+  },
+
+  __unsafeGetCachedForTests(id: string): IntegrationConnectionStored | undefined {
+    return cache.get(id);
+  },
+
+  __unsafeSetCachedForTests(connection: IntegrationConnectionStored): void {
+    cache.set(connection.id, connection);
   },
 };

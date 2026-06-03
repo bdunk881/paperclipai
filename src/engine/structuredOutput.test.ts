@@ -194,4 +194,38 @@ describe("extractStructuredOutput", () => {
       ).toThrow(/Could not extract JSON from model response \(syntax\)/);
     });
   });
+
+  describe("HEL-519: surfaces the most specific error, not the last candidate's", () => {
+    it("reports the field-level schema error, not a trailing array candidate's root type error", () => {
+      // A valid-shaped object that fails on ONE field, followed by trailing
+      // content containing a standalone top-level array. Pre-fix the extractor
+      // reported the *last* failing candidate — the array, whose error is the
+      // unhelpful root "expected object, received array" — masking the real
+      // problem. It must instead surface the `count` field error. This is the
+      // live 8-agent /hire shape (Sentry NODE-EXPRESS-7).
+      const schema = z.object({ ok: z.literal(true), count: z.number().int() });
+      const text = '{"ok":true,"count":"NaN"}\n\nExamples: [1, 2, 3]';
+
+      let message = "";
+      try {
+        extractStructuredOutput(text, { schema, label: "mask" });
+      } catch (err) {
+        message = err instanceof Error ? err.message : String(err);
+      }
+
+      expect(message).toContain("Could not extract JSON from model response (mask)");
+      expect(message).toContain("count");
+      expect(message).not.toContain("received array");
+    });
+
+    it("still surfaces a root type mismatch when that is the only schema failure", () => {
+      // No masking risk here: the only parseable candidate is an array but the
+      // schema wants an object. The root error is the best available, so report
+      // it (we must not suppress a legitimate sole type mismatch).
+      const schema = z.object({ ok: z.literal(true) });
+      expect(() =>
+        extractStructuredOutput("[1, 2, 3]", { schema, label: "array-root" }),
+      ).toThrow(/Could not extract JSON from model response \(array-root\)/);
+    });
+  });
 });

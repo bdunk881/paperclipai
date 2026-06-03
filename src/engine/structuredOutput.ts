@@ -96,12 +96,28 @@ export function extractStructuredOutput<T = unknown>(
   }
   const attempts = buildAttempts(rawText);
 
-  let lastErr: unknown = null;
+  // Track the *most informative* failure, not merely the last one. A model
+  // response can yield several candidates — a real object plus junk array
+  // slices or a trailing top-level array. When more than one fails schema
+  // validation, the last to fail is frequently a wrong-type candidate whose
+  // root-level zod error ("expected object, received array") masks the
+  // leading object's actual field-level error. Surfacing the most specific
+  // error keeps schema failures diagnosable from the thrown message + Sentry.
+  // (HEL-519)
+  let bestErr: unknown = null;
+  let haveErr = false;
+  const recordError = (err: unknown): void => {
+    if (!haveErr || errorSpecificity(err) > errorSpecificity(bestErr)) {
+      bestErr = err;
+      haveErr = true;
+    }
+  };
+
   for (const candidate of attempts) {
     if (!candidate) continue;
     const parsedResult = parseJsonAllowingTrailing(candidate);
     if (!parsedResult.ok) {
-      lastErr = parsedResult.error;
+      recordError(parsedResult.error);
       continue;
     }
     const parsed = parsedResult.value;
@@ -113,7 +129,7 @@ export function extractStructuredOutput<T = unknown>(
         // — a later candidate may be the *actual* JSON the model
         // intended (e.g. the chatty preamble itself contains stray
         // braces that happen to parse but fail validation).
-        lastErr = err;
+        recordError(err);
         continue;
       }
     }
@@ -121,10 +137,39 @@ export function extractStructuredOutput<T = unknown>(
   }
 
   const labelSuffix = options.label ? ` (${options.label})` : "";
-  const reason = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  const reason =
+    bestErr instanceof Error ? bestErr.message : haveErr ? String(bestErr) : "";
   throw new Error(
     `Could not extract JSON from model response${labelSuffix}: ${reason || "no JSON candidate found"}`,
   );
+}
+
+/**
+ * Rank a candidate failure by how useful its message is for diagnosing a
+ * schema mismatch. A zod `ZodError` exposes `.issues: [{ path, … }]`:
+ *
+ *   - an issue that points at a real field (non-empty `path`) is the most
+ *     useful — it names what broke;
+ *   - a root-level type mismatch (empty `path`, e.g. "expected object,
+ *     received array" from a junk array candidate) is a weaker schema signal;
+ *   - a bare `JSON.parse` SyntaxError carries no field info at all.
+ *
+ * Higher score wins when choosing which of several candidate errors to
+ * surface, so the leading object's field error isn't masked by a later
+ * wrong-type candidate. (HEL-519)
+ */
+function errorSpecificity(err: unknown): number {
+  const issues = (err as { issues?: unknown } | null | undefined)?.issues;
+  if (!Array.isArray(issues)) return 0;
+  let maxPathDepth = 0;
+  for (const issue of issues) {
+    const path = (issue as { path?: unknown } | null | undefined)?.path;
+    if (Array.isArray(path) && path.length > maxPathDepth) {
+      maxPathDepth = path.length;
+    }
+  }
+  // Schema (zod) errors rank above bare parse errors; field-level above root.
+  return 10 + maxPathDepth;
 }
 
 /**

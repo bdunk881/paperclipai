@@ -6,7 +6,7 @@
  * rotation, audit log reads, and every `/api/admin/*` route call this
  * middleware AFTER `requireAuth` to demand a fresh second-factor verification.
  *
- * "Fresh" = within MFA_STEP_UP_TTL_SECONDS (default 15 min). Two acceptance
+ * "Fresh" = within MFA_STEP_UP_TTL_SECONDS (default 4 hours — HEL-442). Two acceptance
  * paths:
  *
  *   1. Supabase-native TOTP path. The Supabase JWT carries `aal: "aal2"` plus
@@ -35,7 +35,16 @@ export const AAL2_ATTESTATION_COOKIE = "autoflow_aal2_attestation";
 export const AAL2_ATTESTATION_AUDIENCE = "autoflow-aal2";
 export const AAL2_ATTESTATION_ISSUER = "autoflow-mfa";
 
-const DEFAULT_STEP_UP_TTL_SECONDS = 15 * 60;
+// HEL-442: the step-up freshness window — how long an AAL2 verification (a
+// Supabase TOTP `amr` entry, or the app-minted attestation cookie) stays valid
+// before requireAAL2 demands a fresh second factor. Raised from 15m to 4h: at
+// 15m, passkey users — whose AAL2 lives ONLY in the attestation cookie, never
+// in Supabase — re-stepped-up every 15 minutes of normal use and were
+// dead-ended on return (HEL-435). 4h covers a working session while bounding
+// how long a stolen/leaked session stays AAL2-privileged. Overridable per-env
+// via MFA_STEP_UP_TTL_SECONDS; governs BOTH the attestation cookie Max-Age and
+// the Supabase-`amr` freshness check.
+const DEFAULT_STEP_UP_TTL_SECONDS = 4 * 60 * 60;
 
 function getStepUpTtlSeconds(): number {
   const raw = process.env.MFA_STEP_UP_TTL_SECONDS;

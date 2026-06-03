@@ -28,6 +28,7 @@ Anything failing either test is a finding.
 | B1 | Sweep coordinators double-fire across instances | Urgent | multi-instance | [HEL-458](https://linear.app/helloautoflow/issue/HEL-458) |
 | B2 | Slack replay cache in-process | High | restart, multi-instance | [HEL-459](https://linear.app/helloautoflow/issue/HEL-459) |
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
+| B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
 | F1 | Notification read/mute only in localStorage | Medium | other device | [HEL-461](https://linear.app/helloautoflow/issue/HEL-461) |
 | B4 | Admin rate limiter per-process | Low | restart, multi-instance | [HEL-462](https://linear.app/helloautoflow/issue/HEL-462) |
 | B5 | agentBus in-process EventEmitter | Low | multi-instance, restart | [HEL-463](https://linear.app/helloautoflow/issue/HEL-463) |
@@ -85,6 +86,18 @@ ALT-1409 compliance trail's only durable record today is the `console.info` log;
 
 **Fix:** persist to an append-only Postgres table (e.g. `crm_data_access_log`); drop or
 hard-bound the in-memory array.
+
+### B8 — In-memory daily-quota counters bypassed across instances · High · security
+
+_Surfaced by Codex's PR review; missed by the initial sweep because both declarations carry an `// allowlist:` comment._
+
+**Files:**
+- `src/hostedFreeModels/usageStore.ts:31` — `const usageByWorkspace = new Map<string, UsageEntry>()`, enforcing a 50K-token/day cap that protects the **shared** hosted-free API keys (`GROQ_API_KEY` / `OPENCODE_ZEN_API_KEY`).
+- `src/agents/agentMemoryRoutes.ts:17` — `const semanticSearchUsage = new Map<string, number>()`, enforcing per-tier daily semantic-search limits (flow 100 / automate 1000).
+
+In-memory only → restart resets the counters mid-day, and on 2 prod machines each instance keeps its own counter, so the effective cap is ~N×. For the hosted-free cap this directly weakens protection of a shared paid API key (a single workspace can drain roughly double the intended budget, more after a deploy). For semantic search, paid-tier rate limits are similarly leaky.
+
+**Fix:** Move both counters to a shared, atomic store — Redis `INCR` + `EXPIRE` to UTC midnight (key `hostedfree:{workspaceId}:{dayKey}` / `semsearch:{workspaceId}:{dayKey}`), or a Postgres daily-usage table with an atomic upsert — behind the existing function signatures (`assertWithinHostedFreeCap` / `recordHostedFreeTokens`, semantic-search limit check). Keep the in-memory impl as the dev/test fallback.
 
 ### B4 — Admin-console rate limiter is per-process in-memory · Low · security
 

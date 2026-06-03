@@ -145,7 +145,10 @@ describe("requireAAL2", () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
-  it("rejects an expired Supabase amr timestamp", async () => {
+  it("rejects a Supabase amr timestamp older than the configured TTL", async () => {
+    // Pin an explicit short TTL so this exercises the expiry boundary
+    // independent of the default (HEL-442 raised the default to 4h).
+    process.env.MFA_STEP_UP_TTL_SECONDS = "900";
     const req = makeReq({
       sub: "user-1",
       aal: "aal2",
@@ -158,6 +161,12 @@ describe("requireAAL2", () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it("HEL-442: defaults the step-up TTL to 4h when MFA_STEP_UP_TTL_SECONDS is unset", () => {
+    // beforeEach deletes MFA_STEP_UP_TTL_SECONDS, so this exercises the default.
+    const minted = mintAal2Attestation({ userId: "user-1", method: "webauthn" });
+    expect(minted.maxAgeSeconds).toBe(4 * 60 * 60);
   });
 
   it("passes when a fresh AAL2 attestation cookie matches the user", async () => {

@@ -493,8 +493,10 @@ export async function handleCondition(
     return { output: { _conditionResult: true } };
   }
 
-  // HEL-254 — safe condition evaluation. Uses expr-eval (custom parser,
-  // no JS eval). `process`, `global`, `require`, etc. aren't reachable.
+  // HEL-254 — safe condition evaluation via safeConditionEval (jsep AST +
+  // allowlist walker, no JS eval). `process`, `global`, `require`, etc.
+  // aren't reachable: identifiers must be own-keys of the context scope and
+  // calls/member-access are rejected at the AST level.
   let result = false;
   try {
     result = safeEvalCondition(step.condition, ctx);

@@ -35,11 +35,29 @@
  *                            already; defense in depth)
  *   - ThisExpression, NewExpression, UpdateExpression, SequenceExpression
  *   - Any unknown node type
+ *
+ * Resource limits (defense against DoS via untrusted/LLM-authored
+ * conditions, which carry no length bound at the schema layer):
+ *   - MAX_EXPRESSION_LENGTH caps the raw input before it ever reaches
+ *     jsep, bounding parse-time work and recursion depth.
+ *   - MAX_AST_DEPTH caps walk recursion at evaluation time as a second,
+ *     independent guard against deeply nested ASTs.
  */
 import jsepCjs from "jsep";
 
 // jsep exports default in both CJS and ESM; normalize for our import.
 const jsep = (jsepCjs as unknown as { default?: typeof jsepCjs }).default ?? jsepCjs;
+
+// Upper bound on raw expression length. Real workflow conditions are short
+// (a comparison or two); anything larger is almost certainly malformed or
+// hostile. Capping here bounds both jsep's parse cost and the maximum
+// nesting depth a single expression can encode.
+const MAX_EXPRESSION_LENGTH = 2000;
+
+// Upper bound on AST walk recursion. Generous for any legitimate condition
+// (which nest only a handful of levels) while preventing a crafted
+// deeply-nested expression from exhausting the call stack.
+const MAX_AST_DEPTH = 64;
 
 // Register `in` as a left-associative binary operator. Precedence matches
 // JS's `in`: above comparison (6) but below shift (8). We pick 8 so it
@@ -118,7 +136,10 @@ function evalBinary(op: string, left: unknown, right: unknown): unknown {
   }
 }
 
-function evalNode(node: AstNode, scope: Record<string, unknown>): unknown {
+function evalNode(node: AstNode, scope: Record<string, unknown>, depth: number): unknown {
+  if (depth > MAX_AST_DEPTH) {
+    throw new Error("expression nesting too deep");
+  }
   switch (node.type) {
     case "Literal":
       return node.value;
@@ -129,27 +150,36 @@ function evalNode(node: AstNode, scope: Record<string, unknown>): unknown {
       }
       return scope[name];
     }
+    // jsep emits both `&&`/`||` and the comparison/arithmetic operators as
+    // BinaryExpression (and, in some versions, LogicalExpression for the
+    // boolean ones) — handle both node types here.
     case "BinaryExpression":
     case "LogicalExpression": {
       const op = node.operator ?? "";
-      const left = evalNode(node.left!, scope);
-      const right = evalNode(node.right!, scope);
+      const left = evalNode(node.left!, scope, depth + 1);
+      // Short-circuit && / || so a dead branch never evaluates. This matches
+      // JS semantics and prevents a short-circuited operand from throwing
+      // (e.g. `hasItems || maybeUnbound` must be truthy, not an error) —
+      // which previously flipped edge-routing to `false`.
+      if (op === "&&") return left && evalNode(node.right!, scope, depth + 1);
+      if (op === "||") return left || evalNode(node.right!, scope, depth + 1);
+      const right = evalNode(node.right!, scope, depth + 1);
       return evalBinary(op, left, right);
     }
     case "UnaryExpression": {
       const op = node.operator ?? "";
-      const arg = evalNode(node.argument!, scope);
+      const arg = evalNode(node.argument!, scope, depth + 1);
       if (op === "!") return !arg;
       if (op === "-") return -(arg as number);
       if (op === "+") return +(arg as number);
       throw new Error(`unsupported unary operator: ${op}`);
     }
     case "ConditionalExpression":
-      return evalNode(node.test!, scope)
-        ? evalNode(node.consequent!, scope)
-        : evalNode(node.alternate!, scope);
+      return evalNode(node.test!, scope, depth + 1)
+        ? evalNode(node.consequent!, scope, depth + 1)
+        : evalNode(node.alternate!, scope, depth + 1);
     case "ArrayExpression":
-      return (node.elements ?? []).map((el) => evalNode(el, scope));
+      return (node.elements ?? []).map((el) => evalNode(el, scope, depth + 1));
     case "CallExpression":
       throw new Error("function calls are not allowed in conditions");
     case "MemberExpression":
@@ -178,11 +208,19 @@ export function safeEvalCondition(
   expression: string,
   context: Record<string, unknown>,
 ): boolean {
+  if (typeof expression !== "string") {
+    throw new Error("condition expression must be a string");
+  }
+  if (expression.length > MAX_EXPRESSION_LENGTH) {
+    throw new Error(
+      `condition expression too long (${expression.length} > ${MAX_EXPRESSION_LENGTH})`,
+    );
+  }
   const ast = jsep(expression) as AstNode;
   // Spread builds a fresh prototype-less-ish object; identifier lookup
   // additionally guards via Object.prototype.hasOwnProperty so
   // prototype-chain identifiers (`constructor`, `__proto__`) throw
   // instead of returning the prototype's value.
   const scope: Record<string, unknown> = { ...context };
-  return Boolean(evalNode(ast, scope));
+  return Boolean(evalNode(ast, scope, 0));
 }

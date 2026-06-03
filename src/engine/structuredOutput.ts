@@ -74,10 +74,26 @@ export type ExtractStructuredOutputOptions = {
  * passed) or throws a clear "Could not extract JSON from model response
  * (label): …" with the underlying parse/zod error.
  */
+// Upper bound on the model response we will scan/parse. LLM output length
+// is not bounded by `express.json()` (that limits the *request*, not the
+// provider's *response*), and a tenant-configured custom/self-hosted
+// provider can return arbitrary bytes. Reject oversized payloads up front so
+// no regex or JSON.parse ever sees a multi-MB string.
+const MAX_RAW_TEXT_LENGTH = 1_000_000;
+
 export function extractStructuredOutput<T = unknown>(
   rawText: string,
   options: ExtractStructuredOutputOptions = {},
 ): T {
+  if (typeof rawText !== "string") {
+    throw new Error("extractStructuredOutput: model response was not a string");
+  }
+  if (rawText.length > MAX_RAW_TEXT_LENGTH) {
+    const labelSuffix = options.label ? ` (${options.label})` : "";
+    throw new Error(
+      `Model response too large to parse${labelSuffix}: ${rawText.length} > ${MAX_RAW_TEXT_LENGTH} chars`,
+    );
+  }
   const attempts = buildAttempts(rawText);
 
   let lastErr: unknown = null;
@@ -161,15 +177,25 @@ function buildAttempts(rawText: string): string[] {
   const attempts: string[] = [];
 
   // 1. Whole-string after light fence trim.
-  attempts.push(
-    rawText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "")
-      .trim(),
-  );
+  //    The leading strip stays a `^`-anchored regex (linear — anchoring at
+  //    start means a single, non-backtracking pass). The trailing fence is
+  //    removed with plain string ops rather than a `/\s*```$/`-style regex:
+  //    that form was quadratic (greedy `\s*` before a required backtick
+  //    backtracks across every position of a long whitespace run), which
+  //    blocked the event loop for seconds on a large — even valid — model
+  //    response whose text field held a big whitespace run.
+  let candidate = rawText.trim().replace(/^```(?:json)?[ \t]*\r?\n?/i, "");
+  if (candidate.endsWith("```")) {
+    candidate = candidate.slice(0, -3);
+  }
+  attempts.push(candidate.trim());
 
   // 2. First fenced ```json (or bare ```) block anywhere in the body.
-  const fencedMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  //    No `\s*` between the lazy capture and the closing fence: that trailing
+  //    `\s*` overlapped with `[\s\S]*?` and backtracked quadratically across
+  //    an internal whitespace run. The capture is `.trim()`-ed below, so the
+  //    leading/trailing whitespace it absorbs is dropped anyway.
+  const fencedMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fencedMatch?.[1]) {
     attempts.push(fencedMatch[1].trim());
   }

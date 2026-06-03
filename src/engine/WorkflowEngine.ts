@@ -114,8 +114,9 @@ function interpolate(template: string, context: Record<string, unknown>): string
 }
 
 // ---------------------------------------------------------------------------
-// Condition evaluator — HEL-254 / SEC-03: uses expr-eval (custom parser, no
-// JS eval). Errors fall back to false so workflow edge-routing stays safe.
+// Condition evaluator — HEL-254 / SEC-03, HEL-259 / SEC-14: delegates to
+// safeConditionEval (jsep AST + allowlist walker, no JS eval / new Function).
+// Errors fall back to false so workflow edge-routing stays safe.
 // ---------------------------------------------------------------------------
 
 function evalCondition(expression: string, context: Record<string, unknown>): boolean {

@@ -17,6 +17,7 @@
 
 import { integrationCredentialStore } from "./integrationCredentialStore";
 import { IntegrationCredentials } from "./integrationManifest";
+import { assertValidInstanceDomain } from "./authAdapters";
 
 // ---------------------------------------------------------------------------
 // MCP server map — integration slug → MCP server configuration
@@ -161,6 +162,10 @@ function resolveMcpUrl(
 ): string {
   const url = config.defaultMcpUrl;
   if (credentials.instanceDomain) {
+    // Same guard as resolveUrlTemplate: a tenant-supplied instanceDomain must
+    // not redirect the MCP endpoint (which carries the auth header) to an
+    // arbitrary host.
+    assertValidInstanceDomain(credentials.instanceDomain);
     return url.replace(/\{\{instanceDomain\}\}/g, credentials.instanceDomain);
   }
   return url;

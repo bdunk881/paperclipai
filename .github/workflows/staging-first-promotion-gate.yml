@@ -20,11 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Require staging as the PR head branch
+        # head_ref / base_ref are attacker-controlled (PR source branch name).
+        # Pass them through env vars and reference as quoted shell variables
+        # rather than interpolating `${{ }}` directly into the `run:` script,
+        # which would be a command-injection sink (a crafted branch name could
+        # execute arbitrary commands on the runner).
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          echo "Base branch: ${{ github.base_ref }}"
-          echo "Head branch: ${{ github.head_ref }}"
+          echo "Base branch: $BASE_REF"
+          echo "Head branch: $HEAD_REF"
 
-          if [ "${{ github.head_ref }}" != "staging" ]; then
-            echo "::error title=Master promotions must come from staging::Feature and Dependabot PRs must target staging. Only the dedicated staging -> master promotion PR may target master. If this PR was opened against master by mistake, retarget it with 'gh pr edit ${{ github.event.pull_request.number }} --base staging' or let the Auto-Retarget workflow fix it."
+          if [ "$HEAD_REF" != "staging" ]; then
+            echo "::error title=Master promotions must come from staging::Feature and Dependabot PRs must target staging. Only the dedicated staging -> master promotion PR may target master. If this PR was opened against master by mistake, retarget it with 'gh pr edit ${PR_NUMBER} --base staging' or let the Auto-Retarget workflow fix it."
             exit 1
           fi

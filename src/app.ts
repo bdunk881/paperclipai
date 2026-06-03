@@ -2215,7 +2215,13 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
     steps = parsed as WorkflowStep[];
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}`, raw: rawText });
+    // Error hygiene (HEL-437): don't echo the raw model response to the
+    // client — it can carry prompt fragments or injected content and is
+    // unbounded. Log a truncated server-side preview for debugging instead.
+    console.error(
+      `[workflows/generate] structured-output extraction failed: ${msg}; raw preview: ${rawText.slice(0, 500)}`,
+    );
+    res.status(422).json({ error: `LLM returned invalid JSON: ${msg}` });
     return;
   }
 

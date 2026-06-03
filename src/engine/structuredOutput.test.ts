@@ -40,6 +40,23 @@ describe("extractStructuredOutput", () => {
       expect(result.x).toBe(1);
     });
 
+    it("strips fences even when the JSON value holds a large whitespace run (ReDoS guard)", () => {
+      // Regression: the old `/\s*```$/` trailing-fence strip backtracked
+      // quadratically over long whitespace runs, freezing the event loop.
+      // A big internal whitespace run inside a string value must parse fast.
+      const big = " ".repeat(200_000);
+      const payload = `\`\`\`json\n{"note":"${big}"}\n\`\`\``;
+      const start = Date.now();
+      const result = extractStructuredOutput<{ note: string }>(payload);
+      expect(result.note.length).toBe(200_000);
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
+
+    it("rejects an over-long model response instead of scanning it", () => {
+      const huge = `{"x":"${"a".repeat(1_000_001)}"}`;
+      expect(() => extractStructuredOutput(huge)).toThrow(/too large/i);
+    });
+
     it("extracts a fenced block with chatty preamble (the Mistral pattern)", () => {
       const mistralStyle =
         'Sure! Here is the response:\n\n```json\n{"plan":"x"}\n```\n\nLet me know.';

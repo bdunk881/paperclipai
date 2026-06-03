@@ -340,9 +340,30 @@ export function buildAuthHeaders(
 // URL template helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * A user-supplied `instanceDomain` is substituted into outbound URLs that
+ * carry credentials — OAuth token/authorization endpoints (with the client
+ * secret) and API base URLs (with the bearer/api-key header). If it were
+ * allowed to contain a scheme, path, userinfo, or query, a tenant could
+ * point those requests at an attacker-controlled host and exfiltrate the
+ * credential (SSRF + credential leak). Restrict it to a bare host
+ * (optionally `host:port`) so the manifest's own scheme/path always win.
+ */
+const INSTANCE_DOMAIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?(?::[0-9]{1,5})?$/;
+
+export function assertValidInstanceDomain(instanceDomain: string): void {
+  if (!INSTANCE_DOMAIN_RE.test(instanceDomain)) {
+    throw new Error(
+      "invalid instanceDomain: expected a bare host (e.g. acme.example.com), " +
+        "without scheme, path, '@', or query characters",
+    );
+  }
+}
+
 /** Replace {{instanceDomain}} placeholders in a URL template. */
 export function resolveUrlTemplate(template: string, instanceDomain?: string): string {
   if (!instanceDomain) return template;
+  assertValidInstanceDomain(instanceDomain);
   return template.replace(/\{\{instanceDomain\}\}/g, instanceDomain);
 }
 

@@ -117,6 +117,42 @@ describe("safeEvalCondition — RCE guard (the SEC-03 boundary)", () => {
   });
 });
 
+describe("safeEvalCondition — resource limits (DoS guards)", () => {
+  it("rejects over-long expressions before parsing", () => {
+    const huge = `${"a + ".repeat(1000)}a`;
+    expect(() => safeEvalCondition(huge, { a: 1 })).toThrow(/too long/i);
+  });
+
+  it("rejects pathologically deep nesting without crashing the stack", () => {
+    // Deeply parenthesized unary chain stays under the length cap but
+    // exceeds the AST depth cap.
+    const deep = `${"!".repeat(200)}a`;
+    expect(() => safeEvalCondition(deep, { a: true })).toThrow(/too deep/i);
+  });
+
+  it("rejects non-string input defensively", () => {
+    // @ts-expect-error — exercising the runtime guard
+    expect(() => safeEvalCondition(null, {})).toThrow(/must be a string/i);
+  });
+});
+
+describe("safeEvalCondition — short-circuit semantics", () => {
+  it("does not evaluate the dead branch of || when the left is truthy", () => {
+    // `missing` is unbound; under eager evaluation it would throw. Proper
+    // short-circuit must return the truthy left without touching it.
+    expect(safeEvalCondition("hasItems || missing", { hasItems: true })).toBe(true);
+  });
+
+  it("does not evaluate the dead branch of && when the left is falsy", () => {
+    expect(safeEvalCondition("hasItems && missing", { hasItems: false })).toBe(false);
+  });
+
+  it("still evaluates the live branch of && when the left is truthy", () => {
+    expect(safeEvalCondition("hasItems && ready", { hasItems: true, ready: true })).toBe(true);
+    expect(safeEvalCondition("hasItems && ready", { hasItems: true, ready: false })).toBe(false);
+  });
+});
+
 describe("safeEvalCondition — SEC-03 acceptance payload", () => {
   it("process.env.DATABASE_URL || true never leaks DATABASE_URL (the exact spec payload)", () => {
     // process is unbound → MemberExpression rejection fires before any

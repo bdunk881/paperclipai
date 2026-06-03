@@ -81,6 +81,7 @@ export async function filePlanApprovalRequest(
     timeoutMinutes: input.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES,
     userId: input.userId,
     agentId: input.agentId,
+    workspaceId: input.workspaceId,
   });
 
   return { approvalId: id };

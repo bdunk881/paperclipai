@@ -726,6 +726,7 @@ export class WorkflowEngine {
       message,
       timeoutMinutes,
       userId: params.userId,
+      workspaceId: this._resolveWorkspaceId(params.context, params.config) ?? undefined,
     });
 
     await runStore.update(params.runId, {
@@ -1102,6 +1103,7 @@ export class WorkflowEngine {
               message,
               timeoutMinutes,
               userId,
+              workspaceId: this._resolveWorkspaceId(context, config) ?? undefined,
             });
 
             await runStore.update(runId, {

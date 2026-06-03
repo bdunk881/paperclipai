@@ -220,6 +220,22 @@ export const llmConfigStore = {
     return toPublic(record);
   },
 
+  /**
+   * HEL-494 (B16): DB-backed counterpart to `get`. The sync getter reads only
+   * the in-process bucket (populated by writes in the *current* process), so an
+   * explicit-id lookup 404s on a cold process (after a deploy/restart) or on an
+   * instance that didn't handle the create. `store.getByIdAsync` keeps the
+   * in-memory fast path but falls back to an RLS-scoped Postgres read — which
+   * also hydrates the bucket, so a subsequent `update`/`setDefault` persists.
+   */
+  async getAsync(id: string, userId: string): Promise<LLMConfigPublic | undefined> {
+    const record = await store.getByIdAsync(id, userId);
+    if (!record || record.userId !== userId || record.revokedAt) {
+      return undefined;
+    }
+    return toPublic(record);
+  },
+
   update(
     id: string,
     userId: string,
@@ -277,6 +293,52 @@ export const llmConfigStore = {
 
     for (const record of store.listByUser(userId, false)) {
       if (record.metadata.isDefault) {
+        store.update(record.id, (existing, secrets) => ({
+          record: {
+            ...existing,
+            updatedAt: new Date().toISOString(),
+            metadata: {
+              ...existing.metadata,
+              isDefault: false,
+            },
+          },
+          secrets,
+        }));
+      }
+    }
+
+    const updated = store.update(id, (existing, secrets) => ({
+      record: {
+        ...existing,
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          ...existing.metadata,
+          isDefault: true,
+        },
+      },
+      secrets,
+    }));
+
+    return updated ? toPublic(updated) : undefined;
+  },
+
+  /**
+   * HEL-494 (B16): DB-backed counterpart to `setDefault`. The sync version
+   * looks up the target and the user's configs in the in-process bucket only,
+   * so flipping the default 404s (and the new default isn't durably persisted)
+   * for a config not created in the current process — e.g. after a deploy or on
+   * the other Fly instance. `getByIdAsync` + `listByUserAsync` fall back to
+   * Postgres (and hydrate the bucket), so the `store.update` write-through
+   * persists the `isDefault` flag on any instance.
+   */
+  async setDefaultAsync(id: string, userId: string): Promise<LLMConfigPublic | undefined> {
+    const target = await store.getByIdAsync(id, userId);
+    if (!target || target.userId !== userId || target.revokedAt) {
+      return undefined;
+    }
+
+    for (const record of await store.listByUserAsync(userId, false)) {
+      if (record.metadata.isDefault && record.id !== id) {
         store.update(record.id, (existing, secrets) => ({
           record: {
             ...existing,

@@ -32,6 +32,7 @@ Anything failing either test is a finding.
 | B3 | CRM audit trail in module array | High | restart, multi-instance | [HEL-460](https://linear.app/helloautoflow/issue/HEL-460) |
 | B8 | In-memory daily-quota counters bypassed across instances | High | restart, multi-instance | [HEL-467](https://linear.app/helloautoflow/issue/HEL-467) |
 | B9 | companyLifecycle reads a stale never-refreshed in-memory mirror | High | multi-instance | [HEL-469](https://linear.app/helloautoflow/issue/HEL-469) |
+| B12 | Write-through stores serve stale cross-instance read caches (webhookRelay, integrationCredentialStore) | Medium | multi-instance | [HEL-472](https://linear.app/helloautoflow/issue/HEL-472) |
 | F1 | Notification read/mute only in localStorage | Medium | other device | [HEL-461](https://linear.app/helloautoflow/issue/HEL-461) |
 | B4 | Admin rate limiter per-process | Low | restart, multi-instance | [HEL-462](https://linear.app/helloautoflow/issue/HEL-462) |
 | B5 | agentBus in-process EventEmitter | Low | multi-instance, restart | [HEL-463](https://linear.app/helloautoflow/issue/HEL-463) |
@@ -149,7 +150,7 @@ _Surfaced by Codex's PR review; this was **mis-classified as a NOT-finding** in 
 
 _Surfaced by Codex's PR review; the integrations layer was under-covered in the first pass._
 
-**Files:** `src/integrations/{linear,teams,shopify,docusign,posthog,intercom}/credentialStore.ts` — each keeps credentials in a module-level `store` `Map`, never persisted to Postgres (verified: zero `pool.query`/`queryPostgres`/Supabase references). Routers mounted in prod under `/api/integrations/*` (`src/app.ts:853-862`).
+**Files:** `src/integrations/{linear,teams,shopify,docusign,posthog,intercom,agent-catalog}/credentialStore.ts` — each keeps credentials in a module-level `store` `Map`, never persisted to Postgres (verified: zero `pool.query`/`queryPostgres`/Supabase references). Routers mounted in prod under `/api/integrations/*` (`src/app.ts:853-863`).
 
 **Tests failed:** restart + multi-instance.
 
@@ -161,13 +162,29 @@ _Surfaced by Codex's PR review; the integrations layer was under-covered in the 
 
 _Surfaced by Codex's PR review._
 
-**Files:** `src/integrations/authAdapters.ts:52-53` — `const pkceStateMap = new Map<string, PkceState>()` (10-min TTL, purged in-process); per-provider flows use the same process-local `stateStore` pattern (Slack/Intercom, Apollo/HubSpot). `/authorize` + public callbacks mounted in prod.
+**Files:** `src/integrations/authAdapters.ts:52-53` — `const pkceStateMap = new Map<string, PkceState>()` (10-min TTL, purged in-process). Per-provider flows use the same process-local pattern across **~13 stores**: `{slack,intercom,shopify,docusign,teams,gmail,linear,sentry,posthog,agent-catalog}/pkceStore.ts` and `{hubspot,apollo,stripe}/oauthStateStore.ts`. `/authorize` + public callbacks mounted in prod.
 
 **Tests failed:** restart + multi-instance.
 
 **Impact:** authorize runs on machine A (stores `state` in A's map); the provider redirects to the callback, which the LB routes to either machine → ~50% chance it lands on B, which has no record → **"invalid state"** even though the flow just started (a deploy within 10 min does the same). OAuth connector setup fails intermittently.
 
 **Fix:** Store handshake `state`/`code_verifier` in a shared TTL store (Redis `SET state … EX 600`, or a Postgres `oauth_handshakes` table cleaned on read/expiry), read back in the callback on any instance; in-memory only under `inMemoryAllowed()`. `code_verifier`/`clientSecret` are sensitive — encrypt at rest if persisted.
+
+### B12 — Write-through stores serve stale cross-instance read caches · Medium
+
+_Same class as B9 (companyLifecycle), in the integrations layer._
+
+**Files:**
+- `src/integrations/webhookRelay.ts:184` — `subscriptions` (+ `events` buffer) `Map`, read `subscriptions.get(id) ?? loadSubscriptionById(id)`, write-through to Postgres. Public relay at `src/app.ts:849`. A subscription deleted on A keeps firing (or causes FK errors) on B until B restarts.
+- `src/integrations/integrationCredentialStore.ts:77` — `cache` `Map`, read `cache.get(id) ?? loadById(...)`, write-through to `connector_credentials`. A credential rotated/revoked on A is served stale (incl. a revoked token) from B until B restarts.
+
+**Tests failed:** multi-instance (durable in PG → self-heals on restart, hence Medium).
+
+**Fix:** cross-instance invalidation (Redis pub-sub bust on write, or short TTL), or read Postgres directly on these paths. **Verify** `src/integrations/shared/credentialRegistry.ts:87` (`registryBuckets`) for the same pattern. Relates to B9 — a shared cache-invalidation utility could cover both.
+
+### Methodology note — why the integrations layer was under-reported initially
+
+The first-pass sweep used `grep … = new (Map|Set)\(`, which **does not match generic-typed declarations** like `new Map<string, T>()` — and the entire integrations OAuth/credential/webhook layer is generic-typed. B2 (broadened), B8, B9, B10, B11, B12 were all consequences of that gap, surfaced via Codex's PR review. A corrected sweep (`= new (Map|Set)(<.*>)?\(`) now enumerates them. Lesson for future audits: include the generic form.
 
 ### Backend — verified NOT findings
 

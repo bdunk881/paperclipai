@@ -143,4 +143,38 @@ describe("extractStructuredOutput", () => {
       ).toThrow(/Could not extract JSON from model response \(shape-mismatch\)/);
     });
   });
+
+  describe("HEL-475: trailing-content prefix recovery", () => {
+    const planSchema = z.object({ ok: z.literal(true), count: z.number().int() });
+
+    it("parses the leading value when arbitrary text follows a complete object", () => {
+      const result = extractStructuredOutput<{ plan: string }>(
+        '{"plan":"x"} done — anything else you need?',
+      );
+      expect(result.plan).toBe("x");
+    });
+
+    it("recovers the leading object when a second JSON object is appended (gemini-2.5-pro shape)", () => {
+      // The live HEL-475 failure: a complete object then trailing content the
+      // brace scanner didn't isolate. V8 reports the offending position; we
+      // parse the prefix and the schema validates the leading (intended) object.
+      const result = extractStructuredOutput(
+        '{"ok":true,"count":5}\n{"ok":true,"count":99}',
+        { schema: planSchema },
+      );
+      expect(result).toEqual({ ok: true, count: 5 });
+    });
+
+    it("does NOT recover a truncated object (no false positive)", () => {
+      expect(() =>
+        extractStructuredOutput('{"ok":true,"count":', { schema: planSchema, label: "truncated" }),
+      ).toThrow(/Could not extract JSON from model response \(truncated\)/);
+    });
+
+    it("does NOT recover a value with an internal syntax error", () => {
+      expect(() =>
+        extractStructuredOutput('{"ok": yes, "count": 1}', { schema: planSchema, label: "syntax" }),
+      ).toThrow(/Could not extract JSON from model response \(syntax\)/);
+    });
+  });
 });

@@ -68,7 +68,7 @@ const phasePlanSchema = z.object({
   ownerRoleKeys: z.array(z.string().trim().min(1)).min(1),
 });
 
-const teamAssemblyResultSchema = z.object({
+const teamAssemblyResultObjectSchema = z.object({
   schemaVersion: z.literal(TEAM_ASSEMBLY_SCHEMA_VERSION),
   company: z.object({
     name: z.string().trim().min(1).nullable(),
@@ -100,6 +100,71 @@ const teamAssemblyResultSchema = z.object({
     day90: phasePlanSchema,
   }),
 });
+
+/**
+ * HEL-455: light, deterministic normalization applied BEFORE zod validation.
+ * gemini-2.5-pro reliably under-specifies org-chart entries — it omits
+ * `roleType` / `headcount` even though the (now-explicit) prompt asks for them.
+ * Fill ONLY the unambiguous gaps so a good plan validates instead of 422-ing:
+ *   - a role's `roleType` is implied by which array it sits in (executives →
+ *     "executive", operators → "operator"); an agent inherits it from the
+ *     matching `roleKey`;
+ *   - a staffed role is at least 1 head.
+ * Everything else (department, mandate, …) still relies on the model following
+ * the prompt — we never invent semantic content.
+ */
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+    : [];
+}
+
+function defaultHeadcount(item: Record<string, unknown>): void {
+  const h = item.headcount;
+  if (typeof h !== "number" || !Number.isFinite(h) || h < 1) {
+    item.headcount = 1;
+  }
+}
+
+function normalizeTeamAssemblyRaw(input: unknown): unknown {
+  if (!input || typeof input !== "object") return input;
+  const obj = input as Record<string, unknown>;
+  const roleTypeByKey = new Map<string, "executive" | "operator">();
+
+  const org = obj.orgChart;
+  if (org && typeof org === "object") {
+    const orgObj = org as Record<string, unknown>;
+    for (const item of asRecordArray(orgObj.executives)) {
+      item.roleType = "executive";
+      defaultHeadcount(item);
+      if (typeof item.roleKey === "string") roleTypeByKey.set(item.roleKey, "executive");
+    }
+    for (const item of asRecordArray(orgObj.operators)) {
+      item.roleType = "operator";
+      defaultHeadcount(item);
+      if (typeof item.roleKey === "string") roleTypeByKey.set(item.roleKey, "operator");
+    }
+  }
+
+  const plan = obj.provisioningPlan;
+  if (plan && typeof plan === "object") {
+    for (const agent of asRecordArray((plan as Record<string, unknown>).agents)) {
+      defaultHeadcount(agent);
+      if (agent.roleType !== "executive" && agent.roleType !== "operator") {
+        const inferred =
+          typeof agent.roleKey === "string" ? roleTypeByKey.get(agent.roleKey) : undefined;
+        if (inferred) agent.roleType = inferred;
+      }
+    }
+  }
+
+  return obj;
+}
+
+const teamAssemblyResultSchema = z.preprocess(
+  normalizeTeamAssemblyRaw,
+  teamAssemblyResultObjectSchema,
+);
 
 export const DEFAULT_ROLE_LIBRARY = [
   {
@@ -354,7 +419,7 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "You decide:",
     "  - WHICH roles exist (invent roleKey + title; no picking from a catalog)",
     "  - HOW MANY roles",
-    "  - WHO each role reports to",
+    "  - WHO each role reports to (reportsToRoleKey), plus each role's department and headcount",
     "  - mandate, justification, KPIs, skills, tools, modelTier, budgetMonthlyUsd, provisioningInstructions",
     "",
     "StaffingRecommendation quality:",
@@ -374,15 +439,35 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "  - provisioningPlan.agents must list every role exactly once (mirrors orgChart.executives + operators).",
     "  - reportingLines must reconcile with reportsToRoleKey on each role.",
     "",
+    "Every StaffingRecommendation is an object that MUST include ALL of these fields — never omit any:",
+    "  {",
+    '    "roleKey": string,            // unique kebab-case id, e.g. "support-lead"',
+    '    "title": string,              // human title, e.g. "Support Lead"',
+    '    "roleType": "executive" | "operator",   // EXACTLY one of these two lowercase literals',
+    '    "department": string,         // e.g. "support", "engineering" — required, never null/empty',
+    '    "headcount": number,          // integer >= 1',
+    '    "reportsToRoleKey": string | null,       // a roleKey in this plan, or null for the top role',
+    '    "mandate": string,',
+    '    "justification": string,',
+    '    "kpis": [string, ...],        // at least one',
+    '    "skills": [string, ...],      // at least one',
+    '    "tools": [string, ...],       // at least one kebab-case slug',
+    '    "modelTier": "lite" | "standard" | "power",',
+    '    "budgetMonthlyUsd": number | null,',
+    '    "provisioningInstructions": string',
+    "  }",
+    '  - In orgChart.executives every roleType MUST be "executive"; in orgChart.operators every roleType MUST be "operator".',
+    "  - provisioningPlan.agents repeats every role once with these SAME fields (roleType matching its org-chart section).",
+    "",
     "Return this JSON shape:",
     "{",
     `  "schemaVersion": "${TEAM_ASSEMBLY_SCHEMA_VERSION}",`,
     '  "company": { "name": string | null, "goal": string, "targetCustomer": string | null, "budget": string | null, "timeHorizon": string | null },',
     '  "summary": string,',
     '  "rationale": string,',
-    '  "orgChart": { "executives": [StaffingRecommendation], "operators": [StaffingRecommendation], "reportingLines": [...] },',
-    '  "provisioningPlan": { "teamName": string, "deploymentMode": "continuous_agents", "agents": [StaffingRecommendation] },',
-    '  "roadmap306090": { "day30": {...}, "day60": {...}, "day90": {...} }',
+    '  "orgChart": { "executives": [StaffingRecommendation, ...], "operators": [StaffingRecommendation, ...], "reportingLines": [{ "managerRoleKey": string, "reportRoleKey": string }, ...] },',
+    '  "provisioningPlan": { "teamName": string, "deploymentMode": "continuous_agents", "agents": [StaffingRecommendation, ...] },',
+    '  "roadmap306090": { "day30": { "objectives": [string, ...], "deliverables": [string, ...], "ownerRoleKeys": [string, ...] }, "day60": {...}, "day90": {...} }',
     "}",
     "",
     `Company name: ${companyName}`,

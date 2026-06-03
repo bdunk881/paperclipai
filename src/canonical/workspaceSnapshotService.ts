@@ -412,8 +412,10 @@ async function loadHeartbeatsInMemory(
   return map;
 }
 
-async function loadApprovals(userId: string): Promise<SnapshotApproval[]> {
-  const approvals = (await approvalStore.list()).filter(
+async function loadApprovals(userId: string, workspaceId: string): Promise<SnapshotApproval[]> {
+  // HEL-400: scope to the active workspace so a multi-workspace user doesn't
+  // see approvals assigned to them in a *different* workspace's home snapshot.
+  const approvals = (await approvalStore.list(undefined, undefined, workspaceId)).filter(
     (approval) => approval.assignee === userId,
   );
   return approvals.map((approval) => ({
@@ -475,7 +477,7 @@ export async function buildHomeSnapshot(
   }
 
   const [approvals, runs, heartbeats] = await Promise.all([
-    loadApprovals(userId),
+    loadApprovals(userId, workspaceId),
     loadRuns(workspaceId),
     pool
       ? loadHeartbeatsPostgres(pool, workspaceId, userId)

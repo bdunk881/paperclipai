@@ -62,6 +62,12 @@ describe("approvalStore.create", () => {
     const req = await approvalStore.get(id);
     expect(req?.agentId).toBeUndefined();
   });
+
+  it("round-trips an optional workspaceId (HEL-400)", async () => {
+    const { id } = await approvalStore.create({ ...base, workspaceId: "ws-xyz" });
+    const req = await approvalStore.get(id);
+    expect(req?.workspaceId).toBe("ws-xyz");
+  });
 });
 
 describe("approvalStore.resolve — approve", () => {
@@ -156,6 +162,17 @@ describe("approvalStore.list", () => {
     await approvalStore.resolve(id, "approved");
     await expect(approvalStore.list("pending")).resolves.toHaveLength(1);
     await expect(approvalStore.list("approved")).resolves.toHaveLength(1);
+  });
+
+  it("scopes by workspaceId, keeping legacy NULL-workspace rows visible (HEL-400)", async () => {
+    await approvalStore.create({ ...base, workspaceId: "ws-A" }); // run-1
+    await approvalStore.create({ ...base, runId: "run-2", workspaceId: "ws-B" });
+    await approvalStore.create({ ...base, runId: "run-3" }); // legacy: no workspaceId
+    const scoped = await approvalStore.list(undefined, undefined, "ws-A");
+    const runIds = scoped.map((request) => request.runId).sort();
+    // ws-A row + the legacy NULL-workspace row; the ws-B row is excluded.
+    expect(runIds).toEqual(["run-1", "run-3"]);
+    expect(scoped.some((request) => request.runId === "run-2")).toBe(false);
   });
 });
 

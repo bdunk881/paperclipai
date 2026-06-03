@@ -31,6 +31,13 @@ export interface ApprovalRequest {
    * engine call sites without agent context predate the column.
    */
   agentId?: string;
+  /**
+   * HEL-400: workspace the approval belongs to. Scopes the home snapshot so a
+   * user who belongs to multiple workspaces doesn't see approvals from another
+   * one. Nullable — legacy rows + call sites without workspace context predate
+   * the column and are treated as visible-everywhere by the read filter.
+   */
+  workspaceId?: string;
 }
 
 export type ApprovalDecision = Exclude<ApprovalRequest["status"], "pending">;
@@ -71,6 +78,7 @@ function mapRowToRequest(row: Record<string, unknown>): ApprovalRequest {
     comment: typeof row["comment"] === "string" ? row["comment"] : undefined,
     userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
     agentId: typeof row["agent_id"] === "string" ? row["agent_id"] : undefined,
+    workspaceId: typeof row["workspace_id"] === "string" ? row["workspace_id"] : undefined,
   };
 }
 
@@ -85,9 +93,10 @@ async function persistRequest(request: ApprovalRequest): Promise<void> {
     `
       INSERT INTO approval_requests (
         id, run_id, template_name, step_id, step_name, assignee, message,
-        timeout_minutes, requested_at, status, resolved_at, comment, user_id, agent_id
+        timeout_minutes, requested_at, status, resolved_at, comment, user_id, agent_id,
+        workspace_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT (id) DO UPDATE
       SET status = EXCLUDED.status,
           resolved_at = EXCLUDED.resolved_at,
@@ -111,6 +120,7 @@ async function persistRequest(request: ApprovalRequest): Promise<void> {
       request.comment ?? null,
       request.userId ?? null,
       request.agentId ?? null,
+      request.workspaceId ?? null,
     ]
   );
 }
@@ -128,6 +138,8 @@ export const approvalStore = {
     userId?: string;
     /** DASH-14: optional agent that originated the approval. */
     agentId?: string;
+    /** HEL-400: workspace the approval belongs to (scopes the home snapshot). */
+    workspaceId?: string;
   }): Promise<{ id: string }> {
     const id = randomUUID();
     const request: ApprovalRequest = {
@@ -144,6 +156,7 @@ export const approvalStore = {
       status: "pending",
       ...(params.userId !== undefined ? { userId: params.userId } : {}),
       ...(params.agentId !== undefined ? { agentId: params.agentId } : {}),
+      ...(params.workspaceId !== undefined ? { workspaceId: params.workspaceId } : {}),
     };
 
     const timeoutMs = params.timeoutMinutes * 60 * 1000;
@@ -181,12 +194,21 @@ export const approvalStore = {
     return requestStore.get(id);
   },
 
-  async list(status?: ApprovalRequest["status"], userId?: string): Promise<ApprovalRequest[]> {
+  async list(
+    status?: ApprovalRequest["status"],
+    userId?: string,
+    workspaceId?: string,
+  ): Promise<ApprovalRequest[]> {
     if (!postgresPersistenceAvailable()) {
       const all = Array.from(requestStore.values());
       const filtered = all
         .filter((request) => (status ? request.status === status : true))
-        .filter((request) => (userId ? request.userId === userId : true));
+        .filter((request) => (userId ? request.userId === userId : true))
+        // HEL-400: scope to workspace. NULL workspace_id (legacy rows) stays
+        // visible so in-flight approvals aren't hidden mid-deploy.
+        .filter((request) =>
+          workspaceId ? request.workspaceId === workspaceId || !request.workspaceId : true,
+        );
       return filtered.sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime());
     }
 
@@ -197,9 +219,10 @@ export const approvalStore = {
         FROM approval_requests
         WHERE ($1::text IS NULL OR status = $1)
           AND ($2::text IS NULL OR user_id = $2)
+          AND ($3::text IS NULL OR workspace_id = $3 OR workspace_id IS NULL)
         ORDER BY requested_at DESC
       `,
-      [status ?? null, userId ?? null]
+      [status ?? null, userId ?? null, workspaceId ?? null]
     );
     return result.rows.map(mapRowToRequest);
   },

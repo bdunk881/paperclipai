@@ -853,6 +853,7 @@ CREATE TABLE public.approval_requests (
     id uuid NOT NULL,
     run_id uuid NOT NULL,
     user_id text,
+    workspace_id text,
     template_name text NOT NULL,
     step_id text NOT NULL,
     step_name text NOT NULL,

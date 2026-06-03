@@ -1,15 +1,30 @@
+const queryPostgresMock = jest.fn();
+jest.mock("../db/postgres", () => ({
+  isPostgresConfigured: jest.fn(() => false),
+  queryPostgres: (...args: unknown[]) => queryPostgresMock(...args),
+}));
+
 import {
   auditCrmApiCall,
   categorizeIncludedFields,
   getAuditLog,
+  getAuditLogAsync,
   clearAuditLog,
   CrmAuditEntry,
 } from "./crmAuditLog";
+import { isPostgresConfigured } from "../db/postgres";
+
+const mockIsPgConfigured = jest.mocked(isPostgresConfigured);
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
 
 describe("crmAuditLog", () => {
   beforeEach(() => {
     clearAuditLog();
     jest.restoreAllMocks();
+    mockIsPgConfigured.mockReturnValue(false);
+    queryPostgresMock.mockReset();
+    queryPostgresMock.mockResolvedValue({ rows: [] });
   });
 
   describe("categorizeIncludedFields", () => {
@@ -235,6 +250,101 @@ describe("crmAuditLog", () => {
       expect(getAuditLog()).toHaveLength(1);
       clearAuditLog();
       expect(getAuditLog()).toHaveLength(0);
+    });
+  });
+
+  describe("Postgres persistence (B3/HEL-460)", () => {
+    it("persists each entry to crm_data_access_log when Postgres is configured", async () => {
+      mockIsPgConfigured.mockReturnValue(true);
+      jest.spyOn(console, "info").mockImplementation(() => {});
+
+      auditCrmApiCall({
+        userId: "user-x",
+        runId: "run-x",
+        stepId: "step-x",
+        stepKind: "llm",
+        apiEndpoint: "anthropic/claude",
+        originalFieldCount: 4,
+        sanitizedCtx: { companyName: "Acme", dealValue: 1 },
+        blockedCategories: ["contact_pii"],
+        strippedCount: 1,
+      });
+
+      await flush(); // fire-and-forget persist settles
+
+      expect(queryPostgresMock).toHaveBeenCalledTimes(1);
+      const [sql, params] = queryPostgresMock.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain("INSERT INTO crm_data_access_log");
+      expect(params[0]).toBe("user-x"); // user_id
+      expect(params[3]).toBe("llm"); // step_kind
+      // categories are stored, never raw values
+      expect(JSON.stringify(params)).not.toContain("Acme");
+    });
+
+    it("does not touch Postgres in dev/test (no DATABASE_URL)", async () => {
+      jest.spyOn(console, "info").mockImplementation(() => {});
+      auditCrmApiCall({
+        userId: "u",
+        runId: "r",
+        stepId: "s",
+        stepKind: "llm",
+        apiEndpoint: "x",
+        originalFieldCount: 0,
+        sanitizedCtx: {},
+        blockedCategories: [],
+        strippedCount: 0,
+      });
+      await flush();
+      expect(queryPostgresMock).not.toHaveBeenCalled();
+    });
+
+    it("getAuditLogAsync reads durable rows from Postgres", async () => {
+      mockIsPgConfigured.mockReturnValue(true);
+      queryPostgresMock.mockResolvedValueOnce({
+        rows: [
+          {
+            user_id: "u1",
+            run_id: "r1",
+            step_id: "s1",
+            step_kind: "agent",
+            api_endpoint: "openai/gpt",
+            included_field_categories: ["account_info"],
+            blocked_field_categories: ["contact_pii"],
+            stripped_field_count: 2,
+            total_field_count: 5,
+            recorded_at: new Date("2026-06-01T00:00:00Z"),
+          },
+        ],
+      });
+
+      const rows = await getAuditLogAsync({ userId: "u1" });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        userId: "u1",
+        stepKind: "agent",
+        includedFieldCategories: ["account_info"],
+        blockedFieldCategories: ["contact_pii"],
+        strippedFieldCount: 2,
+        totalFieldCount: 5,
+      });
+    });
+
+    it("bounds the in-memory ring so it can't grow unbounded", () => {
+      jest.spyOn(console, "info").mockImplementation(() => {});
+      for (let i = 0; i < 1100; i++) {
+        auditCrmApiCall({
+          userId: "u",
+          runId: `r${i}`,
+          stepId: "s",
+          stepKind: "llm",
+          apiEndpoint: "x",
+          originalFieldCount: 0,
+          sanitizedCtx: {},
+          blockedCategories: [],
+          strippedCount: 0,
+        });
+      }
+      expect(getAuditLog().length).toBeLessThanOrEqual(1000);
     });
   });
 });

@@ -8,6 +8,7 @@
  * HEL-24's existing endpoint.
  */
 
+import { errorFromApiPayload, type ApiErrorPayload } from "../lib/userFacingError";
 import { getApiBasePath } from "./baseUrl";
 import { trackedFetch } from "./trackedFetch";
 import type { TeamAssemblyRoleLibraryEntry } from "./client";

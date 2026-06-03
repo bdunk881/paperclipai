@@ -520,7 +520,7 @@ export default function HiringPlanReview() {
       const generated = await generateHiringPlan(missionId, token, { llmConfigId });
       navigate(`/hire/plan/${missionId}/${generated.hiringPlanId}`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to regenerate plan";
+      const msg = formatUserFacingError(err, "Failed to regenerate plan");
       setError(msg);
       toast.error(msg);
     } finally {

@@ -187,6 +187,16 @@ describe("workspace resolver route mounting", () => {
     expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("gates Google Workspace connector routes behind the workspace resolver (HEL-453)", async () => {
+    const res = await request(app)
+      .get("/api/connectors/google-workspace/health")
+      .set("Authorization", "Bearer test-user-id");
+
+    expect(res.status).toBe(418);
+    expect(res.body.error).toBe("workspace resolver invoked");
+    expect(workspaceResolverSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("gates hitl routes behind the workspace resolver (HEL-68)", async () => {
     const res = await request(app)
       .get("/api/hitl/companies/some-company/state")

@@ -860,7 +860,13 @@ app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
-app.use("/api/connectors/google-workspace", googleWorkspaceConnectorRoutes);
+app.use(
+  "/api/connectors/google-workspace",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "developer"),
+  googleWorkspaceConnectorRoutes,
+);
 // user-scoped: workspace management creates/lists workspaces and cannot itself be workspace-gated
 app.use("/api/workspaces", requireAuth, workspaceRoutes);
 // DASH-41: mount profileRoutes (GET/PATCH/PUT /api/user/profile). Previously

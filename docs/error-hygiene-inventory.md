@@ -19,15 +19,15 @@ Tracks places where **raw upstream or internal error strings** may reach end use
 | Surface | Files | Pattern | Sub-issue |
 |--------|-------|---------|-----------|
 | Hire / plan generation | `Hire.tsx`, `HiringPlanReview.tsx`, `missionsApi.ts`, `missionRoutes.ts` | Was `err.message` with provider + parser detail | **HEL-437** (this ticket) |
-| Hiring plan confirm | `HiringPlanReview.tsx`, `missionsApi.parseJsonOrError`, `hiringPlanRoutes.ts` | Concatenates `detail` with Postgres `pg_code`, constraints | HEL-439 |
-| Workflow builder + copilot | `WorkflowBuilder.tsx`, `app.ts` `/api/workflows/generate` | `LLM call failed: …` | HEL-440 |
-| LLM providers / credentials | `LLMProviders.tsx`, `Settings.tsx`, `llmConfigRoutes.ts` | Raw provider errors | HEL-441 |
-| Connectors + health | `Connections.tsx`, `ConnectorHealth.tsx`, `src/integrations/*/routes.ts` | `error.message` from connector clients | HEL-442 |
-| Billing / credits | `Billing.tsx`, `CreditsPanel.tsx`, `BuyCreditPackModal.tsx` | Stripe / hybrid-call messages | HEL-443 |
-| Org structure / agents | `OrgStructure.tsx`, `AgentDetail.tsx`, `BudgetDashboard.tsx` | React Query `error.message` | HEL-444 |
-| Tickets / approvals / activity | `Tickets.tsx`, `Approvals.tsx`, `AgentActivity.tsx` | Query error passthrough | HEL-445 |
-| Auth (dashboard) | `Login.tsx` (passkey fallback), `AuthCallback.tsx`, `MfaEnforcementGate.tsx` | Partially mapped via `mapSupabaseAuthError`; gaps remain | HEL-446 |
-| Route error boundary | `RouteErrorBoundary.tsx` | Shows raw `error.message` in mono panel | HEL-447 |
+| Hiring plan confirm | `HiringPlanReview.tsx`, `missionsApi.parseJsonOrError`, `hiringPlanRoutes.ts` | Concatenates `detail` with Postgres `pg_code`, constraints | [HEL-445](https://linear.app/helloautoflow/issue/HEL-445) |
+| Workflow builder + copilot | `WorkflowBuilder.tsx`, `app.ts` `/api/workflows/generate` | `LLM call failed: …` | [HEL-446](https://linear.app/helloautoflow/issue/HEL-446) |
+| LLM providers / credentials | `LLMProviders.tsx`, `Settings.tsx`, `llmConfigRoutes.ts` | Raw provider errors | [HEL-448](https://linear.app/helloautoflow/issue/HEL-448) |
+| Connectors + health | `Connections.tsx`, `ConnectorHealth.tsx`, `src/integrations/*/routes.ts` | `error.message` from connector clients | [HEL-447](https://linear.app/helloautoflow/issue/HEL-447) |
+| Billing / credits | `Billing.tsx`, `CreditsPanel.tsx`, `BuyCreditPackModal.tsx` | Stripe / hybrid-call messages | [HEL-444](https://linear.app/helloautoflow/issue/HEL-444) |
+| Org structure / agents | `OrgStructure.tsx`, `AgentDetail.tsx`, `BudgetDashboard.tsx` | React Query `error.message` | [HEL-452](https://linear.app/helloautoflow/issue/HEL-452) |
+| Tickets / approvals / activity | `Tickets.tsx`, `Approvals.tsx`, `AgentActivity.tsx` | Query error passthrough | [HEL-450](https://linear.app/helloautoflow/issue/HEL-450) |
+| Auth (dashboard) | `Login.tsx` (passkey fallback), `AuthCallback.tsx`, `MfaEnforcementGate.tsx` | Partially mapped via `mapSupabaseAuthError`; gaps remain | [HEL-449](https://linear.app/helloautoflow/issue/HEL-449) |
+| Route error boundary | `RouteErrorBoundary.tsx` | Shows raw `error.message` in mono panel | [HEL-451](https://linear.app/helloautoflow/issue/HEL-451) |
 | Pro / debug tools | `StepDebugger.tsx`, `ToolCallSandbox.tsx` | Intentionally technical — gate behind admin/debug flag later | backlog |
 
 ## Dashboard — medium priority
@@ -76,12 +76,12 @@ Tracks places where **raw upstream or internal error strings** may reach end use
 
 Filed under parent **HEL-437** (Functionality Audit project):
 
-- **HEL-439** — Hiring plan confirm: stop surfacing Postgres `detail` to customers
-- **HEL-440** — Workflow generate/copilot error hygiene
-- **HEL-441** — LLM providers / credentials settings
-- **HEL-442** — Connector health + integration routes
-- **HEL-443** — Billing / credits surfaces
-- **HEL-444** — Org structure / agent / budget queries
-- **HEL-445** — Tickets / approvals / activity feeds
-- **HEL-446** — Auth error pass-through gaps
-- **HEL-447** — Route error boundary presentation
+- [HEL-445](https://linear.app/helloautoflow/issue/HEL-445) — Hiring plan confirm: Postgres `detail`
+- [HEL-446](https://linear.app/helloautoflow/issue/HEL-446) — Workflow generate/copilot
+- [HEL-448](https://linear.app/helloautoflow/issue/HEL-448) — LLM providers / credentials
+- [HEL-447](https://linear.app/helloautoflow/issue/HEL-447) — Connector health + integration routes
+- [HEL-444](https://linear.app/helloautoflow/issue/HEL-444) — Billing / credits surfaces
+- [HEL-452](https://linear.app/helloautoflow/issue/HEL-452) — Org structure / agent / budget queries
+- [HEL-450](https://linear.app/helloautoflow/issue/HEL-450) — Tickets / approvals / activity feeds
+- [HEL-449](https://linear.app/helloautoflow/issue/HEL-449) — Auth error pass-through gaps
+- [HEL-451](https://linear.app/helloautoflow/issue/HEL-451) — Route error boundary presentation

@@ -61,6 +61,14 @@ export type ExtractStructuredOutputOptions = {
  *      `[` to the last `]` — whichever balanced pair starts earliest.
  *      Last-ditch when the model forgets fences entirely but wraps the
  *      JSON in prose.
+ *   4. Each *top-level* balanced `{…}` / `[…]` value in document order
+ *      (string/escape-aware), as its own candidate. Recovers the shape
+ *      where a complete JSON value is followed by trailing content — a
+ *      closing note, or a second object — which defeats strategy 3's
+ *      greedy first-to-last slice ("non-whitespace after JSON"). Lets a
+ *      schema caller skip a preamble/trailing object and land on the
+ *      value that validates. (Reasoning models like gemini-2.5-pro hit
+ *      this routinely.)
  *
  * Returns the parsed value (or schema-validated value if a schema was
  * passed) or throws a clear "Could not extract JSON from model response
@@ -143,5 +151,78 @@ function buildAttempts(rawText: string): string[] {
     }
   }
 
+  // 4. Smart object scanner — each top-level balanced value as its own
+  //    candidate. Fallback for "complete JSON value + trailing content"
+  //    (a closing note or a second object), which makes strategy 3's
+  //    greedy first-`{`-to-last-`}` slice unparseable. The schema-aware
+  //    loop then lands on the candidate that validates. See the captive
+  //    regression in structuredOutput.test.ts.
+  for (const candidate of scanTopLevelBalancedValues(rawText)) {
+    attempts.push(candidate);
+  }
+
   return attempts;
+}
+
+/**
+ * Extracts every *top-level* balanced JSON value (`{…}` or `[…]`) from
+ * `rawText`, in document order. "Top-level" means not nested inside an
+ * already-captured value: scanning resumes after each value's closing
+ * delimiter. String literals — and their backslash escapes — are tracked
+ * so braces/brackets inside string values never affect nesting depth.
+ *
+ * Capped at MAX_BALANCED_CANDIDATES: a model response carries at most a
+ * couple of top-level values (the payload + an optional trailing note),
+ * and the cap guards against pathological input.
+ */
+function scanTopLevelBalancedValues(rawText: string): string[] {
+  const MAX_BALANCED_CANDIDATES = 8;
+  const closerFor: Record<string, string> = { "{": "}", "[": "]" };
+  const out: string[] = [];
+
+  let i = 0;
+  while (i < rawText.length && out.length < MAX_BALANCED_CANDIDATES) {
+    const open = rawText[i];
+    const close = closerFor[open];
+    if (!close) {
+      i += 1;
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let j = i; j < rawText.length; j += 1) {
+      const ch = rawText[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+      } else if (ch === open) {
+        depth += 1;
+      } else if (ch === close) {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+
+    if (end === -1) {
+      // No matching close from here — the value is truncated. Stop; the
+      // earlier best-effort slices already covered the partial content.
+      break;
+    }
+
+    out.push(rawText.slice(i, end + 1));
+    i = end + 1;
+  }
+
+  return out;
 }

@@ -97,6 +97,12 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
     return;
   }
   if (routine.prompt && routine.agent_id) {
+    // HEL-507: scheduled cron fires are unattended, so they run in "auto"
+    // (no HITL plan gate). permissionMode is threaded through both the queued
+    // dispatch and the inline fallback so the value is preserved end-to-end —
+    // a non-cron enqueuer's "plan" would otherwise be silently dropped on the
+    // fallback path and skip the approval gate.
+    const schedulePermissionMode = "auto" as const;
     const agentPromptQueue = getAgentPromptQueue();
     if (!agentPromptQueue) {
       console.warn(
@@ -124,6 +130,7 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
         llmTier: routine.llm_tier ?? "standard",
         sourceRoutineId: routine.id,
         triggerKind: "schedule",
+        permissionMode: schedulePermissionMode,
       });
       return;
     }
@@ -150,6 +157,7 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
           llmTier: routine.llm_tier ?? "standard",
           sourceRoutineId: routine.id,
           triggerKind: "schedule",
+          permissionMode: schedulePermissionMode,
           idempotencyKey: `routine-cron:${routine.id}:${firedAtMs}`,
         },
         { jobId },
@@ -259,6 +267,7 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       sourceTicketId: job.data.sourceTicketId,
       sourceRoutineId: job.data.sourceRoutineId,
       triggerKind: job.data.triggerKind,
+      permissionMode: job.data.permissionMode,
     });
   },
   {

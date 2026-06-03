@@ -28,6 +28,14 @@ export interface AgentPromptJobPayload {
   sourceRoutineId?: string;
   triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
   /**
+   * HEL-507: permission mode forwarded to `executeAgentPrompt`. "plan"
+   * makes the agent stop for HITL approval. Must travel on the payload so
+   * a plan-mode job keeps its approval gate across the queue round-trip
+   * (and the worker's inline fallback). Omitted ⇒ executeAgentPrompt's
+   * default ("auto").
+   */
+  permissionMode?: "auto" | "plan" | "review";
+  /**
    * Logical idempotency key stored in job payload (may contain `:`).
    * BullMQ dedupe uses a separate colon-free `jobId` from bullMqJobId.ts.
    */

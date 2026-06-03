@@ -24,44 +24,54 @@ Promotion `dev → staging → master` is a separate, human-gated step (see AGEN
 
 ---
 
-## Claude Code workflows — when to delegate (mandatory)
+## Dynamic workflows — when to use them (mandatory)
 
-Claude Code ships sub-agent and skill **workflows** that keep the main session's
-context clean and the work auditable. Use them — don't hand-roll in the main
-thread what a workflow already does. This is not optional for the two cases below.
+[Dynamic workflows](https://code.claude.com/docs/en/workflows) are a Claude Code
+feature (research preview — needs v2.1.154+; enable via the **Dynamic workflows**
+row in `/config`). A workflow is a **script Claude writes that orchestrates many
+subagents** — dozens to hundreds — running in the background while your session
+stays responsive. The plan lives in the *script*, not the chat, so intermediate
+results stay in script variables and only the **final result** lands in your
+context. That's the point: a workflow keeps the main session clean on work too big
+for one conversation to coordinate, and codifies the orchestration so it's
+rerunnable.
 
-**Always use a workflow for:**
+This is distinct from a single **subagent** or a **skill**, where Claude holds the
+plan turn by turn and every result lands in context. Use a *workflow* — not an
+ad-hoc subagent — for the two cases below.
 
-- **Code review.** Run the `/code-review` skill on every diff before you call a
-  change done (`/review` when reviewing a specific PR, `/security-review` for any
-  diff touching auth/secrets/tenancy/audit). Do **not** eyeball-review a large
-  change inline — the review workflow is the artifact reviewers and other agents
-  read. Pass `--comment` to post findings inline on the PR when asked.
-- **Large work sessions / codebase sweeps.** When answering means grepping or
-  reading across many files, directories, or naming conventions, delegate the
-  fan-out to the read-only **Explore** sub-agent (or a **general-purpose** agent
-  for multi-step searches). Keep the *conclusion* in the main thread, not the file
-  dumps. A broad "where is X used / how is Y wired across the repo" sweep belongs
-  in a sub-agent, not 40 inline greps that bury the session.
+**Always run as a dynamic workflow:**
+
+- **Code review.** Run review as a workflow so it applies a repeatable, adversarial
+  pattern — independent agents cross-checking each other's findings — instead of a
+  single eyeball pass, and **save it** so the same review runs on every branch.
+  Save to `.claude/workflows/` (shared in the repo) so every agent and human reviews
+  the same way; invoke a saved one as `/<name>`, or kick a one-off with
+  `ultracode: review this diff for correctness + tenancy bugs`.
+- **Large work sessions / codebase sweeps.** Whole-repo greps, audits, and
+  migrations — "audit every endpoint under `src/routes/` for missing auth checks," a
+  500-file rename, "where is X wired across the whole codebase." Trigger with the
+  `ultracode` keyword (or just ask "use a workflow"); the script fans the work across
+  many agents and returns the *conclusion*, not 40 inline greps that bury the session.
 
 **Also reach for a workflow for:**
 
-- **Planning a multi-step change** — the **Plan** sub-agent to design the
-  implementation strategy before touching code (then post the approved plan to the
-  Linear ticket, per "Approved plans go in the ticket" below).
-- **Independent parallel work** — spawn multiple agents in a single message when
-  the units don't depend on each other (e.g. sweep the backend and the dashboard
-  at the same time).
-- **Deep research** — the `/deep-research` skill for multi-source, fact-checked
-  questions (library choices, external API behavior, post-cutoff facts).
-- **Verifying a change really works** — `/verify` or `/run` to drive the app and
-  observe real behavior, instead of asserting "it works" from the diff alone.
-- **Quality cleanup** — `/simplify` for reuse/altitude/efficiency cleanups on a
-  diff (it doesn't hunt bugs — pair it with `/code-review`).
+- **Cross-checked research** — the bundled `/deep-research <question>` workflow: fans
+  web searches across angles, cross-checks sources, returns a cited report (library
+  choices, external API behavior, post-cutoff facts).
+- **A hard plan worth several angles** — have a workflow draft the plan from
+  independent angles and weigh them before you commit (then post the approved plan to
+  the Linear ticket, per "Approved plans go in the ticket" below).
+- **Anything needing more agents than one conversation can coordinate**, or that you
+  want codified as a rerunnable script.
 
-Rule of thumb: if a task would flood the main context with search output, or it's
-a self-contained review / research / verify pass, it's a workflow. Run the search
-**once** — inside the agent — and don't also repeat it inline.
+How to drive them: `ultracode: <task>` (or "use a workflow") starts one for a single
+task; `/effort ultracode` lets Claude pick a workflow for every substantive task in
+the session; `/workflows` lists runs to watch, pause, or **save** (`s`) as a reusable
+command. Workflows are gated by an approval prompt before they run — review the
+planned phases, then approve. Reserve plain subagents and skills (`/verify`, `/run`,
+`/simplify`, the **Plan** subagent) for smaller, one-shot delegations that fit a
+single turn.
 
 ---
 

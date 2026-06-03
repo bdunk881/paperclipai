@@ -47,7 +47,7 @@ export async function resolveHiringPlanLlm(
       };
     }
 
-    const resolved = llmConfigStore.getDecrypted(llmConfigId, userId);
+    const resolved = await llmConfigStore.getDecryptedAsync(llmConfigId, userId);
     if (!resolved) return null;
     return {
       resolved,

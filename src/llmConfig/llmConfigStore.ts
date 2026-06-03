@@ -319,6 +319,29 @@ export const llmConfigStore = {
     };
   },
 
+  /**
+   * HEL-439: DB-backed counterpart to `getDecrypted`. The sync getter reads
+   * only the in-memory bucket, which is populated by writes in the *current*
+   * process — so an explicit-id lookup misses on a cold process (after a
+   * deploy/restart) or on an instance that didn't handle the write, and the
+   * caller 422s even though the record is in Postgres. `store.getDecryptedAsync`
+   * keeps the in-memory fast path but falls back to an RLS-scoped DB read.
+   * Use this on the mission/plan + workflow generation hot paths, where the
+   * id arrives from the client.
+   */
+  async getDecryptedAsync(id: string, userId: string): Promise<DecryptedLLMConfig | undefined> {
+    const decrypted = await store.getDecryptedAsync(id, userId);
+    if (!decrypted || decrypted.record.userId !== userId || decrypted.record.revokedAt) {
+      return undefined;
+    }
+
+    return {
+      config: toPublic(decrypted.record),
+      credentials: decrypted.secrets,
+      apiKey: decrypted.secrets.apiKey,
+    };
+  },
+
   getDecryptedDefault(userId: string): DecryptedLLMConfig | undefined {
     const record = ensureDefaultRecord(userId);
     if (!record) {

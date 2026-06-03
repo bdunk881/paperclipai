@@ -2083,7 +2083,7 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
   const userId = req.auth?.sub;
   let openaiApiKey: string | undefined;
   if (userId) {
-    const defaultConfig = await llmConfigStore.getDecryptedDefault(userId);
+    const defaultConfig = await llmConfigStore.getDecryptedDefaultAsync(userId);
     if (defaultConfig?.config.provider === "openai") {
       openaiApiKey = defaultConfig.apiKey;
     }
@@ -2166,8 +2166,8 @@ app.post("/api/workflows/generate", requireAuth, workspaceResolver, requireRole(
 
   const resolved =
     typeof llmConfigId === "string" && llmConfigId
-      ? await llmConfigStore.getDecrypted(llmConfigId, userId)
-      : await llmConfigStore.getDecryptedDefault(userId);
+      ? await llmConfigStore.getDecryptedAsync(llmConfigId, userId)
+      : await llmConfigStore.getDecryptedDefaultAsync(userId);
 
   if (!resolved) {
     res.status(422).json({
@@ -2260,7 +2260,7 @@ app.post("/api/goals/team-assembly", requireAuth, workspaceResolver, requireRole
     return;
   }
 
-  const resolved = await llmConfigStore.getDecryptedDefault(userId);
+  const resolved = await llmConfigStore.getDecryptedDefaultAsync(userId);
   if (!resolved) {
     res.status(422).json({
       error: "No LLM provider configured. Go to Settings > LLM Providers to connect one.",

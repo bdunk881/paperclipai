@@ -24,6 +24,7 @@ import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
 import AgentDetail from "./pages/AgentDetail";
+import AgentOAuthCallback from "./pages/AgentOAuthCallback";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
 import Assignments from "./pages/Assignments";
@@ -227,6 +228,12 @@ const routes: RouteObject[] = [
   { path: "/auth/callback", element: <AuthCallback />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/confirm", element: <AuthConfirm />, errorElement: <RouteErrorBoundary /> },
   { path: "/auth/social-callback", element: <SocialAuthCallback />, errorElement: <RouteErrorBoundary /> },
+  // HEL-497: agent-catalog OAuth popup redirect target. Backend redirects to
+  // ${DASHBOARD_APP_URL}/agents/oauth/callback (agent-catalog/routes.ts). Kept
+  // standalone (no PrivateRoute/Layout/MFA gate) so the popup renders, posts
+  // the result to window.opener, and closes — gating it could redirect to
+  // /login or /onboarding/mfa and break the postMessage handshake.
+  { path: "/agents/oauth/callback", element: <AgentOAuthCallback />, errorElement: <RouteErrorBoundary /> },
   {
     path: "/login",
     element: (

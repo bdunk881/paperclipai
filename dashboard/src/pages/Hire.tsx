@@ -794,7 +794,24 @@ export default function Hire() {
                           </button>
                         </>
                       )
-                    ) : null}
+                    ) : (
+                      // HEL-438: a failed/draft mission has no plan yet — give it
+                      // a working Retry that re-runs generation on THIS mission
+                      // (no re-typing the brief, no duplicate draft). The failure
+                      // toast already promises "retry from past missions below".
+                      <button
+                        type="button"
+                        className="btn sm primary"
+                        disabled={
+                          regeneratingMissionId === mission.id ||
+                          !selectedLlmConfigId ||
+                          isBusy
+                        }
+                        onClick={() => void handleRegenerateMission(mission)}
+                      >
+                        {regeneratingMissionId === mission.id ? "…" : "Retry"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="btn sm danger"

@@ -292,6 +292,41 @@ describe("Hire page (HEL-23, v2)", () => {
     expect(screen.getByText(/Acme Robotics/)).toBeInTheDocument();
   });
 
+  it("HEL-438: a draft mission with no plan shows a Retry that regenerates the SAME mission (no duplicate)", async () => {
+    listMissionsMock.mockResolvedValueOnce([
+      {
+        id: "m-failed",
+        statement: "Run inbound support",
+        status: "draft",
+        metadata: {},
+        createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+        companyId: "company-1",
+        companyName: "Acme",
+        latestHiringPlanId: null,
+      },
+    ]);
+    generateHiringPlanMock.mockResolvedValue({
+      hiringPlanId: "plan-retry",
+      missionId: "m-failed",
+      schemaVersion: 1,
+      plan: {},
+    });
+
+    renderHire();
+
+    // The fix: a planless (failed) draft now exposes a working Retry, not just Discard.
+    const retry = await screen.findByRole("button", { name: /^Retry$/i });
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(generateHiringPlanMock).toHaveBeenCalledTimes(1));
+    // Re-runs generation on the EXISTING mission — no createMission, no new draft.
+    expect(generateHiringPlanMock).toHaveBeenCalledWith("m-failed", "mock-token", {
+      llmConfigId: "cfg-1",
+    });
+    expect(createMissionMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(/plan review stub/i)).toBeInTheDocument();
+  });
+
   it("uses af2 visual language (HEL-23 + HEL-99)", async () => {
     const { container } = renderHire();
     await screen.findByRole("heading", { name: /Hire from a mission/i });

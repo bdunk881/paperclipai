@@ -194,7 +194,18 @@ function TicketDetailRoute() {
 
 const routes: RouteObject[] = [
   { path: "/waitlist", element: <LandingPage />, errorElement: <RouteErrorBoundary /> },
-  { path: "/checkout/success", element: <CheckoutSuccess />, errorElement: <RouteErrorBoundary /> },
+  {
+    // HEL-397: guard the post-checkout page. It was public, so any visitor
+    // saw "Your subscription is active" regardless of whether they paid.
+    // The legitimate post-Stripe redirect lands here with a live session.
+    path: "/checkout/success",
+    element: (
+      <PrivateRoute>
+        <CheckoutSuccess />
+      </PrivateRoute>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   {
     path: "/billing/credits/success",
     element: (

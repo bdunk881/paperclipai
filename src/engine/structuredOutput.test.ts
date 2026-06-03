@@ -53,6 +53,20 @@ describe("extractStructuredOutput", () => {
       expect(result.plan).toBe("x");
     });
 
+    it("extracts the first complete object when the model appends a trailing note (the gemini-2.5-pro shape)", () => {
+      // The greedy first-`{`-to-last-`}` slice swallows the trailing
+      // `{scale}` and fails to parse; the top-level balanced scan isolates
+      // the leading object.
+      const text = '{"plan":"x"}\n\nNote: tuned for {scale}. Let me know!';
+      const result = extractStructuredOutput<{ plan: string }>(text);
+      expect(result.plan).toBe("x");
+    });
+
+    it("returns the first of two adjacent top-level objects", () => {
+      const result = extractStructuredOutput<{ a: number }>('{"a":1}{"b":2}');
+      expect(result.a).toBe(1);
+    });
+
     it("prefers an object root when both braces and brackets appear in mixed order", () => {
       // Preamble has [brackets] then the real JSON object.
       const text =
@@ -95,22 +109,31 @@ describe("extractStructuredOutput", () => {
       expect((result as { count: number }).count).toBe(7);
     });
 
-    it("falls back to the next candidate when an earlier candidate parses but fails schema", () => {
-      // Whole-string parse fails (it's not valid JSON), the fenced block
-      // is valid JSON but wrong shape, the prose-wrapped JSON is the
-      // correct shape — the extractor should land on the last candidate.
+    it("recovers the schema-valid object when an earlier top-level object fails schema (smart object scanner)", () => {
+      // Two top-level objects in one body: a rejected draft, then the real
+      // answer. Strategies 1–3 can't isolate either (the whole string
+      // isn't JSON; first-`{`-to-last-`}` spans both). The top-level
+      // balanced scan surfaces each object as its own candidate, and the
+      // schema-aware loop skips the draft (ok must be true) and lands on
+      // the final object. This was previously a documented limitation —
+      // the captive regression the "smart object scanner" change resolves.
       const text =
         'Draft: {"ok":false} ← rejected.\nFinal: {"ok":true,"count":42}.';
-      // The first `{` to last `}` slice captures the whole stretch and
-      // won't be valid JSON; only the bracket slice of the second {…}
-      // can satisfy the schema. We assert the throw path is descriptive
-      // — this is a stretch the schema-aware fallback can't always
-      // recover from when two objects appear in one body, and that's OK.
-      // Documenting the limit here so a future "smart object scanner"
-      // change has a captive regression.
-      expect(() =>
-        extractStructuredOutput(text, { schema: planSchema, label: "draft-vs-final" }),
-      ).toThrow(/Could not extract JSON from model response \(draft-vs-final\)/);
+      const result = extractStructuredOutput(text, {
+        schema: planSchema,
+        label: "draft-vs-final",
+      });
+      expect(result).toEqual({ ok: true, count: 42 });
+    });
+
+    it("recovers a schema-valid object when the model appends a brace-bearing trailing note", () => {
+      // The exact live /hire failure shape (HEL-436): one valid object,
+      // then a closing note that itself contains braces — which made the
+      // greedy first-`{`-to-last-`}` slice unparseable.
+      const text =
+        '{"ok":true,"count":3}\n\nNote: adjust the {budget} as needed.';
+      const result = extractStructuredOutput(text, { schema: planSchema });
+      expect(result).toEqual({ ok: true, count: 3 });
     });
 
     it("throws a zod-derived error when the only candidate fails schema validation", () => {

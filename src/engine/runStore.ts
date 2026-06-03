@@ -385,9 +385,17 @@ export const runStore = {
     return cloneRun(cloned);
   },
 
-  async get(id: string): Promise<WorkflowRun | undefined> {
+  async get(id: string, workspaceId?: string): Promise<WorkflowRun | undefined> {
     const local = memoryStore.get(id);
     if (local) {
+      // HEL-484: when a workspace scope is supplied (the public GET
+      // /api/runs/:id path), never return a run that belongs to a *different*
+      // workspace. Untagged runs (no resolvable workspace — legacy / inline
+      // fallback creates) stay visible so the change is non-breaking.
+      const localWs = resolveWorkspaceId(local);
+      if (workspaceId && localWs && localWs !== workspaceId) {
+        return undefined;
+      }
       return cloneRun(local);
     }
     if (!postgresPersistenceAvailable()) {
@@ -422,8 +430,9 @@ export const runStore = {
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
           WHERE r.id = $1::uuid
+            AND ($2::text IS NULL OR r.workspace_id = $2 OR r.workspace_id IS NULL)
         `,
-        [id]
+        [id, workspaceId ?? null]
       );
 
       const row = result.rows[0];
@@ -645,13 +654,26 @@ export const runStore = {
     }
   },
 
-  async list(templateId?: string, userId?: string, status?: string): Promise<WorkflowRun[]> {
+  async list(
+    templateId?: string,
+    userId?: string,
+    status?: string,
+    workspaceId?: string,
+  ): Promise<WorkflowRun[]> {
     const localRuns = () => {
       const runs = Array.from(memoryStore.values());
       return runs
         .filter((run) => (templateId ? run.templateId === templateId : true))
         .filter((run) => (userId ? run.userId === userId : true))
         .filter((run) => (status ? run.status === status : true))
+        // HEL-484: scope to the active workspace (tenant isolation). Untagged
+        // runs stay visible so the change is non-breaking; a run tagged to a
+        // different workspace is filtered out.
+        .filter((run) => {
+          if (!workspaceId) return true;
+          const ws = resolveWorkspaceId(run);
+          return !ws || ws === workspaceId;
+        })
         .map((run) => cloneRun(run));
     };
 
@@ -689,9 +711,10 @@ export const runStore = {
           WHERE ($1::text IS NULL OR w.external_template_id = $1)
             AND ($2::text IS NULL OR r.user_id = $2)
             AND ($3::text IS NULL OR r.status = $3)
+            AND ($4::text IS NULL OR r.workspace_id = $4 OR r.workspace_id IS NULL)
           ORDER BY r.started_at DESC
         `,
-        [templateId ?? null, userId ?? null, status ?? null]
+        [templateId ?? null, userId ?? null, status ?? null, workspaceId ?? null]
       );
 
       const runs = result.rows.map((row) => mapRowToRun(row));

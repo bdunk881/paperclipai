@@ -997,9 +997,24 @@ export class MfaService {
     if (!this.totp) {
       throw new SecurityServiceError("TOTP not configured", 503, "totp_unavailable");
     }
-    await this.totp.unenrollTotp(accessToken, factorId);
+    // HEL-399: resolve the real Supabase factor UUID before unenrolling. The
+    // admin UI historically passed the literal "totp" as factorId; Supabase
+    // 404s on that (swallowed by the adapter), so the factor survived while
+    // local policy flipped hasTotp=false (split-brain). Mirror verifyTotpStepUp:
+    // list the user's factors and delete the real one by its UUID. Prefer an
+    // exact id match (real-UUID callers) and fall back to the user's TOTP factor.
+    const factors = await this.totp.listFactors(accessToken);
+    const target =
+      factors.find((f) => f.type === "totp" && f.id === factorId) ??
+      factors.find((f) => f.type === "totp");
+    if (target) {
+      await this.totp.unenrollTotp(accessToken, target.id);
+    }
+    // Reconcile local policy to "no TOTP" whether or not a factor existed
+    // upstream — if none exists, Supabase already has none, so this keeps the
+    // mirror in sync rather than re-introducing the split-brain in reverse.
     await this.repository.upsertPolicy(ctx.userId, { hasTotp: false });
-    await recordAudit(ctx, "mfa.disable.totp", { factorId });
+    await recordAudit(ctx, "mfa.disable.totp", { factorId: target?.id ?? null });
   }
 
   // ---- Recovery codes ------------------------------------------------------

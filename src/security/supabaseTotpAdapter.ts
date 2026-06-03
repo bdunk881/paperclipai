@@ -146,6 +146,17 @@ export class SupabaseAuthTotpAdapter implements SupabaseTotpAdapter {
   }
 
   async unenrollTotp(accessToken: string, factorId: string): Promise<void> {
+    // HEL-399: reject a non-UUID factorId loudly. Supabase 404s on a bad id
+    // (e.g. the literal "totp"), and the 404 tolerance below would swallow it —
+    // leaving the real factor enrolled while local policy flips hasTotp=false
+    // (split-brain). A real but already-deleted UUID still 404s harmlessly.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(factorId)) {
+      throw new SecurityServiceError(
+        `Invalid TOTP factor id: ${factorId}`,
+        400,
+        "totp_unenroll_invalid_factor_id",
+      );
+    }
     const { authUrl, apiKey } = resolveSupabaseAuthConfig();
     const response = await fetch(`${authUrl}/factors/${encodeURIComponent(factorId)}`, {
       method: "DELETE",

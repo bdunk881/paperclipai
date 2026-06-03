@@ -101,6 +101,34 @@ describe("MfaService", () => {
     expect(policy.requiresAppMfa).toBe(true);
   });
 
+  // HEL-399 -----------------------------------------------------------------
+  it("removeTotpFactor unenrolls the real factor UUID, not the passed string", async () => {
+    const REAL_ID = "11111111-2222-4333-8444-555555555555";
+    const totp = makeTotpStub();
+    jest.mocked(totp.listFactors).mockResolvedValue([
+      { id: REAL_ID, type: "totp", status: "verified" },
+    ]);
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+
+    // The admin UI passes the literal "totp"; the service must resolve the real
+    // Supabase factor UUID via listFactors before deleting (else Supabase 404s
+    // and the factor survives while local policy flips — split-brain).
+    await service.removeTotpFactor({ userId: "u-1" }, "access-token", "totp");
+
+    expect(totp.listFactors).toHaveBeenCalledWith("access-token");
+    expect(totp.unenrollTotp).toHaveBeenCalledWith("access-token", REAL_ID);
+    expect(totp.unenrollTotp).not.toHaveBeenCalledWith("access-token", "totp");
+  });
+
+  it("removeTotpFactor does not call unenroll when no TOTP factor exists upstream", async () => {
+    const totp = makeTotpStub(); // listFactors returns [] by default
+    const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });
+
+    await service.removeTotpFactor({ userId: "u-1" }, "access-token", "totp");
+
+    expect(totp.unenrollTotp).not.toHaveBeenCalled();
+  });
+
   // HEL-280 ----------------------------------------------------------------
 
   it("derives signInMethod and requires app MFA for password sign-ins", async () => {

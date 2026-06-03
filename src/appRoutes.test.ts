@@ -538,10 +538,10 @@ describe("POST /api/workflows/generate", () => {
 
   it("returns 502 when LLM call fails", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => { throw new Error("timeout"); });
 
     const res = await request(app)
@@ -554,10 +554,10 @@ describe("POST /api/workflows/generate", () => {
 
   it("returns 422 when LLM returns non-JSON", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: "not valid json at all" }));
 
     const res = await request(app)
@@ -570,10 +570,10 @@ describe("POST /api/workflows/generate", () => {
 
   it("returns 422 when LLM returns JSON non-array", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: '{"not":"an array"}' }));
 
     const res = await request(app)
@@ -586,10 +586,10 @@ describe("POST /api/workflows/generate", () => {
   it("returns 200 steps array on valid LLM response", async () => {
     const steps = [{ id: "step-1", name: "Trigger", kind: "trigger", description: "d", inputKeys: [], outputKeys: [] }];
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: JSON.stringify(steps) }));
 
     const res = await request(app)
@@ -603,10 +603,10 @@ describe("POST /api/workflows/generate", () => {
   it("strips markdown code fences from LLM response", async () => {
     const steps = [{ id: "step-1", name: "Trigger", kind: "trigger", description: "d", inputKeys: [], outputKeys: [] }];
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: "```json\n" + JSON.stringify(steps) + "\n```" }));
 
     const res = await request(app)
@@ -684,10 +684,10 @@ describe("POST /api/goals/team-assembly", () => {
 
   it("returns 422 when the LLM response is invalid JSON", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({ text: "not valid json at all" }));
 
     const res = await request(app)
@@ -701,10 +701,10 @@ describe("POST /api/goals/team-assembly", () => {
 
   it("returns a structured team assembly plan", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
     mockGetProvider.mockReturnValue(async () => ({
       text: JSON.stringify({
         schemaVersion: "2026-04-27",
@@ -867,10 +867,10 @@ describe("POST /api/goals/team-assembly", () => {
 
   it("passes the company, PRD, and goal document into the prompt", async () => {
     const { llmConfigStore } = await import("./llmConfig/llmConfigStore");
-    jest.spyOn(llmConfigStore, "getDecryptedDefault").mockReturnValue({
+    jest.spyOn(llmConfigStore, "getDecryptedDefaultAsync").mockResolvedValue({
       config: { provider: "openai", model: "gpt-4" },
       apiKey: "sk-test",
-    } as ReturnType<typeof llmConfigStore.getDecryptedDefault>);
+    } as Awaited<ReturnType<typeof llmConfigStore.getDecryptedDefaultAsync>>);
 
     const providerMock = jest.fn(async () => ({
       text: JSON.stringify({

@@ -25,6 +25,7 @@ import {
 import { listLLMConfigs, type LLMConfig } from "../api/client";
 import { getHostedFreeCatalog } from "../api/hostedFreeModelsApi";
 import { ConfirmDestructiveModal } from "../components/missions/ConfirmDestructiveModal";
+import { formatUserFacingError } from "../lib/userFacingError";
 import { teamLinkForMission } from "../lib/missionNavigation";
 
 type SubmitState = "idle" | "saving" | "generating" | "error";

@@ -941,8 +941,9 @@ export function createMissionRoutes(
         provider: resolved.config.provider,
         model: assemblyModel,
       });
+      const userError = buildHiringPlanUserError(msg, "llm_call");
       console.error(
-        `[missions] LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+        `[missions] LLM call failed (${resolved.config.provider}/${assemblyModel}) [ref=${userError.reference}]: ${msg}`,
       );
       Sentry.captureException(err, {
         tags: {
@@ -950,16 +951,11 @@ export function createMissionRoutes(
           phase: "llm_call",
           provider: resolved.config.provider,
           model: assemblyModel,
+          reference: userError.reference,
         },
         contexts: { mission: { workspaceId, userId, missionId } },
       });
-      // Surface provider + model in the user-facing error so they can
-      // self-diagnose (e.g. "model not found" → switch tier in Settings).
-      res.status(502).json({
-        error: `LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
-        provider: resolved.config.provider,
-        model: assemblyModel,
-      });
+      res.status(502).json(userError);
       return;
     }
     const llmDurationMs = Date.now() - llmStartedAtMs;

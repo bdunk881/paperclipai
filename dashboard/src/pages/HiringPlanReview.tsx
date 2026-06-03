@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
+import { formatUserFacingError } from "../lib/userFacingError";
 import {
   deleteMission,
   getHiringPlan,

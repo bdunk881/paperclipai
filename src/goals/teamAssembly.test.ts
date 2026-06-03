@@ -106,6 +106,63 @@ describe("parseTeamAssemblyResponse", () => {
     const badShape = JSON.stringify({ schemaVersion: "wrong-version" });
     expect(() => parseTeamAssemblyResponse(badShape)).toThrow();
   });
+
+  it("HEL-455: recovers when the model omits roleType + headcount on org-chart entries", () => {
+    // gemini-2.5-pro reliably drops roleType/headcount even when asked. The
+    // normalizer infers roleType from which array a role sits in (and agents
+    // from their matching roleKey) and defaults headcount to 1 — so a plan
+    // that is otherwise complete validates instead of 422-ing.
+    const baseFields = {
+      department: "support",
+      reportsToRoleKey: null,
+      mandate: "Own inbound support",
+      justification: "Core to the mission",
+      kpis: ["first-response time"],
+      skills: ["triage"],
+      tools: ["zendesk"],
+      modelTier: "standard",
+      budgetMonthlyUsd: null,
+      provisioningInstructions: "Day-one: connect the inbox",
+    };
+    // NOTE: no `roleType`, no `headcount` on either entry.
+    const exec = { roleKey: "support-lead", title: "Support Lead", ...baseFields };
+    const op = {
+      roleKey: "support-agent",
+      title: "Support Agent",
+      ...baseFields,
+      reportsToRoleKey: "support-lead",
+    };
+    const raw = JSON.stringify({
+      schemaVersion: TEAM_ASSEMBLY_SCHEMA_VERSION,
+      company: { name: "Test Co", goal: "Run support", targetCustomer: null, budget: null, timeHorizon: null },
+      summary: "Support team",
+      rationale: "Test fixture",
+      orgChart: {
+        executives: [exec],
+        operators: [op],
+        reportingLines: [{ managerRoleKey: "support-lead", reportRoleKey: "support-agent" }],
+      },
+      provisioningPlan: {
+        teamName: "Support",
+        deploymentMode: "continuous_agents",
+        agents: [exec, op],
+      },
+      roadmap306090: {
+        day30: { objectives: ["a"], deliverables: ["a"], ownerRoleKeys: ["support-lead"] },
+        day60: { objectives: ["a"], deliverables: ["a"], ownerRoleKeys: ["support-lead"] },
+        day90: { objectives: ["a"], deliverables: ["a"], ownerRoleKeys: ["support-lead"] },
+      },
+    });
+
+    const result = parseTeamAssemblyResponse(raw);
+    expect(result.orgChart.executives[0].roleType).toBe("executive");
+    expect(result.orgChart.executives[0].headcount).toBe(1);
+    expect(result.orgChart.operators[0].roleType).toBe("operator");
+    expect(result.orgChart.operators[0].headcount).toBe(1);
+    // Agent roleType is inferred from the matching org-chart roleKey.
+    const leadAgent = result.provisioningPlan.agents.find((a) => a.roleKey === "support-lead");
+    expect(leadAgent?.roleType).toBe("executive");
+  });
 });
 
 describe("buildTeamAssemblyPrompt", () => {

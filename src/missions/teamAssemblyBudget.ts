@@ -1,0 +1,150 @@
+/**
+ * Token budgeting for chunked team-assembly generation.
+ * (Project: Chunked team-assembly generation — PR1 / HEL-501.)
+ *
+ * The hiring plan is generated as a small "skeleton" call (roles + framing +
+ * roadmap) followed by one or more "fill" calls that each return the heavy
+ * per-agent fields for a *batch* of roles. To keep every response within the
+ * chosen provider's output budget — and leave room for reasoning models that
+ * spend part of that budget "thinking" (those tokens count against the same
+ * cap) — batch sizes and per-call `maxOutputTokens` are derived from the
+ * provider's clamped output ceiling.
+ *
+ * This module is pure: it does not call any provider. The orchestrator (PR5)
+ * uses it to split roles into fill batches and to choose each call's
+ * `maxOutputTokens`.
+ */
+
+import type { ProviderName } from "../engine/llmProviders/types";
+import { clampMaxOutputTokens } from "../engine/llmProviders/outputLimits";
+
+/**
+ * Conservative estimate of the output tokens a single agent's full detail
+ * costs in a fill response — mandate + justification + 2–4 KPIs + skills +
+ * tools + modelTier + budget + provisioningInstructions, serialized as JSON.
+ * Deliberately on the high side so batches stay safely under the cap.
+ */
+export const ESTIMATED_TOKENS_PER_AGENT_FILL = 320;
+
+/**
+ * Target JSON output per fill call. We intentionally aim for *small, reliable*
+ * fill responses (rather than packing a provider's whole ceiling) because the
+ * entire point of chunking is robust, non-truncated parsing — latency is
+ * recovered by running fill calls in parallel. Clamped down further for
+ * low-cap providers; never scaled above this for high-cap ones.
+ */
+export const TARGET_FILL_JSON_TOKENS = 4000;
+
+/** Roughly the JSON cost of one role line in the skeleton response. */
+const ESTIMATED_TOKENS_PER_SKELETON_ROLE = 45;
+/** Fixed skeleton overhead: company/summary/rationale + the 30/60/90 roadmap. */
+const SKELETON_FRAMING_TOKENS = 900;
+/** Floor for a skeleton call's requested budget so a small team still has room. */
+const MIN_SKELETON_OUTPUT_TOKENS = 4096;
+
+/**
+ * Fraction of a provider's output budget we plan to fill with JSON. Reasoning
+ * models spend the remainder on hidden thinking tokens (same cap); other
+ * providers still keep headroom so a slightly verbose response never truncates.
+ */
+const REASONING_RESERVE = 0.5;
+const NON_REASONING_RESERVE = 0.75;
+
+/** Providers whose default models spend output budget on hidden reasoning. */
+const REASONING_PROVIDERS: ReadonlySet<ProviderName> = new Set<ProviderName>([
+  "gemini",
+  "vertex-ai",
+]);
+
+export interface FillBatchSizeOptions {
+  /** Override the per-agent token estimate (e.g. if the fill prompt grows). */
+  estimatedTokensPerAgent?: number;
+  /** Override the usable fraction (0–1] of the provider's output budget. */
+  reserveFraction?: number;
+}
+
+function resolvePerAgent(options: FillBatchSizeOptions): number {
+  const v = options.estimatedTokensPerAgent;
+  return typeof v === "number" && v > 0 ? v : ESTIMATED_TOKENS_PER_AGENT_FILL;
+}
+
+function resolveReserve(provider: ProviderName, options: FillBatchSizeOptions): number {
+  const v = options.reserveFraction;
+  if (typeof v === "number" && v > 0 && v <= 1) return v;
+  return REASONING_PROVIDERS.has(provider) ? REASONING_RESERVE : NON_REASONING_RESERVE;
+}
+
+/** The provider's hard output ceiling (the clamp's cap for this provider). */
+function providerOutputCeiling(provider: ProviderName): number {
+  return clampMaxOutputTokens(provider, Number.POSITIVE_INFINITY);
+}
+
+/**
+ * How many roles to request per fill call for `provider` so the response stays
+ * within a safe, reliably-parseable output budget. Always returns >= 1 (a lone
+ * role still gets its own call rather than being dropped).
+ */
+export function computeFillBatchSize(
+  provider: ProviderName,
+  options: FillBatchSizeOptions = {},
+): number {
+  const perAgent = resolvePerAgent(options);
+  const reserve = resolveReserve(provider, options);
+  const usableCap = Math.floor(providerOutputCeiling(provider) * reserve);
+  const jsonTarget = Math.min(TARGET_FILL_JSON_TOKENS, usableCap);
+  return Math.max(1, Math.floor(jsonTarget / perAgent));
+}
+
+/**
+ * Split an ordered list of roles into fill batches of at most
+ * `computeFillBatchSize(provider)`. Order is preserved; the final batch may be
+ * smaller. An empty input yields an empty list (no calls).
+ */
+export function splitRolesIntoFillBatches<T>(
+  roles: readonly T[],
+  provider: ProviderName,
+  options: FillBatchSizeOptions = {},
+): T[][] {
+  const size = computeFillBatchSize(provider, options);
+  const batches: T[][] = [];
+  for (let i = 0; i < roles.length; i += size) {
+    batches.push(roles.slice(i, i + size));
+  }
+  return batches;
+}
+
+/**
+ * The `maxOutputTokens` to request for a fill call covering `roleCount` roles:
+ * the expected JSON (roleCount × per-agent) grossed up by the reasoning
+ * reserve to leave thinking headroom, then clamped to the provider's ceiling.
+ */
+export function recommendedFillCallMaxTokens(
+  provider: ProviderName,
+  roleCount: number,
+  options: FillBatchSizeOptions = {},
+): number {
+  const perAgent = resolvePerAgent(options);
+  const reserve = resolveReserve(provider, options);
+  const safeRoleCount = Number.isFinite(roleCount) && roleCount > 0 ? Math.floor(roleCount) : 1;
+  const jsonTokens = safeRoleCount * perAgent;
+  return clampMaxOutputTokens(provider, Math.ceil(jsonTokens / reserve));
+}
+
+/**
+ * The `maxOutputTokens` to request for the skeleton call. The skeleton is
+ * small (roles identity + framing + roadmap), but we grossed it up for
+ * thinking headroom and floor it so even a tiny team has room. `roleCountHint`
+ * lets the caller size for a larger expected team.
+ */
+export function recommendedSkeletonMaxTokens(
+  provider: ProviderName,
+  roleCountHint = 12,
+): number {
+  const reserve = REASONING_PROVIDERS.has(provider)
+    ? REASONING_RESERVE
+    : NON_REASONING_RESERVE;
+  const safeHint = Number.isFinite(roleCountHint) && roleCountHint > 0 ? roleCountHint : 12;
+  const jsonTokens = safeHint * ESTIMATED_TOKENS_PER_SKELETON_ROLE + SKELETON_FRAMING_TOKENS;
+  const desired = Math.max(MIN_SKELETON_OUTPUT_TOKENS, Math.ceil(jsonTokens / reserve));
+  return clampMaxOutputTokens(provider, desired);
+}

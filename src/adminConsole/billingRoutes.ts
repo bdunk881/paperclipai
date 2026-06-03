@@ -39,10 +39,19 @@ export interface BillingRouteDeps {
  * Default Stripe facade. Pulls the existing Stripe client from src/billing
  * and adapts it. If Stripe is not configured the routes return 503.
  */
-async function getDefaultStripeFacade(): Promise<StripeFacade | null> {
+export async function getDefaultStripeFacade(): Promise<StripeFacade | null> {
   // Late-load so unit tests can run without STRIPE_SECRET_KEY in env.
   const mod = await import("../billing/stripeClient");
-  const client = (mod as { getStripeClient?: () => unknown }).getStripeClient?.();
+  // getStripe() throws when neither STRIPE_SECRET_KEY nor STRIPE_API_KEY is
+  // set; treat that as "Stripe not configured" → null so the route returns a
+  // 503. Previously this called a non-existent `getStripeClient`, so `client`
+  // was always undefined and refunds 503'd even when Stripe WAS configured.
+  let client: unknown;
+  try {
+    client = mod.getStripe();
+  } catch {
+    return null;
+  }
   if (!client) return null;
   type StripeApi = {
     refunds: { create: (args: Record<string, unknown>) => Promise<{ id: string; amount: number; status: string }> };

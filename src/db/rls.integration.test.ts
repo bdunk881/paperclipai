@@ -84,6 +84,7 @@ describe("P1 table RLS integration (HEL-70)", () => {
   let stepA: string, stepB: string;
   let approvalA: string, approvalB: string;
   let auditA: string, auditB: string;
+  let fileObjA: string, fileObjB: string;
 
   /**
    * Executes `fn` inside a transaction where the database role is temporarily
@@ -155,6 +156,8 @@ describe("P1 table RLS integration (HEL-70)", () => {
     approvalB = randomUUID();
     auditA = randomUUID();
     auditB = randomUUID();
+    fileObjA = randomUUID();
+    fileObjB = randomUUID();
 
     await withWsCtx(pool, { workspaceId: workspaceA, userId: userA }, async (client) => {
       await client.query(
@@ -206,6 +209,11 @@ describe("P1 table RLS integration (HEL-70)", () => {
       await client.query(
         `INSERT INTO audit_log (id, workspace_id, actor_user_id, category, action) VALUES ($1, $2, $3, 'auth', 'login')`,
         [auditA, workspaceA, userA],
+      );
+      await client.query(
+        `INSERT INTO file_objects (id, workspace_id, uploaded_by, collection, storage_key, provider, bucket)
+         VALUES ($1, $2, $3, 'run-input', $4, 'r2', 'autoflow-dev')`,
+        [fileObjA, workspaceA, userA, `workspaces/${workspaceA}/run-input/${fileObjA}-a.pdf`],
       );
     });
 
@@ -259,6 +267,11 @@ describe("P1 table RLS integration (HEL-70)", () => {
       await client.query(
         `INSERT INTO audit_log (id, workspace_id, actor_user_id, category, action) VALUES ($1, $2, $3, 'auth', 'login')`,
         [auditB, workspaceB, userB],
+      );
+      await client.query(
+        `INSERT INTO file_objects (id, workspace_id, uploaded_by, collection, storage_key, provider, bucket)
+         VALUES ($1, $2, $3, 'run-input', $4, 'r2', 'autoflow-dev')`,
+        [fileObjB, workspaceB, userB, `workspaces/${workspaceB}/run-input/${fileObjB}-b.pdf`],
       );
     });
   }
@@ -916,6 +929,81 @@ describe("P1 table RLS integration (HEL-70)", () => {
   );
 
   it(
+    "file_objects: workspace isolation for SELECT/UPDATE/DELETE; NULL context denies",
+    async () => {
+      if (!canRunIntegration) {
+        return;
+      }
+
+      await pg.queryPostgres(
+        `INSERT INTO user_profiles (user_id, display_name) VALUES ($1, 'HEL-70 User A'), ($2, 'HEL-70 User B') ON CONFLICT (user_id) DO NOTHING`,
+        [userA, userB],
+      );
+      await pg.queryPostgres(
+        `INSERT INTO workspaces (id, name, owner_user_id) VALUES ($1, 'HEL-70 WS-A', $3), ($2, 'HEL-70 WS-B', $4) ON CONFLICT (id) DO NOTHING`,
+        [workspaceA, workspaceB, userA, userB],
+      );
+
+      await seedAll(pgPool, withWorkspaceContextFn);
+
+      const ctxA = { workspaceId: workspaceA, userId: userA };
+      const ctxB = { workspaceId: workspaceB, userId: userB };
+
+      // SELECT isolation: A sees A not B, B sees B not A.
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM file_objects WHERE id = $1`, [fileObjA])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM file_objects WHERE id = $1`, [fileObjB])).rowCount,
+        ).toBe(0);
+      });
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        expect(
+          (await client.query(`SELECT id FROM file_objects WHERE id = $1`, [fileObjB])).rowCount,
+        ).toBe(1);
+        expect(
+          (await client.query(`SELECT id FROM file_objects WHERE id = $1`, [fileObjA])).rowCount,
+        ).toBe(0);
+      });
+
+      // Crafted cross-tenant UPDATE / DELETE: the FOR-ALL workspace policy makes
+      // B's row invisible to A, so both mutations affect 0 rows (no error, no change).
+      await withRlsEnforcedContext(pgPool, ctxA, async (client) => {
+        const upd = await client.query(
+          `UPDATE file_objects SET deleted_at = now() WHERE id = $1`,
+          [fileObjB],
+        );
+        expect(upd.rowCount).toBe(0);
+        const del = await client.query(`DELETE FROM file_objects WHERE id = $1`, [fileObjB]);
+        expect(del.rowCount).toBe(0);
+      });
+      // B's row is untouched (still present, not soft-deleted).
+      await withRlsEnforcedContext(pgPool, ctxB, async (client) => {
+        const r = await client.query(`SELECT deleted_at FROM file_objects WHERE id = $1`, [fileObjB]);
+        expect(r.rowCount).toBe(1);
+        expect(r.rows[0]?.deleted_at).toBeNull();
+      });
+
+      // NULL workspace context denies all.
+      const nullClient = await pgPool.connect();
+      try {
+        await nullClient.query("BEGIN");
+        await nullClient.query("SET LOCAL ROLE autoflow_api");
+        const r = await nullClient.query(`SELECT id FROM file_objects WHERE id = $1`, [fileObjA]);
+        expect(r.rowCount ?? r.rows.length).toBe(0);
+        await nullClient.query("COMMIT");
+      } catch (err) {
+        await nullClient.query("ROLLBACK").catch(() => undefined);
+        throw err;
+      } finally {
+        nullClient.release();
+      }
+    },
+    30_000,
+  );
+
+  it(
     "FORCE RLS guard: test fails cleanly if FORCE RLS is dropped from any P1 table",
     async () => {
       if (!canRunIntegration) {
@@ -935,6 +1023,7 @@ describe("P1 table RLS integration (HEL-70)", () => {
         "entitlements",
         "approvals",
         "audit_log",
+        "file_objects",
       ];
 
       const result = (await pg.queryPostgres(
@@ -965,6 +1054,7 @@ describe("P1 table RLS integration (HEL-70)", () => {
         "entitlements",
         "approvals",
         "audit_log",
+        "file_objects",
       ];
       for (const row of result.rows) {
         if (tablesWithForceRls.includes(row.relname)) {

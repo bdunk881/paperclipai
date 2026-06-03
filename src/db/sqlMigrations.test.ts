@@ -985,4 +985,79 @@ describe("sql migrations", () => {
       expect(migration.trim().endsWith("COMMIT;")).toBe(true);
     });
   });
+
+  describe("migration 096 file_objects (HEL-353)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "096_file_objects.sql"),
+      "utf8"
+    );
+
+    it("creates file_objects with the workspace + uploader foreign keys", () => {
+      expect(migration).toContain("CREATE TABLE IF NOT EXISTS file_objects");
+      expect(migration).toContain(
+        "workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE"
+      );
+      // uploaded_by is text (Supabase sub), not uuid — mirrors migration 022.
+      expect(migration).toContain(
+        "uploaded_by text NOT NULL REFERENCES user_profiles(user_id) ON DELETE RESTRICT"
+      );
+    });
+
+    it("declares the storage-metadata and tenancy columns", () => {
+      expect(migration).toContain("storage_key text NOT NULL");
+      expect(migration).toContain(
+        "provider text NOT NULL DEFAULT 'r2' CHECK (provider IN ('r2', 's3'))"
+      );
+      expect(migration).toContain("external_account_id uuid");
+      expect(migration).toContain("kms_key_id text");
+      expect(migration).toContain("metadata jsonb NOT NULL DEFAULT '{}'::jsonb");
+      expect(migration).toContain(
+        "CHECK (retention_class IN ('short', 'standard', 'legal_hold'))"
+      );
+      expect(migration).toContain(
+        "CONSTRAINT file_objects_storage_key_unique UNIQUE (storage_key)"
+      );
+    });
+
+    it("indexes workspace lookups including a partial index for live objects", () => {
+      expect(migration).toContain(
+        "CREATE INDEX IF NOT EXISTS idx_file_objects_workspace_collection"
+      );
+      expect(migration).toContain("idx_file_objects_workspace_active");
+      expect(migration).toContain("WHERE deleted_at IS NULL");
+    });
+
+    it("enables and forces row-level security", () => {
+      expect(migration).toContain("ALTER TABLE file_objects ENABLE ROW LEVEL SECURITY;");
+      expect(migration).toContain("ALTER TABLE file_objects FORCE ROW LEVEL SECURITY;");
+    });
+
+    it("recreates the workspace-isolation policy idempotently (FOR ALL, USING + WITH CHECK)", () => {
+      expect(migration).toContain(
+        "DROP POLICY IF EXISTS file_objects_workspace_isolation ON file_objects;"
+      );
+      const policy =
+        /CREATE POLICY file_objects_workspace_isolation ON file_objects\s+AS PERMISSIVE FOR ALL TO public\s+USING \(app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id::text = app_current_workspace_id\(\)::text\)\s+WITH CHECK \(app_current_workspace_id\(\) IS NOT NULL\s+AND workspace_id::text = app_current_workspace_id\(\)::text\);/m;
+      expect(migration).toMatch(policy);
+    });
+
+    it("adds the platform-admin debug-read policy", () => {
+      expect(migration).toContain(
+        "DROP POLICY IF EXISTS file_objects_admin_read ON file_objects;"
+      );
+      expect(migration).toContain("CREATE POLICY file_objects_admin_read ON file_objects");
+      expect(migration).toContain("USING (app_is_platform_admin())");
+    });
+
+    it("grants table privileges to the non-superuser API role (autoflow_api)", () => {
+      expect(migration).toContain(
+        "GRANT SELECT, INSERT, UPDATE, DELETE ON public.file_objects TO autoflow_api;"
+      );
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
 });

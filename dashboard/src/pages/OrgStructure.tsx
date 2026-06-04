@@ -7,6 +7,7 @@ import { useBudgetsQuery } from "../hooks/queries/useBudgetsQuery";
 import { useMissionsQuery } from "../hooks/queries/useMissionsQuery";
 import { useOrgGraphQuery } from "../hooks/queries/useOrgGraphQuery";
 import { AddReportModal } from "../components/missions/AddReportModal";
+import { OrgChart } from "../components/OrgChart";
 import { EmptyState, ErrorState, SkeletonBlock } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -306,6 +307,8 @@ export default function OrgStructure() {
     "overview" | "job" | "standing" | "budget"
   >("overview");
   const [addReportLead, setAddReportLead] = useState<Agent | null>(null);
+  // HEL-563: the org graph is the primary view; the card-list stays a toggle.
+  const [view, setView] = useState<"graph" | "list">("graph");
 
   const budgets = useMemo(() => {
     const budgetMap = new Map<string, AgentSpendRow>();
@@ -464,6 +467,24 @@ export default function OrgStructure() {
           <div className="meta">{loading ? <SkeletonBlock lines={1} /> : pageMeta}</div>
         </div>
         <div className="page-head-right">
+          <div className="seg" role="tablist" aria-label="Org view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "graph"}
+              onClick={() => setView("graph")}
+            >
+              Graph
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "list"}
+              onClick={() => setView("list")}
+            >
+              List
+            </button>
+          </div>
           <button type="button" className="btn">
             Manage teams
           </button>
@@ -548,14 +569,23 @@ export default function OrgStructure() {
         </div>
       ) : null}
 
-      {teamGroups.length === 0 && agents.length > 0 ? (
+      {view === "graph" ? (
+        <OrgChart
+          agents={filteredAgents}
+          edges={edges ?? []}
+          presence={presence}
+          budgets={budgets}
+        />
+      ) : null}
+
+      {view === "list" && teamGroups.length === 0 && agents.length > 0 ? (
         <div className="card">
           <h3>No teams match</h3>
           <p className="desc">Try clearing the filters or hire a new team.</p>
         </div>
       ) : null}
 
-      {teamGroups.map((group, groupIndex) => {
+      {view === "list" && teamGroups.map((group, groupIndex) => {
         const isArchived = isArchivedMission(group.mission);
         const status = isArchived ? "archived" : "live";
         const pillToneClass = isArchived ? "pill mustard dot" : "pill sage dot";

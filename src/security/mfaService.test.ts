@@ -657,6 +657,101 @@ describe("MfaService", () => {
     expect(sender.sent.some((m) => m.kind === "password_changed")).toBe(false);
   });
 
+  // HEL-385 — session freshness + revocation -------------------------------
+
+  it("revokes the user's other sessions after a recovery-code reset (HEL-385)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const sessionRevoker = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      sessionRevoker,
+    });
+    const ctx = { userId: "u-1", accessToken: "recovery-jwt", sessionAuthTime: Math.floor(Date.now() / 1000) };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(sessionRevoker).toHaveBeenCalledWith("recovery-jwt");
+  });
+
+  it("does not fail the reset when session revocation throws (HEL-385)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const sessionRevoker = jest.fn().mockRejectedValue(new Error("gotrue down"));
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      sessionRevoker,
+    });
+    const ctx = { userId: "u-1", accessToken: "recovery-jwt", sessionAuthTime: Math.floor(Date.now() / 1000) };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123"),
+    ).resolves.toBeUndefined();
+    expect(passwordResetter).toHaveBeenCalled();
+  });
+
+  it("skips revocation when no access token is on the context (HEL-385)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const sessionRevoker = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      sessionRevoker,
+    });
+    const ctx = { userId: "u-1" };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(sessionRevoker).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale recovery session without consuming the code (HEL-385)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+      recoverySessionMaxAgeSeconds: 1800,
+    });
+    const ctx = {
+      userId: "u-1",
+      sessionAuthTime: Math.floor(Date.now() / 1000) - 3600, // 1h ago, past the 30-min cap
+    };
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await expect(
+      service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123"),
+    ).rejects.toThrow(/expired/i);
+    expect(passwordResetter).not.toHaveBeenCalled();
+    // The code was NOT consumed by the rejected attempt — a fresh session can still use it.
+    const freshCtx = { userId: "u-1", sessionAuthTime: Math.floor(Date.now() / 1000) };
+    await service.resetPasswordWithRecoveryCode(freshCtx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalledWith("u-1", "brand-new-pass-123");
+  });
+
+  it("allows the reset when sessionAuthTime is absent (fail-open) (HEL-385)", async () => {
+    const passwordResetter = jest.fn().mockResolvedValue(undefined);
+    const service = new MfaService({
+      repository: repo,
+      webauthn: makeWebauthnStub(),
+      totp: makeTotpStub(),
+      passwordResetter,
+    });
+    const ctx = { userId: "u-1" }; // no sessionAuthTime
+    const issued = await service.issueRecoveryCodes(ctx, 3);
+
+    await service.resetPasswordWithRecoveryCode(ctx, issued.codes[0], "brand-new-pass-123");
+    expect(passwordResetter).toHaveBeenCalled();
+  });
+
   it("delegates TOTP enrollment to the Supabase adapter", async () => {
     const totp = makeTotpStub();
     const service = new MfaService({ repository: repo, webauthn: makeWebauthnStub(), totp });

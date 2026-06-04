@@ -62,13 +62,14 @@ export interface CardConfig {
 }
 
 /**
- * Conservative PLACEHOLDER defaults — these are treasury-policy numbers Brad
- * sets via STRIPE_ISSUING_CONFIG before going live; they exist only so the
- * code has safe guardrails while disabled. Loosely scaled to the plan's
- * illustrative float (~$2k Anthropic + ~$1k OpenAI).
+ * Conservative defaults matching the decided treasury policy: a $1000/card
+ * monthly cap per provider (set with Brad 2026-06-04, HEL-619). STRIPE_ISSUING_CONFIG
+ * overrides these at provisioning time and stays the operative source of
+ * truth; these defaults exist only so the code can never exceed policy if
+ * config is unset. Keep each provider's reload ceiling ≤ its monthly cap.
  */
 export const DEFAULT_CARD_CONFIG: Record<DirectProvider, CardConfig> = {
-  anthropic: { monthlyCapUsd: 2000, reloadThresholdUsd: 300, reloadCeilingUsd: 1000 },
+  anthropic: { monthlyCapUsd: 1000, reloadThresholdUsd: 300, reloadCeilingUsd: 500 },
   openai: { monthlyCapUsd: 1000, reloadThresholdUsd: 150, reloadCeilingUsd: 500 },
 };
 

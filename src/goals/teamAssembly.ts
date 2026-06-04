@@ -3,7 +3,7 @@ import { extractStructuredOutput } from "../engine/structuredOutput";
 
 export const TEAM_ASSEMBLY_SCHEMA_VERSION = "2026-04-27";
 
-const modelTierSchema = z.enum(["lite", "standard", "power"]);
+export const modelTierSchema = z.enum(["lite", "standard", "power"]);
 
 export const normalizedGoalDocumentSchema = z.object({
   sourceType: z.enum(["free_text", "notion", "google-doc", "markdown"]),
@@ -62,7 +62,7 @@ const staffingRecommendationSchema = z.object({
   provisioningInstructions: z.string().trim().min(1),
 });
 
-const phasePlanSchema = z.object({
+export const phasePlanSchema = z.object({
   objectives: z.array(z.string().trim().min(1)).min(1),
   deliverables: z.array(z.string().trim().min(1)).min(1),
   ownerRoleKeys: z.array(z.string().trim().min(1)).min(1),
@@ -161,7 +161,7 @@ function normalizeTeamAssemblyRaw(input: unknown): unknown {
   return obj;
 }
 
-const teamAssemblyResultSchema = z.preprocess(
+export const teamAssemblyResultSchema = z.preprocess(
   normalizeTeamAssemblyRaw,
   teamAssemblyResultObjectSchema,
 );
@@ -385,6 +385,9 @@ export const teamAssemblyRequestSchema = z.object({
 
 export type TeamAssemblyRequest = z.infer<typeof teamAssemblyRequestSchema>;
 export type TeamAssemblyResult = z.infer<typeof teamAssemblyResultSchema>;
+/** One staffed role's full spec — the shape both org-chart arrays and the
+ *  provisioning plan carry. Exported for the chunked assembler (PR4). */
+export type StaffingRecommendation = z.infer<typeof staffingRecommendationSchema>;
 
 /**
  * Team-assembly prompt. Field expectations must stay aligned with

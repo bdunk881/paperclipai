@@ -49,6 +49,10 @@ import {
   type HiringPlanDraft,
 } from "./hiringPlanDraft";
 import { resolveHiringPlanLlm } from "./resolveHiringPlanLlm";
+import {
+  generateTeamPlanChunked,
+  isChunkedTeamAssemblyEnabled,
+} from "./chunkedTeamAssembly";
 
 /** Abuse guard — missions.statement is unbounded text in Postgres. */
 const MAX_STATEMENT_LENGTH = 50_000;
@@ -876,13 +880,6 @@ export function createMissionRoutes(
     }
 
     const { resolved, llmConfigId, assemblyModel } = llmChoice;
-    const provider = getProvider({
-      provider: resolved.config.provider,
-      model: assemblyModel,
-      apiKey: resolved.apiKey,
-      responseFormat: { type: "json_object" },
-      maxOutputTokens: 8192,
-    });
 
     let connectedToolSlugs: string[] = [];
     try {
@@ -905,99 +902,166 @@ export function createMissionRoutes(
     // integration). Useful for: confirming the workspace's expected
     // BYOK provider is being hit, catching provider misroutes, and
     // proving plans aren't stale-cached.
-    let rawText: string;
+    let plan: HiringPlanDraft;
     let promptTokens = 0;
     let completionTokens = 0;
     const llmStartedAtMs = Date.now();
     console.log(
-      `[missions] LLM call dispatching for hiring plan: provider=${resolved.config.provider} model=${assemblyModel} userId=${userId} missionId=${missionId}`,
+      `[missions] hiring-plan generation dispatching: provider=${resolved.config.provider} model=${assemblyModel} mode=${
+        isChunkedTeamAssemblyEnabled() ? "chunked" : "single"
+      } userId=${userId} missionId=${missionId}`,
     );
-    try {
-      const llmResponse = await provider(buildTeamAssemblyPrompt(request));
-      rawText = llmResponse.text;
-      promptTokens = llmResponse.usage?.promptTokens ?? 0;
-      completionTokens = llmResponse.usage?.completionTokens ?? 0;
-      console.log(
-        `[missions] LLM call succeeded: provider=${resolved.config.provider} model=${assemblyModel} promptTokens=${promptTokens} completionTokens=${completionTokens} durationMs=${Date.now() - llmStartedAtMs} responseChars=${rawText.length}`,
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // HEL-74: record the failed-LLM-call step_result so the budget +
-      // observability surfaces see the attempt + cost (likely zero on
-      // hard provider errors, non-zero if the provider charges for
-      // partial work).
-      void recordHiringPlanCost({
-        pool,
-        workspaceId,
-        userId,
-        missionId,
-        hiringPlanId: "(none)",
-        costCents: 0,
-        durationMs: Date.now() - llmStartedAtMs,
-        status: "failure",
-        errorMessage: msg,
-        rateMatched: false,
-        promptTokens: 0,
-        completionTokens: 0,
-        provider: resolved.config.provider,
-        model: assemblyModel,
-      });
-      console.error(
-        `[missions] LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
-      );
-      Sentry.captureException(err, {
-        tags: {
-          route: "POST /api/missions/:missionId/generate-plan",
-          phase: "llm_call",
+
+    if (isChunkedTeamAssemblyEnabled()) {
+      // Chunked path (TEAM_ASSEMBLY_CHUNKED): skeleton -> parallel batched
+      // fills -> assemble. Scales past a single call's output cap, which is
+      // what truncated large plans. See src/missions/chunkedTeamAssembly.ts.
+      try {
+        const { result, usage } = await generateTeamPlanChunked(request, {
           provider: resolved.config.provider,
           model: assemblyModel,
-        },
-        contexts: { mission: { workspaceId, userId, missionId } },
-      });
-      // Surface provider + model in the user-facing error so they can
-      // self-diagnose (e.g. "model not found" → switch tier in Settings).
-      res.status(502).json({
-        error: `LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+          apiKey: resolved.apiKey,
+        });
+        promptTokens = usage.promptTokens;
+        completionTokens = usage.completionTokens;
+        plan = attachDefaultSelection(result);
+        plan.generationMeta = {
+          provider: resolved.config.provider,
+          model: assemblyModel,
+          llmConfigId,
+        };
+        console.log(
+          `[missions] chunked hiring-plan generation succeeded: provider=${resolved.config.provider} model=${assemblyModel} calls=${usage.calls} promptTokens=${promptTokens} completionTokens=${completionTokens} durationMs=${Date.now() - llmStartedAtMs}`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const userError = buildHiringPlanUserError(msg, "parse");
+        void recordHiringPlanCost({
+          pool,
+          workspaceId,
+          userId,
+          missionId,
+          hiringPlanId: "(none)",
+          costCents: 0,
+          durationMs: Date.now() - llmStartedAtMs,
+          status: "failure",
+          errorMessage: msg,
+          rateMatched: false,
+          promptTokens: 0,
+          completionTokens: 0,
+          provider: resolved.config.provider,
+          model: assemblyModel,
+        });
+        console.error(
+          `[missions] chunked plan generation failed [ref=${userError.reference}]: ${msg}`,
+        );
+        Sentry.captureException(err, {
+          tags: {
+            route: "POST /api/missions/:missionId/generate-plan",
+            phase: "chunked",
+            provider: resolved.config.provider,
+            model: assemblyModel,
+            reference: userError.reference,
+          },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        res.status(502).json(userError);
+        return;
+      }
+    } else {
+      // Legacy single-call path.
+      const provider = getProvider({
         provider: resolved.config.provider,
         model: assemblyModel,
+        apiKey: resolved.apiKey,
+        responseFormat: { type: "json_object" },
+        maxOutputTokens: 8192,
       });
-      return;
+      let rawText: string;
+      try {
+        const llmResponse = await provider(buildTeamAssemblyPrompt(request));
+        rawText = llmResponse.text;
+        promptTokens = llmResponse.usage?.promptTokens ?? 0;
+        completionTokens = llmResponse.usage?.completionTokens ?? 0;
+        console.log(
+          `[missions] LLM call succeeded: provider=${resolved.config.provider} model=${assemblyModel} promptTokens=${promptTokens} completionTokens=${completionTokens} durationMs=${Date.now() - llmStartedAtMs} responseChars=${rawText.length}`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // HEL-74: record the failed-LLM-call step_result so the budget +
+        // observability surfaces see the attempt + cost.
+        void recordHiringPlanCost({
+          pool,
+          workspaceId,
+          userId,
+          missionId,
+          hiringPlanId: "(none)",
+          costCents: 0,
+          durationMs: Date.now() - llmStartedAtMs,
+          status: "failure",
+          errorMessage: msg,
+          rateMatched: false,
+          promptTokens: 0,
+          completionTokens: 0,
+          provider: resolved.config.provider,
+          model: assemblyModel,
+        });
+        console.error(
+          `[missions] LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+        );
+        Sentry.captureException(err, {
+          tags: {
+            route: "POST /api/missions/:missionId/generate-plan",
+            phase: "llm_call",
+            provider: resolved.config.provider,
+            model: assemblyModel,
+          },
+          contexts: { mission: { workspaceId, userId, missionId } },
+        });
+        // Surface provider + model in the user-facing error so they can
+        // self-diagnose (e.g. "model not found" → switch tier in Settings).
+        res.status(502).json({
+          error: `LLM call failed (${resolved.config.provider}/${assemblyModel}): ${msg}`,
+          provider: resolved.config.provider,
+          model: assemblyModel,
+        });
+        return;
+      }
+
+      try {
+        const parsed = parseTeamAssemblyResponse(rawText);
+        plan = attachDefaultSelection(parsed);
+        plan.generationMeta = {
+          provider: resolved.config.provider,
+          model: assemblyModel,
+          llmConfigId,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const userError = buildHiringPlanUserError(msg, "parse");
+        console.error(
+          `[missions] plan parse failed [ref=${userError.reference}]: ${msg}`,
+        );
+        Sentry.captureException(err, {
+          tags: {
+            route: "POST /api/missions/:missionId/generate-plan",
+            phase: "parse",
+            provider: resolved.config.provider,
+            model: assemblyModel,
+            reference: userError.reference,
+          },
+          contexts: {
+            mission: { workspaceId, userId, missionId },
+            // First 500 chars of the model's output so we can see what
+            // the parser tripped on without dumping the full response.
+            llm_response: { excerpt: rawText.slice(0, 500) },
+          },
+        });
+        res.status(502).json(userError);
+        return;
+      }
     }
     const llmDurationMs = Date.now() - llmStartedAtMs;
-
-    let plan: HiringPlanDraft;
-    try {
-      const parsed = parseTeamAssemblyResponse(rawText);
-      plan = attachDefaultSelection(parsed);
-      plan.generationMeta = {
-        provider: resolved.config.provider,
-        model: assemblyModel,
-        llmConfigId,
-      };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const userError = buildHiringPlanUserError(msg, "parse");
-      console.error(
-        `[missions] plan parse failed [ref=${userError.reference}]: ${msg}`,
-      );
-      Sentry.captureException(err, {
-        tags: {
-          route: "POST /api/missions/:missionId/generate-plan",
-          phase: "parse",
-          provider: resolved.config.provider,
-          model: assemblyModel,
-          reference: userError.reference,
-        },
-        contexts: {
-          mission: { workspaceId, userId, missionId },
-          // First 500 chars of the model's output so we can see what
-          // the parser tripped on without dumping the full response.
-          llm_response: { excerpt: rawText.slice(0, 500) },
-        },
-      });
-      res.status(502).json(userError);
-      return;
-    }
 
     let hiringPlanId: string;
     try {

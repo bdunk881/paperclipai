@@ -236,25 +236,26 @@ describe("handleLlm", () => {
   describe("hosted-free fallback (PR B.1 + B.2)", () => {
     // These cases hit the new fallback path that lets Explore
     // workspaces with no BYOK config still run LLM steps via the
-    // hosted free tier. Tests run with GROQ_API_KEY set so
-    // getDefaultHostedFreeProvider() returns a real provider; the
+    // hosted free tier. Tests run with OPENCODE_ZEN_API_KEY set so
+    // getDefaultHostedFreeProvider() returns the sole free provider
+    // (OpenCode Zen "big-pickle" — Groq was dropped in HEL-605); the
     // engine then synthesizes a DecryptedLLMConfig + routes through
     // getProvider (mocked) and records token usage.
-    const previousGroqKey = process.env.GROQ_API_KEY;
+    const previousHostedFreeKey = process.env.OPENCODE_ZEN_API_KEY;
 
     beforeEach(() => {
       llmConfigStore.clear();
-      process.env.GROQ_API_KEY = "gsk-test-fallback";
+      process.env.OPENCODE_ZEN_API_KEY = "ozk-test-fallback";
       // Reset the per-workspace counter so cap tests are independent.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require("../hostedFreeModels/usageStore").resetHostedFreeUsageForTests();
     });
 
     afterAll(() => {
-      if (previousGroqKey === undefined) {
-        delete process.env.GROQ_API_KEY;
+      if (previousHostedFreeKey === undefined) {
+        delete process.env.OPENCODE_ZEN_API_KEY;
       } else {
-        process.env.GROQ_API_KEY = previousGroqKey;
+        process.env.OPENCODE_ZEN_API_KEY = previousHostedFreeKey;
       }
     });
 
@@ -279,9 +280,9 @@ describe("handleLlm", () => {
 
       expect(getProvider).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "groq",
-          model: "llama-3.1-8b-instant",
-          apiKey: "gsk-test-fallback",
+          provider: "opencode_zen",
+          model: "big-pickle",
+          apiKey: "ozk-test-fallback",
         })
       );
       expect(result.output.out).toBe("hosted-free result");
@@ -326,8 +327,8 @@ describe("handleLlm", () => {
       ).rejects.toThrow(/daily token cap/i);
     });
 
-    it("surfaces the original error when GROQ_API_KEY is not set", async () => {
-      delete process.env.GROQ_API_KEY;
+    it("surfaces the original error when OPENCODE_ZEN_API_KEY is not set", async () => {
+      delete process.env.OPENCODE_ZEN_API_KEY;
       const step = makeStep({
         kind: "llm",
         outputKeys: ["out"],

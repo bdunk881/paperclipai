@@ -1,5 +1,6 @@
 import express from "express";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 import { stripeConnectorService } from "../integrations/stripe/service";
 import { reportStore } from "./reportStore";
@@ -49,7 +50,7 @@ function parseTemplate(value: unknown): ReportTemplateConfig | undefined {
   };
 }
 
-router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -58,18 +59,20 @@ router.get("/", asyncHandler<AuthenticatedRequest>(async (req, res) => {
 
   const kind = parseKind(req.query.kind);
   const teamId = typeof req.query.teamId === "string" && req.query.teamId.trim() ? req.query.teamId.trim() : undefined;
-  const reports = await reportStore.listByUser(userId, { kind: kind ?? undefined, teamId });
+  const workspaceId = req.workspaceId?.trim() || undefined;
+  const reports = await reportStore.listByUser(userId, { kind: kind ?? undefined, teamId, workspaceId });
   res.json({ reports, total: reports.length });
 }));
 
-router.get("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const report = await reportStore.getById(req.params.id, userId);
+  const workspaceId = req.workspaceId?.trim() || undefined;
+  const report = await reportStore.getById(req.params.id, userId, workspaceId);
   if (!report) {
     res.status(404).json({ error: "Report not found" });
     return;
@@ -77,7 +80,7 @@ router.get("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
   res.json({ report });
 }));
 
-router.post("/generate", requireRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/generate", requireRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
@@ -181,7 +184,7 @@ router.post("/generate", requireRunId, asyncHandler<AuthenticatedRequest>(async 
       });
     }
 
-    const report = await reportStore.save({ userId, ...generated });
+    const report = await reportStore.save({ userId, ...generated, workspaceId: req.workspaceId?.trim() || undefined });
     res.status(201).json({ report });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unexpected report generation failure";

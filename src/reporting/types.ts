@@ -31,6 +31,8 @@ export interface ReportTemplateConfig {
 export interface GeneratedReport {
   id: string;
   userId: string;
+  /** Owning workspace. Populated on insert; legacy rows may be undefined. */
+  workspaceId?: string;
   teamId?: string;
   kind: ReportKind;
   title: string;

@@ -467,7 +467,9 @@ router.delete("/:provider/disconnect", requireAuth, asyncHandler<AuthenticatedRe
       break;
     }
     case "intercom": {
-      const current = intercomCredentialStore.getActiveByUser(userId);
+      // Async hydrated getter: a bucket-only read would be null on a cold
+      // instance and we'd return success without revoking (HEL-470 Codex P2).
+      const current = await intercomCredentialStore.getActiveByUserAsync(userId);
       if (current) {
         await intercomConnectorService.disconnect(userId, current.id);
       }

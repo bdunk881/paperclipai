@@ -279,11 +279,12 @@ export const intercomCredentialStore = {
   },
 
   async revoke(credentialId: string, userId: string): Promise<boolean> {
-    // getByIdAsync hydrates from Postgres under RLS (ownership enforced), so a
-    // credential persisted by another instance can actually be disconnected
-    // (HEL-470 Codex P2). getById (bucket-only) would 404 on a cold instance.
+    // getByIdAsync hydrates from Postgres so a credential persisted by another
+    // instance can be disconnected (vs getById, bucket-only → 404 on a cold
+    // instance). It can return a bucket-resident record by id *before* the
+    // user-scoped RLS lookup, so re-check ownership explicitly (HEL-470 Codex P1).
     const existing = await store.getByIdAsync(credentialId, userId);
-    if (!existing || existing.revokedAt) {
+    if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }
     const now = new Date().toISOString();

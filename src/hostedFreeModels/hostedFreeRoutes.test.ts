@@ -44,34 +44,29 @@ describe("GET /api/hosted-free-models", () => {
   it("returns the catalog with availability=false when no env keys are set", async () => {
     const res = await request(buildApp()).get("/api/hosted-free-models");
     expect(res.status).toBe(200);
-    expect(res.body.defaultProviderId).toBe("groq_llama_31_8b");
-    expect(res.body.providers).toHaveLength(3);
+    expect(res.body.defaultProviderId).toBe("opencode_zen_big_pickle");
+    expect(res.body.providers).toHaveLength(1);
     for (const p of res.body.providers) {
       expect(p.available).toBe(false);
     }
   });
 
-  it("flips availability=true for providers whose env key IS set", async () => {
-    process.env.GROQ_API_KEY = "gsk-test";
+  it("flips availability=true for the provider whose env key IS set", async () => {
+    process.env.OPENCODE_ZEN_API_KEY = "oc-test";
     const res = await request(buildApp()).get("/api/hosted-free-models");
-    const groq8b = res.body.providers.find(
-      (p: { id: string }) => p.id === "groq_llama_31_8b",
-    );
     const bigPickle = res.body.providers.find(
       (p: { id: string }) => p.id === "opencode_zen_big_pickle",
     );
-    expect(groq8b.available).toBe(true);
-    expect(bigPickle.available).toBe(false);
+    expect(bigPickle.available).toBe(true);
   });
 
-  it("marks Tier 2 as the default + carries warnings on Tier 1", async () => {
+  it("marks OpenCode Zen as the default + carries training/beta warnings", async () => {
     const res = await request(buildApp()).get("/api/hosted-free-models");
-    const tier1 = res.body.providers.find((p: { tier: number }) => p.tier === 1);
-    const tier2 = res.body.providers.find((p: { tier: number }) => p.tier === 2);
-    expect(tier2.isDefault).toBe(true);
-    expect(tier1.isDefault).toBe(false);
-    expect(tier1.warnings.length).toBeGreaterThan(0);
-    expect(tier2.warnings).toEqual([]);
+    const bigPickle = res.body.providers.find(
+      (p: { id: string }) => p.id === "opencode_zen_big_pickle",
+    );
+    expect(bigPickle.isDefault).toBe(true);
+    expect(bigPickle.warnings.length).toBeGreaterThan(0);
   });
 
   // PR B.2: usage snapshot piggybacks on the catalog response so the

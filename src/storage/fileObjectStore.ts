@@ -50,7 +50,10 @@ export interface InsertFileObjectInput {
   retentionClass?: string;
 }
 
-// In-memory backend: Map<workspaceId, Map<fileId, row>>.
+// In-memory backend: Map<workspaceId, Map<fileId, row>>. Production uses the
+// "pg" backend (see backend() below); this in-memory path is reachable only
+// when Postgres is unconfigured AND inMemoryAllowed() (development/test).
+// allowlist: dev/test-only fallback when Postgres is unconfigured — never holds prod data of record (HEL-606).
 const memStore = new Map<string, Map<string, FileObjectRow>>();
 
 function memWorkspace(workspaceId: string): Map<string, FileObjectRow> {

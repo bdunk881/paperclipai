@@ -94,6 +94,23 @@ describe("handleTrigger", () => {
 
 const TEST_USER = "user-llm-test";
 
+// HEL-610 / Codex review: OPENCODE_ZEN_API_KEY is now the active hosted-free
+// fallback env var. Default EVERY test in this file to "no hosted-free key" so
+// the negative "no LLM provider configured" paths reliably exercise even if the
+// key leaks in from the shell/CI env. The hosted-free describe re-sets it for
+// its own positive cases; the original value is restored after the suite.
+const ORIGINAL_OPENCODE_ZEN_KEY = process.env.OPENCODE_ZEN_API_KEY;
+beforeEach(() => {
+  delete process.env.OPENCODE_ZEN_API_KEY;
+});
+afterAll(() => {
+  if (ORIGINAL_OPENCODE_ZEN_KEY === undefined) {
+    delete process.env.OPENCODE_ZEN_API_KEY;
+  } else {
+    process.env.OPENCODE_ZEN_API_KEY = ORIGINAL_OPENCODE_ZEN_KEY;
+  }
+});
+
 describe("handleLlm", () => {
   let mockProviderFn: jest.Mock;
 
@@ -241,8 +258,6 @@ describe("handleLlm", () => {
     // (OpenCode Zen "big-pickle" — Groq was dropped in HEL-605); the
     // engine then synthesizes a DecryptedLLMConfig + routes through
     // getProvider (mocked) and records token usage.
-    const previousHostedFreeKey = process.env.OPENCODE_ZEN_API_KEY;
-
     beforeEach(() => {
       llmConfigStore.clear();
       process.env.OPENCODE_ZEN_API_KEY = "ozk-test-fallback";
@@ -251,15 +266,7 @@ describe("handleLlm", () => {
       require("../hostedFreeModels/usageStore").resetHostedFreeUsageForTests();
     });
 
-    afterAll(() => {
-      if (previousHostedFreeKey === undefined) {
-        delete process.env.OPENCODE_ZEN_API_KEY;
-      } else {
-        process.env.OPENCODE_ZEN_API_KEY = previousHostedFreeKey;
-      }
-    });
-
-    it("falls back to the hosted-free Groq provider when no BYOK config exists", async () => {
+    it("falls back to the hosted-free OpenCode Zen provider when no BYOK config exists", async () => {
       (getProvider as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({
           text: "hosted-free result",

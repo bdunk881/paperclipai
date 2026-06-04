@@ -654,7 +654,17 @@ app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, re
 app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
 // File storage (HEL-354): signed-URL upload/download/delete. Workspace-scoped;
 // any authenticated member manages their own workspace's files.
-app.use("/api/files", requireAuth, workspaceResolver, createFileRoutes());
+app.use(
+  "/api/files",
+  requireAuth,
+  workspaceResolver,
+  // HEL-606: any authenticated workspace member manages their workspace's
+  // files; enumerate all member roles to satisfy the HEL-69 requireRole guard
+  // without changing runtime access (requireAuth + workspaceResolver already
+  // admit any member). Same no-op pass-through pattern as /api/activity-events.
+  requireRole("owner", "admin", "billing", "operator", "developer", "approver", "member"),
+  createFileRoutes(),
+);
 app.use("/api/public/landing", landingPublicApiRoutes);
 // Public status feed for status.helloautoflow.com (HEL infra follow-up).
 // Sanitized component-level status with 30s in-process cache + CDN cache

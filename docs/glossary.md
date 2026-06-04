@@ -38,6 +38,7 @@ internal surfaces. The original rename from the legacy `control_plane_*` /
 | Agent execution | `agent_executions` | 015 / 021 | Internal record of one agent invocation inside a run. |
 | Agent heartbeat | `agent_heartbeats` | 015 / 021 | Liveness ping for an in-flight agent execution. |
 | Company lifecycle | `company_lifecycle`, `company_lifecycle_audit` | 013 / 021 | Pause/resume state machine for a company. |
+| File object | `file_objects` | 096 | Workspace-scoped record of a stored object (R2/S3). HTTP surface: `/api/files`. |
 
 ## Memory + scheduling
 

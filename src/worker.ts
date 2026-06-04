@@ -33,6 +33,8 @@ import {
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload, AgentPromptJobPayload } from "./queue/queues";
 import { getDlqQueue, getAgentPromptQueue, getRunQueue } from "./queue/queues";
+import type { StorageDeletionPayload } from "./queue/storageQueue";
+import { getStorageAdapter, parseStorageKey } from "./storage";
 import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
@@ -338,6 +340,55 @@ agentPromptWorker.on("failed", (job, err) => {
   }
 });
 
+/**
+ * HEL-354: storage object-deletion queue consumer. The DELETE /api/files/:id
+ * route soft-deletes the row and enqueues the bucket-object removal here so a
+ * slow/failing provider call never blocks the request. HEL-356 reuses this
+ * queue for bulk workspace-deletion cleanup.
+ */
+const storageDeletionWorker = new Worker<StorageDeletionPayload>(
+  "storage-deletion",
+  async (job: Job<StorageDeletionPayload>) => {
+    const ref = parseStorageKey(job.data.storageKey);
+    if (!ref) {
+      console.warn(
+        `[worker:storage-deletion] malformed storage_key for file ${job.data.fileId}; skipping`,
+      );
+      return;
+    }
+    await getStorageAdapter().deleteObject(ref);
+  },
+  {
+    connection,
+    concurrency: 5,
+    metrics: { maxDataPoints: MetricsTime.ONE_HOUR * 24 },
+  },
+);
+
+storageDeletionWorker.on("completed", (job) => {
+  console.log(`[worker:storage-deletion] deleted object for file ${job.data.fileId}`);
+});
+
+storageDeletionWorker.on("failed", (job, err) => {
+  console.error(
+    `[worker:storage-deletion] Job ${job?.id ?? "unknown"} failed (file ${job?.data?.fileId ?? "unknown"}):`,
+    err.message,
+  );
+  const attempts = job?.attemptsMade ?? 0;
+  const maxAttempts = job?.opts?.attempts ?? 5;
+  if (attempts < maxAttempts) return;
+  Sentry.captureException(err, {
+    tags: { queue: "storage-deletion" },
+    contexts: {
+      storage_deletion: {
+        jobId: job?.id,
+        fileId: job?.data?.fileId,
+        workspaceId: job?.data?.workspaceId,
+      },
+    },
+  });
+});
+
 // Sync cron schedules after a short delay to let the DB connection warm up.
 if (isPostgresConfigured()) {
   const pool = getPostgresPool();
@@ -351,7 +402,7 @@ if (isPostgresConfigured()) {
 async function shutdownWorker(signal: string): Promise<void> {
   console.log(`[worker] ${signal} received — closing queues`);
   stopPlanApprovalResumeCoordinator();
-  await Promise.all([runsWorker.close(), agentPromptWorker.close()]);
+  await Promise.all([runsWorker.close(), agentPromptWorker.close(), storageDeletionWorker.close()]);
   await connection.quit();
   process.exit(0);
 }
@@ -370,4 +421,4 @@ process.on("SIGINT", () => {
 // configured (in-memory dev / tests) — the sweep is a no-op there.
 startPlanApprovalResumeCoordinator();
 
-console.log("[worker] Started, listening on 'runs' + 'agent-prompt' queues");
+console.log("[worker] Started, listening on 'runs' + 'agent-prompt' + 'storage-deletion' queues");

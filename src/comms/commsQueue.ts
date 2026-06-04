@@ -16,6 +16,8 @@ export interface CommsSendJobPayload {
   commsSendId: string;
   workspaceId: string;
   userId?: string;
+  agentId?: string;
+  missionId?: string;
   kind: CommsKind;
   channel: CommsChannel;
   message: TransportMessage;
@@ -110,6 +112,8 @@ export async function enqueueCommsSend(
     commsSendId: record.id,
     workspaceId: input.workspaceId,
     userId: input.userId,
+    agentId: input.agentId,
+    missionId: input.missionId,
     kind: input.kind,
     channel: input.channel,
     message: {

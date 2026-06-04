@@ -15,6 +15,8 @@
  */
 
 import { commsSendStore } from "./commsSendStore";
+import { commsSpendStore } from "./commsSpendStore";
+import { estimateCommsCostUsd } from "./pricing";
 import {
   CommsChannel,
   CommsKind,
@@ -130,6 +132,8 @@ export class CommsGateway {
         channel: input.channel,
         message,
         userId: input.userId,
+        agentId: input.agentId,
+        missionId: input.missionId,
         transport,
       });
     } catch (err) {
@@ -158,6 +162,8 @@ export class CommsGateway {
     channel: CommsChannel;
     message: TransportMessage;
     userId?: string;
+    agentId?: string;
+    missionId?: string;
     transport?: CommsTransport;
   }): Promise<CommsSendResult> {
     const transport =
@@ -175,6 +181,25 @@ export class CommsGateway {
       { provider: transport.id, providerMessageId: result.providerMessageId },
       params.userId,
     );
+    // Best-effort spend attribution (HEL-611) — never fail a delivered message
+    // on a spend-ledger error.
+    try {
+      await commsSpendStore.recordSpend({
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        agentId: params.agentId,
+        missionId: params.missionId,
+        commsSendId: params.id,
+        channel: params.channel,
+        provider: transport.id,
+        units: 1,
+        costUsd: estimateCommsCostUsd(params.channel, transport.id, 1),
+      });
+    } catch (err) {
+      console.error(
+        `[comms] spend record failed for ${params.id}: ${(err as Error).message}`,
+      );
+    }
     return {
       id: params.id,
       status: "sent",

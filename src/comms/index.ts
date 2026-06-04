@@ -19,3 +19,6 @@ export {
 } from "./commsQueue";
 export type { CommsSendJobPayload } from "./commsQueue";
 export { processCommsSendJob, startCommsWorker, resetCommsWorkerForTests } from "./commsWorker";
+export { commsSpendStore, COMMS_SPEND_SYSTEM_ACTOR_USER_ID } from "./commsSpendStore";
+export type { CommsSpendEntry, CommsSpendSummary, RecordCommsSpendInput } from "./commsSpendStore";
+export { estimateCommsCostUsd } from "./pricing";

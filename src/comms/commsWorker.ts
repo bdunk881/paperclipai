@@ -47,6 +47,8 @@ export async function processCommsSendJob(
       channel: payload.channel,
       message: payload.message,
       userId: payload.userId,
+      agentId: payload.agentId,
+      missionId: payload.missionId,
     });
   } catch (err) {
     const retryable = err instanceof TransportError ? err.retryable : true;

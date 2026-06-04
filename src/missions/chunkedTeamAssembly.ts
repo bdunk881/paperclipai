@@ -72,7 +72,12 @@ export async function generateTeamPlanChunked(
   });
   const skeletonResp = await skeletonProvider(buildTeamSkeletonPrompt(request));
   accumulate(skeletonResp.usage);
-  const skeleton = parseTeamSkeletonResponse(skeletonResp.text);
+  let skeleton: TeamSkeleton;
+  try {
+    skeleton = parseTeamSkeletonResponse(skeletonResp.text);
+  } catch (err) {
+    throw augmentWithRaw("skeleton", err, skeletonResp.text);
+  }
 
   // --- Stage 2: fills (heavy per-agent fields), batched + parallel -----
   const roleKeys = skeleton.roles.map((r) => r.roleKey);
@@ -112,8 +117,26 @@ async function runFillBatch(
     accumulate(resp.usage);
     return parseRoleDetailResponse(resp.text, batch);
   } catch {
-    const resp = await fillProvider(prompt);
-    accumulate(resp.usage);
-    return parseRoleDetailResponse(resp.text, batch);
+    // fall through to a single retry
   }
+  const resp = await fillProvider(prompt);
+  accumulate(resp.usage);
+  try {
+    return parseRoleDetailResponse(resp.text, batch);
+  } catch (err) {
+    throw augmentWithRaw(`fill[${batch.join(",")}]`, err, resp.text);
+  }
+}
+
+/**
+ * Re-throw a parse/validation error with a snippet of the raw model output so
+ * the failure mode (truncated mid-JSON vs. wrong shape) is diagnosable from the
+ * server logs / Sentry without re-running. Server-side only — the route still
+ * returns the branded user error.
+ */
+function augmentWithRaw(stage: string, err: unknown, raw: string): Error {
+  const base = err instanceof Error ? err.message : String(err);
+  const head = raw.slice(0, 180).replace(/\s+/g, " ");
+  const tail = raw.length > 360 ? ` … ${raw.slice(-120).replace(/\s+/g, " ")}` : "";
+  return new Error(`${base} | ${stage} raw(${raw.length}c): "${head}"${tail}`);
 }

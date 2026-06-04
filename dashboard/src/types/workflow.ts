@@ -8,6 +8,7 @@ export type StepKind =
   | "cron_trigger"
   | "interval_trigger"
   | "llm"
+  | "knowledge"
   | "transform"
   | "condition"
   | "action"
@@ -44,9 +45,16 @@ export interface WorkflowStep {
   outputKeys: string[];
   promptTemplate?: string;
   llmConfigId?: string;
+  // For LLM / agent steps: explicit tier override (bypasses the classifier).
+  llmTier?: "lite" | "standard" | "power";
   condition?: string;
   action?: string;
   config?: Record<string, unknown>;
+  // knowledge step
+  knowledgeBaseIds?: string[];
+  knowledgeQuery?: string;
+  knowledgeLimit?: number;
+  knowledgeMinScore?: number;
   // cron_trigger step
   cronExpression?: string;
   timezone?: string;
@@ -65,6 +73,7 @@ export interface WorkflowStep {
   approvalAssignee?: string;
   approvalMessage?: string;
   approvalTimeoutMinutes?: number;
+  approvalRequestChangesStepId?: string;
   // mcp step
   mcpServerUrl?: string;
   mcpTool?: string;
@@ -76,7 +85,7 @@ export interface WorkflowTemplate {
   id: string;
   name: string;
   description: string;
-  category: "support" | "sales" | "content" | "operations" | "marketing" | "engineering" | "custom";
+  category: "support" | "sales" | "content" | "operations" | "marketing" | "finance" | "engineering" | "custom";
   version: string;
   configFields: ConfigField[];
   steps: WorkflowStep[];

@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { getProvider } from "../../engine/llmProviders";
 import type { LLMProviderConfig, LLMResponse } from "../../engine/llmProviders/types";
 import { actualCallCredits, estimateWorstCaseCredits } from "./costCalculator";
+import { assertAnthropicApiKeyForCredits } from "./anthropicCreditsAuth";
 import {
   pickKeySource,
   markThrottled,
@@ -130,6 +131,19 @@ export async function callWithCredits(args: CreditsCallArgs): Promise<CreditsCal
   const source = await pickKeySource(args.provider);
   if (!source) {
     return { ok: false, error: { kind: "no_key_source", provider: args.provider } };
+  }
+
+  // HEL-602: a direct Anthropic key source must bill our prepaid balance
+  // via an API key, never a subscription-OAuth token (which lands in the
+  // capped Agent-SDK pool from the 2026-06-15 billing split). Fail fast,
+  // before reserving credits. OpenRouter sources carry an OpenRouter key
+  // and route Anthropic downstream, so they're not subject to this.
+  if (source.sourceKind === "direct") {
+    assertAnthropicApiKeyForCredits({
+      provider: source.provider,
+      apiKey: source.apiKey,
+      sourceLabel: source.label,
+    });
   }
 
   // 2. Worst-case estimate + reserve.

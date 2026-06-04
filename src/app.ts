@@ -102,6 +102,7 @@ import apolloRoutes from "./integrations/apollo/routes";
 import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
+import billingInfoRoutes from "./billing/billingInfoRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
@@ -654,6 +655,13 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ensures only members with the billing role can manage subscriptions.
 app.use("/api/billing/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
+// HEL-402: read-only billing info (payment method + next invoice) + a Stripe
+// billing-portal session for the "Update card" action. Mounted AFTER the
+// specific /checkout + /subscription mounts (which terminate their own paths),
+// so this only serves /payment-method, /next-invoice, /portal-session. Reads
+// are display-only for billing-role members (no step-up, mirroring the wallet
+// read); the Stripe-hosted portal is the security boundary for the card change.
+app.use("/api/billing", requireAuth, workspaceResolver, requireRole("billing"), billingInfoRoutes);
 // HEL-credits-mvp: hosted-credits pack purchases. Same role + rate-limit
 // gates as subscription checkout — billing role required.
 app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);

@@ -124,9 +124,16 @@ function toFullCredential(
   };
 }
 
-/** Revoke any existing non-revoked credential for the same user+workspace. */
-function supersedeExisting(userId: string, workspaceId: string): void {
-  for (const record of store.listByUser(userId, false)) {
+/**
+ * Supersede any existing non-revoked credential for the same user+workspace.
+ * Hydrates the user's durable rows first (HEL-470 Codex P2): on a cold instance
+ * the local bucket is empty, so without this a reconnect wouldn't see/delete the
+ * persisted credential and would leave duplicate active creds for the same
+ * user/workspace. `delete()` durably removes the row once it's in the bucket.
+ */
+async function supersedeExisting(userId: string, workspaceId: string): Promise<void> {
+  const records = await store.listByUserAsync(userId, false);
+  for (const record of records) {
     if (record.metadata.workspaceId === workspaceId) {
       store.delete(record.id);
     }
@@ -134,7 +141,7 @@ function supersedeExisting(userId: string, workspaceId: string): void {
 }
 
 export const intercomCredentialStore = {
-  saveOAuth(params: {
+  async saveOAuth(params: {
     userId: string;
     accessToken: string;
     refreshToken?: string;
@@ -142,8 +149,8 @@ export const intercomCredentialStore = {
     workspaceId: string;
     workspaceName?: string;
     metadata?: Record<string, string>;
-  }): IntercomCredentialPublic {
-    supersedeExisting(params.userId, params.workspaceId);
+  }): Promise<IntercomCredentialPublic> {
+    await supersedeExisting(params.userId, params.workspaceId);
     const record = store.create({
       userId: params.userId,
       authMethod: "oauth2_pkce",
@@ -164,15 +171,15 @@ export const intercomCredentialStore = {
     return toPublic(record);
   },
 
-  saveApiKey(params: {
+  async saveApiKey(params: {
     userId: string;
     apiKey: string;
     scopes?: string[];
     workspaceId: string;
     workspaceName?: string;
     metadata?: Record<string, string>;
-  }): IntercomCredentialPublic {
-    supersedeExisting(params.userId, params.workspaceId);
+  }): Promise<IntercomCredentialPublic> {
+    await supersedeExisting(params.userId, params.workspaceId);
     const record = store.create({
       userId: params.userId,
       authMethod: "api_key",
@@ -192,11 +199,19 @@ export const intercomCredentialStore = {
     return toPublic(record);
   },
 
-  getPublicByUser(userId: string): IntercomCredentialPublic[] {
-    return store.listByUser(userId).map(toPublic);
+  async getPublicByUser(userId: string): Promise<IntercomCredentialPublic[]> {
+    // Hydrate from Postgres under RLS so connection listings aren't empty on a
+    // cold instance / after a restart (HEL-470 Codex P2).
+    const records = await store.listByUserAsync(userId, true);
+    return records.map(toPublic);
   },
 
-  /** Sync getter — reads this process's bucket only. Prefer the async variant. */
+  /**
+   * Sync getter — reads this process's local bucket only (no Postgres). Used by
+   * the unified connection-status/disconnect bridge for parity with the other
+   * (not-yet-migrated) connectors. Durable hot paths (health, ensureValidCredential,
+   * connection listing, disconnect) use the async variants.
+   */
   getActiveByUser(userId: string): IntercomCredential | null {
     const record = store.findLatest((r) => r.userId === userId, false);
     if (!record) return null;
@@ -263,9 +278,12 @@ export const intercomCredentialStore = {
     return toPublic(updated);
   },
 
-  revoke(credentialId: string, userId: string): boolean {
-    const existing = store.getById(credentialId);
-    if (!existing || existing.userId !== userId || existing.revokedAt) {
+  async revoke(credentialId: string, userId: string): Promise<boolean> {
+    // getByIdAsync hydrates from Postgres under RLS (ownership enforced), so a
+    // credential persisted by another instance can actually be disconnected
+    // (HEL-470 Codex P2). getById (bucket-only) would 404 on a cold instance.
+    const existing = await store.getByIdAsync(credentialId, userId);
+    if (!existing || existing.revokedAt) {
       return false;
     }
     const now = new Date().toISOString();

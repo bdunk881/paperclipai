@@ -469,7 +469,7 @@ router.delete("/:provider/disconnect", requireAuth, asyncHandler<AuthenticatedRe
     case "intercom": {
       const current = intercomCredentialStore.getActiveByUser(userId);
       if (current) {
-        intercomConnectorService.disconnect(userId, current.id);
+        await intercomConnectorService.disconnect(userId, current.id);
       }
       break;
     }

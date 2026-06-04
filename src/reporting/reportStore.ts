@@ -7,6 +7,7 @@ import { GeneratedReport, ReportDelivery, ReportKind, ReportMetric, ReportSectio
 interface ReportRow {
   id: string;
   user_id: string;
+  workspace_id: string | null;
   team_id: string | null;
   kind: ReportKind;
   title: string;
@@ -50,6 +51,7 @@ function mapRow(row: ReportRow): GeneratedReport {
   return {
     id: row.id,
     userId: row.user_id,
+    workspaceId: row.workspace_id ?? undefined,
     teamId: row.team_id ?? undefined,
     kind: row.kind,
     title: row.title,
@@ -77,10 +79,10 @@ async function persist(report: GeneratedReport): Promise<void> {
       `INSERT INTO generated_reports (
          id, user_id, team_id, kind, title, summary, period_start, period_end,
          template_json, sections_json, metrics_json, delivery_json, source_json,
-         created_at, updated_at
+         created_at, updated_at, workspace_id
        )
        VALUES (
-         $1, $2, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15
+         $1, $2, $3::uuid, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14, $15, $16::uuid
        )
        ON CONFLICT (id) DO UPDATE
        SET title = EXCLUDED.title,
@@ -92,6 +94,7 @@ async function persist(report: GeneratedReport): Promise<void> {
            metrics_json = EXCLUDED.metrics_json,
            delivery_json = EXCLUDED.delivery_json,
            source_json = EXCLUDED.source_json,
+           workspace_id = EXCLUDED.workspace_id,
            updated_at = EXCLUDED.updated_at`,
       [
         report.id,
@@ -109,6 +112,7 @@ async function persist(report: GeneratedReport): Promise<void> {
         serializeJson(report.source),
         report.createdAt,
         report.updatedAt,
+        report.workspaceId ?? null,
       ],
     );
   });
@@ -133,10 +137,19 @@ export const reportStore = {
     return cloneReport(report);
   },
 
-  async listByUser(userId: string, filters?: { teamId?: string; kind?: ReportKind }): Promise<GeneratedReport[]> {
+  async listByUser(
+    userId: string,
+    filters?: { teamId?: string; kind?: ReportKind; workspaceId?: string },
+  ): Promise<GeneratedReport[]> {
+    const workspaceId = filters?.workspaceId ?? null;
     if (!postgresPersistenceAvailable()) {
       return Array.from(memoryReports.values())
         .filter((report) => report.userId === userId)
+        // NULL-tolerant workspace scoping: rows tagged with a workspace are
+        // only visible under that workspace; legacy untagged rows stay visible.
+        .filter((report) =>
+          workspaceId ? report.workspaceId === workspaceId || !report.workspaceId : true,
+        )
         .filter((report) => (filters?.teamId ? report.teamId === filters.teamId : true))
         .filter((report) => (filters?.kind ? report.kind === filters.kind : true))
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -150,23 +163,34 @@ export const reportStore = {
           WHERE user_id = $1
             AND ($2::uuid IS NULL OR team_id = $2::uuid)
             AND ($3::text IS NULL OR kind = $3)
+            AND ($4::uuid IS NULL OR workspace_id = $4::uuid OR workspace_id IS NULL)
           ORDER BY created_at DESC`,
-        [userId, filters?.teamId ?? null, filters?.kind ?? null],
+        [userId, filters?.teamId ?? null, filters?.kind ?? null, workspaceId],
       );
       return result.rows.map(mapRow);
     });
   },
 
-  async getById(id: string, userId: string): Promise<GeneratedReport | undefined> {
+  async getById(id: string, userId: string, workspaceId?: string): Promise<GeneratedReport | undefined> {
+    const scopedWorkspaceId = workspaceId ?? null;
     if (!postgresPersistenceAvailable()) {
       const report = memoryReports.get(id);
-      return report && report.userId === userId ? cloneReport(report) : undefined;
+      if (!report || report.userId !== userId) {
+        return undefined;
+      }
+      // NULL-tolerant: a report tagged with another workspace is not visible.
+      if (scopedWorkspaceId && report.workspaceId && report.workspaceId !== scopedWorkspaceId) {
+        return undefined;
+      }
+      return cloneReport(report);
     }
 
     return withUserContext(getPostgresPool(), userId, async (client) => {
       const result = await client.query<ReportRow>(
-        "SELECT * FROM generated_reports WHERE id = $1 AND user_id = $2",
-        [id, userId],
+        `SELECT * FROM generated_reports
+          WHERE id = $1 AND user_id = $2
+            AND ($3::uuid IS NULL OR workspace_id = $3::uuid OR workspace_id IS NULL)`,
+        [id, userId, scopedWorkspaceId],
       );
       return result.rows[0] ? mapRow(result.rows[0]) : undefined;
     });

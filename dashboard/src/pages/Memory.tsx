@@ -25,10 +25,12 @@ import {
   listInstructions,
   listKnowledgeItems,
   listEpisodes,
+  runReflection,
   updateInstruction,
   type Episode,
   type Instruction,
   type KnowledgeItem,
+  type ReflectionResult,
 } from "../api/memoryApi";
 // HEL-214 / PR J: Pro Mode actionable reveal.
 import { ProReveal } from "../components/pro/ProReveal";
@@ -431,6 +433,10 @@ function EpisodesTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
   const [items, setItems] = useState<Episode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // HEL-483: manual reflection ("Run consolidation") state.
+  const [reflecting, setReflecting] = useState(false);
+  const [reflection, setReflection] = useState<ReflectionResult | null>(null);
+  const [reflectError, setReflectError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -450,6 +456,26 @@ function EpisodesTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
     }
   }, [requireAccessToken, scopeFilter.agentId, scopeFilter.missionId]);
 
+  // HEL-483: re-added the manual reflection trigger that the v2 Memory rework
+  // dropped (regressed from HEL-91). Calls the live POST /api/knowledge/reflect
+  // and surfaces the distillation summary; refreshes the feed afterwards since
+  // reflection marks episodes reflected and creates knowledge items.
+  const runConsolidation = useCallback(async () => {
+    setReflecting(true);
+    setReflectError(null);
+    setReflection(null);
+    try {
+      const token = await requireAccessToken();
+      const result = await runReflection(token);
+      setReflection(result);
+      await refresh();
+    } catch (err) {
+      setReflectError((err as Error).message);
+    } finally {
+      setReflecting(false);
+    }
+  }, [requireAccessToken, refresh]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -463,6 +489,45 @@ function EpisodesTab({ scopeFilter }: { scopeFilter: ScopeFilter }) {
 
   return (
     <>
+      {/* HEL-483: manual "Run consolidation" trigger (regressed from HEL-91). */}
+      <div
+        className="card"
+        style={{
+          marginBottom: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <p className="desc" style={{ margin: 0 }}>
+            Distill recent episodes into consolidated knowledge items.
+          </p>
+          {reflection ? (
+            <p className="meta" style={{ margin: "4px 0 0" }}>
+              Processed {reflection.episodesProcessed} episode
+              {reflection.episodesProcessed === 1 ? "" : "s"} · {reflection.clustersFound} cluster
+              {reflection.clustersFound === 1 ? "" : "s"} · created {reflection.itemsCreated} knowledge
+              item{reflection.itemsCreated === 1 ? "" : "s"}.
+            </p>
+          ) : null}
+          {reflectError ? (
+            <p className="meta" style={{ margin: "4px 0 0", color: "var(--af2-clay)" }}>
+              {reflectError}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => void runConsolidation()}
+          disabled={reflecting}
+        >
+          {reflecting ? "Consolidating…" : "Run consolidation"}
+        </button>
+      </div>
       {loading ? <p className="meta">Loading…</p> : null}
       {error ? (
         <p className="meta" style={{ color: "var(--af2-clay)" }}>

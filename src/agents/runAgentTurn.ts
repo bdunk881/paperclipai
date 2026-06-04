@@ -112,6 +112,14 @@ export interface RunAgentTurnInput {
    * which prevents A→B→A loops.
    */
   delegationLineage?: ReadonlySet<string>;
+  /**
+   * HEL-603 sub-agent affinity: the parent run's key `source_id`, inherited
+   * down the delegation chain. Forwarded to the delegate tool, which prefers
+   * a fresh ledger read and uses this as the chain fallback. (This run's own
+   * LLM call doesn't consume it yet — the agent runtime isn't on the credits
+   * path today — so it's carried purely for the next delegation hop.)
+   */
+  parentSourceHint?: string | null;
 }
 
 export interface RunAgentTurnResult {
@@ -160,6 +168,7 @@ export async function runAgentTurn(
     lineage: input.delegationLineage,
     sourceRoutineId: input.sourceRoutineId ?? null,
     sourceTicketId: input.sourceTicketId ?? null,
+    parentSourceHint: input.parentSourceHint ?? null,
     tier: input.tier,
     permissionMode: input.permissionMode,
   });

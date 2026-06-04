@@ -21,6 +21,17 @@ jest.mock("../runAgentTurn", () => ({
   runAgentTurn: (input: Record<string, unknown>) => mockRunAgentTurn(input),
 }));
 
+// HEL-603: the handler reads the parent's last source from the ledger via
+// walletStore. Mock it so the suite stays off the DB and we can drive the
+// affinity path deterministically.
+const mockGetLastConsumptionSourceId = jest.fn<
+  (workspaceId: string) => Promise<string | null>
+>(async () => null);
+jest.mock("../../billing/credits/walletStore", () => ({
+  getLastConsumptionSourceId: (workspaceId: string) =>
+    mockGetLastConsumptionSourceId(workspaceId),
+}));
+
 import {
   createDelegateToSubagentTool,
   MAX_DELEGATION_DEPTH,
@@ -47,6 +58,7 @@ function poolThatThrows(): Pool {
 
 beforeEach(() => {
   mockRunAgentTurn.mockClear();
+  mockGetLastConsumptionSourceId.mockClear();
 });
 
 afterEach(() => {
@@ -224,5 +236,76 @@ describe("createDelegateToSubagentTool", () => {
     })) as { ok: boolean; error: string };
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/Delegation to Alice failed: model timed out/);
+  });
+
+  describe("HEL-603 sub-agent affinity (parentSourceHint)", () => {
+    it("threads the parent's last ledger source to the child run", async () => {
+      mockGetLastConsumptionSourceId.mockResolvedValueOnce("src-parent-123");
+      const tool = await createDelegateToSubagentTool({
+        pool: poolWithReports([
+          { id: ALICE_ID, name: "Alice", role_key: "sdr", description: "" },
+        ]),
+        workspaceId: WS_ID,
+        userId: "user-1",
+        parentAgentId: PARENT_ID,
+      });
+      await tool!.handler({ agent_name: "Alice", task: "Do it." });
+      expect(mockGetLastConsumptionSourceId).toHaveBeenCalledWith(WS_ID);
+      const call = mockRunAgentTurn.mock.calls[0]![0];
+      expect(call.parentSourceHint).toBe("src-parent-123");
+    });
+
+    it("falls back to the inherited hint when the ledger has no source", async () => {
+      mockGetLastConsumptionSourceId.mockResolvedValueOnce(null);
+      const tool = await createDelegateToSubagentTool({
+        pool: poolWithReports([
+          { id: ALICE_ID, name: "Alice", role_key: "sdr", description: "" },
+        ]),
+        workspaceId: WS_ID,
+        userId: "user-1",
+        parentAgentId: PARENT_ID,
+        parentSourceHint: "src-grandparent-9",
+      });
+      await tool!.handler({ agent_name: "Alice", task: "Do it." });
+      const call = mockRunAgentTurn.mock.calls[0]![0];
+      expect(call.parentSourceHint).toBe("src-grandparent-9");
+    });
+
+    it("threads null when neither the ledger nor an inherited hint is present", async () => {
+      mockGetLastConsumptionSourceId.mockResolvedValueOnce(null);
+      const tool = await createDelegateToSubagentTool({
+        pool: poolWithReports([
+          { id: ALICE_ID, name: "Alice", role_key: "sdr", description: "" },
+        ]),
+        workspaceId: WS_ID,
+        userId: "user-1",
+        parentAgentId: PARENT_ID,
+      });
+      await tool!.handler({ agent_name: "Alice", task: "Do it." });
+      const call = mockRunAgentTurn.mock.calls[0]![0];
+      expect(call.parentSourceHint).toBeNull();
+    });
+
+    it("survives a ledger read failure, falling back to the inherited hint", async () => {
+      mockGetLastConsumptionSourceId.mockRejectedValueOnce(
+        new Error("db down") as never,
+      );
+      const tool = await createDelegateToSubagentTool({
+        pool: poolWithReports([
+          { id: ALICE_ID, name: "Alice", role_key: "sdr", description: "" },
+        ]),
+        workspaceId: WS_ID,
+        userId: "user-1",
+        parentAgentId: PARENT_ID,
+        parentSourceHint: "src-fallback",
+      });
+      const result = (await tool!.handler({
+        agent_name: "Alice",
+        task: "Do it.",
+      })) as { ok: boolean };
+      expect(result.ok).toBe(true);
+      const call = mockRunAgentTurn.mock.calls[0]![0];
+      expect(call.parentSourceHint).toBe("src-fallback");
+    });
   });
 });

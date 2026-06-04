@@ -224,6 +224,36 @@ export async function getDailySpendCapStatus(workspaceId: string): Promise<Daily
 }
 
 /**
+ * HEL-603 sub-agent affinity: the key `source_id` of the workspace's most
+ * recent successful (consumption) credits call, read from the ledger
+ * metadata. The `delegate_to_subagent` handler passes this down so a child
+ * run sticks to the parent's upstream source for prompt-cache locality.
+ *
+ * Workspace-scoped — the finest scope the ledger row carries without a
+ * schema change. Returns null in in-memory mode (the dev/test ledger
+ * doesn't retain source metadata) and when the workspace has no
+ * consumption rows yet; a null result simply means "no affinity hint," so
+ * callers fall back to normal priority selection. Uses the
+ * `idx_credit_ledger_workspace_created` index.
+ */
+export async function getLastConsumptionSourceId(
+  workspaceId: string,
+): Promise<string | null> {
+  if (!persistenceAvailable()) return null;
+  const result = await queryPostgres<{ source_id: string | null }>(
+    `SELECT metadata->>'source_id' AS source_id
+       FROM workspace_credit_ledger
+      WHERE workspace_id = $1
+        AND type = 'consumption'
+        AND metadata->>'source_id' IS NOT NULL
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [workspaceId],
+  );
+  return result.rows[0]?.source_id ?? null;
+}
+
+/**
  * Update the workspace's daily spend cap. Null clears the cap entirely.
  * Caller must enforce its own auth (this is invoked from a route
  * gated by requireRole).

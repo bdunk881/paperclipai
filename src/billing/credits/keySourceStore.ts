@@ -35,6 +35,7 @@ import {
   queryPostgres,
 } from "../../db/postgres";
 import { connectorSecretVault } from "../../integrations/shared/credentialRegistry";
+import { emitRoutingAffinityUsed } from "./routingTelemetry";
 
 export type KeySourceKind = "openrouter" | "direct";
 export type KeySourceStatus =
@@ -65,6 +66,38 @@ export interface SelectedKeySource extends KeySourceRow {
   /** Decrypted plaintext. Caller must not log or persist this. */
   apiKey: string;
 }
+
+export interface PickKeySourceOptions {
+  /**
+   * HEL-603 sub-agent affinity: prefer this key source if it is still
+   * eligible (same active-OR-throttled-cooldown-passed + provider-match +
+   * daily-cap predicate as normal selection). When set and eligible we
+   * short-circuit to it for prompt-cache locality across a delegation
+   * fan-out; otherwise we fall through to `priority ASC` selection. A
+   * stale or wrong-provider id simply fails the eligibility check and we
+   * fall through — the hint is never trusted blindly.
+   */
+  preferSourceId?: string;
+}
+
+/** Row shape returned by the two `pickKeySource` SELECTs (includes the ciphertext). */
+type PickKeySourceQueryRow = {
+  id: string;
+  source_kind: string;
+  provider: string;
+  label: string;
+  key_ciphertext: string;
+  status: string;
+  throttled_until: Date | null;
+  prepaid_balance_usd: string | null;
+  prepaid_balance_observed_at: Date | null;
+  daily_spend_cap_usd: string | null;
+  current_day_spend_usd: string;
+  current_day_key: string | null;
+  last_429_at: Date | null;
+  consecutive_429_count: number;
+  priority: number;
+};
 
 // allowlist: rolling counter / cached config; process-local by design
 const inMemoryKeySources = new Map<string, KeySourceRow & { keyCiphertext: string }>();
@@ -118,10 +151,22 @@ function rowToShape(row: {
  *
  * Direct-provider rows match by `provider` exactly. OpenRouter rows
  * match any provider lookup as a catch-all.
+ *
+ * HEL-603: when `opts.preferSourceId` is supplied and that row is still
+ * eligible, we short-circuit to it (sub-agent affinity for prompt-cache
+ * locality) and emit `routing.affinity_used`. Otherwise selection is
+ * unchanged: `priority ASC`, then spend headroom.
  */
-export async function pickKeySource(provider: string): Promise<SelectedKeySource | null> {
+export async function pickKeySource(
+  provider: string,
+  opts: PickKeySourceOptions = {},
+): Promise<SelectedKeySource | null> {
   if (!persistenceAvailable()) {
     const now = new Date();
+    const decryptKey = (r: KeySourceRow & { keyCiphertext: string }): string =>
+      r.keyCiphertext.startsWith("inmem:")
+        ? r.keyCiphertext.slice("inmem:".length)
+        : connectorSecretVault.decrypt(r.keyCiphertext);
     const candidates = [...inMemoryKeySources.values()]
       .filter((r) => {
         // A row is eligible when it's `active` OR its `throttled` cooldown
@@ -139,35 +184,61 @@ export async function pickKeySource(provider: string): Promise<SelectedKeySource
         }
         return false;
       })
-      .filter((r) => r.sourceKind === "openrouter" || r.provider === provider)
-      .sort((a, b) => a.priority - b.priority);
-    const chosen = candidates[0];
+      .filter((r) => r.sourceKind === "openrouter" || r.provider === provider);
+    // HEL-603 affinity: stick to the parent's source when it's still
+    // eligible, before falling back to priority order.
+    if (opts.preferSourceId) {
+      const preferred = candidates.find((r) => r.id === opts.preferSourceId);
+      if (preferred) {
+        emitRoutingAffinityUsed({
+          sourceId: preferred.id,
+          provider,
+          sourceKind: preferred.sourceKind,
+        });
+        return { ...preferred, apiKey: decryptKey(preferred) };
+      }
+    }
+    const chosen = candidates.sort((a, b) => a.priority - b.priority)[0];
     if (!chosen) return null;
-    return {
-      ...chosen,
-      apiKey: chosen.keyCiphertext.startsWith("inmem:")
-        ? chosen.keyCiphertext.slice("inmem:".length)
-        : connectorSecretVault.decrypt(chosen.keyCiphertext),
-    };
+    return { ...chosen, apiKey: decryptKey(chosen) };
   }
 
-  const result = await queryPostgres<{
-    id: string;
-    source_kind: string;
-    provider: string;
-    label: string;
-    key_ciphertext: string;
-    status: string;
-    throttled_until: Date | null;
-    prepaid_balance_usd: string | null;
-    prepaid_balance_observed_at: Date | null;
-    daily_spend_cap_usd: string | null;
-    current_day_spend_usd: string;
-    current_day_key: string | null;
-    last_429_at: Date | null;
-    consecutive_429_count: number;
-    priority: number;
-  }>(
+  // HEL-603 affinity: try the preferred (parent's) source first, using the
+  // SAME eligibility predicate as the priority query below. A hit keeps the
+  // delegation chain on one source for prompt-cache locality; a miss (stale,
+  // throttled, wrong-provider, or capped row) falls through unchanged.
+  if (opts.preferSourceId) {
+    const preferred = await queryPostgres<PickKeySourceQueryRow>(
+      `SELECT id, source_kind, provider, label, key_ciphertext, status,
+              throttled_until, prepaid_balance_usd, prepaid_balance_observed_at,
+              daily_spend_cap_usd, current_day_spend_usd, current_day_key,
+              last_429_at, consecutive_429_count, priority
+         FROM platform_provider_keys
+        WHERE id = $2
+          AND (
+                status = 'active'
+                OR (status = 'throttled' AND throttled_until IS NOT NULL AND throttled_until <= now())
+              )
+          AND (source_kind = 'openrouter' OR provider = $1)
+          AND (daily_spend_cap_usd IS NULL OR current_day_spend_usd < daily_spend_cap_usd)
+        LIMIT 1`,
+      [provider, opts.preferSourceId],
+    );
+    if ((preferred.rowCount ?? 0) > 0) {
+      const prow = preferred.rows[0];
+      emitRoutingAffinityUsed({
+        sourceId: prow.id,
+        provider,
+        sourceKind: prow.source_kind,
+      });
+      return {
+        ...rowToShape(prow),
+        apiKey: connectorSecretVault.decrypt(prow.key_ciphertext),
+      };
+    }
+  }
+
+  const result = await queryPostgres<PickKeySourceQueryRow>(
     `SELECT id, source_kind, provider, label, key_ciphertext, status,
             throttled_until, prepaid_balance_usd, prepaid_balance_observed_at,
             daily_spend_cap_usd, current_day_spend_usd, current_day_key,

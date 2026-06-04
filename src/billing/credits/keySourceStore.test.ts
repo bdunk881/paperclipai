@@ -1,3 +1,7 @@
+jest.mock("./routingTelemetry", () => ({
+  emitRoutingAffinityUsed: jest.fn(),
+}));
+
 import {
   __resetInMemoryStateForTests,
   insertKeySource,
@@ -6,10 +10,16 @@ import {
   recordSuccess,
   setStatus,
 } from "./keySourceStore";
+import { emitRoutingAffinityUsed } from "./routingTelemetry";
+
+const emitAffinityMock = emitRoutingAffinityUsed as jest.MockedFunction<
+  typeof emitRoutingAffinityUsed
+>;
 
 describe("credits key source store (in-memory mode)", () => {
   beforeEach(() => {
     __resetInMemoryStateForTests();
+    emitAffinityMock.mockClear();
   });
 
   it("returns null when no key source matches", async () => {
@@ -138,5 +148,126 @@ describe("credits key source store (in-memory mode)", () => {
     await recordSuccess(id, 0.1);
     const afterRecover = await pickKeySource("anthropic");
     expect(afterRecover?.status).toBe("active");
+  });
+
+  describe("HEL-603 sub-agent affinity (preferSourceId)", () => {
+    it("sticks to the preferred source even when a lower-priority row would win", async () => {
+      const orId = await insertKeySource({
+        sourceKind: "openrouter",
+        provider: "openrouter",
+        label: "or-prod",
+        apiKey: "sk-or-test",
+        priority: 100,
+      });
+      const antId = await insertKeySource({
+        sourceKind: "direct",
+        provider: "anthropic",
+        label: "anthropic-direct",
+        apiKey: "sk-ant-test",
+        priority: 10,
+      });
+
+      // Sanity: without a hint, the direct anthropic row (priority 10) wins.
+      expect((await pickKeySource("anthropic"))?.id).toBe(antId);
+      expect(emitAffinityMock).not.toHaveBeenCalled();
+
+      // With the hint, affinity short-circuits to OpenRouter despite p100.
+      const picked = await pickKeySource("anthropic", { preferSourceId: orId });
+      expect(picked?.id).toBe(orId);
+      expect(picked?.sourceKind).toBe("openrouter");
+      expect(picked?.apiKey).toBe("sk-or-test");
+      expect(emitAffinityMock).toHaveBeenCalledTimes(1);
+      expect(emitAffinityMock).toHaveBeenCalledWith({
+        sourceId: orId,
+        provider: "anthropic",
+        sourceKind: "openrouter",
+      });
+    });
+
+    it("falls through to priority selection when the preferred source is throttled", async () => {
+      const orId = await insertKeySource({
+        sourceKind: "openrouter",
+        provider: "openrouter",
+        label: "or-prod",
+        apiKey: "sk-or-test",
+        priority: 100,
+      });
+      const antId = await insertKeySource({
+        sourceKind: "direct",
+        provider: "anthropic",
+        label: "anthropic-direct",
+        apiKey: "sk-ant-test",
+        priority: 10,
+      });
+      await markThrottled(orId, 3600); // preferred source ineligible
+
+      const picked = await pickKeySource("anthropic", { preferSourceId: orId });
+      expect(picked?.id).toBe(antId);
+      expect(picked?.sourceKind).toBe("direct");
+      // A miss must NOT emit the affinity event.
+      expect(emitAffinityMock).not.toHaveBeenCalled();
+    });
+
+    it("ignores a hint for a source not eligible for the requested provider", async () => {
+      const orId = await insertKeySource({
+        sourceKind: "openrouter",
+        provider: "openrouter",
+        label: "or-prod",
+        apiKey: "sk-or-test",
+        priority: 100,
+      });
+      const openaiId = await insertKeySource({
+        sourceKind: "direct",
+        provider: "openai",
+        label: "openai-direct",
+        apiKey: "sk-oai-test",
+        priority: 10,
+      });
+
+      // Hint points at the OpenAI direct row, but the call is for anthropic —
+      // that row isn't a candidate, so we fall through to the OpenRouter catch-all.
+      const picked = await pickKeySource("anthropic", { preferSourceId: openaiId });
+      expect(picked?.id).toBe(orId);
+      expect(emitAffinityMock).not.toHaveBeenCalled();
+    });
+
+    it("honors a hint for a throttled source once its cooldown has elapsed", async () => {
+      const orId = await insertKeySource({
+        sourceKind: "openrouter",
+        provider: "openrouter",
+        label: "or-prod",
+        apiKey: "sk-or-test",
+        priority: 100,
+      });
+      const antId = await insertKeySource({
+        sourceKind: "direct",
+        provider: "anthropic",
+        label: "anthropic-direct",
+        apiKey: "sk-ant-test",
+        priority: 10,
+      });
+      // Briefly throttle the preferred source so its cooldown elapses mid-test;
+      // affinity must treat "throttled but cooled down" as eligible, same as
+      // the priority query does.
+      await markThrottled(orId, 0);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      const picked = await pickKeySource("anthropic", { preferSourceId: orId });
+      expect(picked?.id).toBe(orId);
+      expect(picked?.id).not.toBe(antId);
+      expect(emitAffinityMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not emit when no hint is supplied", async () => {
+      await insertKeySource({
+        sourceKind: "openrouter",
+        provider: "openrouter",
+        label: "or-prod",
+        apiKey: "sk-or-test",
+      });
+      const picked = await pickKeySource("anthropic");
+      expect(picked?.sourceKind).toBe("openrouter");
+      expect(emitAffinityMock).not.toHaveBeenCalled();
+    });
   });
 });

@@ -43,7 +43,13 @@ const PLAN_LIMITS: Record<SubscriptionTier, EntitlementLimits> = {
     runsPerMonth: 250,
     agentCap: 3,
     integrationCap: 3,
-    byokAllowed: false,
+    // HEL-499: unified BYOK across all tiers so the ladder is monotonic.
+    // Explore (free) is temporarily byok=true while the hosted-free-model
+    // path is built; leaving Flow ($19) at false meant an Explore→Flow
+    // upgrade *removed* BYOK — an inverted ladder. Until hosted-free ships
+    // (HEL-420), every tier allows BYOK; when it lands, flip Explore back to
+    // false (and reconsider gating BYOK to Automate+) in the same change.
+    byokAllowed: true,
     logRetentionDays: 30,
     approvalTierMax: 1,
   },

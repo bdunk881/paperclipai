@@ -57,7 +57,9 @@ function build(workspaceId: string, plan: SubscriptionTier): WorkspaceEntitlemen
               runsPerMonth: 250,
               agentCap: 3,
               integrationCap: 3,
-              byokAllowed: false,
+              // HEL-499: flow now allows BYOK (monotonic ladder) — mirrors the
+              // real PLAN_LIMITS so byok-gate tests reflect production.
+              byokAllowed: true,
               logRetentionDays: 30,
               approvalTierMax: 1,
             }

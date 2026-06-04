@@ -210,12 +210,11 @@ describe("POST /api/llm-configs", () => {
     expect(res.body.error).toMatch(/provider/i);
   });
 
-  it("returns 402 with entitlement_exceeded payload when BYOK is disallowed on the plan (HEL-71)", async () => {
-    // Flip the test workspace to a tier where byokAllowed=false. As of
-    // the Explore-BYOK unlock, that's `flow` — Explore now allows BYOK
-    // while the hosted free-model path is built. The default workspace
-    // id is the one the auto-mock workspaceResolver sets when no
-    // X-Workspace-Id header is passed.
+  it("allows BYOK config creation on flow after HEL-499 unified the tier ladder", async () => {
+    // HEL-71 originally gated BYOK behind paid tiers and this asserted a 402
+    // on flow. HEL-499 unified BYOK across all tiers (so an Explore→Flow
+    // upgrade no longer regresses BYOK) — no standard tier denies it until the
+    // hosted-free-model path ships. Verify flow no longer hits the gate.
     entitlementStore.upsert(DEFAULT_WORKSPACE, "flow");
 
     const res = await request(app)
@@ -228,14 +227,8 @@ describe("POST /api/llm-configs", () => {
         apiKey: "sk-test-abc1234",
       });
 
-    expect(res.status).toBe(402);
-    expect(res.body).toMatchObject({
-      code: "entitlement_exceeded",
-      feature: "byokAllowed",
-      limit: false,
-      currentTier: "flow",
-      upgradeTo: "automate",
-    });
+    expect(res.status).not.toBe(402);
+    expect(res.body).not.toMatchObject({ code: "entitlement_exceeded" });
   });
 });
 

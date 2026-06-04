@@ -37,9 +37,13 @@ describe("requireEntitlement", () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
-    it("denies with 402 + structured upgrade hint on a plan that doesn't grant the feature (flow)", async () => {
+    it("grants byokAllowed on flow after HEL-499 unified the tier ladder", async () => {
+      // HEL-499: flow ($19) now allows BYOK (was false, which made an
+      // Explore→Flow upgrade regress capability). BYOK is uniform across
+      // tiers until the hosted-free-model path ships, so no standard tier
+      // denies it — the 402 deny path is covered by the scale-quota test below.
       const ws = "ws-flow";
-      entitlementStore.upsert(ws, "flow"); // byokAllowed=false on flow
+      entitlementStore.upsert(ws, "flow");
       const middleware = requireEntitlement("byokAllowed");
       const req = reqInWorkspace(ws);
       const res = createResponse();
@@ -47,16 +51,8 @@ describe("requireEntitlement", () => {
 
       await middleware(req, res, next);
 
-      expect(next).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(402);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          code: "entitlement_exceeded",
-          feature: "byokAllowed",
-          currentTier: "flow",
-          upgradeTo: "automate",
-        }),
-      );
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
     });
 
     it("upgradeTo is null when denying at the top of the plan ladder (scale)", async () => {

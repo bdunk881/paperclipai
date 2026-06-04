@@ -748,24 +748,39 @@ export const ticketSyncService = {
     }
 
     const secret = built.decrypted.record.metadata.config.webhookSecret;
-    if (secret) {
-      try {
-        if (input.provider === "github") {
-          verifyGitHubWebhook(input.rawBody, input.headers["x-hub-signature-256"], secret);
-        } else if (input.provider === "jira") {
-          verifyJiraWebhook(input.rawBody, input.headers["x-atlassian-webhook-signature"], secret);
-        } else {
-          verifyLinearWebhook({
-            rawBody: input.rawBody,
-            signatureHeader: input.headers["linear-signature"] ?? input.headers["x-linear-signature"],
-            deliveryIdHeader: input.headers["linear-delivery"] ?? input.headers["x-linear-delivery"],
-            signingSecret: secret,
-          });
-        }
-      } catch (sigErr) {
-        console.error("[webhook.signature_rejected]", { provider: input.provider, connectionId: input.connectionId, error: sigErr instanceof Error ? sigErr.message : String(sigErr) });
-        throw sigErr;
+    // HEL-487: a connection with no configured webhookSecret must NOT accept
+    // unauthenticated inbound writes to the ticket store. Previously the
+    // signature check was skipped entirely when no secret was set, so a
+    // secret-less connection trusted any payload. github/jira/linear all
+    // support request signing, so require it and reject when absent.
+    if (!secret) {
+      console.error("[webhook.signature_rejected]", {
+        provider: input.provider,
+        connectionId: input.connectionId,
+        error: "no webhookSecret configured for this connection",
+      });
+      throw new TrackerError(
+        "auth",
+        "Webhook signature required: this ticket-sync connection has no webhookSecret configured.",
+        401,
+      );
+    }
+    try {
+      if (input.provider === "github") {
+        verifyGitHubWebhook(input.rawBody, input.headers["x-hub-signature-256"], secret);
+      } else if (input.provider === "jira") {
+        verifyJiraWebhook(input.rawBody, input.headers["x-atlassian-webhook-signature"], secret);
+      } else {
+        verifyLinearWebhook({
+          rawBody: input.rawBody,
+          signatureHeader: input.headers["linear-signature"] ?? input.headers["x-linear-signature"],
+          deliveryIdHeader: input.headers["linear-delivery"] ?? input.headers["x-linear-delivery"],
+          signingSecret: secret,
+        });
       }
+    } catch (sigErr) {
+      console.error("[webhook.signature_rejected]", { provider: input.provider, connectionId: input.connectionId, error: sigErr instanceof Error ? sigErr.message : String(sigErr) });
+      throw sigErr;
     }
 
     const event =

@@ -420,6 +420,36 @@ describe("ticket sync routes", () => {
     expect(mirrored.body).toContain("autoflow");
   });
 
+  it("rejects inbound webhooks with 401 when the connection has no webhookSecret (HEL-487)", async () => {
+    const app = buildApp();
+    const connection = await request(app)
+      .post("/api/ticket-sync/connections")
+      .set(auth("user-1"))
+      .send({
+        workspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        provider: "github",
+        authMethod: "api_key",
+        label: "GitHub no-secret",
+        config: { owner: "autoflow", repo: "paperclipai" },
+        secrets: { token: "ghp_test" },
+      });
+    expect(connection.status).toBeLessThan(300);
+
+    const payload = JSON.stringify({
+      action: "opened",
+      issue: { id: 7, number: 7, title: "x", body: "", state: "open", labels: [], html_url: "https://github.test/issues/7" },
+    });
+    const webhook = await request(app)
+      .post(`/api/webhooks/ticket-sync/github/${connection.body.id}`)
+      .set("X-GitHub-Event", "issues")
+      .set("Content-Type", "application/json")
+      .send(payload);
+
+    // No webhookSecret configured ⇒ unauthenticated inbound must be rejected,
+    // not silently trusted.
+    expect(webhook.status).toBe(401);
+  });
+
   it("imports labeled GitHub issues from webhooks and suppresses echoed comments", async () => {
     const app = buildApp();
     const connection = await request(app)

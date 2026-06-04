@@ -20,6 +20,7 @@ import { asyncHandler } from "../middleware/asyncHandler";
 import { getPackById } from "./credits/packCatalog";
 import { claimSessionForGrant } from "./credits/purchaseEventLog";
 import { grantCredits } from "./credits/walletStore";
+import { sweepPurchaseToIssuing } from "./credits/stripeIssuing";
 
 const router = Router();
 
@@ -453,6 +454,16 @@ async function handleCreditPackCheckout(
     );
     return;
   }
+
+  // HEL-599: sweep a share of this purchase into the Stripe Issuing balance
+  // (direct-provider wholesale funding). Best-effort + idempotent on the
+  // session id, so the webhook/confirm dual-path books at most one funding
+  // row; a failure here never affects the customer's credit grant. Use the
+  // actual amount paid (post-discount) as the revenue figure.
+  await sweepPurchaseToIssuing({
+    amountUsdCents: session.amount_total ?? pack.priceUsdCents,
+    sessionId: session.id,
+  });
 
   console.log(
     `[stripe/webhook] credit pack ${packId} granted ${pack.creditsGranted} credits to workspace ${workspaceId} (session ${session.id}, balance_after=${result.balanceAfter}, claim_recorded=${claimed})`,

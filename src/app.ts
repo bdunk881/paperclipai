@@ -88,6 +88,7 @@ import {
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import issuingWebhookRoutes from "./billing/credits/issuingWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import creditsCheckoutRoutes from "./billing/credits/checkoutRoutes";
@@ -549,6 +550,10 @@ app.use("/api/webhooks", webhookRateLimiter);
 // is available for signature verification
 // ---------------------------------------------------------------------------
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
+// Stripe Issuing webhook (HEL-599) — real-time provider-card authorization
+// decisions. Separate endpoint + signing secret from the main Stripe webhook;
+// raw body before express.json() for signature verification.
+app.use("/api/webhooks/stripe/issuing", express.raw({ type: "application/json" }), issuingWebhookRoutes);
 // Slack webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/slack", slackWebhookRouter);
 // Shopify webhook — mounted before express.json() for signature verification

@@ -60,20 +60,20 @@ describe("Template registry", () => {
     });
   });
 
-  it("getTemplate returns the correct template", () => {
-    expect(getTemplate(customerSupportBot.id)).toBe(customerSupportBot);
-    expect(getTemplate(leadEnrichment.id)).toBe(leadEnrichment);
-    expect(getTemplate(contentGenerator.id)).toBe(contentGenerator);
+  it("getTemplate returns the correct template", async () => {
+    expect(await getTemplate(customerSupportBot.id)).toBe(customerSupportBot);
+    expect(await getTemplate(leadEnrichment.id)).toBe(leadEnrichment);
+    expect(await getTemplate(contentGenerator.id)).toBe(contentGenerator);
   });
 
-  it("getTemplate throws for unknown id", () => {
-    expect(() => getTemplate("tpl-unknown")).toThrow("Workflow template not found");
+  it("getTemplate throws for unknown id", async () => {
+    await expect(getTemplate("tpl-unknown")).rejects.toThrow("Workflow template not found");
   });
 
-  it("getTemplatesByCategory filters correctly", () => {
-    expect(getTemplatesByCategory("support")).toContain(customerSupportBot);
-    expect(getTemplatesByCategory("sales")).toContain(leadEnrichment);
-    expect(getTemplatesByCategory("content")).toContain(contentGenerator);
+  it("getTemplatesByCategory filters correctly", async () => {
+    expect(await getTemplatesByCategory("support")).toContain(customerSupportBot);
+    expect(await getTemplatesByCategory("sales")).toContain(leadEnrichment);
+    expect(await getTemplatesByCategory("content")).toContain(contentGenerator);
   });
 });
 

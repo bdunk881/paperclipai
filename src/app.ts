@@ -1334,14 +1334,14 @@ app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
 // ---------------------------------------------------------------------------
 
 /** List all templates (optionally filtered by category) */
-app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { category } = req.query;
   let templates: WorkflowTemplate[];
 
   if (category && typeof category === "string") {
-    templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
+    templates = await getTemplatesByCategory(category as WorkflowTemplate["category"], req.workspaceId);
   } else {
-    templates = listTemplates();
+    templates = await listTemplates(req.workspaceId);
   }
 
   // Distinguish seeded (built-in library) templates from user-imported/created
@@ -1362,10 +1362,10 @@ app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEM
     })),
     total: templates.length,
   });
-});
+}));
 
 /** Create or update a user-managed template */
-app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -1397,7 +1397,7 @@ app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", 
       ? payload.id.trim()
       : `tpl-custom-${Date.now()}`;
 
-  const importedTemplate = getImportedTemplate(nextId);
+  const importedTemplate = getImportedTemplate(nextId, req.workspaceId);
   const builtInTemplateExists = Boolean(TEMPLATE_MAP[nextId]);
   if (builtInTemplateExists && !importedTemplate) {
     nextId = `${nextId}-custom-${Date.now()}`;
@@ -1415,7 +1415,7 @@ app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", 
     expectedOutput,
   };
 
-  await saveImportedTemplate(template);
+  await saveImportedTemplate(template, req.auth?.sub, req.workspaceId);
   res.status(importedTemplate ? 200 : 201).json(template);
 }));
 
@@ -1425,9 +1425,9 @@ app.get("/api/workflows/schema", (_req, res) => {
 });
 
 /** Get a single template with full definition */
-app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(template);
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
@@ -1435,9 +1435,9 @@ app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL
 });
 
 /** Export a template in the portable AutoFlow workflow format */
-app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(createPortableWorkflowBundle(template));
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
@@ -1445,13 +1445,13 @@ app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole
 });
 
 /** Import a portable workflow template into the in-memory registry */
-app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const id = req.params.id;
   if (!id) {
     res.status(400).json({ error: "Template id is required" });
     return;
   }
-  const removed = await deleteImportedTemplate(id);
+  const removed = await deleteImportedTemplate(id, req.workspaceId);
   if (!removed) {
     res.status(404).json({ error: "Template not found" });
     return;
@@ -1459,7 +1459,7 @@ app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("ad
   res.status(204).end();
 }));
 
-app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -1470,14 +1470,14 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
   }
 
   try {
-    getTemplate(bundle.template.id);
+    await getTemplate(bundle.template.id, req.workspaceId);
     res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
     return;
   } catch {
     // Template id is available; continue with import.
   }
 
-  await saveImportedTemplate(bundle.template);
+  await saveImportedTemplate(bundle.template, req.auth?.sub, req.workspaceId);
   res.status(201).json({
     imported: true,
     template: bundle.template,
@@ -1486,9 +1486,9 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
 }));
 
 /** Get sample data for a template (for dashboard preview) */
-app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json({
       sampleInput: template.sampleInput,
       expectedOutput: template.expectedOutput,
@@ -1531,7 +1531,7 @@ app.post(
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    template = await getTemplate(templateId, req.workspaceId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -1818,7 +1818,7 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
 
   if (!latestDag) {
     try {
-      latestDag = getTemplate(run.templateId);
+      latestDag = await getTemplate(run.templateId, run.workspaceId);
     } catch {
       res.status(404).json({ error: `Original template not found: ${run.templateId}` });
       return;
@@ -2088,7 +2088,7 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    template = await getTemplate(templateId, req.workspaceId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -2410,7 +2410,9 @@ app.post("/api/webhooks/:templateId", asyncHandler(async (req, res) => {
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    // Webhook trigger is authenticated by the per-template secret below, not a
+    // workspace session — resolve the template id globally.
+    template = await getTemplate(templateId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -2618,7 +2620,7 @@ app.post("/api/executions/:id/resume", requireAuth, workspaceResolver, requireRo
       !Array.isArray(run.workflowDag) &&
       Array.isArray((run.workflowDag as Partial<WorkflowTemplate>).steps)
         ? (run.workflowDag as WorkflowTemplate)
-        : getTemplate(run.templateId);
+        : await getTemplate(run.templateId, run.workspaceId);
   } catch (error) {
     res.status(404).json({ error: String(error) });
     return;
@@ -2657,7 +2659,7 @@ app.get("/health", asyncHandler(async (_req, res) => {
 
   res.json({
     status: degraded ? "degraded" : "ok",
-    templates: listTemplates().length,
+    templates: (await listTemplates()).length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,

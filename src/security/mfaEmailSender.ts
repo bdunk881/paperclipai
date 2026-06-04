@@ -2,18 +2,16 @@
  * Transactional email sender for the email-OTP + magic-link MFA factors
  * (HEL-282).
  *
- * The repo has no canonical mailer yet — the member-invite path (HEL-213)
- * logs the URL with a TODO. The one real transport is the SendGrid sender in
- * `src/engine/approvalNotificationSenders.ts`. This module mirrors that exact
- * shape so MFA email lands on the same surface: send via SendGrid when
- * `SENDGRID_API_KEY` + `AUTOFLOW_APPROVAL_EMAIL_FROM` are configured,
- * otherwise log in dev so the code/link is observable for tests and local
- * runs. The route always returns `{ sent: true }` regardless — never leak
- * whether delivery succeeded (and never block the auth flow on a mail error).
+ * Transport: AutoFlow's canonical transactional provider is **Resend**
+ * (HEL-404). Sends via `ResendMfaEmailSender` when `RESEND_API_KEY` +
+ * `AUTOFLOW_APPROVAL_EMAIL_FROM` are configured, otherwise logs in dev so the
+ * code/link is observable for tests and local runs. The route always returns
+ * `{ sent: true }` regardless — never leak whether delivery succeeded (and
+ * never block the auth flow on a mail error).
  *
- * Production email delivery is therefore gated on `SENDGRID_API_KEY` being
- * present in the deploy env. Wiring a dedicated MFA mailer template beyond
- * this seam is out of scope for HEL-282 (tracked by HEL-213's mailer TODO).
+ * Production email delivery is therefore gated on `RESEND_API_KEY` being
+ * present in the deploy env. (`src/engine/approvalNotificationSenders.ts` is
+ * still on SendGrid — a sibling follow-up to migrate onto Resend.)
  */
 
 export type MfaEmailKind =
@@ -108,49 +106,6 @@ function render(message: MfaEmailMessage): RenderedEmail {
 }
 
 /**
- * Sends through the SendGrid v3 API when configured, mirroring
- * `approvalNotificationSenders.ts`. Reuses the same `SENDGRID_API_KEY` /
- * `AUTOFLOW_APPROVAL_EMAIL_FROM` / `SENDGRID_API_BASE_URL` env so a single
- * mail config powers both surfaces.
- */
-export class SendGridMfaEmailSender implements MfaEmailSender {
-  async send(message: MfaEmailMessage): Promise<void> {
-    const apiKey = normalizeEnv("SENDGRID_API_KEY");
-    const fromEmail = normalizeEnv("AUTOFLOW_APPROVAL_EMAIL_FROM");
-    const fromName = normalizeEnv("AUTOFLOW_APPROVAL_EMAIL_FROM_NAME") ?? "AutoFlow";
-    const baseUrl = normalizeEnv("SENDGRID_API_BASE_URL") ?? "https://api.sendgrid.com";
-
-    if (!apiKey) throw new Error("SENDGRID_API_KEY is not configured");
-    if (!fromEmail) throw new Error("AUTOFLOW_APPROVAL_EMAIL_FROM is not configured");
-    if (!isEmailAddress(message.to)) {
-      throw new Error(`MFA recipient ${message.to} is not a valid email address`);
-    }
-
-    const { subject, text, html } = render(message);
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v3/mail/send`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        personalizations: [{ to: [{ email: message.to }], subject }],
-        from: { email: fromEmail, name: fromName },
-        content: [
-          { type: "text/plain", value: text },
-          { type: "text/html", value: html },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`SendGrid mail send failed (${response.status}): ${body.slice(0, 300)}`);
-    }
-  }
-}
-
-/**
  * Sends through the Resend HTTP API when configured. Resend is AutoFlow's
  * canonical transactional-email provider. Reuses the same
  * `AUTOFLOW_APPROVAL_EMAIL_FROM` / `AUTOFLOW_APPROVAL_EMAIL_FROM_NAME`
@@ -196,7 +151,7 @@ export class ResendMfaEmailSender implements MfaEmailSender {
 /**
  * Dev/test fallback: logs that a code/link would have been sent. The code or
  * link is logged so local enrollment and the jest integration tests can
- * complete the round-trip without a live mailbox. Never used when SendGrid is
+ * complete the round-trip without a live mailbox. Never used when Resend is
  * configured.
  */
 export class LoggingMfaEmailSender implements MfaEmailSender {
@@ -214,16 +169,15 @@ export class LoggingMfaEmailSender implements MfaEmailSender {
 }
 
 /**
- * Picks the transactional transport by key presence: Resend (AutoFlow's
- * canonical transactional provider) when `RESEND_API_KEY` is set, else SendGrid
- * when `SENDGRID_API_KEY` is set, else the dev logging fallback. Keyed on
- * presence so MFA email "just works" wherever transactional mail is configured.
+ * Picks the transactional transport: Resend (AutoFlow's canonical provider)
+ * when `RESEND_API_KEY` is set, else the dev logging fallback. Keyed on key
+ * presence so MFA email "just works" wherever Resend is configured.
  *
- * Note: `approvalNotificationSenders.ts` is still SendGrid-only — moving it onto
- * Resend is a sibling follow-up so a single provider powers all transactional mail.
+ * Note: `src/engine/approvalNotificationSenders.ts` is still on SendGrid —
+ * moving it onto Resend is a sibling follow-up so one provider powers all
+ * transactional mail.
  */
 export function buildDefaultMfaEmailSender(): MfaEmailSender {
   if (normalizeEnv("RESEND_API_KEY")) return new ResendMfaEmailSender();
-  if (normalizeEnv("SENDGRID_API_KEY")) return new SendGridMfaEmailSender();
   return new LoggingMfaEmailSender();
 }

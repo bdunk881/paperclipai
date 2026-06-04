@@ -13,7 +13,9 @@ import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
 import {
   getCreditPackOverlays,
+  getFaqItems,
   getPricingOverlays,
+  getTestimonials,
   type CreditPackOverlay,
   type PricingTierOverlay,
 } from "@/lib/sanity";
@@ -32,8 +34,66 @@ export function meta() {
       content:
         "Workforce automation, by the role — not by the node. Bring your own keys, ship on day one.",
     },
+    { property: "og:type", content: "website" },
+    { property: "og:url", content: "https://helloautoflow.com/" },
+    { property: "og:site_name", content: "AutoFlow" },
+    { property: "og:image", content: "https://helloautoflow.com/og.svg" },
+    { property: "og:image:width", content: "1200" },
+    { property: "og:image:height", content: "630" },
+    {
+      property: "og:image:alt",
+      content: "AutoFlow — hire a team of agents that actually ship",
+    },
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:title", content: "AutoFlow — Hire your first team of agents" },
+    {
+      name: "twitter:description",
+      content:
+        "Workforce automation, by the role — not by the node. Bring your own keys, ship on day one.",
+    },
+    { name: "twitter:image", content: "https://helloautoflow.com/og.svg" },
   ];
 }
+
+const GITHUB_URL = "https://github.com/bdunk881/paperclipai";
+// Set to the public Product Hunt listing to surface the PH badge in the hero.
+// Empty by default so we never ship a broken link before the URL is confirmed.
+const PRODUCT_HUNT_URL = "";
+
+// Hardcoded factual FAQ. A Sanity `faqItem` set replaces this when present —
+// these are product facts (not social proof), so a fallback is honest.
+const FAQ_FALLBACK: Array<{ question: string; answer: string }> = [
+  {
+    question: "Do I need my own API keys?",
+    answer:
+      "No — AutoFlow includes free hosted models so you can run on day one. Bring your own Anthropic, OpenAI, Gemini, or Mistral key anytime for more control.",
+  },
+  {
+    question: "How is this different from n8n or Zapier?",
+    answer:
+      "Those wire apps together with triggers and nodes. AutoFlow gives you a team of agents with roles, budgets, approvals, and a paper trail — a workforce, not a flowchart.",
+  },
+  {
+    question: "Can I self-host?",
+    answer:
+      "Yes. AutoFlow is open source under the MIT license — run it yourself, or use our hosted cloud.",
+  },
+  {
+    question: "What does it cost?",
+    answer:
+      "Start free for 14 days, no card. Paid plans begin at $19/mo, plus pay-as-you-go credit packs that never expire.",
+  },
+  {
+    question: "Is my data isolated?",
+    answer:
+      "Every workspace is tenant-isolated with Postgres row-level security. Your agents' memory and data are never shared across workspaces.",
+  },
+  {
+    question: "What if an agent tries something risky?",
+    answer:
+      "You set approval policies. Risky steps pause for your sign-off; everything else runs and logs to a live activity feed.",
+  },
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data — pulled from Projects/AutoFlow/v2/data.jsx and the inline scripts in
@@ -157,6 +217,19 @@ interface Pack {
 interface PricingLoaderData {
   tiers: Tier[];
   packs: Pack[];
+}
+
+type Testimonial = {
+  quote: string;
+  authorName: string;
+  authorTitle: string;
+  order: number;
+};
+type FaqItem = { question: string; answer: string };
+
+interface HomeLoaderData extends PricingLoaderData {
+  testimonials: Testimonial[];
+  faqItems: FaqItem[];
 }
 
 // Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
@@ -299,7 +372,7 @@ function mergeCreditPackOverlays(
   });
 }
 
-export async function loader(): Promise<PricingLoaderData> {
+export async function loader(): Promise<HomeLoaderData> {
   // Pricing API + Sanity overlays in parallel. Sanity overlay failures
   // (missing creds, GROQ errors) return null inside sanityFetch — they
   // never block the prerender; the loader just falls through to the
@@ -318,15 +391,24 @@ export async function loader(): Promise<PricingLoaderData> {
     }
   })();
 
-  const [apiData, tierOverlays, packOverlays] = await Promise.all([
-    apiPromise,
-    getPricingOverlays(),
-    getCreditPackOverlays(),
-  ]);
+  const [apiData, tierOverlays, packOverlays, testimonials, faqItems] =
+    await Promise.all([
+      apiPromise,
+      getPricingOverlays(),
+      getCreditPackOverlays(),
+      getTestimonials(),
+      getFaqItems(),
+    ]);
 
   return {
     tiers: mergeOverlays(apiData.tiers, tierOverlays),
     packs: mergeCreditPackOverlays(apiData.packs, packOverlays),
+    // Real Sanity testimonials only — no fabricated quotes when empty.
+    testimonials: testimonials ?? [],
+    // Sanity FAQ when authored, else the factual fallback above.
+    faqItems: (faqItems && faqItems.length > 0 ? faqItems : FAQ_FALLBACK).map(
+      ({ question, answer }) => ({ question, answer }),
+    ),
   };
 }
 
@@ -452,7 +534,8 @@ function PricingCta({ tier }: { tier: Tier }) {
 // Page
 
 export default function Home() {
-  const { tiers, packs } = useLoaderData() as PricingLoaderData;
+  const { tiers, packs, testimonials, faqItems } =
+    useLoaderData() as HomeLoaderData;
 
   return (
     <>
@@ -486,6 +569,9 @@ export default function Home() {
           <a href="#integrations">Integrations</a>
           <a href="#pricing">Pricing</a>
           <Link to="/blog">Blog</Link>
+          <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
+            GitHub
+          </a>
           <span style={{ flex: 1 }} />
           <Link to="/signup" style={{ fontSize: 13.5 }}>
             Sign in
@@ -508,6 +594,22 @@ export default function Home() {
         >
           <div>
             <span className="af2-eyebrow">Workforce automation, by the role · not by the node.</span>
+            {PRODUCT_HUNT_URL ? (
+              <a
+                href={PRODUCT_HUNT_URL}
+                target="_blank"
+                rel="noreferrer noopener"
+                style={{
+                  display: "inline-block",
+                  marginTop: 12,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "var(--af2-clay)",
+                }}
+              >
+                ▲ Live on Product Hunt
+              </a>
+            ) : null}
             <h1 style={{ marginTop: 18 }}>
               Hire a team
               <br />
@@ -537,6 +639,10 @@ export default function Home() {
               <span>
                 <strong>SOC 2</strong> in progress
               </span>
+              <span style={{ color: "var(--af2-line-2)" }}>·</span>
+              <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
+                <strong>Open source</strong> · MIT
+              </a>
             </div>
           </div>
 
@@ -1149,6 +1255,108 @@ export default function Home() {
         </p>
       </section>
 
+      {/* TESTIMONIALS — Sanity-driven; the whole section is omitted when there
+          are none (no fabricated quotes on a pre-customer landing). */}
+      {testimonials.length > 0 ? (
+        <section
+          className="lp-section"
+          style={{ padding: "60px 32px" }}
+          aria-label="What early teams say"
+        >
+          <span className="af2-eyebrow">From early teams</span>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gap: 20,
+              marginTop: 22,
+            }}
+          >
+            {testimonials.map((t, i) => (
+              <figure
+                key={i}
+                className="af2-card"
+                style={{ margin: 0, display: "flex", flexDirection: "column", gap: 14 }}
+              >
+                <blockquote
+                  style={{ margin: 0, fontSize: 15.5, lineHeight: 1.5, color: "var(--af2-ink)" }}
+                >
+                  &ldquo;{t.quote}&rdquo;
+                </blockquote>
+                <figcaption
+                  style={{ display: "flex", alignItems: "center", gap: 10, marginTop: "auto" }}
+                >
+                  <Avatar
+                    initials={t.authorName
+                      .split(" ")
+                      .map((s) => s[0])
+                      .join("")
+                      .slice(0, 2)}
+                    tone={(["clay", "sage", "mustard", "plum", "blue"] as AvatarTone[])[i % 5]}
+                    size="sm"
+                  />
+                  <span style={{ fontSize: 12.5 }}>
+                    <strong>{t.authorName}</strong>
+                    <span style={{ color: "var(--af2-ink-3)" }}> · {t.authorTitle}</span>
+                  </span>
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* FAQ — Sanity-driven with a factual hardcoded fallback. */}
+      <section
+        className="lp-section"
+        style={{ padding: "60px 32px" }}
+        id="faq"
+        aria-label="Frequently asked questions"
+      >
+        <span className="af2-eyebrow">Questions</span>
+        <h2
+          style={{
+            font: "400 36px/1.1 var(--af2-serif)",
+            letterSpacing: "-0.02em",
+            margin: "8px 0 26px",
+            maxWidth: 700,
+          }}
+        >
+          The short version.
+        </h2>
+        <div style={{ maxWidth: 760 }}>
+          {faqItems.map((f, i) => (
+            <details
+              key={i}
+              open={i === 0}
+              style={{ borderTop: "1px solid var(--af2-line)", padding: "16px 0" }}
+            >
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontWeight: 500,
+                  fontSize: 15.5,
+                  color: "var(--af2-ink)",
+                }}
+              >
+                {f.question}
+              </summary>
+              <p
+                style={{
+                  margin: "10px 0 0",
+                  fontSize: 14.5,
+                  lineHeight: 1.55,
+                  color: "var(--af2-ink-2)",
+                  maxWidth: 680,
+                }}
+              >
+                {f.answer}
+              </p>
+            </details>
+          ))}
+        </div>
+      </section>
+
       {/* CTA */}
       <section className="lp-cta">
         <h2>
@@ -1185,6 +1393,9 @@ export default function Home() {
         <span style={{ flex: 1 }} />
         <Link to="/blog">Blog</Link>
         <a href="https://status.helloautoflow.com">Status</a>
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
+          GitHub
+        </a>
         <Link to="/privacy">Privacy</Link>
         <Link to="/terms">Terms</Link>
         <span>© {new Date().getFullYear()}</span>

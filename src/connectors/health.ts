@@ -1,9 +1,13 @@
 import { apolloConnectorService } from "../integrations/apollo/service";
 import { composioConnectorService } from "../integrations/composio/service";
+import { docuSignConnectorService } from "../integrations/docusign/service";
 import { gmailConnectorService } from "../integrations/gmail/service";
 import { hubSpotConnectorService } from "../integrations/hubspot/service";
+import { intercomConnectorService } from "../integrations/intercom/service";
 import { linearConnectorService } from "../integrations/linear/service";
+import { posthogConnectorService } from "../integrations/posthog/service";
 import { sentryConnectorService } from "../integrations/sentry/service";
+import { shopifyConnectorService } from "../integrations/shopify/service";
 import { slackConnectorService } from "../integrations/slack/service";
 import { stripeConnectorService } from "../integrations/stripe/service";
 import { teamsConnectorService } from "../integrations/teams/service";
@@ -48,6 +52,10 @@ const CONNECTOR_HEALTH_PROBES: ConnectorHealthProbe[] = [
   { key: "teams", name: "Teams", probe: (userId) => teamsConnectorService.health(userId) },
   { key: "apollo", name: "Apollo", probe: (userId) => apolloConnectorService.health(userId) },
   { key: "composio", name: "Composio", probe: (userId) => composioConnectorService.health(userId) },
+  { key: "posthog", name: "PostHog", probe: (userId) => posthogConnectorService.health(userId) },
+  { key: "intercom", name: "Intercom", probe: (userId) => intercomConnectorService.health(userId) },
+  { key: "docusign", name: "DocuSign", probe: (userId) => docuSignConnectorService.health(userId) },
+  { key: "shopify", name: "Shopify", probe: (userId) => shopifyConnectorService.health(userId) },
 ];
 
 export const CONNECTOR_HEALTH_KEYS = CONNECTOR_HEALTH_PROBES.map((probe) => probe.key);

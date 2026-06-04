@@ -28,6 +28,7 @@ import type { Pool } from "pg";
 import type { AgentTool } from "../../engine/llmProviders/types";
 import type { AgentTraceCallback } from "../../engine/agentTrace/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
+import { getLastConsumptionSourceId } from "../../billing/credits/walletStore";
 import type { AgentPermissionMode, AgentRunTier } from "./types";
 
 const MAX_DELEGATION_DEPTH = 3;
@@ -56,6 +57,13 @@ export interface CreateDelegateToolInput {
    */
   sourceRoutineId?: string | null;
   sourceTicketId?: string | null;
+  /**
+   * HEL-603 sub-agent affinity: the source hint inherited from further up
+   * the delegation chain. Used as a fallback when the parent has no
+   * consumption row of its own yet; the handler prefers a fresh read of
+   * the parent's last successful `source_id` from the ledger.
+   */
+  parentSourceHint?: string | null;
   /** Tier to use for the child run; defaults to the parent's tier. */
   tier?: AgentRunTier;
   /** Permission mode propagated to the child. */
@@ -230,6 +238,17 @@ export async function createDelegateToSubagentTool(
       // (runAgentTurn imports this factory).
       const { runAgentTurn } = await import("../runAgentTurn");
 
+      // HEL-603 affinity: inherit the parent's last successful key source so
+      // the child sticks to it for prompt-cache locality. Prefer a fresh
+      // read of the parent's most recent consumption row (it has committed
+      // by the time this tool fires); fall back to the hint inherited from
+      // further up the chain. Best-effort — a failed/empty read just means
+      // no hint, and the child falls back to normal priority selection.
+      const childSourceHint =
+        (await getLastConsumptionSourceId(input.workspaceId).catch(() => null))
+        ?? input.parentSourceHint
+        ?? null;
+
       const childPrompt = context
         ? `Context from your manager:\n${context}\n\n---\n\nTask:\n${task}`
         : task;
@@ -255,6 +274,8 @@ export async function createDelegateToSubagentTool(
           // depth = depth + 1 and lineage = {parent, target}.
           delegationDepth: depth + 1,
           delegationLineage: lineage,
+          // HEL-603: child inherits the parent's key source for cache affinity.
+          parentSourceHint: childSourceHint,
         });
         return {
           ok: true,

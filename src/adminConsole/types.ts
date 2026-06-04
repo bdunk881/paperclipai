@@ -74,6 +74,10 @@ export const ADMIN_ACTIONS = [
   "rotate_provider_key",
   "disable_provider_key",
 
+  // HEL-599 Stripe Issuing treasury
+  "list_treasury",
+  "provision_issuing_cards",
+
   // infra dashboard reads (HEL infra PR #2)
   "view_infra_overview",
   "view_infra_compute",

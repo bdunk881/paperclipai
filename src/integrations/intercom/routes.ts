@@ -69,16 +69,16 @@ router.post("/connect-api-key", requireAuth, asyncHandler<AuthenticatedRequest>(
   res.status(201).json({ connection });
 }));
 
-router.get("/connections", requireAuth, (req: AuthenticatedRequest, res) => {
+router.get("/connections", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const connections = intercomConnectorService.listConnections(userId);
+  const connections = await intercomConnectorService.listConnections(userId);
   res.json({ connections, total: connections.length });
-});
+}));
 
 router.post("/test-connection", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
@@ -103,21 +103,21 @@ router.get("/health", requireAuth, asyncHandler<AuthenticatedRequest>(async (req
   res.status(statusCode).json(health);
 }));
 
-router.delete("/connections/:id", requireAuth, (req: AuthenticatedRequest, res) => {
+router.delete("/connections/:id", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user required" });
     return;
   }
 
-  const deleted = intercomConnectorService.disconnect(userId, req.params.id);
+  const deleted = await intercomConnectorService.disconnect(userId, req.params.id);
   if (!deleted) {
     res.status(404).json({ error: "Intercom connection not found" });
     return;
   }
 
   res.status(204).send();
-});
+}));
 
 router.get("/contacts", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);

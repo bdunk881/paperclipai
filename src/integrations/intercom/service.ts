@@ -57,7 +57,7 @@ export class IntercomConnectorService {
       codeVerifier: state.verifier,
     });
 
-    const credential = intercomCredentialStore.saveOAuth({
+    const credential = await intercomCredentialStore.saveOAuth({
       userId: state.userId,
       accessToken: tokenSet.accessToken,
       refreshToken: tokenSet.refreshToken,
@@ -84,7 +84,7 @@ export class IntercomConnectorService {
     const client = new IntercomClient(params.apiKey);
     const viewer = await client.viewer();
 
-    const credential = intercomCredentialStore.saveApiKey({
+    const credential = await intercomCredentialStore.saveApiKey({
       userId: params.userId,
       apiKey: params.apiKey,
       workspaceId: viewer.workspaceId,
@@ -105,7 +105,7 @@ export class IntercomConnectorService {
     return credential;
   }
 
-  listConnections(userId: string): IntercomCredentialPublic[] {
+  async listConnections(userId: string): Promise<IntercomCredentialPublic[]> {
     return intercomCredentialStore.getPublicByUser(userId);
   }
 
@@ -132,7 +132,7 @@ export class IntercomConnectorService {
 
   async health(userId: string): Promise<IntercomConnectionHealth> {
     const checkedAt = new Date().toISOString();
-    const credential = intercomCredentialStore.getActiveByUser(userId);
+    const credential = await intercomCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
       return {
@@ -218,8 +218,8 @@ export class IntercomConnectorService {
     }
   }
 
-  disconnect(userId: string, credentialId: string): boolean {
-    const revoked = intercomCredentialStore.revoke(credentialId, userId);
+  async disconnect(userId: string, credentialId: string): Promise<boolean> {
+    const revoked = await intercomCredentialStore.revoke(credentialId, userId);
 
     if (revoked) {
       logIntercom({
@@ -362,7 +362,7 @@ export class IntercomConnectorService {
   }
 
   private async ensureValidCredential(userId: string) {
-    const credential = intercomCredentialStore.getActiveByUser(userId);
+    const credential = await intercomCredentialStore.getActiveByUserAsync(userId);
     if (!credential) {
       throw new ConnectorError("auth", "Intercom connector is not configured", 404);
     }

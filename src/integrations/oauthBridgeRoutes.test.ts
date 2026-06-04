@@ -238,6 +238,10 @@ jest.mock("./posthog/credentialStore", () => ({
 jest.mock("./intercom/credentialStore", () => ({
   intercomCredentialStore: {
     getActiveByUser: (...args: unknown[]) => intercomGetActiveByUser(...args),
+    // HEL-470: intercom is migrated; the status/disconnect bridge uses the
+    // async hydrated getter. Back it with the same mock so the existing
+    // mockReturnValue setup keeps working.
+    getActiveByUserAsync: async (...args: unknown[]) => intercomGetActiveByUser(...args),
   },
 }));
 

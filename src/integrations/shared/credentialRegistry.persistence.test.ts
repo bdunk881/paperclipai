@@ -256,4 +256,52 @@ describe("CredentialRegistry persistence", () => {
       if (userId === "user-b") expect(ids).toEqual(["cred-b1"]);
     }
   });
+
+  it("does not resurrect a credential revoked on another instance (HEL-594)", async () => {
+    const registry = new CredentialRegistry<TestCredential, { id: string }>({
+      service: "revoke-merge",
+      toPublic: (record) => ({ id: record.id }),
+    });
+    mockIsPostgresConfigured.mockReturnValue(true);
+
+    // This process holds an active copy in its bucket (also persisted).
+    registry.save({
+      id: "cred-x",
+      userId: "user-9",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      tokenEncrypted: "ct",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    clientQueryMock.mockReset();
+    clientQueryMock.mockResolvedValue({ rows: [], rowCount: 1, command: "OK", oid: 0, fields: [] });
+
+    // Another instance revoked it: the persisted row now carries revokedAt while
+    // our bucket still has the active copy.
+    stageSelectRows([
+      {
+        id: "cred-x",
+        user_id: "user-9",
+        record_data: {
+          id: "cred-x",
+          userId: "user-9",
+          createdAt: "2026-05-01T00:00:00.000Z",
+          tokenEncrypted: "ct",
+          revokedAt: "2026-05-02T00:00:00.000Z",
+        },
+      },
+    ]);
+
+    // Active lookup must honor the persisted revocation, not the stale local copy.
+    const active = await registry.listStoredByUserAsync("user-9", false);
+    expect(active).toHaveLength(0);
+
+    // And the stale copy is evicted from the bucket, so the sync getters can't
+    // serve it as active either.
+    expect(registry.getById("cred-x")).toBeNull();
+
+    // includeRevoked still surfaces it (from Postgres) for listings/audit.
+    const all = await registry.listStoredByUserAsync("user-9", true);
+    expect(all).toHaveLength(1);
+    expect(all[0].revokedAt).toBe("2026-05-02T00:00:00.000Z");
+  });
 });

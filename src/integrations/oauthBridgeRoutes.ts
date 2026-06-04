@@ -238,12 +238,10 @@ router.get("/status", requireAuth, asyncHandler<AuthenticatedRequest>(async (req
   // instead of becoming an unhandled promise rejection (Express 4 doesn't
   // auto-catch async handler rejections).
   try {
-    // Hydrate Slack from Postgres before reading the status. Otherwise
-    // persisted Slack connections show as disconnected immediately after
-    // deploy/restart, which regresses HEL-180's persistence objective.
-    // Other connector stores still use sync getters for now — they'll
-    // surface stale "disconnected" reads after a restart until their own
-    // migrations land (see HEL-182).
+    // Hydrate the migrated connectors (Slack HEL-180, Intercom HEL-470) from
+    // Postgres before reading status — otherwise persisted connections show as
+    // disconnected immediately after deploy/restart. The other connector stores
+    // still use sync getters until their own migrations land (see HEL-182).
     const slackCredential = await slackCredentialStore.getActiveByUserAsync(userId);
     const linearCredential = linearCredentialStore.getActiveByUser(userId);
     const apolloCredential = apolloCredentialStore.getActiveByUser(userId);
@@ -254,7 +252,7 @@ router.get("/status", requireAuth, asyncHandler<AuthenticatedRequest>(async (req
     const docusignCredential = docuSignCredentialStore.getActiveByUser(userId);
     const teamsCredential = teamsCredentialStore.getActiveByUser(userId);
     const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
-    const intercomCredential = intercomCredentialStore.getActiveByUser(userId);
+    const intercomCredential = await intercomCredentialStore.getActiveByUserAsync(userId);
     const stripeCredential = stripeCredentialStore.getActiveByUser(userId);
     const composioCredential = composioCredentialStore.getActiveByUser(userId);
 

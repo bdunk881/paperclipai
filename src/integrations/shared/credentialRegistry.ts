@@ -294,25 +294,42 @@ export class CredentialRegistry<TStored extends CredentialRegistryRecord, TPubli
     // `idx_connector_credentials_service_user` partial index (migration
     // 006) so OAuth callbacks stay fast even when other tenants have
     // accumulated many rows for the same service.
-    const local = Array.from(this.bucket.values()).filter(
-      (record) => record.userId === userId && (includeRevoked ? true : !record.revokedAt),
-    );
     if (!this.postgresPersistenceAvailable()) {
+      const local = Array.from(this.bucket.values()).filter(
+        (record) => record.userId === userId && (includeRevoked ? true : !record.revokedAt),
+      );
       return local.sort((a, b) => this.sortValue(b).localeCompare(this.sortValue(a)));
     }
 
     // HEL-299: wrap in withUserContext so FORCE RLS on
     // connector_credentials (migration 083) lets the SELECT through.
+    // HEL-594: fetch ALL persisted rows (including revoked) so a revocation
+    // written on another instance is authoritative and can't be resurrected by
+    // a stale, still-active local bucket copy.
     const persisted = await withUserContext(getPostgresPool(), userId, async (client) => {
       const result = await client.query<PersistedCredentialRegistryRow>(
         "SELECT id, user_id, record_data, key_version FROM connector_credentials WHERE service = $1 AND user_id = $2 ORDER BY created_at DESC",
         [this.service, userId],
       );
-      return result.rows
-        .map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row))
-        .filter((record: TStored) => (includeRevoked ? true : !record.revokedAt));
+      return result.rows.map((row: PersistedCredentialRegistryRow) => this.mapPersistedRecord(row));
     });
-    return mergeStoredRecords(local, persisted, this.sortValue);
+
+    // HEL-594: evict any locally-cached copy of a persisted-revoked record so
+    // the revocation sticks process-wide (the sync getters read the bucket too)
+    // and can't be served as active again.
+    for (const record of persisted) {
+      if (record.revokedAt) {
+        this.bucket.delete(record.id);
+      }
+    }
+
+    // Local wins over persisted for overlapping ids to preserve fresh,
+    // not-yet-persisted writes (create/rotate persist fire-and-forget). Revoked
+    // persisted ids were just evicted from the bucket, so they resolve to the
+    // persisted (revoked) record. Filter by includeRevoked AFTER merging.
+    const local = Array.from(this.bucket.values()).filter((record) => record.userId === userId);
+    const merged = mergeStoredRecords(local, persisted, this.sortValue);
+    return includeRevoked ? merged : merged.filter((record) => !record.revokedAt);
   }
 
   /**

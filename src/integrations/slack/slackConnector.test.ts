@@ -383,27 +383,29 @@ describe("Slack connector", () => {
     expect(slackCredentialStore.decryptRefreshToken(stored!)).toBe("xoxr-refresh-secret-8888");
   });
 
-  it("verifies Slack webhook signatures and blocks replay", () => {
+  it("verifies Slack webhook signatures and blocks replay", async () => {
     const payload = Buffer.from(JSON.stringify({ type: "event_callback" }), "utf8");
     const timestamp = String(Math.floor(Date.now() / 1000));
     const base = `v0:${timestamp}:${payload.toString("utf8")}`;
     const digest = createHmac("sha256", "signing_secret").update(base).digest("hex");
     const signature = `v0=${digest}`;
 
-    verifySlackSignature({
+    await verifySlackSignature({
       rawBody: payload,
       timestampHeader: timestamp,
       signatureHeader: signature,
       signingSecret: "signing_secret",
     });
 
-    expect(() =>
+    // Second identical (validly-signed) delivery is rejected as a replay — now
+    // via the shared guard (Redis in prod; in-memory fallback under test).
+    await expect(
       verifySlackSignature({
         rawBody: payload,
         timestampHeader: timestamp,
         signatureHeader: signature,
         signingSecret: "signing_secret",
       })
-    ).toThrow(/replay/i);
+    ).rejects.toThrow(/replay/i);
   });
 });

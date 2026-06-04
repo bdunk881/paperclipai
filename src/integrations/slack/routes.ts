@@ -156,44 +156,48 @@ router.get("/channels/:channel/messages", requireAuth, asyncHandler<Authenticate
 
 export const slackWebhookRouter = express.Router();
 
-slackWebhookRouter.post("/events", express.raw({ type: "application/json" }), (req, res) => {
-  const signingSecret = process.env.SLACK_SIGNING_SECRET;
-  if (!signingSecret) {
-    throw new ConnectorError("auth", "SLACK_SIGNING_SECRET is not configured", 503);
-  }
+slackWebhookRouter.post(
+  "/events",
+  express.raw({ type: "application/json" }),
+  asyncHandler(async (req, res) => {
+    const signingSecret = process.env.SLACK_SIGNING_SECRET;
+    if (!signingSecret) {
+      throw new ConnectorError("auth", "SLACK_SIGNING_SECRET is not configured", 503);
+    }
 
-  const rawBody = req.body as Buffer;
-  try {
-    verifySlackSignature({
-      rawBody,
-      signatureHeader: req.header("x-slack-signature"),
-      timestampHeader: req.header("x-slack-request-timestamp"),
-      signingSecret,
+    const rawBody = req.body as Buffer;
+    try {
+      await verifySlackSignature({
+        rawBody,
+        signatureHeader: req.header("x-slack-signature"),
+        timestampHeader: req.header("x-slack-request-timestamp"),
+        signingSecret,
+      });
+    } catch (verifyErr) {
+      console.error("[webhook.signature_rejected]", { provider: "slack", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
+      throw verifyErr;
+    }
+
+    const payload = JSON.parse(rawBody.toString("utf8"));
+
+    if (payload.type === "url_verification" && payload.challenge) {
+      res.status(200).json({ challenge: payload.challenge });
+      return;
+    }
+
+    logSlack({
+      event: "webhook",
+      level: "info",
+      connector: "slack",
+      message: "Slack event received",
+      metadata: {
+        eventType: payload.event?.type,
+        teamId: payload.team_id,
+      },
     });
-  } catch (verifyErr) {
-    console.error("[webhook.signature_rejected]", { provider: "slack", ip: req.ip, error: verifyErr instanceof Error ? verifyErr.message : String(verifyErr) });
-    throw verifyErr;
-  }
 
-  const payload = JSON.parse(rawBody.toString("utf8"));
-
-  if (payload.type === "url_verification" && payload.challenge) {
-    res.status(200).json({ challenge: payload.challenge });
-    return;
-  }
-
-  logSlack({
-    event: "webhook",
-    level: "info",
-    connector: "slack",
-    message: "Slack event received",
-    metadata: {
-      eventType: payload.event?.type,
-      teamId: payload.team_id,
-    },
-  });
-
-  res.status(200).json({ ok: true });
-});
+    res.status(200).json({ ok: true });
+  }),
+);
 
 export default router;

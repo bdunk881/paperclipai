@@ -6,7 +6,9 @@
  * Live OpenAI calls are NOT made in this suite.
  */
 
-import { parseFile } from "./fileParser";
+import { parseFile, parseFileById, FileNotFoundError } from "./fileParser";
+import { fileObjectStore } from "../storage/fileObjectStore";
+import { getStorageAdapter, __resetStorageAdapterForTests } from "../storage";
 
 // ---------------------------------------------------------------------------
 // Plain text / JSON / CSV — decoded as UTF-8
@@ -118,5 +120,72 @@ describe("parseFile — return shape", () => {
     expect(typeof result.content).toBe("string");
     expect(typeof result.mimeType).toBe("string");
     expect(typeof result.filename).toBe("string");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseFileById — fetch persisted bytes via the storage adapter (HEL-355)
+// ---------------------------------------------------------------------------
+
+describe("parseFileById (HEL-355)", () => {
+  const WID = "11111111-1111-4111-8111-111111111111";
+  const OTHER_WID = "22222222-2222-4222-8222-222222222222";
+  const USER = "user-a";
+  const ctx = { workspaceId: WID, userId: USER };
+
+  async function persist(filename: string, body: string, mimeType: string) {
+    const put = await getStorageAdapter().putObject({
+      workspaceId: WID,
+      collection: "run-input",
+      filename,
+      body,
+      contentType: mimeType,
+    });
+    return fileObjectStore.insert(ctx, {
+      uploadedBy: USER,
+      collection: "run-input",
+      storageKey: put.storageKey,
+      provider: put.provider,
+      bucket: put.bucket,
+      filename,
+      mimeType,
+      byteSize: Buffer.byteLength(body),
+    });
+  }
+
+  let savedProvider: string | undefined;
+  beforeAll(() => {
+    savedProvider = process.env.STORAGE_PROVIDER;
+    delete process.env.STORAGE_PROVIDER; // force the in-memory adapter
+    process.env.AUTOFLOW_ALLOW_INMEMORY = "true";
+  });
+  afterAll(() => {
+    if (savedProvider !== undefined) process.env.STORAGE_PROVIDER = savedProvider;
+    __resetStorageAdapterForTests();
+  });
+  beforeEach(() => {
+    fileObjectStore.__resetForTests();
+    __resetStorageAdapterForTests();
+  });
+
+  it("fetches the persisted bytes via the adapter and parses them", async () => {
+    const row = await persist("note.txt", "hello from storage", "text/plain");
+    const parsed = await parseFileById(ctx, row.id);
+    expect(parsed.content).toBe("hello from storage");
+    expect(parsed.filename).toBe("note.txt");
+    expect(parsed.mimeType).toBe("text/plain");
+  });
+
+  it("throws FileNotFoundError for a missing id", async () => {
+    await expect(parseFileById(ctx, "00000000-0000-4000-8000-000000000000")).rejects.toBeInstanceOf(
+      FileNotFoundError,
+    );
+  });
+
+  it("is workspace-scoped — a foreign workspace cannot read the file", async () => {
+    const row = await persist("a.txt", "secret", "text/plain");
+    await expect(
+      parseFileById({ workspaceId: OTHER_WID, userId: "user-b" }, row.id),
+    ).rejects.toBeInstanceOf(FileNotFoundError);
   });
 });

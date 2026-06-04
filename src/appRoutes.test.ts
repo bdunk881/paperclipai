@@ -21,13 +21,13 @@ jest.mock("./queue/queues", () => ({
 // Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.
 jest.mock("./middleware/workspaceResolver", () => ({
   createWorkspaceResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.workspace = { id: "test-workspace-id", role: "owner" };
-    req.workspaceId = "test-workspace-id";
+    req.workspace = { id: "11111111-1111-4111-8111-111111111111", role: "owner" };
+    req.workspaceId = "11111111-1111-4111-8111-111111111111";
     next();
   }),
   createExplicitWorkspaceHeaderResolver: jest.fn(() => (req: Record<string, unknown>, _res: unknown, next: () => void) => {
-    req.workspace = { id: "test-workspace-id", role: "owner" };
-    req.workspaceId = "test-workspace-id";
+    req.workspace = { id: "11111111-1111-4111-8111-111111111111", role: "owner" };
+    req.workspaceId = "11111111-1111-4111-8111-111111111111";
     next();
   }),
 }));
@@ -55,6 +55,9 @@ import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import { runStore } from "./engine/runStore";
 import { getProvider } from "./engine/llmProviders";
 import { llmConfigStore } from "./llmConfig/llmConfigStore";
+import { fileObjectStore } from "./storage/fileObjectStore";
+import { __resetStorageAdapterForTests } from "./storage";
+import { auditService } from "./auditing/auditService";
 
 const mockGetProvider = getProvider as jest.Mock;
 
@@ -63,6 +66,8 @@ beforeEach(async () => {
   await approvalNotificationStore.clear();
   await runStore.clear();
   llmConfigStore.clear();
+  fileObjectStore.__resetForTests();
+  __resetStorageAdapterForTests();
   mockGetProvider.mockReset();
   mockQueueAdd.mockReset();
   mockQueueAdd.mockResolvedValue({ id: "job-1" });
@@ -1042,6 +1047,32 @@ describe("POST /api/runs/file", () => {
       .attach("file", Buffer.from("corrupt data"), { filename: "bad.bin", contentType: "application/octet-stream" });
     expect(res.status).toBe(422);
     expect(res.body.error).toMatch(/File parsing failed/);
+  });
+
+  it("persists the upload + records a file_objects row + audits the fileId (HEL-355)", async () => {
+    const auditSpy = jest.spyOn(auditService, "recordAction").mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .post("/api/runs/file")
+      .field("templateId", "tpl-support-bot")
+      .attach("file", Buffer.from("Persist me please"), { filename: "persist.txt", contentType: "text/plain" });
+    expect(res.status).toBe(202);
+
+    const rows = await fileObjectStore.listByWorkspace({
+      workspaceId: "11111111-1111-4111-8111-111111111111",
+      userId: "test-user-id",
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].collection).toBe("run-input");
+    expect(rows[0].filename).toBe("persist.txt");
+
+    expect(auditSpy).toHaveBeenCalledTimes(1);
+    const entry = auditSpy.mock.calls[0][1];
+    expect(entry).toMatchObject({
+      category: "execution",
+      action: "run_file_persisted",
+      target: { type: "file_object", id: rows[0].id },
+    });
   });
 });
 

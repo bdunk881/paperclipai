@@ -153,6 +153,9 @@ import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createFileRoutes } from "./storage/fileRoutes";
+import { getStorageAdapter } from "./storage";
+import { fileObjectStore } from "./storage/fileObjectStore";
+import { auditService } from "./auditing/auditService";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -2102,6 +2105,43 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
     return;
   }
 
+  // HEL-355: persist the uploaded bytes to object storage + record a
+  // file_objects row, then thread the fileId into the run. Best-effort — a
+  // storage hiccup (or a QA-bypass user without a user_profiles row) must not
+  // break run creation; the run still receives the parsed `content`.
+  let fileId: string | undefined;
+  if (req.workspaceId && userId) {
+    try {
+      const put = await getStorageAdapter().putObject({
+        workspaceId: req.workspaceId,
+        collection: "run-input",
+        filename: req.file.originalname,
+        body: req.file.buffer,
+        contentType: req.file.mimetype,
+        contentLength: req.file.size,
+      });
+      const row = await fileObjectStore.insert(
+        { workspaceId: req.workspaceId, userId },
+        {
+          uploadedBy: userId,
+          collection: "run-input",
+          storageKey: put.storageKey,
+          provider: put.provider,
+          bucket: put.bucket,
+          filename: req.file.originalname,
+          mimeType: req.file.mimetype,
+          byteSize: req.file.size,
+        },
+      );
+      fileId = row.id;
+    } catch (err) {
+      console.error(
+        "[runs/file] storage persistence failed; continuing without fileId:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   const input: Record<string, unknown> = {
     content: parsed.content,
     mimeType: parsed.mimeType,
@@ -2110,8 +2150,32 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
   if (req.workspaceId) {
     input.workspaceId = req.workspaceId;
   }
+  if (fileId) {
+    input.fileId = fileId;
+  }
 
   const run = await workflowEngine.startRun(template, input, undefined, userId);
+
+  // HEL-355: record the persisted file in the run's audit trail (best-effort).
+  if (fileId && req.workspaceId && userId) {
+    try {
+      await auditService.recordAction(
+        { workspaceId: req.workspaceId, userId, actorUserId: userId },
+        {
+          category: "execution",
+          action: "run_file_persisted",
+          target: { type: "file_object", id: fileId },
+          metadata: { runId: run.id, collection: "run-input", byteSize: req.file.size },
+        },
+      );
+    } catch (err) {
+      console.error(
+        "[runs/file] audit recordAction failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   res.status(202).json(run);
 }));
 

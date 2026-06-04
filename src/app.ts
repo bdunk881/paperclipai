@@ -1581,7 +1581,8 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<Work
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
     req.auth?.sub,
-    typeof status === "string" ? status : undefined
+    typeof status === "string" ? status : undefined,
+    req.workspace?.id, // HEL-484: scope the list to the active workspace
   );
   res.json({ runs, total: runs.length });
 }));
@@ -1605,7 +1606,7 @@ app.get(
 
 /** Get a single run by ID */
 app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
-  const run = await runStore.get(req.params.id);
+  const run = await runStore.get(req.params.id, req.workspace?.id); // HEL-484: workspace-scoped
   const userId = req.auth?.sub;
   if (!run || (run.userId !== undefined && run.userId !== userId)) {
     res.status(404).json({ error: `Run not found: ${req.params.id}` });

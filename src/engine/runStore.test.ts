@@ -54,6 +54,12 @@ describe("runStore.get", () => {
     await expect(runStore.get("run-a")).resolves.toEqual(runA);
     await expect(runStore.get("run-b")).resolves.toEqual(runB);
   });
+
+  it("does not return a run from another workspace when a scope is given (HEL-484)", async () => {
+    await runStore.create(makeRun({ id: "run-ws-a", workspaceId: "ws-A" }));
+    await expect(runStore.get("run-ws-a", "ws-B")).resolves.toBeUndefined();
+    await expect(runStore.get("run-ws-a", "ws-A")).resolves.toMatchObject({ id: "run-ws-a" });
+  });
 });
 
 describe("runStore.update", () => {
@@ -141,6 +147,13 @@ describe("runStore.list", () => {
     const filtered = await runStore.list(undefined, "user-a");
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.id).toBe("run-1");
+  });
+
+  it("filters by workspaceId (HEL-484)", async () => {
+    await runStore.create(makeRun({ id: "run-1", workspaceId: "ws-A" }));
+    await runStore.create(makeRun({ id: "run-2", workspaceId: "ws-B" }));
+    const scoped = await runStore.list(undefined, undefined, undefined, "ws-A");
+    expect(scoped.map((run) => run.id)).toEqual(["run-1"]);
   });
 });
 
@@ -428,7 +441,8 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
-    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1", null]);
+    // HEL-484: list() now takes a 4th workspaceId param (null when unscoped).
+    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1", null, null]);
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
     expect(query.mock.calls[1]?.[1]).toEqual([["run-pg-1", "run-pg-2"]]);

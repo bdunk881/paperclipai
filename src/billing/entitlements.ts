@@ -72,8 +72,17 @@ const PLAN_LIMITS: Record<SubscriptionTier, EntitlementLimits> = {
 // undefined, which made `requireEntitlement.ts` silently downgrade the
 // caller to "explore" until the next webhook restored the cache —
 // effectively cancelling paid users' plans after every Fly restart.
-// allowlist: hot-path read cache; canonical state lives in Postgres (DASH-47..51)
-const entitlementsByWorkspace = new Map<string, WorkspaceEntitlements>();
+// HEL-473 (B13): cache entries carry a timestamp so cross-instance plan
+// changes propagate. A Stripe webhook/upgrade writes Postgres (+ that machine's
+// cache) on instance A; instance B previously served its stale cached tier
+// forever, so requireEntitlement enforced the wrong plan on ~half of prod
+// traffic. With a TTL, B re-reads Postgres once an entry goes stale.
+const ENTITLEMENTS_CACHE_TTL_MS = 30_000;
+// allowlist: hot-path read cache (TTL'd); canonical state lives in Postgres (DASH-47..51 / HEL-473)
+const entitlementsByWorkspace = new Map<
+  string,
+  { value: WorkspaceEntitlements; cachedAt: number }
+>();
 
 function postgresAvailable(): boolean {
   if (isPostgresPersistenceEnabled()) return true;
@@ -128,14 +137,21 @@ export const entitlementStore = {
     // the same code paths that call this). This method just updates the
     // in-process cache so the next read on this machine is fast.
     const entitlements = buildEntitlements(workspaceId, plan);
-    entitlementsByWorkspace.set(workspaceId, entitlements);
+    entitlementsByWorkspace.set(workspaceId, { value: entitlements, cachedAt: Date.now() });
     return entitlements;
   },
 
   async get(workspaceId: string): Promise<WorkspaceEntitlements | undefined> {
     const cached = entitlementsByWorkspace.get(workspaceId);
-    if (cached) return cached;
-    if (!postgresAvailable()) return undefined;
+    if (cached) {
+      const fresh = Date.now() - cached.cachedAt < ENTITLEMENTS_CACHE_TTL_MS;
+      // In dev/test in-memory mode the cache IS canonical (no Postgres to
+      // re-read from), so never expire it. In prod, serve fresh entries from
+      // cache; let stale ones fall through to a Postgres re-read so a plan
+      // change written on another instance propagates within the TTL.
+      if (fresh || !isPostgresPersistenceEnabled()) return cached.value;
+    }
+    if (!postgresAvailable()) return cached?.value;
 
     const result = await getPostgresPool().query<EntitlementRow>(
       `SELECT workspace_id, runs_per_month, agent_cap, integration_cap,
@@ -145,9 +161,13 @@ export const entitlementStore = {
         WHERE workspace_id = $1`,
       [workspaceId],
     );
-    if (result.rowCount === 0) return undefined;
+    if (result.rowCount === 0) {
+      // Row gone (e.g. workspace deleted) — drop any stale cache entry.
+      entitlementsByWorkspace.delete(workspaceId);
+      return undefined;
+    }
     const entitlements = mapRow(result.rows[0]);
-    entitlementsByWorkspace.set(workspaceId, entitlements);
+    entitlementsByWorkspace.set(workspaceId, { value: entitlements, cachedAt: Date.now() });
     return entitlements;
   },
 

@@ -11,6 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
 import { withUserContext } from "../middleware/workspaceContext";
+import { decryptSecret, encryptSecret } from "../controlPlane/secretEncryption";
 
 export interface McpServer {
   id: string;
@@ -20,7 +21,10 @@ export interface McpServer {
   url: string;
   /** Optional auth header name, e.g. "Authorization" */
   authHeaderKey?: string;
-  /** Optional auth header value, e.g. "Bearer <token>" — stored in plaintext for MVP */
+  /**
+   * Optional auth header value, e.g. "Bearer <token>". Encrypted at rest in
+   * Postgres via the secretEncryption envelope (HEL-560); plaintext in memory.
+   */
   authHeaderValue?: string;
   createdAt: string;
 }
@@ -48,6 +52,57 @@ interface McpServerRow {
   created_at: Date | string;
 }
 
+let warnedNoSecretKey = false;
+
+/**
+ * HEL-560: encrypt the MCP auth header at rest, serialized as
+ * `enc:<keyVersion>:<ivHex>:<authTagHex>:<ciphertextHex>` via the same
+ * AES-256-GCM envelope used for provisioned company secrets. Where
+ * CONTROL_PLANE_SECRET_KEY is unset (some keyless dev envs) it falls back to
+ * plaintext rather than breaking MCP — encryption applies wherever the key is
+ * configured (staging/prod, where company secrets are already encrypted).
+ */
+export function encryptAuthHeader(plain: string): string {
+  try {
+    const e = encryptSecret(plain);
+    return `enc:${e.keyVersion}:${e.iv.toString("hex")}:${e.authTag.toString("hex")}:${e.ciphertext.toString("hex")}`;
+  } catch (err) {
+    if (!warnedNoSecretKey) {
+      console.warn(
+        `[mcpStore] storing MCP auth header unencrypted (set CONTROL_PLANE_SECRET_KEY to encrypt): ${err instanceof Error ? err.message : "secret key unavailable"}`,
+      );
+      warnedNoSecretKey = true;
+    }
+    return plain;
+  }
+}
+
+/**
+ * Inverse of encryptAuthHeader. Legacy plaintext rows (no `enc:` prefix) pass
+ * through unchanged, so existing data keeps working and re-encrypts on its next
+ * save. A decrypt failure yields `undefined` (no auth) rather than leaking the
+ * ciphertext blob as a header value.
+ */
+export function decryptAuthHeader(stored: string | null): string | undefined {
+  if (stored == null) return undefined;
+  if (!stored.startsWith("enc:")) return stored;
+  const parts = stored.split(":");
+  if (parts.length !== 5) return stored;
+  try {
+    return decryptSecret({
+      keyVersion: Number(parts[1]),
+      iv: Buffer.from(parts[2], "hex"),
+      authTag: Buffer.from(parts[3], "hex"),
+      ciphertext: Buffer.from(parts[4], "hex"),
+    });
+  } catch (err) {
+    console.warn(
+      `[mcpStore] failed to decrypt MCP auth header: ${err instanceof Error ? err.message : "unknown"}`,
+    );
+    return undefined;
+  }
+}
+
 function mapRow(row: McpServerRow): McpServer {
   return {
     id: row.id,
@@ -55,7 +110,7 @@ function mapRow(row: McpServerRow): McpServer {
     name: row.name,
     url: row.url,
     authHeaderKey: row.auth_header_key ?? undefined,
-    authHeaderValue: row.auth_header_value ?? undefined,
+    authHeaderValue: decryptAuthHeader(row.auth_header_value),
     createdAt:
       row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
   };
@@ -84,7 +139,7 @@ async function persistServer(server: McpServer): Promise<void> {
         server.name,
         server.url,
         server.authHeaderKey ?? null,
-        server.authHeaderValue ?? null,
+        server.authHeaderValue ? encryptAuthHeader(server.authHeaderValue) : null,
         server.createdAt,
       ],
     );

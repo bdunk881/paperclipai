@@ -85,6 +85,20 @@ The single source of truth is [`docs/glossary.md`](docs/glossary.md). Every API 
 
 ## Branch flow (current reality)
 
+> ### ⛔ Branch & PR target — `dev` ONLY (non-negotiable)
+> **Every branch is cut from `dev`, and every pull request targets `dev`.** Never open,
+> retarget, or push a PR against `main`/`master` — they're the frozen production line.
+> 1. Before branching: `git checkout dev && git pull origin dev`, then branch off it.
+> 2. Open the PR with the **base set to `dev` explicitly** (`gh pr create --base dev …`, or
+>    `base: "dev"` on the GitHub MCP `create_pull_request` call) — don't trust the repo
+>    default base; it may be `main`/`master`.
+> 3. **Verify the base after opening.** A PR showing `main`/`master` (telltale: a
+>    hundreds/thousands-of-files diff) is wrong — retarget to `dev` immediately
+>    (`gh pr edit <n> --base dev` / MCP `update_pull_request`).
+>
+> Promotion `dev → staging → master` is a separate, human-gated step (below). Agents never
+> promote to `master`. This applies to **every** agent — Claude, Cursor, Codex.
+
 | Branch | Role | Protection (today) | Protection (target — [HEL-7](https://linear.app/helloautoflow/issue/HEL-7)) |
 |---|---|---|---|
 | `dev` | Main / integration | None | No force-push, no delete, CI green required |
@@ -96,7 +110,7 @@ The single source of truth is [`docs/glossary.md`](docs/glossary.md). Every API 
 ### How to contribute a change
 
 1. Branch from `dev`: `git checkout -b feature/<short-name>` (humans) or `brad/hel-<n>-<slug>` (agents — Linear provides the canonical branch name on each issue).
-2. Open the PR into `dev` in the same heartbeat as the first push.
+2. Open the PR into `dev` in the same heartbeat as the first push — set the **base to `dev` explicitly** and verify it after opening (see the non-negotiable callout above).
 3. Enable auto-merge after CI passes.
 4. Promotion to `staging`: separate PR, requires approval.
 5. Promotion to `master`: separate PR, requires approval **and** a clean staging history.

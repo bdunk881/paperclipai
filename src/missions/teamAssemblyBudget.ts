@@ -39,8 +39,25 @@ export const TARGET_FILL_JSON_TOKENS = 4000;
 const ESTIMATED_TOKENS_PER_SKELETON_ROLE = 45;
 /** Fixed skeleton overhead: company/summary/rationale + the 30/60/90 roadmap. */
 const SKELETON_FRAMING_TOKENS = 900;
-/** Floor for a skeleton call's requested budget so a small team still has room. */
-const MIN_SKELETON_OUTPUT_TOKENS = 4096;
+
+/**
+ * Absolute output-token headroom reserved for a reasoning model's hidden
+ * THINKING tokens, which count against `maxOutputTokens` alongside the JSON.
+ * For gemini-2.5-pro this is roughly constant per planning task (a few
+ * thousand to ~10k) and is NOT proportional to the (small) per-call JSON — so
+ * it must be ADDED, not derived from a ratio of the JSON size. Set generously:
+ * `maxOutputTokens` is a ceiling, not a target, so unused headroom costs
+ * nothing, while too little truncates the response (the live 8-agent E2E hit
+ * this on the skeleton call — thinking ate the old ~4096 budget).
+ */
+const REASONING_THINKING_HEADROOM_TOKENS = 24000;
+const NON_REASONING_HEADROOM_TOKENS = 2048;
+
+function thinkingHeadroom(provider: ProviderName): number {
+  return REASONING_PROVIDERS.has(provider)
+    ? REASONING_THINKING_HEADROOM_TOKENS
+    : NON_REASONING_HEADROOM_TOKENS;
+}
 
 /**
  * Fraction of a provider's output budget we plan to fill with JSON. Reasoning
@@ -124,10 +141,11 @@ export function recommendedFillCallMaxTokens(
   options: FillBatchSizeOptions = {},
 ): number {
   const perAgent = resolvePerAgent(options);
-  const reserve = resolveReserve(provider, options);
   const safeRoleCount = Number.isFinite(roleCount) && roleCount > 0 ? Math.floor(roleCount) : 1;
   const jsonTokens = safeRoleCount * perAgent;
-  return clampMaxOutputTokens(provider, Math.ceil(jsonTokens / reserve));
+  // JSON output + a generous thinking allowance (reasoning models spend part
+  // of maxOutputTokens on hidden thinking), clamped to the provider ceiling.
+  return clampMaxOutputTokens(provider, jsonTokens + thinkingHeadroom(provider));
 }
 
 /**
@@ -140,11 +158,9 @@ export function recommendedSkeletonMaxTokens(
   provider: ProviderName,
   roleCountHint = 12,
 ): number {
-  const reserve = REASONING_PROVIDERS.has(provider)
-    ? REASONING_RESERVE
-    : NON_REASONING_RESERVE;
   const safeHint = Number.isFinite(roleCountHint) && roleCountHint > 0 ? roleCountHint : 12;
   const jsonTokens = safeHint * ESTIMATED_TOKENS_PER_SKELETON_ROLE + SKELETON_FRAMING_TOKENS;
-  const desired = Math.max(MIN_SKELETON_OUTPUT_TOKENS, Math.ceil(jsonTokens / reserve));
-  return clampMaxOutputTokens(provider, desired);
+  // Small JSON + generous thinking headroom. The old ratio-derived ~4096
+  // truncated the skeleton once gemini's thinking tokens were counted.
+  return clampMaxOutputTokens(provider, jsonTokens + thinkingHeadroom(provider));
 }

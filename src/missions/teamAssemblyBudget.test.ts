@@ -67,9 +67,9 @@ describe("teamAssemblyBudget (HEL-501 / chunked generation PR1)", () => {
   });
 
   describe("recommendedFillCallMaxTokens", () => {
-    it("grosses up the batch's JSON by the reasoning reserve (gemini)", () => {
-      // 12 * 320 = 3840 JSON; / 0.5 reserve = 7680 requested.
-      expect(recommendedFillCallMaxTokens("gemini", 12)).toBe(7680);
+    it("adds generous thinking headroom to the batch JSON (gemini)", () => {
+      // 12 * 320 = 3840 JSON + 24000 thinking headroom = 27840 requested.
+      expect(recommendedFillCallMaxTokens("gemini", 12)).toBe(27840);
     });
 
     it("clamps to the provider ceiling when a batch would over-request", () => {
@@ -80,23 +80,24 @@ describe("teamAssemblyBudget (HEL-501 / chunked generation PR1)", () => {
     });
 
     it("handles a single-role batch", () => {
-      expect(recommendedFillCallMaxTokens("gemini", 1)).toBe(640); // 320 / 0.5
+      expect(recommendedFillCallMaxTokens("gemini", 1)).toBe(24320); // 320 + 24000
     });
   });
 
   describe("recommendedSkeletonMaxTokens", () => {
-    it("floors a small team's skeleton budget", () => {
-      expect(recommendedSkeletonMaxTokens("gemini", 12)).toBe(4096);
+    it("budgets a small team's skeleton with thinking headroom", () => {
+      // (12*45 + 900) = 1440 JSON + 24000 headroom = 25440.
+      expect(recommendedSkeletonMaxTokens("gemini", 12)).toBe(25440);
     });
 
     it("scales up for a large team but stays under the provider cap", () => {
-      // anthropic: (200*45 + 900) / 0.75 = 13200 desired, clamped to 8192.
+      // anthropic: (200*45 + 900) + 2048 headroom = 11948 desired, clamped to 8192.
       expect(recommendedSkeletonMaxTokens("anthropic", 200)).toBe(8192);
     });
 
-    it("grows past the floor for a mid-size team on a high-cap provider", () => {
-      // gemini, 40 roles: (40*45 + 900) / 0.5 = 5400 > 4096 floor.
-      expect(recommendedSkeletonMaxTokens("gemini", 40)).toBe(5400);
+    it("scales the skeleton budget with team size on a high-cap provider", () => {
+      // gemini, 40 roles: (40*45 + 900) = 2700 JSON + 24000 = 26700.
+      expect(recommendedSkeletonMaxTokens("gemini", 40)).toBe(26700);
     });
   });
 });

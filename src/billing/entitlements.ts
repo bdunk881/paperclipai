@@ -159,14 +159,31 @@ export const entitlementStore = {
     }
     if (!postgresAvailable()) return cached?.value;
 
-    const result = await getPostgresPool().query<EntitlementRow>(
-      `SELECT workspace_id, runs_per_month, agent_cap, integration_cap,
-              byok_allowed, log_retention_days, approval_tier_max, plan,
-              updated_at
-         FROM entitlements
-        WHERE workspace_id = $1`,
-      [workspaceId],
-    );
+    let result;
+    try {
+      result = await getPostgresPool().query<EntitlementRow>(
+        `SELECT workspace_id, runs_per_month, agent_cap, integration_cap,
+                byok_allowed, log_retention_days, approval_tier_max, plan,
+                updated_at
+           FROM entitlements
+          WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+    } catch (err) {
+      // A stale entry only reaches here to *refresh*. If Postgres is briefly
+      // unavailable, keep serving the last-known cached entitlements rather
+      // than failing entitlement-gated requests — the same resilience the
+      // pre-TTL code had. Only a genuine cache miss (no cached value) surfaces
+      // the error. (Codex P2 on #1295.)
+      if (cached) {
+        console.warn(
+          `[entitlements] refresh failed for ${workspaceId}; serving cached value:`,
+          (err as Error).message,
+        );
+        return cached.value;
+      }
+      throw err;
+    }
     if (result.rowCount === 0) {
       // Row gone (e.g. workspace deleted) — drop any stale cache entry.
       entitlementsByWorkspace.delete(workspaceId);

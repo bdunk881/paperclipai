@@ -70,4 +70,20 @@ describe("entitlementStore cache TTL (B13/HEL-473)", () => {
     expect(await entitlementStore.get("ws-gone")).toBeUndefined();
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
+
+  it("serves the cached value when a stale refresh hits a transient DB error", async () => {
+    const t0 = 7_000_000;
+    const nowSpy = jest.spyOn(Date, "now").mockReturnValue(t0);
+    entitlementStore.upsert("ws-blip", "automate");
+
+    // Stale → would refresh, but Postgres is briefly unavailable.
+    nowSpy.mockReturnValue(t0 + 31_000);
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockQuery.mockRejectedValue(new Error("connection terminated unexpectedly"));
+
+    // Must serve last-known entitlements, not throw / reject the request.
+    const got = await entitlementStore.get("ws-blip");
+    expect(got?.plan).toBe("automate");
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
 });

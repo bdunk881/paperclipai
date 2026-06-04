@@ -9,7 +9,10 @@
  * All parsers return { content, mimeType, filename }.
  */
 
+import type { Readable } from "stream";
 import OpenAI from "openai";
+import { getStorageAdapter, parseStorageKey } from "../storage";
+import { fileObjectStore, type FileObjectContext } from "../storage/fileObjectStore";
 
 export interface ParsedFile {
   content: string;
@@ -164,4 +167,54 @@ export async function parseFile(
   }
 
   return { content, mimeType, filename };
+}
+
+// ---------------------------------------------------------------------------
+// Fetch-by-fileId — parse a persisted file_objects row via the storage adapter
+// (HEL-355). Used by the run pipeline / re-runs so the bytes live in object
+// storage, not in Postgres or memory.
+// ---------------------------------------------------------------------------
+
+export class FileNotFoundError extends Error {
+  constructor(fileId: string) {
+    super(`file_objects row not found or deleted: ${fileId}`);
+    this.name = "FileNotFoundError";
+  }
+}
+
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array));
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Resolve a `file_objects` row (workspace-scoped) by id, fetch its bytes through
+ * the storage adapter, and parse them. Throws {@link FileNotFoundError} if the
+ * row is missing, deleted, or belongs to another workspace (getById is
+ * workspace-scoped).
+ */
+export async function parseFileById(
+  ctx: FileObjectContext,
+  fileId: string,
+  opts: ParseOptions = {},
+): Promise<ParsedFile> {
+  const row = await fileObjectStore.getById(ctx, fileId);
+  if (!row || row.deletedAt) {
+    throw new FileNotFoundError(fileId);
+  }
+  const ref = parseStorageKey(row.storageKey);
+  if (!ref) {
+    throw new Error(`Stored object key is malformed for file ${fileId}`);
+  }
+  const object = await getStorageAdapter().getObject(ref);
+  const buffer = await streamToBuffer(object.body);
+  return parseFile(
+    buffer,
+    row.mimeType ?? object.contentType ?? "application/octet-stream",
+    row.filename ?? fileId,
+    opts,
+  );
 }

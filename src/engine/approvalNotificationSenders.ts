@@ -20,15 +20,15 @@ function normalizeEnv(name: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function buildSendGridEmailSender(): NotificationSender {
-  const apiKey = normalizeEnv("SENDGRID_API_KEY");
+function buildResendEmailSender(): NotificationSender {
+  const apiKey = normalizeEnv("RESEND_API_KEY");
   const fromEmail = normalizeEnv("AUTOFLOW_APPROVAL_EMAIL_FROM");
   const fromName = normalizeEnv("AUTOFLOW_APPROVAL_EMAIL_FROM_NAME") ?? "AutoFlow";
-  const baseUrl = normalizeEnv("SENDGRID_API_BASE_URL") ?? "https://api.sendgrid.com";
+  const baseUrl = normalizeEnv("RESEND_API_BASE_URL") ?? "https://api.resend.com";
 
   return async (notification) => {
     if (!apiKey) {
-      throw new Error("SENDGRID_API_KEY is not configured");
+      throw new Error("RESEND_API_KEY is not configured");
     }
     if (!fromEmail) {
       throw new Error("AUTOFLOW_APPROVAL_EMAIL_FROM is not configured");
@@ -81,39 +81,24 @@ function buildSendGridEmailSender(): NotificationSender {
       );
     }
 
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v3/mail/send`, {
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/emails`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: notification.recipient }],
-            subject: `Approval required: ${notification.templateName} / ${notification.stepName}`,
-          },
-        ],
-        from: {
-          email: fromEmail,
-          name: fromName,
-        },
-        content: [
-          {
-            type: "text/plain",
-            value: textLines.join("\n"),
-          },
-          {
-            type: "text/html",
-            value: htmlParts.join(""),
-          },
-        ],
+        from: `${fromName} <${fromEmail}>`,
+        to: [notification.recipient],
+        subject: `Approval required: ${notification.templateName} / ${notification.stepName}`,
+        text: textLines.join("\n"),
+        html: htmlParts.join(""),
       }),
     });
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`SendGrid mail send failed (${response.status}): ${body.slice(0, 300)}`);
+      throw new Error(`Resend mail send failed (${response.status}): ${body.slice(0, 300)}`);
     }
   };
 }
@@ -128,19 +113,21 @@ function escapeHtml(value: string): string {
 }
 
 export function buildApprovalNotificationSenders(): ApprovalNotificationSenders {
-  const provider = normalizeEnv("AUTOFLOW_APPROVAL_EMAIL_PROVIDER")?.toLowerCase();
-
   return {
     inbox: async () => {
       return;
     },
-    email:
-      provider === "sendgrid"
-        ? buildSendGridEmailSender()
-        : async (notification) => {
-            console.log(
-              `[approval-notifications] delivered email notification ${notification.id} to ${notification.recipient}`
-            );
-          },
+    // HEL-604: AutoFlow's canonical transactional provider is Resend. (SendGrid
+    // is a customer-facing connector in the agent plane, not our system mailer.)
+    // Deliver via Resend when RESEND_API_KEY is set, else log in dev so the
+    // notification is observable without a live mailbox — mirrors
+    // buildDefaultMfaEmailSender.
+    email: normalizeEnv("RESEND_API_KEY")
+      ? buildResendEmailSender()
+      : async (notification) => {
+          console.log(
+            `[approval-notifications] (dev) would deliver email notification ${notification.id} to ${notification.recipient}`
+          );
+        },
   };
 }

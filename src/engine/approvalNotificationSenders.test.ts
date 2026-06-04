@@ -19,17 +19,18 @@ const baseNotification: ApprovalNotification = {
   createdAt: "2026-04-22T10:00:00.000Z",
 };
 
+// HEL-604: approval-notification email goes through Resend (AutoFlow's canonical
+// transactional provider), not SendGrid (a customer connector, not our mailer).
 describe("buildApprovalNotificationSenders", () => {
   const originalEnv = { ...process.env };
   const originalFetch = global.fetch;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.AUTOFLOW_APPROVAL_EMAIL_PROVIDER;
-    delete process.env.SENDGRID_API_KEY;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.RESEND_API_BASE_URL;
     delete process.env.AUTOFLOW_APPROVAL_EMAIL_FROM;
     delete process.env.AUTOFLOW_APPROVAL_EMAIL_FROM_NAME;
-    delete process.env.SENDGRID_API_BASE_URL;
     delete process.env.DASHBOARD_APP_URL;
     global.fetch = jest.fn() as unknown as typeof fetch;
   });
@@ -40,26 +41,25 @@ describe("buildApprovalNotificationSenders", () => {
     jest.restoreAllMocks();
   });
 
-  it("falls back to the log-based sender when no provider is configured", async () => {
+  it("falls back to the log-based sender when RESEND_API_KEY is not set", async () => {
     const senders = buildApprovalNotificationSenders();
     const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
 
     await expect(senders.email(baseNotification)).resolves.toBeUndefined();
     expect(logSpy).toHaveBeenCalledWith(
-      `[approval-notifications] delivered email notification ${baseNotification.id} to ${baseNotification.recipient}`
+      `[approval-notifications] (dev) would deliver email notification ${baseNotification.id} to ${baseNotification.recipient}`
     );
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("sends approval email through SendGrid when configured", async () => {
-    process.env.AUTOFLOW_APPROVAL_EMAIL_PROVIDER = "sendgrid";
-    process.env.SENDGRID_API_KEY = "sg_test";
+  it("sends approval email through Resend when RESEND_API_KEY is set", async () => {
+    process.env.RESEND_API_KEY = "re_test";
     process.env.AUTOFLOW_APPROVAL_EMAIL_FROM = "autoflow@example.com";
     process.env.AUTOFLOW_APPROVAL_EMAIL_FROM_NAME = "AutoFlow Ops";
     process.env.DASHBOARD_APP_URL = "https://dashboard.example.com";
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
-      status: 202,
+      status: 200,
       text: async () => "",
     });
 
@@ -68,26 +68,29 @@ describe("buildApprovalNotificationSenders", () => {
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://api.sendgrid.com/v3/mail/send");
+    expect(url).toBe("https://api.resend.com/emails");
     expect(init.method).toBe("POST");
     expect(init.headers).toMatchObject({
-      Authorization: "Bearer sg_test",
+      Authorization: "Bearer re_test",
       "Content-Type": "application/json",
     });
 
     const body = JSON.parse(String(init.body));
-    expect(body.from).toEqual({ email: "autoflow@example.com", name: "AutoFlow Ops" });
-    expect(body.personalizations[0].to).toEqual([{ email: "manager@example.com" }]);
-    expect(body.personalizations[0].subject).toContain("Approval required");
-    expect(body.content[0].value).toContain("Please review this escalation");
-    expect(body.content[0].value).toContain("https://dashboard.example.com/approvals/approval-1");
+    expect(body.from).toBe("AutoFlow Ops <autoflow@example.com>");
+    expect(body.to).toEqual(["manager@example.com"]);
+    expect(body.subject).toContain("Approval required");
+    expect(body.text).toContain("Please review this escalation");
+    expect(body.text).toContain("https://dashboard.example.com/approvals/approval-1");
+    expect(body.html).toContain("Please review this escalation");
   });
 
-  it("throws when SendGrid is selected but required config is missing", async () => {
-    process.env.AUTOFLOW_APPROVAL_EMAIL_PROVIDER = "sendgrid";
+  it("throws when Resend is selected but the from-address is missing", async () => {
+    process.env.RESEND_API_KEY = "re_test";
     const senders = buildApprovalNotificationSenders();
 
-    await expect(senders.email(baseNotification)).rejects.toThrow("SENDGRID_API_KEY is not configured");
+    await expect(senders.email(baseNotification)).rejects.toThrow(
+      "AUTOFLOW_APPROVAL_EMAIL_FROM is not configured"
+    );
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });

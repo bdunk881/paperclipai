@@ -947,17 +947,29 @@ function DrawerBody({
                     : "—"}
                 </div>
                 <div className="feed-msg">
-                  <span
-                    className={`pill ${
-                      run.status === "completed"
-                        ? "sage"
-                        : run.status === "failed"
-                          ? "clay"
-                          : "mustard"
-                    } dot`}
+                  {/* HEL-562: drill into the run's step timeline. */}
+                  <Link
+                    to={`/runs/${run.id}`}
+                    style={{
+                      textDecoration: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
                   >
-                    {run.status}
-                  </span>
+                    <span
+                      className={`pill ${
+                        run.status === "completed"
+                          ? "sage"
+                          : run.status === "failed"
+                            ? "clay"
+                            : "mustard"
+                      } dot`}
+                    >
+                      {run.status}
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--af2-ink-4)" }}>view →</span>
+                  </Link>
                 </div>
               </div>
             ))

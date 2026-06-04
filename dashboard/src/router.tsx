@@ -24,6 +24,7 @@ import AgentTeamDetail from "./pages/AgentTeamDetail";
 import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
 import AgentDetail from "./pages/AgentDetail";
+import RunDetail from "./pages/RunDetail";
 import AgentOAuthCallback from "./pages/AgentOAuthCallback";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
@@ -283,6 +284,8 @@ const routes: RouteObject[] = [
       // Loader still pre-warms the observability cache so the tab renders
       // instantly when the redirect lands.
       { path: "agents/activity", loader: activityLoader, element: <Navigate to="/assignments?tab=activity" replace /> },
+      // HEL-562: run detail / step timeline — makes a run's paper trail visible.
+      { path: "runs/:runId", element: <RunDetail /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },
       // Wave 3: per-agent Job Description editor + LLM-assisted wizard.
       // Linked from AgentTeamDetail and OrgStructure (via the agent card).

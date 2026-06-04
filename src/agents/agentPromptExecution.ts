@@ -42,6 +42,10 @@ import { runAgentTurn, type AgentRunTier, type RunAgentTurnResult } from "./runA
 import { ticketStore } from "../tickets/ticketStore";
 import { publishWorkspaceStreamEvent } from "../engine/agentTrace/streamPublisher";
 import { filePlanApprovalRequest } from "./runtime/planApprovalBridge";
+import { saveMemory } from "../knowledge/saveMemoryTool";
+// NOTE: embedTextForWorkspace is imported lazily inside
+// scheduleMemoryConsolidation — reflectionWiring pulls in the LLM-providers
+// barrel, which would otherwise load on every import of this hot primitive.
 
 export interface ExecuteAgentPromptInput {
   pool: Pool;
@@ -393,34 +397,77 @@ async function emitActivityEvent(input: {
 }
 
 /**
- * Best-effort: enqueue a knowledge-reflection pass so what the agent
- * learned during this turn gets consolidated into `knowledge_items`
- * for future recall (HEL-150 / HEL-91 wiring).
+ * Records this prompt turn as an `action_result` episode (HEL-492) so the
+ * batched knowledge-reflection job can later cluster + distill recurring
+ * patterns into `knowledge_items` for future recall.
  *
- * We don't block on this — it's a background consolidation, and any
- * failure is logged but not surfaced to the caller. The reflection
- * pipeline itself batches by lookback window, so we're really just
- * making sure SOMEONE will eventually pick this turn up.
+ * Previously this was a no-op stub that only logged under `HEL_174_VERBOSE`,
+ * so the automatic memory loop never produced anything for reflection to
+ * consolidate (the reflection pipeline reads unreflected `agent_episodes`).
+ *
+ * Reuses `saveMemory` — the same validated path the explicit save_memory tool
+ * uses (length caps, PII scan, tier-routed embedding, insert) — with
+ * `layer:"episode"`, which is ungated. The row lands with `reflected_at` NULL,
+ * exactly what `reflectionJob`'s lookback query selects. A workspace with no
+ * embeddings tier configured simply skips (saveMemory returns `ok:false`).
+ *
+ * Best-effort: failures are swallowed (never surfaced to the caller), and the
+ * call site fires-and-forgets so the embedding call adds no latency to the
+ * agent's response.
  */
-async function scheduleMemoryConsolidation(input: {
+export async function scheduleMemoryConsolidation(input: {
+  pool: Pool;
   workspaceId: string;
   agentId: string;
+  userId: string;
   runId: string;
+  actionSummary: string;
+  fullReply: string;
 }): Promise<void> {
   try {
-    // The reflection route runs over recent activity windows; emitting
-    // the activity event above is the canonical hand-off. This stub
-    // is here as a future hook for explicit per-run reflection if we
-    // want it. Logging keeps the call site visible without coupling
-    // the primitive to the reflection module's internals.
-    if (process.env.HEL_174_VERBOSE === "1") {
+    // saveMemory enforces title ≤ 80 / content ≤ 2000; truncate up front so a
+    // long reply degrades to a stored-but-clipped episode instead of a reject.
+    const title = input.actionSummary.trim().slice(0, 80);
+    const content = input.fullReply.trim().slice(0, 2000);
+    if (!title || !content) {
+      return;
+    }
+
+    const result = await saveMemory(
+      {
+        layer: "episode",
+        kind: "action_result",
+        title,
+        content,
+        run_id: input.runId,
+      },
+      {
+        pool: input.pool,
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        userId: input.userId,
+        embedFn: async (text) => {
+          // Use the workspace's tier-routed embedder so consolidation episodes
+          // embed with the same model/dimension as the workspace's other
+          // episodes (cross-episode clustering depends on consistent vectors).
+          const { embedTextForWorkspace } = await import("../knowledge/reflectionWiring");
+          return embedTextForWorkspace(
+            { workspaceId: input.workspaceId, userId: input.userId },
+            text,
+          );
+        },
+        canWriteAuthoritative: false,
+      },
+    );
+
+    if (!result.ok && process.env.HEL_174_VERBOSE === "1") {
       console.log(
-        `[agentPromptExecution] memory hand-off — ws=${input.workspaceId} agent=${input.agentId} run=${input.runId}`,
+        `[agentPromptExecution] memory consolidation skipped — ws=${input.workspaceId} run=${input.runId}: ${result.reason}`,
       );
     }
   } catch (err) {
     console.warn(
-      `[agentPromptExecution] memory consolidation hand-off failed: ${(err as Error).message}`,
+      `[agentPromptExecution] memory consolidation failed: ${(err as Error).message}`,
     );
   }
 }
@@ -740,11 +787,18 @@ export async function executeAgentPrompt(
     triggerKind: input.triggerKind,
   });
 
-  // 7. Hand off memory consolidation.
-  await scheduleMemoryConsolidation({
+  // 7. Hand off memory consolidation — record an action_result episode the
+  // reflection job can later cluster + distill. Fire-and-forget: the embedding
+  // call must not add latency to the agent's response, and failures are
+  // swallowed inside the helper.
+  void scheduleMemoryConsolidation({
+    pool: input.pool,
     workspaceId: input.workspaceId,
     agentId: input.agentId,
+    userId: input.userId,
     runId,
+    actionSummary: parsed.actionSummary,
+    fullReply: turnResult.text,
   });
 
   return {

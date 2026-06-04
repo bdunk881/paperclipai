@@ -159,6 +159,12 @@ export default function Hire() {
 
   const hasLLM = modelOptions.length > 0;
   const canUseLlm = hasLLM;
+  // HEL-554: when the active model is a free hosted one, reassure the user
+  // they don't need to bring an API key — the #1 first-run drop-off was
+  // people assuming a key was mandatory and bouncing at this step.
+  const selectedIsHostedFree = Boolean(
+    selectedLlmConfigId && selectedLlmConfigId.startsWith("hosted-free:"),
+  );
   const llmCheckLoading = llmConfigs === null && llmConfigError === null;
 
   useEffect(() => {
@@ -413,9 +419,10 @@ export default function Hire() {
           >
             <h3>Connect a model before you can generate a hiring plan</h3>
             <p className="desc">
-              AutoFlow uses your own API key to draft the org chart, budget, and
-              first week of work. Add an OpenAI, Anthropic, or other provider key
-              in Models, then come back here.
+              AutoFlow normally drafts the org chart, budget, and first week of
+              work on free hosted models — no API key needed — but none are
+              enabled for this workspace right now. Add your own provider key
+              (OpenAI, Anthropic, Gemini, Mistral…) in Models to get started.
             </p>
             {llmConfigError ? (
               <p
@@ -585,7 +592,7 @@ export default function Hire() {
               disabled={!canGenerate}
               title={
                 !canUseLlm && !llmCheckLoading
-                  ? "Add an LLM model in Settings → Models first"
+                  ? "No model available — add a provider key in Settings → Models"
                   : undefined
               }
             >
@@ -594,6 +601,26 @@ export default function Hire() {
                 : "Draft hiring plan →"}
             </button>
           </div>
+
+          {selectedIsHostedFree && !isBusy ? (
+            <div
+              className="desc"
+              style={{
+                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <span className="pill sage dot">Included · no API key needed</span>
+              <span>
+                Using AutoFlow hosted models.{" "}
+                <Link to="/settings/llm-providers">Add your own key</Link>{" "}
+                anytime.
+              </span>
+            </div>
+          ) : null}
 
           {submitState === "generating" ? (
             <div

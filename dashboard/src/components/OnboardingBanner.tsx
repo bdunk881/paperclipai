@@ -21,7 +21,7 @@
 
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CheckCircle2, Sparkles, Users, X } from "lucide-react";
+import { ArrowRight, CheckCircle2, Plug, Sparkles, X } from "lucide-react";
 
 const DISMISS_KEY = "af2-onboarding-dismissed-v1";
 
@@ -131,8 +131,8 @@ export function OnboardingBanner({ show, firstName }: Props) {
           maxWidth: 640,
         }}
       >
-        Tell us what you need done. We'll draft the team. You confirm.
-        They run. You watch.
+        No setup required — your agents run on free hosted models out of the
+        box. Tell us what you need done, we'll draft the team, you confirm.
       </p>
 
       <div
@@ -145,18 +145,18 @@ export function OnboardingBanner({ show, firstName }: Props) {
       >
         <Step
           number={1}
-          title="Brief a mission"
-          body="One paragraph. What needs to happen. We'll suggest a team to run it."
+          title="Pick how your agents think"
+          body="AutoFlow hosted models are on by default — no API key needed. Bring your own anytime."
         />
         <Step
           number={2}
-          title="Confirm the team"
-          body="Tweak who you're hiring, edit their job descriptions, then provision."
+          title="Brief a mission"
+          body="One paragraph. We draft the team, the org chart, and the first week of work."
         />
         <Step
           number={3}
-          title="Watch them work"
-          body="Live status. Check in or hand off new work whenever you need."
+          title="Confirm & watch"
+          body="Approve the plan, gate the risky steps, watch the rest run on a live feed."
         />
       </div>
 
@@ -174,7 +174,7 @@ export function OnboardingBanner({ show, firstName }: Props) {
           <ArrowRight size={14} />
         </Link>
         <Link
-          to="/workspace/org-structure"
+          to="/connections"
           className="af2-btn af2-btn-ghost"
           style={{
             display: "inline-flex",
@@ -182,8 +182,8 @@ export function OnboardingBanner({ show, firstName }: Props) {
             gap: 6,
           }}
         >
-          <Users size={14} />
-          See an empty team
+          <Plug size={14} />
+          Connect a tool
         </Link>
       </div>
     </div>

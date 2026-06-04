@@ -24,6 +24,9 @@ const errorCardStyle: CSSProperties = {
 };
 
 function isDevBypassEnabled(): boolean {
+  // HEL-391: honored only in dev builds. In production the admin gate cannot be
+  // skipped client-side via this flag (mirrors the dashboard gate, HEL-389).
+  if (!import.meta.env.DEV) return false;
   if (typeof window === "undefined") return false;
   try {
     return window.localStorage.getItem("autoflow.mfa.enforcement") === "off";

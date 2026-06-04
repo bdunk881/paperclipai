@@ -17,6 +17,7 @@ import {
   IntegrationManifest,
   OAuth2Config,
 } from "./integrationManifest";
+import { getRedisClient } from "../queue/redisClient";
 
 // ---------------------------------------------------------------------------
 // PKCE helpers
@@ -49,37 +50,95 @@ interface PkceState {
   createdAt: number;
 }
 
-// allowlist: PKCE state with short TTL; process-local by design
-const pkceStateMap = new Map<string, PkceState>();
+// allowlist: dev/test + Redis-error fallback; Redis is the cross-instance source of truth (HEL-471).
+const pkceStateFallback = new Map<string, PkceState>();
+const PKCE_TTL_SECONDS = 10 * 60;
+const pkceRedisKey = (state: string): string => `oauth-pkce:${state}`;
 
-/** Purge PKCE state entries older than 10 minutes. */
-function purgeStalePkceState(): void {
-  const cutoff = Date.now() - 10 * 60 * 1000;
-  for (const [key, value] of pkceStateMap.entries()) {
-    if (value.createdAt < cutoff) pkceStateMap.delete(key);
+/** Purge expired entries from the in-memory fallback. */
+function prunePkceFallback(): void {
+  const cutoff = Date.now() - PKCE_TTL_SECONDS * 1000;
+  for (const [key, value] of pkceStateFallback.entries()) {
+    if (value.createdAt < cutoff) pkceStateFallback.delete(key);
   }
 }
 
+/**
+ * Persist PKCE handshake state keyed by `state`. Redis (shared across the
+ * 2-machine fleet, self-expiring) is the source of truth so the callback
+ * completes regardless of which instance handles it; the in-memory map is the
+ * dev/test and Redis-error fallback. (HEL-471 / B10.)
+ */
+async function savePkceState(state: string, value: PkceState): Promise<void> {
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      await redis.set(pkceRedisKey(state), JSON.stringify(value), "EX", PKCE_TTL_SECONDS);
+      return;
+    } catch (err) {
+      console.warn(
+        "[oauth] PKCE state Redis write failed; using in-memory fallback:",
+        (err as Error).message,
+      );
+    }
+  }
+  prunePkceFallback();
+  pkceStateFallback.set(state, value);
+}
+
+/** Consume (read + delete) PKCE state for `state`. Single-use. */
+async function takePkceState(state: string): Promise<PkceState | null> {
+  const redis = getRedisClient();
+  if (redis) {
+    try {
+      const raw = await redis.get(pkceRedisKey(state));
+      if (raw !== null) {
+        await redis.del(pkceRedisKey(state)).catch(() => undefined);
+        return JSON.parse(raw) as PkceState;
+      }
+    } catch (err) {
+      console.warn(
+        "[oauth] PKCE state Redis read failed; using in-memory fallback:",
+        (err as Error).message,
+      );
+    }
+  }
+  prunePkceFallback();
+  const value = pkceStateFallback.get(state);
+  if (!value) return null;
+  pkceStateFallback.delete(state);
+  return value.createdAt >= Date.now() - PKCE_TTL_SECONDS * 1000 ? value : null;
+}
+
+/** Test-only helpers — the in-memory fallback is the store under test. */
+export function __setPkceStateForTests(state: string, value: PkceState): void {
+  pkceStateFallback.set(state, value);
+}
+export function __clearPkceStateForTests(): void {
+  pkceStateFallback.clear();
+}
+export function __listPkceStatesForTests(): PkceState[] {
+  return Array.from(pkceStateFallback.values());
+}
+
 /** Begin an OAuth2 PKCE flow — returns the authorization redirect URL and stores state. */
-export function beginOAuth2PkceFlow(params: {
+export async function beginOAuth2PkceFlow(params: {
   manifest: IntegrationManifest;
   userId: string;
   redirectUri: string;
   clientId: string;
   clientSecret?: string;
   instanceDomain?: string;
-}): { authorizationUrl: string; state: string } {
+}): Promise<{ authorizationUrl: string; state: string }> {
   const { manifest, userId, redirectUri, clientId, clientSecret, instanceDomain } = params;
   const oauth2 = manifest.oauth2Config;
   if (!oauth2) throw new Error(`Integration "${manifest.slug}" does not support OAuth2`);
-
-  purgeStalePkceState();
 
   const state = randomBytes(16).toString("hex");
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = deriveCodeChallenge(codeVerifier);
 
-  pkceStateMap.set(state, {
+  await savePkceState(state, {
     integrationSlug: manifest.slug,
     userId,
     codeVerifier,
@@ -117,10 +176,8 @@ export async function completeOAuth2PkceFlow(params: {
 }): Promise<{ credentials: IntegrationCredentials; userId: string }> {
   const { code, state, oauth2Config } = params;
 
-  const saved = pkceStateMap.get(state);
+  const saved = await takePkceState(state);
   if (!saved) throw new Error("OAuth2 state not found or expired — please restart the auth flow");
-
-  pkceStateMap.delete(state);
 
   // A provider redirect carries only code + state, so the client credentials
   // and instance domain come from the state captured at authorize time unless
@@ -367,5 +424,3 @@ export function resolveUrlTemplate(template: string, instanceDomain?: string): s
   return template.replace(/\{\{instanceDomain\}\}/g, instanceDomain);
 }
 
-/** Export the PKCE state map reference for testing. */
-export { pkceStateMap };

@@ -328,7 +328,7 @@ router.post("/connections/:id/test", asyncHandler(async (req, res) => {
  * Begins an OAuth2 PKCE authorization flow.
  * Returns: { authorizationUrl: string } — the caller should redirect the user here.
  */
-router.get("/oauth2/:slug/authorize", (req, res) => {
+router.get("/oauth2/:slug/authorize", asyncHandler(async (req, res) => {
   const userId = (req as AuthenticatedRequest).auth!.sub;
 
   const manifest = getIntegrationBySlug(req.params.slug);
@@ -340,7 +340,7 @@ router.get("/oauth2/:slug/authorize", (req, res) => {
   if (!redirectUri) { res.status(400).json({ error: "redirectUri query param is required" }); return; }
 
   try {
-    const result = beginOAuth2PkceFlow({
+    const result = await beginOAuth2PkceFlow({
       manifest,
       userId,
       redirectUri,
@@ -353,7 +353,7 @@ router.get("/oauth2/:slug/authorize", (req, res) => {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: msg });
   }
-});
+}));
 
 /**
  * POST /api/integrations/oauth2/:slug/client-credentials

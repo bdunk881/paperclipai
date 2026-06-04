@@ -4,10 +4,29 @@ import {
   randomBytes,
   scryptSync,
 } from "crypto";
-import { randomUUID } from "node:crypto";
-import { IntercomCredential, IntercomCredentialPublic } from "./types";
+import { SharedCredentialStore } from "../shared/sharedCredentialStore";
+import {
+  IntercomAuthMethod,
+  IntercomCredential,
+  IntercomCredentialPublic,
+} from "./types";
 
-const ENCRYPTION_KEY: Buffer = (() => {
+/**
+ * HEL-470 (B11): Intercom credentials are now persisted durably (encrypted) via
+ * the shared `connector_credentials` Postgres table + key-versioned vault,
+ * instead of a process-local `new Map<>()` that lost every connection on restart
+ * and was invisible on the other Fly machine.
+ *
+ * The service layer still consumes the legacy `IntercomCredential` shape (with
+ * `tokenEncrypted` / `refreshTokenEncrypted` fields) and `decryptAccessToken`/
+ * `decryptRefreshToken` helpers. To preserve that contract without rewriting the
+ * whole service, `getActiveByUser*` reconstruct an `IntercomCredential` from the
+ * vault's decrypted secrets, re-wrapping the tokens with a *transient* cipher.
+ * That transient round-trip never leaves the process, so a random key when
+ * `CONNECTOR_CREDENTIAL_ENCRYPTION_KEY` is unset is harmless here — the durable
+ * at-rest encryption is the vault's stable key, not this one.
+ */
+const TRANSIENT_KEY: Buffer = (() => {
   const envKey = process.env.CONNECTOR_CREDENTIAL_ENCRYPTION_KEY;
   if (envKey) {
     return scryptSync(envKey, "autoflow-connector-salt", 32) as Buffer;
@@ -15,62 +34,103 @@ const ENCRYPTION_KEY: Buffer = (() => {
   return randomBytes(32);
 })();
 
-function encrypt(plaintext: string): string {
+function transientEncrypt(plaintext: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ENCRYPTION_KEY, iv);
+  const cipher = createCipheriv("aes-256-gcm", TRANSIENT_KEY, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
 }
 
-function decrypt(ciphertext: string): string {
+function transientDecrypt(ciphertext: string): string {
   const [ivHex, tagHex, dataHex] = ciphertext.split(":");
   if (!ivHex || !tagHex || !dataHex) {
     throw new Error("Invalid ciphertext format");
   }
-
-  const decipher = createDecipheriv(
-    "aes-256-gcm",
-    ENCRYPTION_KEY,
-    Buffer.from(ivHex, "hex")
-  );
+  const decipher = createDecipheriv("aes-256-gcm", TRANSIENT_KEY, Buffer.from(ivHex, "hex"));
   decipher.setAuthTag(Buffer.from(tagHex, "hex"));
   return decipher.update(Buffer.from(dataHex, "hex")).toString("utf8") + decipher.final("utf8");
 }
 
-// allowlist: legacy in-memory store; review and migrate to Postgres OR add a more specific reason
-const store = new Map<string, IntercomCredential>();
+interface IntercomCredentialMetadata {
+  authMethod: IntercomAuthMethod;
+  tokenMasked: string;
+  scopes: string[];
+  workspaceId: string;
+  workspaceName?: string;
+  /** Legacy free-form metadata (e.g. expiresAt, viewerId). */
+  extra?: Record<string, string>;
+}
 
-function toPublic(credential: IntercomCredential): IntercomCredentialPublic {
+interface IntercomCredentialSecrets {
+  accessToken: string;
+  refreshToken?: string;
+}
+
+type IntercomRecord = {
+  id: string;
+  userId: string;
+  label: string;
+  authMethod: string;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  metadata: IntercomCredentialMetadata;
+};
+
+const store = new SharedCredentialStore<
+  IntercomCredentialMetadata,
+  IntercomCredentialSecrets
+>({ service: "intercom" });
+
+function maskToken(value: string): string {
+  return `****${value.slice(-4)}`;
+}
+
+function toPublic(record: IntercomRecord): IntercomCredentialPublic {
   return {
-    id: credential.id,
-    userId: credential.userId,
-    authMethod: credential.authMethod,
-    tokenMasked: credential.tokenMasked,
-    scopes: credential.scopes,
-    workspaceId: credential.workspaceId,
-    workspaceName: credential.workspaceName,
-    createdAt: credential.createdAt,
-    revokedAt: credential.revokedAt,
+    id: record.id,
+    userId: record.userId,
+    authMethod: record.metadata.authMethod,
+    tokenMasked: record.metadata.tokenMasked,
+    scopes: record.metadata.scopes,
+    workspaceId: record.metadata.workspaceId,
+    workspaceName: record.metadata.workspaceName,
+    createdAt: record.createdAt,
+    revokedAt: record.revokedAt,
   };
 }
 
-function maskToken(value: string): string {
-  const tail = value.slice(-4);
-  return `****${tail}`;
+/** Rebuild the legacy IntercomCredential (with transient-encrypted tokens). */
+function toFullCredential(
+  record: IntercomRecord,
+  secrets: IntercomCredentialSecrets,
+): IntercomCredential {
+  return {
+    id: record.id,
+    userId: record.userId,
+    authMethod: record.metadata.authMethod,
+    tokenEncrypted: transientEncrypt(secrets.accessToken),
+    tokenMasked: record.metadata.tokenMasked,
+    refreshTokenEncrypted: secrets.refreshToken
+      ? transientEncrypt(secrets.refreshToken)
+      : undefined,
+    scopes: record.metadata.scopes,
+    workspaceId: record.metadata.workspaceId,
+    workspaceName: record.metadata.workspaceName,
+    createdAt: record.createdAt,
+    revokedAt: record.revokedAt,
+    metadata: record.metadata.extra,
+  };
 }
 
-function upsertByUserAndWorkspace(credential: IntercomCredential): void {
-  for (const [id, existing] of store.entries()) {
-    if (
-      existing.userId === credential.userId &&
-      existing.workspaceId === credential.workspaceId &&
-      !existing.revokedAt
-    ) {
-      store.delete(id);
+/** Revoke any existing non-revoked credential for the same user+workspace. */
+function supersedeExisting(userId: string, workspaceId: string): void {
+  for (const record of store.listByUser(userId, false)) {
+    if (record.metadata.workspaceId === workspaceId) {
+      store.delete(record.id);
     }
   }
-  store.set(credential.id, credential);
 }
 
 export const intercomCredentialStore = {
@@ -83,22 +143,25 @@ export const intercomCredentialStore = {
     workspaceName?: string;
     metadata?: Record<string, string>;
   }): IntercomCredentialPublic {
-    const credential: IntercomCredential = {
-      id: randomUUID(),
+    supersedeExisting(params.userId, params.workspaceId);
+    const record = store.create({
       userId: params.userId,
       authMethod: "oauth2_pkce",
-      tokenEncrypted: encrypt(params.accessToken),
-      tokenMasked: maskToken(params.accessToken),
-      refreshTokenEncrypted: params.refreshToken ? encrypt(params.refreshToken) : undefined,
-      scopes: params.scopes,
-      workspaceId: params.workspaceId,
-      workspaceName: params.workspaceName,
-      createdAt: new Date().toISOString(),
-      metadata: params.metadata,
-    };
-
-    upsertByUserAndWorkspace(credential);
-    return toPublic(credential);
+      label: params.workspaceName ?? params.workspaceId,
+      metadata: {
+        authMethod: "oauth2_pkce",
+        tokenMasked: maskToken(params.accessToken),
+        scopes: params.scopes,
+        workspaceId: params.workspaceId,
+        workspaceName: params.workspaceName,
+        extra: params.metadata,
+      },
+      secrets: {
+        accessToken: params.accessToken,
+        refreshToken: params.refreshToken,
+      },
+    });
+    return toPublic(record);
   },
 
   saveApiKey(params: {
@@ -109,44 +172,55 @@ export const intercomCredentialStore = {
     workspaceName?: string;
     metadata?: Record<string, string>;
   }): IntercomCredentialPublic {
-    const credential: IntercomCredential = {
-      id: randomUUID(),
+    supersedeExisting(params.userId, params.workspaceId);
+    const record = store.create({
       userId: params.userId,
       authMethod: "api_key",
-      tokenEncrypted: encrypt(params.apiKey),
-      tokenMasked: maskToken(params.apiKey),
-      scopes: params.scopes ?? [],
-      workspaceId: params.workspaceId,
-      workspaceName: params.workspaceName,
-      createdAt: new Date().toISOString(),
-      metadata: params.metadata,
-    };
-
-    upsertByUserAndWorkspace(credential);
-    return toPublic(credential);
+      label: params.workspaceName ?? params.workspaceId,
+      metadata: {
+        authMethod: "api_key",
+        tokenMasked: maskToken(params.apiKey),
+        scopes: params.scopes ?? [],
+        workspaceId: params.workspaceId,
+        workspaceName: params.workspaceName,
+        extra: params.metadata,
+      },
+      secrets: {
+        accessToken: params.apiKey,
+      },
+    });
+    return toPublic(record);
   },
 
   getPublicByUser(userId: string): IntercomCredentialPublic[] {
-    return Array.from(store.values())
-      .filter((credential) => credential.userId === userId)
-      .map(toPublic);
+    return store.listByUser(userId).map(toPublic);
   },
 
+  /** Sync getter — reads this process's bucket only. Prefer the async variant. */
   getActiveByUser(userId: string): IntercomCredential | null {
-    const active = Array.from(store.values())
-      .filter((credential) => credential.userId === userId && !credential.revokedAt)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const record = store.findLatest((r) => r.userId === userId, false);
+    if (!record) return null;
+    const decrypted = store.getDecrypted(record.id);
+    if (!decrypted) return null;
+    return toFullCredential(decrypted.record, decrypted.secrets);
+  },
 
-    return active[0] ?? null;
+  /** Durable getter — re-hydrates from Postgres when the bucket is cold. */
+  async getActiveByUserAsync(userId: string): Promise<IntercomCredential | null> {
+    const record = await store.findLatestAsync((r) => r.userId === userId, false);
+    if (!record) return null;
+    const decrypted = await store.getDecryptedAsync(record.id, userId);
+    if (!decrypted) return null;
+    return toFullCredential(decrypted.record, decrypted.secrets);
   },
 
   decryptAccessToken(credential: IntercomCredential): string {
-    return decrypt(credential.tokenEncrypted);
+    return transientDecrypt(credential.tokenEncrypted);
   },
 
   decryptRefreshToken(credential: IntercomCredential): string | null {
     if (!credential.refreshTokenEncrypted) return null;
-    return decrypt(credential.refreshTokenEncrypted);
+    return transientDecrypt(credential.refreshTokenEncrypted);
   },
 
   rotateToken(params: {
@@ -156,37 +230,42 @@ export const intercomCredentialStore = {
     scopes?: string[];
     expiresAt?: string;
   }): IntercomCredentialPublic | null {
-    const existing = store.get(params.credentialId);
-    if (!existing || existing.revokedAt) return null;
-
-    const updated: IntercomCredential = {
-      ...existing,
-      tokenEncrypted: encrypt(params.accessToken),
-      tokenMasked: maskToken(params.accessToken),
-      refreshTokenEncrypted: params.refreshToken
-        ? encrypt(params.refreshToken)
-        : existing.refreshTokenEncrypted,
-      scopes: params.scopes ?? existing.scopes,
-      metadata: {
-        ...(existing.metadata ?? {}),
-        ...(params.expiresAt ? { expiresAt: params.expiresAt } : {}),
-      },
-    };
-
-    store.set(updated.id, updated);
+    const updated = store.update(params.credentialId, (existing, secrets) => {
+      if (existing.revokedAt) return {};
+      return {
+        record: {
+          ...existing,
+          updatedAt: new Date().toISOString(),
+          metadata: {
+            ...existing.metadata,
+            tokenMasked: maskToken(params.accessToken),
+            scopes: params.scopes ?? existing.metadata.scopes,
+            extra: {
+              ...(existing.metadata.extra ?? {}),
+              ...(params.expiresAt ? { expiresAt: params.expiresAt } : {}),
+            },
+          },
+        },
+        secrets: {
+          accessToken: params.accessToken,
+          refreshToken: params.refreshToken ?? secrets.refreshToken,
+        },
+      };
+    });
+    if (!updated || updated.revokedAt) return null;
     return toPublic(updated);
   },
 
   revoke(credentialId: string, userId: string): boolean {
-    const existing = store.get(credentialId);
+    const existing = store.getById(credentialId);
     if (!existing || existing.userId !== userId || existing.revokedAt) {
       return false;
     }
-
-    store.set(credentialId, {
-      ...existing,
-      revokedAt: new Date().toISOString(),
-    });
+    const now = new Date().toISOString();
+    store.update(credentialId, (record, secrets) => ({
+      record: { ...record, updatedAt: now, revokedAt: now },
+      secrets,
+    }));
     return true;
   },
 

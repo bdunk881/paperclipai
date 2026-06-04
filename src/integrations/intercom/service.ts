@@ -132,7 +132,7 @@ export class IntercomConnectorService {
 
   async health(userId: string): Promise<IntercomConnectionHealth> {
     const checkedAt = new Date().toISOString();
-    const credential = intercomCredentialStore.getActiveByUser(userId);
+    const credential = await intercomCredentialStore.getActiveByUserAsync(userId);
 
     if (!credential) {
       return {
@@ -362,7 +362,7 @@ export class IntercomConnectorService {
   }
 
   private async ensureValidCredential(userId: string) {
-    const credential = intercomCredentialStore.getActiveByUser(userId);
+    const credential = await intercomCredentialStore.getActiveByUserAsync(userId);
     if (!credential) {
       throw new ConnectorError("auth", "Intercom connector is not configured", 404);
     }

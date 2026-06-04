@@ -9,9 +9,11 @@
  * and is unaffected.
  *
  * No SDK dependency — raw `fetch`, mirroring the SendGrid/Twilio senders.
+ * Failures throw {@link TransportError} so the durable worker (HEL-612) can
+ * classify retryable (5xx / network) vs permanent (4xx / config).
  */
 
-import { CommsTransport, TransportMessage, TransportResult } from "../types";
+import { CommsTransport, TransportError, TransportMessage, TransportResult } from "../types";
 
 function normalizeEnv(name: string): string | undefined {
   const raw = process.env[name];
@@ -48,15 +50,19 @@ export class TelnyxSmsTransport implements CommsTransport {
     const messagingProfileId = normalizeEnv("TELNYX_MESSAGING_PROFILE_ID");
     const baseUrl = normalizeEnv("TELNYX_API_BASE_URL") ?? "https://api.telnyx.com";
 
+    // Config errors are permanent — retrying won't fix a missing key.
     if (!apiKey) {
-      throw new Error("TELNYX_API_KEY is not configured");
+      throw new TransportError("TELNYX_API_KEY is not configured", { retryable: false });
     }
     if (!from && !messagingProfileId) {
-      throw new Error("TELNYX_SMS_FROM or TELNYX_MESSAGING_PROFILE_ID must be configured");
+      throw new TransportError(
+        "TELNYX_SMS_FROM or TELNYX_MESSAGING_PROFILE_ID must be configured",
+        { retryable: false },
+      );
     }
     const text = message.text ?? "";
     if (!text.trim()) {
-      throw new Error("Telnyx SMS requires non-empty text");
+      throw new TransportError("Telnyx SMS requires non-empty text", { retryable: false });
     }
 
     const payload: Record<string, unknown> = { to: message.to, text };
@@ -78,7 +84,11 @@ export class TelnyxSmsTransport implements CommsTransport {
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(`Telnyx SMS send failed (${response.status}): ${body.slice(0, 300)}`);
+      // status drives retry classification (5xx retryable, 4xx not).
+      throw new TransportError(
+        `Telnyx SMS send failed (${response.status}): ${body.slice(0, 300)}`,
+        { status: response.status },
+      );
     }
 
     const json = (await response.json().catch(() => ({}))) as TelnyxMessageResponse;

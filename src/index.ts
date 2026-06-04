@@ -9,6 +9,7 @@
 // `instrument`.
 import "./instrument";
 import { initializePersistence } from "./bootstrap";
+import { assertRequiredSecrets } from "./config/requiredSecrets";
 
 const PORT = process.env.PORT || 3000;
 
@@ -21,6 +22,12 @@ async function startServer() {
   }
 
   const runtimeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+
+  // HEL-500: fail fast in production when a required secret is unset (mirrors
+  // HEL-262's connector-key fail-fast); warn for recommended/feature-gating
+  // secrets in every environment. No-op when everything is configured.
+  assertRequiredSecrets({ isProduction: runtimeEnv === "production" });
+
   const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
   if (!supabaseUrl && (runtimeEnv === "development" || runtimeEnv === "test")) {
     console.warn(

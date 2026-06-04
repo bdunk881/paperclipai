@@ -2,22 +2,15 @@
  * Hosted free model providers (PR B.1).
  *
  * AutoFlow's Explore tier needs a way to run workflows without the user
- * pasting their own LLM API key. This module defines the three free
- * tiers offered out of the box and exposes the env-var-backed credentials
+ * pasting their own LLM API key. This module defines the hosted free
+ * model(s) offered out of the box and exposes the env-var-backed credentials
  * the engine routes through when no workspace BYOK config exists.
  *
- * Tier 1 — Big Pickle (stealth model via OpenCode Zen)
- *   Free during their limited beta. Underlying model + provider are
- *   NOT disclosed by OpenCode. Prompts may be used to train the model
- *   (per OpenCode Zen's docs). User-facing disclosure of this trade-off
- *   lands with PR B.3.
- *
- * Tier 2 — Llama 3.1 8B (Groq)
- *   Fast, privacy-respecting (Groq does not train on customer data).
- *   Default tier for new Explore workspaces.
- *
- * Tier 3 — Llama 3.3 70B (Groq)
- *   Slower, capable, same privacy guarantees as Tier 2.
+ * The free model is OpenCode Zen (Big Pickle) — a stealth model whose
+ * underlying provider OpenCode does not disclose, and which may use prompts
+ * for training (per OpenCode Zen's docs; surfaced to users via `warnings`).
+ * OpenCode Zen exposes multiple models and routes internally, so we don't
+ * curate additional fast/smart tiers. (HEL-605 dropped the earlier Groq tiers.)
  *
  * Per-workspace daily token caps + the workspace-level tier preference
  * are PR B.2 / B.3 — this module just ships the static catalog + the
@@ -35,7 +28,7 @@ export type HostedFreeTier = 1 | 2 | 3;
 export interface HostedFreeProvider {
   /** Stable string id surfaced to the dashboard + selector. */
   id: string;
-  /** UI grouping — Tier 1 is "trial / beta", Tier 2/3 are stable hosted. */
+  /** UI grouping for the selection surface (currently a single beta tier). */
   tier: HostedFreeTier;
   /** Human-readable label. */
   label: string;
@@ -70,37 +63,17 @@ export const HOSTED_FREE_PROVIDERS: HostedFreeProvider[] = [
       "Limited-time beta — could be removed at any time.",
     ],
   },
-  {
-    id: "groq_llama_31_8b",
-    tier: 2,
-    label: "Free Fast (Llama 3.1 8B)",
-    description:
-      "Llama 3.1 8B on Groq. Fast inference; Groq doesn't train on customer data.",
-    provider: "groq",
-    modelId: "llama-3.1-8b-instant",
-    apiKeyEnvVar: "GROQ_API_KEY",
-    warnings: [],
-  },
-  {
-    id: "groq_llama_33_70b",
-    tier: 3,
-    label: "Free Smart (Llama 3.3 70B)",
-    description:
-      "Llama 3.3 70B on Groq. Slower, more capable; same privacy as Tier 2.",
-    provider: "groq",
-    modelId: "llama-3.3-70b-versatile",
-    apiKeyEnvVar: "GROQ_API_KEY",
-    warnings: [],
-  },
 ];
 
 /**
- * Default tier picked when no workspace preference is set.
- * Tier 2 (Groq 8B) wins over Tier 1 (Big Pickle) because Tier 1 trains
- * on prompts — opting users into that needs explicit consent (PR B.3),
- * not silent default routing.
+ * The sole hosted free model. Groq was dropped (HEL-605) — OpenCode Zen
+ * exposes multiple models and routes internally, so we don't curate Groq
+ * tiers. NOTE: Big Pickle may use prompts for training (see its `warnings`,
+ * surfaced at the model-selection UI); there is no non-training free model
+ * today, so that caveat is inherent to the free tier until OpenCode Zen
+ * exposes more model IDs.
  */
-export const DEFAULT_HOSTED_FREE_PROVIDER_ID = "groq_llama_31_8b";
+export const DEFAULT_HOSTED_FREE_PROVIDER_ID = "opencode_zen_big_pickle";
 
 export function getHostedFreeProviderById(
   id: string,

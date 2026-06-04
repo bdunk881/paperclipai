@@ -26,6 +26,10 @@
 import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
 import { previewToolOutput } from "../../engine/agentTrace/redact";
+import {
+  SUBSCRIPTION_AUTH_ENV_VARS,
+  assertAnthropicApiKeyForCredits,
+} from "../../billing/credits/anthropicCreditsAuth";
 import { jsonSchemaToZodShape } from "./jsonSchemaToZod";
 import {
   appendSkillsToPrompt,
@@ -43,6 +47,39 @@ import type {
 } from "./types";
 
 const DEFAULT_MAX_TURNS = 8;
+
+/**
+ * Build the subprocess env for the Claude Agent SDK, guaranteeing API-key
+ * billing (HEL-602).
+ *
+ * The SDK spawns the embedded Claude Code CLI, which will authenticate via
+ * a subscription-OAuth token (`CLAUDE_CODE_OAUTH_TOKEN`) or a bearer
+ * override (`ANTHROPIC_AUTH_TOKEN`) in preference to `ANTHROPIC_API_KEY`.
+ * Since the 2026-06-15 billing split, subscription-OAuth calls draw from a
+ * separate capped pool instead of our prepaid balance. We therefore (1)
+ * reject an OAuth token mistakenly wired in as the binding key, and (2)
+ * strip those ambient auth env vars from the spawned env so nothing can
+ * override the explicit API key. Exported (not inlined) so it's
+ * unit-testable without the dynamically imported SDK.
+ */
+export function buildAnthropicSdkEnv(
+  binding: Pick<ResolvedModelBinding, "provider" | "apiKey">,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  if (binding.provider === "anthropic") {
+    assertAnthropicApiKeyForCredits({
+      provider: binding.provider,
+      apiKey: binding.apiKey,
+      sourceLabel: "claude_sdk binding",
+    });
+  }
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  for (const name of SUBSCRIPTION_AUTH_ENV_VARS) {
+    delete env[name];
+  }
+  env.ANTHROPIC_API_KEY = binding.apiKey;
+  return env;
+}
 
 export class ClaudeSdkBackend implements AgentBackend {
   readonly name = "claude_sdk" as const;
@@ -97,7 +134,7 @@ export class ClaudeSdkBackend implements AgentBackend {
         permissionMode,
         allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
         persistSession: false,
-        env: { ...process.env, ANTHROPIC_API_KEY: binding.apiKey },
+        env: buildAnthropicSdkEnv(binding),
       },
     });
 

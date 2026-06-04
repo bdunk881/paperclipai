@@ -207,9 +207,16 @@ export const intercomCredentialStore = {
 
   /** Durable getter — re-hydrates from Postgres when the bucket is cold. */
   async getActiveByUserAsync(userId: string): Promise<IntercomCredential | null> {
-    const record = await store.findLatestAsync((r) => r.userId === userId, false);
-    if (!record) return null;
-    const decrypted = await store.getDecryptedAsync(record.id, userId);
+    // Must use the user-scoped list: it queries Postgres under RLS and
+    // re-hydrates after a restart / on the other instance. `findLatestAsync`
+    // only reads this process's local bucket, so it would return null for a
+    // durable credential this process hasn't loaded yet (HEL-470 Codex P1).
+    const records = await store.listByUserAsync(userId, false);
+    if (records.length === 0) return null;
+    const latest = records.reduce((a, b) =>
+      b.createdAt.localeCompare(a.createdAt) > 0 ? b : a,
+    );
+    const decrypted = await store.getDecryptedAsync(latest.id, userId);
     if (!decrypted) return null;
     return toFullCredential(decrypted.record, decrypted.secrets);
   },

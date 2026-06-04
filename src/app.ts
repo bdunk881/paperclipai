@@ -152,6 +152,7 @@ import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
+import { createFileRoutes } from "./storage/fileRoutes";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -651,6 +652,9 @@ app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, re
 // Wallet balance is readable by any authenticated workspace member —
 // it's analogous to the subscription tier read, not a billing action.
 app.use("/api/credits/wallet", requireAuth, workspaceResolver, creditsWalletRoutes);
+// File storage (HEL-354): signed-URL upload/download/delete. Workspace-scoped;
+// any authenticated member manages their own workspace's files.
+app.use("/api/files", requireAuth, workspaceResolver, createFileRoutes());
 app.use("/api/public/landing", landingPublicApiRoutes);
 // Public status feed for status.helloautoflow.com (HEL infra follow-up).
 // Sanitized component-level status with 30s in-process cache + CDN cache

@@ -55,11 +55,12 @@ const defaultDelivery: OtpEmailDelivery = {
       throw new Error(`Unable to resolve user email for ${args.userId}`);
     }
     // HEL-404: actually email the OTP via the shared transactional mailer
-    // (SendGrid when SENDGRID_API_KEY is set; otherwise a logging fallback —
-    // the same sender that powers the MFA email factors). The OTP is still
-    // returned in the API response (see the route handler) as a deliberate
-    // fallback for the "user can't access their email" support path, so a mail
-    // failure must not break the reset request — log and continue.
+    // (Resend when RESEND_API_KEY is set — AutoFlow's canonical provider —
+    // else SendGrid, else a dev logging fallback; the same sender that powers
+    // the MFA email factors). The OTP is still returned in the API response
+    // (see the route handler) as a deliberate fallback for the "user can't
+    // access their email" support path, so a mail failure must not break the
+    // reset request — log and continue.
     const sender = buildDefaultMfaEmailSender();
     try {
       await sender.send({

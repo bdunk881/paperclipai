@@ -68,12 +68,21 @@ function buildContext(req: AuthenticatedRequest): MfaServiceContext {
     req.ip ??
     req.socket?.remoteAddress ??
     undefined;
+  // HEL-385: latest amr timestamp = when this session last authenticated
+  // (stable across token refresh, unlike the access-token `iat`). Used to
+  // reject a stale recovery session before a password reset.
+  const amr = req.auth?.amr ?? [];
+  const sessionAuthTime = amr.length
+    ? Math.max(...amr.map((entry) => entry.timestamp))
+    : undefined;
   return {
     workspaceId,
     userId: req.auth!.sub,
     userAgent,
     ip,
     email: typeof req.auth?.email === "string" ? req.auth.email : undefined,
+    accessToken: extractAccessToken(req) ?? undefined,
+    sessionAuthTime,
   };
 }
 

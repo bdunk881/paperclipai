@@ -110,6 +110,14 @@ export interface MfaServiceContext {
   ip?: string;
   /** Verified email of the session user, for out-of-band notifications. */
   email?: string;
+  /** Raw access token of the current session, for HEL-385 session revocation. */
+  accessToken?: string;
+  /**
+   * HEL-385: when the current session last authenticated (epoch seconds, from
+   * the JWT `amr` timestamps — stable across token refresh). Used to reject a
+   * stale recovery session before a password reset.
+   */
+  sessionAuthTime?: number;
 }
 
 export interface WebauthnRegistrationOptions {
@@ -271,6 +279,30 @@ async function defaultPasswordResetter(userId: string, newPassword: string): Pro
   }
 }
 
+/**
+ * HEL-385: revoke the user's OTHER sessions after a recovery-path password
+ * change (a credential-reset event), keeping the *current* recovery session
+ * alive so the client can finish its post-reset redirect. Identifies the
+ * caller's session by its access token and uses gotrue's `scope: "others"`.
+ */
+export type RecoverySessionRevoker = (accessToken: string) => Promise<void>;
+
+async function defaultSessionRevoker(accessToken: string): Promise<void> {
+  if (!isSupabaseAdminConfigured()) {
+    // No admin client → can't revoke. Surfaced to the (best-effort) caller.
+    throw new SecurityServiceError(
+      "Session revocation is unavailable in this environment.",
+      503,
+      "admin_not_configured",
+    );
+  }
+  const admin = getSupabaseAdminClient();
+  const { error } = await admin.auth.admin.signOut(accessToken, "others");
+  if (error) {
+    throw new SecurityServiceError(error.message, 502, "session_revoke_failed");
+  }
+}
+
 export interface MfaServiceDeps {
   repository?: MfaRepository;
   webauthn?: WebauthnAdapter | null;
@@ -314,6 +346,17 @@ export interface MfaServiceDeps {
    * to the service-role admin API; tests inject a capturing fake.
    */
   passwordResetter?: RecoverySessionPasswordResetter;
+  /**
+   * HEL-385: revokes the user's other sessions after a recovery-path reset.
+   * Defaults to the service-role admin `signOut(token, "others")`; tests inject
+   * a capturing fake.
+   */
+  sessionRevoker?: RecoverySessionRevoker;
+  /**
+   * HEL-385: max age (seconds) of a recovery session that may set a password.
+   * Defaults to `MFA_RECOVERY_SESSION_MAX_AGE_SECONDS` env or 30 min.
+   */
+  recoverySessionMaxAgeSeconds?: number;
 }
 
 export interface GetPolicyOptions {
@@ -520,6 +563,8 @@ export class MfaService {
   private emailSender: MfaEmailSender;
   private magicLinkApiBaseUrl: string;
   private passwordResetter: RecoverySessionPasswordResetter;
+  private sessionRevoker: RecoverySessionRevoker;
+  private recoverySessionMaxAgeSeconds: number;
 
   constructor(deps: MfaServiceDeps = {}) {
     this.repository = deps.repository ?? getDefaultMfaRepository();
@@ -538,6 +583,11 @@ export class MfaService {
       process.env.PAPERCLIP_API_URL ??
       "http://localhost:3000";
     this.passwordResetter = deps.passwordResetter ?? defaultPasswordResetter;
+    this.sessionRevoker = deps.sessionRevoker ?? defaultSessionRevoker;
+    const envMaxAge = Number.parseInt(process.env.MFA_RECOVERY_SESSION_MAX_AGE_SECONDS ?? "", 10);
+    this.recoverySessionMaxAgeSeconds =
+      deps.recoverySessionMaxAgeSeconds ??
+      (Number.isFinite(envMaxAge) && envMaxAge > 0 ? envMaxAge : 30 * 60);
   }
 
   private parseOriginEnv(raw: string): string | string[] {
@@ -1086,9 +1136,11 @@ export class MfaService {
     newPassword: string,
   ): Promise<void> {
     this.assertStrongPassword(newPassword);
+    this.assertFreshRecoverySession(ctx);
     await this.consumeRecoveryCodeOrThrow(ctx, plaintext);
     await this.passwordResetter(ctx.userId, newPassword);
     await recordAudit(ctx, "mfa.recovery_code.password_reset", {});
+    await this.revokeOtherSessions(ctx);
     await this.notifyPasswordChanged(ctx, "a recovery code");
   }
 
@@ -1127,9 +1179,53 @@ export class MfaService {
     newPassword: string,
   ): Promise<void> {
     this.assertStrongPassword(newPassword);
+    this.assertFreshRecoverySession(ctx);
     await this.passwordResetter(ctx.userId, newPassword);
     await recordAudit(ctx, "mfa.account.password_reset", {});
+    await this.revokeOtherSessions(ctx);
     await this.notifyPasswordChanged(ctx, "your second factor");
+  }
+
+  /**
+   * HEL-385: reject a stale recovery session. A recovery session that
+   * authenticated more than `recoverySessionMaxAgeSeconds` ago shouldn't be
+   * able to set a password — it bounds the window for pairing a leaked
+   * recovery token with a leaked recovery code. `sessionAuthTime` comes from
+   * the JWT `amr` timestamps (stable across token refresh). When it's absent
+   * we fail open: the rate limit + the recovery code itself still gate the
+   * action, and we don't want to lock out sessions with no amr signal.
+   */
+  private assertFreshRecoverySession(ctx: MfaServiceContext): void {
+    if (typeof ctx.sessionAuthTime !== "number") return;
+    const ageSeconds = Math.floor(Date.now() / 1000) - ctx.sessionAuthTime;
+    if (ageSeconds > this.recoverySessionMaxAgeSeconds) {
+      throw new SecurityServiceError(
+        "This password-reset session has expired. Request a new reset email and try again.",
+        400,
+        "recovery_session_stale",
+      );
+    }
+  }
+
+  /**
+   * HEL-385: best-effort revocation of the user's OTHER sessions after a
+   * recovery-path reset. Never fails the reset (the password is already
+   * changed) — a failure is logged + audited so it's visible.
+   */
+  private async revokeOtherSessions(ctx: MfaServiceContext): Promise<void> {
+    if (!ctx.accessToken) return;
+    try {
+      await this.sessionRevoker(ctx.accessToken);
+      await recordAudit(ctx, "mfa.sessions.revoked_after_reset", {});
+    } catch (error) {
+      console.warn(
+        "[mfaService] post-reset session revocation failed",
+        error instanceof Error ? error.message : error,
+      );
+      await recordAudit(ctx, "mfa.sessions.revoke_failed", {
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+    }
   }
 
   // ---- Email OTP + magic link (HEL-282) ------------------------------------

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="AutoFlow — hire a team of agents that actually ship">
+  <rect width="1200" height="630" fill="#f6f1e7"/>
+  <rect x="0" y="0" width="1200" height="8" fill="#c2502b"/>
+  <g transform="translate(80,86)">
+    <rect width="64" height="64" rx="14" fill="#1a1410"/>
+    <path d="M18 23a9 9 0 0 1 18 0v18a9 9 0 0 1-18 0M28 23a9 9 0 0 1 18 0v18" fill="none" stroke="#f6f1e7" stroke-width="4.4" stroke-linecap="round"/>
+    <text x="84" y="46" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="500" fill="#1a1410">AutoFlow</text>
+  </g>
+  <text x="80" y="300" font-family="Georgia, 'Times New Roman', serif" font-size="78" letter-spacing="-1.5" fill="#1a1410">Hire a team of agents</text>
+  <text x="80" y="388" font-family="Georgia, 'Times New Roman', serif" font-size="78" letter-spacing="-1.5" fill="#1a1410">that <tspan font-style="italic" fill="#c2502b">actually ship.</tspan></text>
+  <text x="80" y="456" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" fill="#6b5a48">Workforce automation, by the role — not by the node.</text>
+  <g transform="translate(80,536)" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="0" y="20" font-size="22" font-weight="600" fill="#3a2f25">helloautoflow.com</text>
+    <text x="1040" y="20" text-anchor="end" font-size="19" fill="#6b5a48">Open source · MIT · BYOK</text>
+  </g>
+</svg>

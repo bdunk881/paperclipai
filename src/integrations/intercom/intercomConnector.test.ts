@@ -237,4 +237,18 @@ describe("Intercom connector", () => {
       })
     ).toThrow("Intercom webhook replay detected");
   });
+
+  it("revoke rejects a credential owned by another user (HEL-470)", async () => {
+    const cred = await intercomCredentialStore.saveOAuth({
+      userId: "owner-user",
+      accessToken: "xoxb-owner-token",
+      scopes: ["read_conversations"],
+      workspaceId: "WS-1",
+    });
+
+    // A different user who knows the credential id must not be able to revoke it.
+    expect(await intercomCredentialStore.revoke(cred.id, "attacker-user")).toBe(false);
+    // The owner can.
+    expect(await intercomCredentialStore.revoke(cred.id, "owner-user")).toBe(true);
+  });
 });

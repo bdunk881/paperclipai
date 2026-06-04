@@ -69,7 +69,11 @@ import request from "supertest";
 import app from "../app";
 import { integrationCredentialStore } from "./integrationCredentialStore";
 import { webhookRelay } from "./webhookRelay";
-import { pkceStateMap } from "./authAdapters";
+import {
+  __setPkceStateForTests,
+  __clearPkceStateForTests,
+  __listPkceStatesForTests,
+} from "./authAdapters";
 
 const USER_ID = "test-user-123";
 // Sent with every authenticated request in tests
@@ -513,7 +517,7 @@ describe("GET /api/integrations/triggers/subscriptions/:id/events", () => {
 
 describe("GET /api/integrations/oauth2/:slug/authorize", () => {
   beforeEach(() => {
-    pkceStateMap.clear();
+    __clearPkceStateForTests();
   });
 
   it("captures the client secret in PKCE state but never leaks it in the redirect URL", async () => {
@@ -531,7 +535,7 @@ describe("GET /api/integrations/oauth2/:slug/authorize", () => {
     // The confidential client secret must stay server-side.
     expect(res.body.authorizationUrl).not.toContain("hs-secret");
 
-    const states = Array.from(pkceStateMap.values());
+    const states = __listPkceStatesForTests();
     expect(
       states.some((s) => s.clientId === "hs-id" && s.clientSecret === "hs-secret"),
     ).toBe(true);
@@ -546,13 +550,13 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
   } as unknown as Response;
 
   beforeEach(() => {
-    pkceStateMap.clear();
+    __clearPkceStateForTests();
   });
 
   it("uses userId from PKCE state, ignoring X-User-Id header", async () => {
     const pkceUserId = "pkce-owner-user";
     const stateKey = "test-state-sec05-a";
-    pkceStateMap.set(stateKey, {
+    __setPkceStateForTests(stateKey, {
       integrationSlug: "hubspot",
       userId: pkceUserId,
       codeVerifier: "test-verifier",
@@ -584,7 +588,7 @@ describe("GET /api/integrations/oauth2/:slug/callback — userId from PKCE state
   it("normal flow works without X-User-Id header", async () => {
     const pkceUserId = "legitimate-user";
     const stateKey = "test-state-sec05-b";
-    pkceStateMap.set(stateKey, {
+    __setPkceStateForTests(stateKey, {
       integrationSlug: "hubspot",
       userId: pkceUserId,
       codeVerifier: "test-verifier",

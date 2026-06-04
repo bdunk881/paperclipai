@@ -89,4 +89,24 @@ describe("Pricing", () => {
       expect(window.location.pathname).toBe("/signup");
     });
   });
+
+  // HEL-555: pricing copy must match the enforced caps in
+  // src/billing/entitlements.ts (PLAN_LIMITS) — no false "Unlimited".
+  it("advertises the real per-plan run caps from PLAN_LIMITS", () => {
+    render(<Pricing />);
+    expect(screen.getByText("25 workflow runs / month")).toBeInTheDocument();
+    expect(screen.getByText("250 workflow runs / month")).toBeInTheDocument();
+    expect(screen.getByText("1,000 workflow runs / month")).toBeInTheDocument();
+    expect(screen.getByText("10,000 workflow runs / month")).toBeInTheDocument();
+  });
+
+  it("no longer claims unlimited executions / workflows / connections", () => {
+    render(<Pricing />);
+    expect(screen.queryByText(/Unlimited workflow executions/i)).toBeNull();
+    expect(screen.queryByText(/Unlimited active workflows/i)).toBeNull();
+    expect(screen.queryByText(/Unlimited LLM provider connections/i)).toBeNull();
+    expect(screen.queryByText(/Unlimited Executions on Every Plan/i)).toBeNull();
+    expect(screen.queryByText(/No usage limits/i)).toBeNull();
+    expect(screen.queryByText(/millions of executions/i)).toBeNull();
+  });
 });

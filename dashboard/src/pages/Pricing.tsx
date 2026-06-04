@@ -3,6 +3,12 @@ import { Check, Zap, Sparkles } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { getApiBasePath } from "../api/baseUrl";
 
+// HEL-555: pricing copy MUST stay in sync with the caps actually enforced in
+// `src/billing/entitlements.ts` → PLAN_LIMITS. This page previously advertised
+// "Unlimited" executions / workflows / connections that the entitlement gate
+// hard-caps (runsPerMonth / agentCap / integrationCap) — promising unlimited
+// then enforcing a cap is a churn/refund trap. `runsPerMonth` below mirrors
+// PLAN_LIMITS; keep both in sync.
 const TIERS = [
   {
     name: "Explore",
@@ -12,11 +18,12 @@ const TIERS = [
     description: "Try AutoFlow with the essentials before you scale up.",
     highlight: false,
     cta: "Start Free",
+    runsPerMonth: 25,
     features: [
-      "Unlimited workflow executions",
-      "Up to 3 active workflows",
-      "1 LLM provider connection",
-      "Execution logs (3-day retention)",
+      "25 workflow runs / month",
+      "1 active agent",
+      "Bring your own LLM key",
+      "Execution logs (14-day retention)",
       "Community support",
       "Basic workflow analytics",
     ],
@@ -35,10 +42,11 @@ const TIERS = [
     tierId: "flow",
     highlight: false,
     cta: "Start 14-Day Trial",
+    runsPerMonth: 250,
     features: [
-      "Unlimited workflow executions",
-      "Up to 25 active workflows",
-      "5 LLM provider connections",
+      "250 workflow runs / month",
+      "Up to 3 active agents",
+      "Bring your own LLM keys",
       "Execution logs (30-day retention)",
       "Core integrations hub access",
       "Agent Memory (5 GB)",
@@ -59,10 +67,11 @@ const TIERS = [
     highlight: true,
     cta: "Start 14-Day Trial",
     badge: "Most Popular",
+    runsPerMonth: 1000,
     features: [
-      "Unlimited workflow executions",
-      "Unlimited active workflows",
-      "Unlimited LLM provider connections",
+      "1,000 workflow runs / month",
+      "Up to 10 active agents",
+      "Bring your own LLM keys",
       "Execution logs (90-day retention)",
       "Multi-agent workflows",
       "Human-in-the-loop approvals",
@@ -83,14 +92,16 @@ const TIERS = [
     tierId: "scale",
     highlight: false,
     cta: "Get Scale",
+    runsPerMonth: 10000,
     features: [
-      "Everything in Automate",
+      "Everything in Automate, plus:",
+      "10,000 workflow runs / month",
+      "Up to 50 active agents",
       "Dedicated Agent Memory",
       "Advanced access controls",
       "Audit logs & compliance exports",
       "Priority support with onboarding",
       "Custom integration assistance",
-      "Expanded usage guardrails",
       "Security review support",
     ],
     notIncluded: [],
@@ -161,12 +172,12 @@ export default function Pricing() {
       <div className="bg-af2-card border-b border-af2-line px-8 py-10 text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-af2-clay-soft text-af2-clay-2 text-xs font-medium mb-4">
           <Zap size={12} />
-          Unlimited Executions on Every Plan
+          Flat-fee plans — no per-run charges
         </div>
         <h1 className="text-3xl font-bold text-af2-ink mb-3 tracking-tight">Simple, Flat-Fee Pricing</h1>
         <p className="text-af2-ink-3 max-w-xl mx-auto text-sm">
-          No per-execution charges. No usage limits. Pay a flat monthly fee and run
-          as many workflows as you need.
+          No per-execution charges — pay a flat monthly fee. Each plan includes a
+          generous monthly run allowance.
         </p>
         {error && (
           <div className="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-af2-clay/10 border border-af2-clay/30 text-af2-clay text-xs">
@@ -205,7 +216,7 @@ export default function Pricing() {
                   )}
                 </div>
                 <div className="mt-1 text-xs text-af2-sage font-medium uppercase tracking-wide">
-                  Unlimited executions included
+                  {tier.runsPerMonth.toLocaleString("en-US")} runs / month included
                 </div>
               </div>
 
@@ -250,8 +261,8 @@ export default function Pricing() {
             <p className="text-af2-paper-2 text-sm leading-relaxed max-w-2xl">
               Traditional AI platforms charge per token or per execution — costs that spiral as your
               workflows scale. AutoFlow believes your team should iterate freely without worrying about
-              runaway bills. Our flat-fee model means you can run experiments, debug in production, and
-              scale to millions of executions on the same predictable monthly cost.
+              runaway bills. Our flat-fee model means you can run experiments and debug in production
+              within a generous monthly run allowance, on the same predictable monthly cost.
             </p>
           </div>
         </div>

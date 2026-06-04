@@ -52,6 +52,12 @@ primary_region = "ord"
   # explicitly here keeps the dev/staging/prod separation we wanted from
   # the DASH-33 Sentry audit.
   SENTRY_ENVIRONMENT = "dev"
+  # HEL-553 (Chunked team-assembly generation): enable the skeleton -> batched
+  # fill -> reduce pipeline for /hire plan generation on dev, so large
+  # (8-15+ agent) plans don't truncate at the single-call output cap. Prod +
+  # staging stay on the legacy single call until this is validated on dev.
+  # Unset (default) = legacy single-call path.
+  TEAM_ASSEMBLY_CHUNKED = "true"
   # AUTOFLOW_ALLOW_INMEMORY is intentionally unset — HEL-80 enforces double-locked
   # production safety. The server will fail-fast if Postgres is unreachable.
 

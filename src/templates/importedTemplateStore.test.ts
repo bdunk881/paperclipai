@@ -12,6 +12,7 @@ import {
   listImportedTemplatesAsync,
   resetImportedTemplatesForTests,
   saveImportedTemplate,
+  warmImportedTemplates,
 } from "./importedTemplateStore";
 import { isPostgresConfigured, queryPostgres } from "../db/postgres";
 
@@ -127,5 +128,43 @@ describe("importedTemplateStore", () => {
         "user-123",
       ]
     );
+  });
+
+  // HEL-485: a fresh process (empty Map) must rehydrate imported templates from
+  // Postgres on boot, else runs started with an imported templateId 404.
+  it("warmImportedTemplates loads persisted templates into the cache on a cold boot", async () => {
+    const template = makeWorkflowTemplate({
+      id: "tpl-warm-boot",
+      name: "Warm Boot",
+      category: "custom",
+    });
+
+    mockIsPostgresConfigured.mockReturnValue(true);
+    mockQueryPostgres.mockResolvedValue({
+      rows: [{ id: template.id, dag: template }],
+      rowCount: 1,
+      command: "SELECT",
+      oid: 0,
+      fields: [],
+    });
+
+    // Map starts empty (resetImportedTemplatesForTests in beforeEach), mirroring
+    // a fresh process; the sync getter must find the template after warming.
+    expect(getImportedTemplate(template.id)).toBeUndefined();
+
+    const count = await warmImportedTemplates();
+
+    expect(count).toBe(1);
+    expect(getImportedTemplate(template.id)).toEqual(template);
+    expect(mockQueryPostgres).toHaveBeenCalledWith(expect.stringContaining("FROM workflows w"));
+  });
+
+  it("warmImportedTemplates is a no-op (0) when Postgres is not configured", async () => {
+    mockIsPostgresConfigured.mockReturnValue(false);
+
+    const count = await warmImportedTemplates();
+
+    expect(count).toBe(0);
+    expect(mockQueryPostgres).not.toHaveBeenCalled();
   });
 });

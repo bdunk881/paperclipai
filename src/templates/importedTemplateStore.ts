@@ -123,6 +123,26 @@ export async function listImportedTemplatesAsync(): Promise<WorkflowTemplate[]> 
     .map(mapPersistedImportedTemplate)
     .filter((template: WorkflowTemplate | undefined): template is WorkflowTemplate => Boolean(template));
 }
+
+/**
+ * HEL-485: hydrate the in-memory imported-template cache from Postgres at boot.
+ *
+ * Without this, after a process/instance restart the `importedTemplates` Map is
+ * empty, so any run started with an imported templateId (POST /api/runs,
+ * /runs/file, the webhook trigger, replay-with-latest) 404s until the template
+ * is re-saved — and on the multi-machine fleet a template imported on one
+ * machine is invisible on another. Called once from bootstrap after migrations.
+ *
+ * Delegates to `listImportedTemplatesAsync`, which on a cold (empty) cache reads
+ * every persisted imported template and hydrates the Map as a side effect.
+ * Returns the number of templates now cached. Best-effort + Postgres-gated
+ * (no-ops to 0 in the in-memory dev/test path).
+ */
+export async function warmImportedTemplates(): Promise<number> {
+  const templates = await listImportedTemplatesAsync();
+  return templates.length;
+}
+
 export function getImportedTemplate(id: string): WorkflowTemplate | undefined {
   return importedTemplates.get(id);
 }

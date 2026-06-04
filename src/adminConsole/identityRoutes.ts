@@ -18,6 +18,7 @@ import { recordAdminAction } from "./auditLog";
 import { consumeRateLimit } from "./rateLimit";
 import { getSupabaseAdminClient, isSupabaseAdminConfigured } from "./supabaseAdminClient";
 import { extractAuditContext, type PlatformAdminRequest } from "./types";
+import { buildDefaultMfaEmailSender } from "../security/mfaEmailSender";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OTP_TTL_MS = 15 * 60 * 1000;
@@ -53,14 +54,28 @@ const defaultDelivery: OtpEmailDelivery = {
     if (lookupErr || !userResult?.user?.email) {
       throw new Error(`Unable to resolve user email for ${args.userId}`);
     }
-    // Supabase's admin SDK does not have a generic "send arbitrary email"
-    // primitive; the closest fit is the magic-link endpoint, which lands the
-    // recipient at the dashboard. For now we surface the OTP to the admin in
-    // the API response (see the route handler). Replace with Resend/Postmark
-    // when system-mail lands.
-    console.info(
-      `[admin-console] would email OTP to ${userResult.user.email} (reason: ${args.reason})`,
-    );
+    // HEL-404: actually email the OTP via the shared transactional mailer
+    // (Resend when RESEND_API_KEY is set — AutoFlow's canonical provider —
+    // else SendGrid, else a dev logging fallback; the same sender that powers
+    // the MFA email factors). The OTP is still returned in the API response
+    // (see the route handler) as a deliberate fallback for the "user can't
+    // access their email" support path, so a mail failure must not break the
+    // reset request — log and continue.
+    const sender = buildDefaultMfaEmailSender();
+    try {
+      await sender.send({
+        to: userResult.user.email,
+        kind: "email_otp_code",
+        code: args.otp,
+        purpose: "verify",
+      });
+    } catch (err) {
+      console.error(
+        `[admin-console] MFA-reset OTP email to ${userResult.user.email} failed (reason: ${args.reason}): ${
+          (err as Error).message
+        }`,
+      );
+    }
   },
 };
 

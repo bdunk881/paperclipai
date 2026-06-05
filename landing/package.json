@@ -48,6 +48,8 @@
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^5",
     "globals": "^15",
+    "sanity": "^5.30.0",
+    "styled-components": "^6.4.2",
     "typescript": "^5",
     "typescript-eslint": "^8",
     "vite": "^8.0.14"

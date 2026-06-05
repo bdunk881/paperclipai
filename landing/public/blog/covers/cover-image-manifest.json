@@ -1,0 +1,82 @@
+[
+  {
+    "slug": "complete-guide-workflow-automation-small-business",
+    "postId": "fT4RkbtsUFo0w0XC153GsN",
+    "file": "01-complete-guide-workflow-automation-small-business.png",
+    "path": "/blog/covers/01-complete-guide-workflow-automation-small-business.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#d96239",
+    "alt": "Editorial illustration of connected small-business processes, including leads, CRM, invoices, onboarding, approvals, budgets, reports, and Slack-like updates, on a warm cream AutoFlow v2 background."
+  },
+  {
+    "slug": "autoflow-vs-zapier",
+    "postId": "0bzv6vDb5M9RssFkJRkNJz",
+    "file": "02-autoflow-vs-zapier.png",
+    "path": "/blog/covers/02-autoflow-vs-zapier.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#4a6b4a",
+    "alt": "Balanced editorial scale comparing task-based automation with agent routines, using sage and terracotta accents on cream paper."
+  },
+  {
+    "slug": "autoflow-vs-n8n",
+    "postId": "nE3O1lobPG69YhI3zgxIdI",
+    "file": "03-autoflow-vs-n8n.png",
+    "path": "/blog/covers/03-autoflow-vs-n8n.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#1f3a52",
+    "alt": "Editorial workflow illustration contrasting a branching open-source flow with a guided agent routine and policy rail in ink-blue and terracotta."
+  },
+  {
+    "slug": "autoflow-vs-make",
+    "postId": "nE3O1lobPG69YhI3zgxIGd",
+    "file": "04-autoflow-vs-make.png",
+    "path": "/blog/covers/04-autoflow-vs-make.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#b8862c",
+    "alt": "Modular visual-canvas blocks connected as an automation flow, with mustard and terracotta accents on a cream editorial background."
+  },
+  {
+    "slug": "autoflow-vs-power-automate",
+    "postId": "0bzv6vDb5M9RssFkJRkMop",
+    "file": "05-autoflow-vs-power-automate.png",
+    "path": "/blog/covers/05-autoflow-vs-power-automate.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#5d3a5e",
+    "alt": "Editorial contrast between heavy enterprise gears and nimble startup arrows, using plum and terracotta accents in the AutoFlow v2 style."
+  },
+  {
+    "slug": "best-workflow-automation-tools-2026",
+    "postId": "0bzv6vDb5M9RssFkJRkNp9",
+    "file": "06-best-workflow-automation-tools-2026.png",
+    "path": "/blog/covers/06-best-workflow-automation-tools-2026.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#b8862c",
+    "alt": "Tidy ranked top-five editorial lineup of automation tool cards with terracotta and mustard accents on warm cream paper."
+  },
+  {
+    "slug": "automate-invoice-follow-ups-tutorial",
+    "postId": "nE3O1lobPG69YhI3zgxJek",
+    "file": "07-automate-invoice-follow-ups-tutorial.png",
+    "path": "/blog/covers/07-automate-invoice-follow-ups-tutorial.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#4a6b4a",
+    "alt": "Invoice follow-up illustration showing an invoice and Day 3, Day 7, and Day 14 reminder cadence timeline, with sage and terracotta accents."
+  },
+  {
+    "slug": "future-of-no-code-automation",
+    "postId": "nE3O1lobPG69YhI3zgxKbf",
+    "file": "08-future-of-no-code-automation.png",
+    "path": "/blog/covers/08-future-of-no-code-automation.png",
+    "width": 1200,
+    "height": 630,
+    "accent": "#b8862c",
+    "alt": "Warm dawn horizon with abstract no-code blocks self-assembling into an automation flow, using mustard and terracotta on cream paper."
+  }
+]

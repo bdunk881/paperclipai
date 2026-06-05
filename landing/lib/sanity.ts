@@ -3,9 +3,13 @@ import { createImageUrlBuilder } from "@sanity/image-url";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SanityImageSource = any;
 
-const isSanityConfigured =
-  !!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID &&
-  process.env.NEXT_PUBLIC_SANITY_PROJECT_ID !== "replace-me";
+// `wrangler types` narrows this env var to the literal "koldjrka" (from
+// wrangler.jsonc vars), but at build/dev time it may be undefined or
+// "replace-me", so widen before comparing.
+const sanityProjectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID as
+  | string
+  | undefined;
+const isSanityConfigured = !!sanityProjectId && sanityProjectId !== "replace-me";
 
 export const sanityClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "replace-me",

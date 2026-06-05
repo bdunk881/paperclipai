@@ -194,6 +194,7 @@ import { verifyHmac } from "./webhooks/verifySignature";
 
 import { deleteImportedTemplate, getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
 import { getConnectorHealthSummary, listConnectorHealth } from "./connectors/health";
+import { buildConnectorActionCatalog } from "./integrations/connectorActionCatalog";
 
 requirePersistence();
 
@@ -2738,6 +2739,23 @@ app.get("/api/connectors/health", requireAuthOrQaBypass, asyncHandler<Authentica
     connectors,
     summary: getConnectorHealthSummary(connectors),
   });
+}));
+
+// HEL-657 (HEL-647 PR 4): connection-gated action catalog for the Workflow
+// Studio builder. Returns the connector-action library annotated with whether
+// the caller has each backing connector connected (run-owner scope) — the
+// "user has X connected → show X's actions" feed that drives dynamic step
+// suggestions. Mirrors the connectors/health route's auth shape (any
+// authenticated user; tenant-isolated by user id via withUserContext).
+app.get("/api/connectors/actions", requireAuthOrQaBypass, asyncHandler<AuthenticatedRequest>(async (req, res) => {
+  const userId = req.auth?.sub?.trim();
+  if (!userId) {
+    res.status(401).json({ error: "Authenticated user required" });
+    return;
+  }
+  const pool = isPostgresPersistenceEnabled() ? getPostgresPool() : null;
+  const actions = await buildConnectorActionCatalog(pool, userId);
+  res.json({ actions, total: actions.length });
 }));
 
 if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_RESUME_SWEEPER !== "false") {

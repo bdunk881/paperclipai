@@ -76,6 +76,7 @@ async function startServer() {
     { startIssuingTreasuryJob },
     { startDirectProviderHealthJobs },
     { startStorageLifecycleReconcileJob },
+    { startWorkflowFailureDigestJob },
   ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
@@ -84,6 +85,7 @@ async function startServer() {
     import("./billing/credits/stripeIssuing"),
     import("./billing/credits/sourceHealthJob"),
     import("./storage/storageLifecycleReconcileJob"),
+    import("./engine/failureDigest/failureDigest"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
@@ -98,6 +100,10 @@ async function startServer() {
   // HEL-358: storage lifecycle drift watchdog. No-op unless STORAGE_PROVIDER
   // is a lifecycle-capable backend (r2/s3); the in-memory adapter is skipped.
   startStorageLifecycleReconcileJob();
+  // HEL-365: daily workflow-failure digest to workspace owners. No-op unless
+  // Postgres is configured; respects per-workspace opt-out + the SES mailer's
+  // own gating (logs until AUTOFLOW_SYSTEM_EMAIL_FROM is set).
+  startWorkflowFailureDigestJob();
 }
 
 void startServer();

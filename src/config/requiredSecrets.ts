@@ -62,6 +62,19 @@ const RECOMMENDED_IN_PRODUCTION: SecretRequirement[] = [
     gates:
       "WebAuthn expected origin(s). Falls back to http://localhost:5173 → passkeys fail on real origins.",
   },
+  {
+    // HEL-420: shared key for the hosted free LLM tier (OpenCode Zen / Big
+    // Pickle — see src/hostedFreeModels/providers.ts). Unset → the free tier
+    // is silently disabled: resolveHostedFreeApiKey() returns null, so
+    // /settings/llm-providers shows the tier "not configured" and /hire shows
+    // "No model connected" for Explore workspaces that haven't brought their
+    // own key. Warn-only (BYOK still works without it), but it must be loud —
+    // a missing free-tier key is otherwise an invisible new-customer
+    // activation blocker.
+    name: "OPENCODE_ZEN_API_KEY",
+    gates:
+      "Shared key for the Explore hosted free LLM tier (OpenCode Zen / Big Pickle). Unset → the free tier is disabled: /hire shows \"No model connected\" and /settings/llm-providers shows it \"not configured\" for Explore workspaces without their own LLM key.",
+  },
 ];
 
 function isSet(value: string | undefined): boolean {

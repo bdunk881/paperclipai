@@ -162,6 +162,54 @@ export const commsSendStore = {
   },
 
   /**
+   * Resolve a send's tenancy from its (provider, provider_message_id) — the
+   * correlation key an inbound delivery/bounce receipt carries (HEL-613). Runs
+   * WITHOUT a workspace context: a webhook has no session, so the Postgres path
+   * goes through the SECURITY DEFINER resolver (migration 103) which bypasses
+   * the FORCE-RLS ledger for this one narrow read.
+   */
+  async findTenancyByProviderMessageId(
+    provider: string,
+    providerMessageId: string,
+  ): Promise<{
+    commsSendId: string;
+    workspaceId: string;
+    agentId: string | null;
+    missionId: string | null;
+  } | null> {
+    if (!postgresPersistenceAvailable()) {
+      for (const record of memById.values()) {
+        if (record.provider === provider && record.providerMessageId === providerMessageId) {
+          return {
+            commsSendId: record.id,
+            workspaceId: record.workspaceId,
+            agentId: record.agentId ?? null,
+            missionId: record.missionId ?? null,
+          };
+        }
+      }
+      return null;
+    }
+
+    const result = await getPostgresPool().query<{
+      comms_send_id: string;
+      workspace_id: string;
+      agent_id: string | null;
+      mission_id: string | null;
+    }>(`SELECT comms_send_id, workspace_id, agent_id, mission_id
+          FROM comms_resolve_send_by_provider_msg($1, $2)`, [provider, providerMessageId]);
+    const row = result.rows[0];
+    return row
+      ? {
+          commsSendId: row.comms_send_id,
+          workspaceId: row.workspace_id,
+          agentId: row.agent_id,
+          missionId: row.mission_id,
+        }
+      : null;
+  },
+
+  /**
    * Insert a `queued` row. Returns `{ created: false }` (with the existing
    * row) when the idempotency key already exists — including when a concurrent
    * insert wins the race (`ON CONFLICT DO NOTHING`).

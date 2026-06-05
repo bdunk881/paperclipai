@@ -73,7 +73,7 @@ export interface ExecuteAgentPromptInput {
     createdAt: string;
   }>;
   /** Trigger kind for observability + persistence. */
-  triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
+  triggerKind: "assignment" | "assignment_update" | "schedule" | "manual" | "wake";
   /**
    * Permission mode forwarded to the runtime. "plan" makes the agent
    * produce a plan and stop — the caller (typically a route handler with
@@ -136,7 +136,9 @@ function buildSystemPrompt(input: {
         ? "You are responding to a follow-up comment on an existing Mission Assignment. Read the full thread for context."
         : input.triggerKind === "schedule"
           ? "You are running a scheduled routine. Produce a concise status update with concrete next actions. If you need human input or approval, clearly ask for it so the system can file an Assignment for you."
-          : "You are running a manual re-trigger on an existing Assignment. Pick up where the prior thread left off.";
+          : input.triggerKind === "wake"
+            ? "An inbound comms event (an inbound message, or a delivery/bounce/complaint notice) was routed to you and your triage policy approved acting on it. Read the event details in the request, then take the follow-up it calls for — reply to the contact, update the mission, or flag a human if needed."
+            : "You are running a manual re-trigger on an existing Assignment. Pick up where the prior thread left off.";
   return [
     `You are ${input.agentName}, an AutoFlow agent. Role: ${input.agentRoleKey}.`,
     "",
@@ -494,7 +496,7 @@ export async function executeAgentPrompt(
   // a paper trail in the timeline — this closes the gap for manual runs
   // that previously had no ticket to attach `structured_update`s to.
   let sourceTicketId = input.sourceTicketId;
-  if (!sourceTicketId && input.triggerKind === "manual") {
+  if (!sourceTicketId && (input.triggerKind === "manual" || input.triggerKind === "wake")) {
     sourceTicketId = await autoCreateAssignmentTicket({
       workspaceId: input.workspaceId,
       userId: input.userId,

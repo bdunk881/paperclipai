@@ -112,7 +112,16 @@ import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
-import { createSesNotificationsRoutes } from "./mailer/sesNotificationsRoutes";
+import {
+  createSesNotificationsRoutes,
+  type SesNotificationsDeps,
+} from "./mailer/sesNotificationsRoutes";
+import {
+  createCommsInboundIngest,
+  createCommsWebhookRoutes,
+  normalizeSesEvent,
+  type CommsInboundIngest,
+} from "./comms/webhooks";
 import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
@@ -199,6 +208,21 @@ import("./billing/subscriptionStore")
   .catch((err) => {
     console.warn("[billing] subscription hydration failed:", (err as Error).message);
   });
+
+// HEL-613: forward parsed SES events to the comms wake-event ingest. Defined
+// here (away from the route-mounting block) so this async callback isn't read as
+// an unwrapped route handler by the HEL-184 asyncHandler guard — the real SES
+// route handlers inside createSesNotificationsRoutes() are already wrapped.
+function buildSesInboundForwarder(ingest: CommsInboundIngest): SesNotificationsDeps {
+  return {
+    onInboundEvent: async (event) => {
+      const normalized = normalizeSesEvent(event);
+      if (normalized) {
+        await ingest(normalized);
+      }
+    },
+  };
+}
 
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
@@ -581,9 +605,29 @@ app.use("/api/webhooks/composio", composioWebhookRouter);
 app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// HEL-613: inbound comms ingest (provider webhooks → wake_events → triage → run).
+// Postgres-gated (wake_events writes need it). Shared by the Telnyx route and
+// the SES route's onInboundEvent hook below.
+const commsInboundIngest = isPostgresPersistenceEnabled()
+  ? createCommsInboundIngest({ pool: getPostgresPool() })
+  : null;
+
 // SES notifications (SNS) webhook (HEL-361) — bounce/complaint → suppression list.
 // Mounted before express.json(); the router parses its own (text/plain) body.
-app.use("/api/webhooks/ses-notifications", createSesNotificationsRoutes());
+// HEL-613 additively forwards each parsed event to the comms ingest so a
+// bounce/complaint also wakes the owning agent (suppression unchanged).
+app.use(
+  "/api/webhooks/ses-notifications",
+  createSesNotificationsRoutes(
+    commsInboundIngest ? buildSesInboundForwarder(commsInboundIngest) : {},
+  ),
+);
+// HEL-613: inbound comms provider webhooks (Telnyx SMS DLR + inbound). Mounted
+// before express.json(); each provider route parses its own raw body for
+// signature verification.
+if (commsInboundIngest) {
+  app.use("/api/webhooks/comms", createCommsWebhookRoutes({ ingest: commsInboundIngest }));
+}
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Composio webhook — mounted before express.json() because the route verifies the raw payload

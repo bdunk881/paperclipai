@@ -40,6 +40,7 @@ import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 import { executeAgentPrompt } from "./agents/agentPromptExecution";
+import { setActedRunId } from "./agents/wakeEventStore";
 import {
   startPlanApprovalResumeCoordinator,
   stopPlanApprovalResumeCoordinator,
@@ -275,7 +276,7 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       return;
     }
     const pool = getPostgresPool();
-    await executeAgentPrompt({
+    const { runId } = await executeAgentPrompt({
       pool,
       workspaceId: job.data.workspaceId,
       userId: job.data.userId,
@@ -288,6 +289,19 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       triggerKind: job.data.triggerKind,
       permissionMode: job.data.permissionMode,
     });
+    // HEL-613: link an ACTed wake event to the run it spawned.
+    if (job.data.wakeEventId) {
+      await setActedRunId(pool, {
+        eventId: job.data.wakeEventId,
+        workspaceId: job.data.workspaceId,
+        userId: job.data.userId,
+        runId,
+      }).catch((err: Error) => {
+        console.error(
+          `[worker:agent-prompt] acted_run_id backfill failed for wake ${job.data.wakeEventId}: ${err.message}`,
+        );
+      });
+    }
   },
   {
     connection,

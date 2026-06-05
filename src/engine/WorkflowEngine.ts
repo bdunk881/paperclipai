@@ -15,6 +15,7 @@ import {
   AgentSlotResult,
 } from "../types/workflow";
 import { runStore } from "./runStore";
+import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
 import { approvalStore } from "./approvalStore";
 import { approvalPolicyStore } from "../approvals/policyStore";
 import {
@@ -316,6 +317,7 @@ export class WorkflowEngine {
         completedAt: new Date().toISOString(),
         error: String(err),
       });
+      void this._publishRunLifecycle(run.id, "failed", { error: String(err) });
     });
 
     return run;
@@ -449,15 +451,17 @@ export class WorkflowEngine {
     // completed/failed and persisting per-step updates.
     void runStore
       .update(newRun.id, { status: "running" })
-      .then(() =>
-        this._runSteps(newRun.id, template, config, context, clonedStepResults, stepIndex, userId)
-      )
+      .then(() => {
+        void this._publishRunLifecycle(newRun.id, "started");
+        return this._runSteps(newRun.id, template, config, context, clonedStepResults, stepIndex, userId);
+      })
       .catch((err) => {
         void runStore.update(newRun.id, {
           status: "failed",
           completedAt: new Date().toISOString(),
           error: String(err),
         });
+        void this._publishRunLifecycle(newRun.id, "failed", { error: String(err) });
       });
 
     return newRun;
@@ -847,6 +851,39 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * HEL-489: emit a `run.lifecycle` SSE event for a DAG run so the RunTray and
+   * routine streams update live (the agent-prompt path publishes these; the DAG
+   * path was silent — subscribers only refreshed on the ~20s poll). Best-effort
+   * and fire-and-forget at the call sites; fetches the run for its workspace +
+   * routine so the per-resource SSE channels can filter. DAG runs aren't owned
+   * by a single agent, so `agentId` is empty.
+   */
+  private async _publishRunLifecycle(
+    runId: string,
+    phase: RunLifecyclePhase,
+    extra?: { error?: string },
+  ): Promise<void> {
+    try {
+      const run = await runStore.get(runId);
+      if (!run?.workspaceId) {
+        return;
+      }
+      await publishWorkspaceStreamEvent(run.workspaceId, {
+        kind: "run.lifecycle",
+        phase,
+        runId,
+        agentId: "",
+        routineId: run.routineId ?? null,
+        ...(extra?.error ? { error: extra.error } : {}),
+      });
+    } catch (err) {
+      console.warn(
+        `[WorkflowEngine] run.lifecycle publish failed run=${runId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   private async _executeRun(
     runId: string,
     template: WorkflowTemplate,
@@ -855,6 +892,7 @@ export class WorkflowEngine {
     userId?: string
   ): Promise<void> {
     await runStore.update(runId, { status: "running" });
+    void this._publishRunLifecycle(runId, "started");
 
     // The execution context accumulates outputs from all steps + initial input + config
     // memory helpers are injected so LLM prompt templates can reference them.
@@ -909,6 +947,7 @@ export class WorkflowEngine {
       status: "running",
       runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
     });
+    void this._publishRunLifecycle(run.id, "started");
 
     let stepStatus: StepResult["status"] = "success";
     let stepError: string | undefined;
@@ -965,6 +1004,7 @@ export class WorkflowEngine {
         stepResults,
         runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
       });
+      void this._publishRunLifecycle(run.id, "failed", { error: stepError });
       return;
     }
 
@@ -1178,6 +1218,7 @@ export class WorkflowEngine {
           stepResults,
           runtimeState: makeRuntimeState(config, context, currentStepIndex),
         });
+        void this._publishRunLifecycle(runId, "failed", { error: stepError });
         return;
       }
 
@@ -1202,6 +1243,7 @@ export class WorkflowEngine {
       stepResults,
       runtimeState: makeRuntimeState(config, context, template.steps.length - 1),
     });
+    void this._publishRunLifecycle(runId, "completed");
   }
 }
 

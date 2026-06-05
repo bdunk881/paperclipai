@@ -13,10 +13,21 @@
  */
 
 import { getProvider } from "../engine/llmProviders";
-import type { ProviderName } from "../engine/llmProviders/types";
+import type { ProviderName, ResponseFormat } from "../engine/llmProviders/types";
 import type { TeamAssemblyRequest, TeamAssemblyResult } from "../goals/teamAssembly";
-import { buildTeamSkeletonPrompt, parseTeamSkeletonResponse, type TeamSkeleton } from "../goals/teamSkeleton";
-import { buildRoleDetailPrompt, parseRoleDetailResponse, type RoleDetail } from "../goals/roleDetail";
+import {
+  buildTeamSkeletonPrompt,
+  parseTeamSkeletonResponse,
+  teamSkeletonSchema,
+  type TeamSkeleton,
+} from "../goals/teamSkeleton";
+import {
+  buildRoleDetailPrompt,
+  parseRoleDetailResponse,
+  roleDetailBatchSchema,
+  type RoleDetail,
+} from "../goals/roleDetail";
+import { z } from "zod";
 import { assembleTeamPlan } from "../goals/assembleTeamPlan";
 import {
   computeFillBatchSize,
@@ -28,6 +39,25 @@ import {
 /** True when the chunked generation path is enabled for this process. */
 export function isChunkedTeamAssemblyEnabled(): boolean {
   return process.env.TEAM_ASSEMBLY_CHUNKED === "true";
+}
+
+/**
+ * Per-provider structured-output mode for the chunked calls. (HEL-625)
+ *
+ * Anthropic forces JSON via a tool; in `json_object` mode its tool input_schema
+ * is permissive and claude-opus-4-7 satisfies it with `{}`. Giving Anthropic the
+ * REAL schema (`json_schema` → real tool input_schema) makes it fill the shape.
+ * gemini + openai follow `json_object` from the prompt reliably, and OpenAI's
+ * `json_schema` is strict (rejects the record-shaped fill), so they stay on it.
+ */
+export function chunkedResponseFormat(provider: ProviderName, schema: z.ZodType): ResponseFormat {
+  if (provider === "anthropic") {
+    // Strip the $schema meta-key; Anthropic's tool input_schema wants the bare shape.
+    const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>;
+    delete jsonSchema.$schema;
+    return { type: "json_schema", schema: jsonSchema };
+  }
+  return { type: "json_object" };
 }
 
 export interface ChunkedLlm {
@@ -67,7 +97,7 @@ export async function generateTeamPlanChunked(
     provider: llm.provider,
     model: llm.model,
     apiKey: llm.apiKey,
-    responseFormat: { type: "json_object" },
+    responseFormat: chunkedResponseFormat(llm.provider, teamSkeletonSchema),
     maxOutputTokens: recommendedSkeletonMaxTokens(llm.provider),
   });
   const skeletonResp = await skeletonProvider(buildTeamSkeletonPrompt(request));
@@ -86,7 +116,7 @@ export async function generateTeamPlanChunked(
     provider: llm.provider,
     model: llm.model,
     apiKey: llm.apiKey,
-    responseFormat: { type: "json_object" },
+    responseFormat: chunkedResponseFormat(llm.provider, roleDetailBatchSchema),
     maxOutputTokens: recommendedFillCallMaxTokens(llm.provider, batchSize),
   });
   const batches = splitRolesIntoFillBatches(roleKeys, llm.provider);

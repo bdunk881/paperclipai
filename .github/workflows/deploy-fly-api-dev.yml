@@ -136,6 +136,7 @@ jobs:
           echo "[verify] Upstash REST token present: $([ -n "${UPSTASH_REDIS_REST_TOKEN:-}" ] && echo yes || echo no)"
           echo "[verify] Upstash TCP URL present: $([ -n "${UPSTASH_REDIS_URL:-}" ] && echo yes || echo no)"
           echo "[verify] Legacy REDIS_URL present: $([ -n "${REDIS_URL:-}" ] && echo yes || echo no)"
+          echo "[verify] STORAGE_PROVIDER present: $([ -n "${STORAGE_PROVIDER:-}" ] && echo yes || echo no)"
 
       # HEL-345: detect the Sentry release token (pulled from Infisical above).
       # Reads it from the process env the secrets-action exports, so the gate
@@ -218,6 +219,25 @@ jobs:
           # forwarded here or passkey registration 500s ("APP_JWT_SECRET must be
           # configured to mint AAL2 attestations") and OAuth login breaks.
           [[ -n "${APP_JWT_SECRET:-}" ]] && args+=( "APP_JWT_SECRET=${APP_JWT_SECRET}" )
+          # HEL-663: object storage (R2/S3) — forward STORAGE_* so the deployed
+          # `app` AND `worker` process groups can reach the bucket: file routes,
+          # the storage-deletion BullMQ consumer (worker), and the HEL-358
+          # lifecycle drift watchdog (app). Infisical names == runtime names (1:1).
+          # Both the R2 and S3 key sets forward regardless of STORAGE_PROVIDER, so
+          # flipping the provider later is a one-value change in Infisical (no CI
+          # edit). Guarded so a not-yet-set var is omitted, never failing the deploy.
+          [[ -n "${STORAGE_PROVIDER:-}" ]] && args+=( "STORAGE_PROVIDER=${STORAGE_PROVIDER}" )
+          [[ -n "${STORAGE_R2_ACCOUNT_ID:-}" ]] && args+=( "STORAGE_R2_ACCOUNT_ID=${STORAGE_R2_ACCOUNT_ID}" )
+          [[ -n "${STORAGE_R2_BUCKET:-}" ]] && args+=( "STORAGE_R2_BUCKET=${STORAGE_R2_BUCKET}" )
+          [[ -n "${STORAGE_R2_ACCESS_KEY_ID:-}" ]] && args+=( "STORAGE_R2_ACCESS_KEY_ID=${STORAGE_R2_ACCESS_KEY_ID}" )
+          [[ -n "${STORAGE_R2_SECRET_ACCESS_KEY:-}" ]] && args+=( "STORAGE_R2_SECRET_ACCESS_KEY=${STORAGE_R2_SECRET_ACCESS_KEY}" )
+          [[ -n "${STORAGE_S3_REGION:-}" ]] && args+=( "STORAGE_S3_REGION=${STORAGE_S3_REGION}" )
+          [[ -n "${STORAGE_S3_BUCKET:-}" ]] && args+=( "STORAGE_S3_BUCKET=${STORAGE_S3_BUCKET}" )
+          [[ -n "${STORAGE_S3_ACCESS_KEY_ID:-}" ]] && args+=( "STORAGE_S3_ACCESS_KEY_ID=${STORAGE_S3_ACCESS_KEY_ID}" )
+          [[ -n "${STORAGE_S3_SECRET_ACCESS_KEY:-}" ]] && args+=( "STORAGE_S3_SECRET_ACCESS_KEY=${STORAGE_S3_SECRET_ACCESS_KEY}" )
+          [[ -n "${STORAGE_S3_ENDPOINT:-}" ]] && args+=( "STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}" )
+          [[ -n "${STORAGE_EXPORT_URL_TTL_SECONDS:-}" ]] && args+=( "STORAGE_EXPORT_URL_TTL_SECONDS=${STORAGE_EXPORT_URL_TTL_SECONDS}" )
+          [[ -n "${OBSERVABILITY_EXPORT_MAX_ROWS:-}" ]] && args+=( "OBSERVABILITY_EXPORT_MAX_ROWS=${OBSERVABILITY_EXPORT_MAX_ROWS}" )
 
           flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 

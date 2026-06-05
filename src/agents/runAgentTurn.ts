@@ -38,8 +38,10 @@ import {
 } from "./agentToolPermissions";
 import { pickBackend, withAgentConversation } from "./runtime/runAgent";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
-import { createBudgetHook } from "./runtime/budgetHook";
+import { budgetMiddleware } from "./runtime/middleware/budgetMiddleware";
+import { auditMiddleware } from "./runtime/middleware/auditMiddleware";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
+import type { AgentMiddleware } from "./runtime/middleware/types";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
 
 const TOKEN_PREVIEW_PUBLISH_INTERVAL_MS = 200;
@@ -264,14 +266,20 @@ export async function runAgentTurn(
   const resolvedSkills =
     input.skills ?? agentSkillsRow.rows[0]?.skills ?? [];
   const mcpServers = await loadAgentMcpServers({ userId: input.userId });
-  const hooks =
-    input.enforceBudget === false
-      ? undefined
-      : createBudgetHook({
-          pool: input.pool,
-          workspaceId: input.workspaceId,
-          agentId: input.agentId,
-        });
+  // Build the agent middleware pipeline: budget enforcement (opt-out via
+  // enforceBudget=false) + audit logging (always on). Both run on every
+  // backend now that all tool calls route through the pipeline (HEL-621/622).
+  const middleware: AgentMiddleware[] = [];
+  if (input.enforceBudget !== false) {
+    middleware.push(
+      budgetMiddleware({
+        pool: input.pool,
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+      }),
+    );
+  }
+  middleware.push(auditMiddleware());
 
   let response: { text: string; usage: NonNullable<LLMResponse["usage"]> };
   try {
@@ -297,7 +305,7 @@ export async function runAgentTurn(
             skills: resolvedSkills,
             mcpServers,
             permissionMode: input.permissionMode,
-            hooks,
+            middleware,
           },
           binding,
         ),

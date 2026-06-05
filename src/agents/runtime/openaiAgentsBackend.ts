@@ -61,7 +61,7 @@ export class OpenAIAgentsBackend implements AgentBackend {
       // (budget / audit / future tool-phase middleware). Until now this
       // backend ignored `input.hooks` entirely, so budget enforcement and
       // audit logging silently never ran on the OpenAI Agents path.
-      const pipeline = buildPipeline(input.hooks);
+      const pipeline = buildPipeline(input.hooks, input.middleware);
       const ctx: AgentRunContext = {
         run: input,
         binding,

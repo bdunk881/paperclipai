@@ -14,6 +14,7 @@
 import type { Pool } from "pg";
 import type { AgentTool, LLMResponse, ProviderName } from "../../engine/llmProviders/types";
 import type { AgentTraceCallback } from "../../engine/agentTrace/types";
+import type { AgentMiddleware } from "./middleware/types";
 
 export type AgentRunTier = "lite" | "standard" | "power";
 
@@ -88,8 +89,14 @@ export interface AgentRunInput {
    *   - "review" agent runs but every tool call is forwarded to hooks for approval
    */
   permissionMode?: AgentPermissionMode;
-  /** Pre/post tool hooks. Used today for budget enforcement + audit logging. */
+  /** Pre/post tool hooks. Adapted into the middleware pipeline (legacy surface). */
   hooks?: AgentHooks;
+  /**
+   * Explicit agent middleware injected by the caller (budget, audit, …).
+   * Runs after the adapted legacy `hooks` in the pipeline. This is the
+   * forward-looking way to compose cross-cutting concerns (HEL-621/622).
+   */
+  middleware?: AgentMiddleware[];
 }
 
 export interface AgentRunResult {

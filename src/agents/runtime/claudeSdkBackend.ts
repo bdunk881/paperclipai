@@ -99,7 +99,7 @@ export class ClaudeSdkBackend implements AgentBackend {
     // (budget / audit / future tool-phase middleware). The Claude SDK owns the
     // model↔tool loop, so model-phase middleware can't run here; `ctx.messages`
     // stays empty and is unused on this backend.
-    const pipeline = buildPipeline(input.hooks);
+    const pipeline = buildPipeline(input.hooks, input.middleware);
     const ctx: AgentRunContext = {
       run: input,
       binding,

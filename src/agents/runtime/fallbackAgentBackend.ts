@@ -81,7 +81,7 @@ export class FallbackAgentBackend implements AgentBackend {
     const maxIterations = input.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
     const loadedSkills = resolveSkills(input.skills ?? []);
     const system = appendSkillsToPrompt(input.systemPrompt, loadedSkills);
-    const pipeline = buildPipeline(input.hooks);
+    const pipeline = buildPipeline(input.hooks, input.middleware);
 
     try {
       return await this.runInner({

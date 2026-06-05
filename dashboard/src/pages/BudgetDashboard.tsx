@@ -6,9 +6,11 @@
  * editorial shell from `docs/design/v2/preview/consolidation.html`:
  *
  *   - Eyebrow + h1 + meta line
+ *   - A budget-ceiling threshold banner (HEL-564) elevating the most-severe
+ *     fired `budget_alerts` row ("Growth is at 82% of its $200 budget").
  *   - Filter bar: seg (Today / 7d / 30d / Custom) + 2 date inputs + 3 selects
- *   - Inline SVG area chart with legend (visually static for now — chart-data
- *     wiring is followup; the goal here is "Budget HAS charts").
+ *   - Inline SVG stacked-area chart driven by the real daily breakdown series
+ *     (HEL-564), with a dynamic per-model legend.
  *   - 4-card stat-grid
  *   - "By mission" card-list with per-model breakdown (real rows from the
  *     breakdown endpoint; falls back to prototype sample if empty so the
@@ -39,6 +41,7 @@ import {
 import { ErrorState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
+import { buildSpendChart, pickWorstAlert, spendStatus, type SpendChart } from "./budgetChart";
 
 interface AgentBudgetRow {
   id: string;
@@ -107,53 +110,51 @@ const SCOPE_OPTIONS: Array<{ value: BudgetBreakdownScope; label: string }> = [
 ];
 
 // ---------------------------------------------------------------------------
-// Inline area chart — verbatim port of prototype lines 882-892 (HTML → JSX).
-// Visually static for now; real series wiring is followup.
+// Inline stacked-area chart — HEL-564. Geometry comes from `buildSpendChart`
+// (pure + unit-tested in budgetChart.test.ts); this just paints the bands.
 // ---------------------------------------------------------------------------
 
-function ProtoAreaChart() {
+function SpendAreaChart({ chart }: { chart: SpendChart }) {
+  if (!chart.hasData) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: 200,
+          color: "var(--af2-ink-3)",
+          fontSize: 12.5,
+        }}
+      >
+        No spend recorded in this window yet.
+      </div>
+    );
+  }
   return (
-    <svg viewBox="0 0 600 200" style={{ width: "100%", height: 200 }}>
-      <defs>
-        <linearGradient id="bdg-g1" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#c2502b" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#c2502b" stopOpacity="0.05" />
-        </linearGradient>
-        <linearGradient id="bdg-g2" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#4a6b4a" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#4a6b4a" stopOpacity="0.05" />
-        </linearGradient>
-        <linearGradient id="bdg-g3" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#b8862c" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#b8862c" stopOpacity="0.05" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M 20,170 L 105,140 L 190,120 L 275,150 L 360,100 L 445,80 L 530,60 L 580,55 L 580,180 L 20,180 Z"
-        fill="url(#bdg-g1)"
-        stroke="#c2502b"
-        strokeWidth="1.5"
+    <svg
+      viewBox={`0 0 ${chart.width} ${chart.height}`}
+      style={{ width: "100%", height: 200 }}
+      role="img"
+      aria-label="Daily spend by model"
+    >
+      {chart.bands.map((band) => (
+        <path key={band.model} d={band.areaPath} fill={band.color} fillOpacity={0.55} stroke="none" />
+      ))}
+      <path d={chart.totalLinePath} fill="none" stroke="var(--af2-ink-2)" strokeWidth="1.5" />
+      <line
+        x1={0}
+        y1={chart.baselineY}
+        x2={chart.width}
+        y2={chart.baselineY}
+        stroke="rgba(26,20,16,0.12)"
       />
-      <path
-        d="M 20,175 L 105,160 L 190,150 L 275,160 L 360,140 L 445,130 L 530,120 L 580,118 L 580,180 L 20,180 Z"
-        fill="url(#bdg-g2)"
-        stroke="#4a6b4a"
-        strokeWidth="1.5"
-      />
-      <path
-        d="M 20,178 L 105,170 L 190,165 L 275,168 L 360,160 L 445,155 L 530,150 L 580,148 L 580,180 L 20,180 Z"
-        fill="url(#bdg-g3)"
-        stroke="#b8862c"
-        strokeWidth="1.5"
-      />
-      <g fontFamily="JetBrains Mono" fontSize="9" fill="#6b5a48">
-        <text x="48" y="195">Mon</text>
-        <text x="128" y="195">Tue</text>
-        <text x="208" y="195">Wed</text>
-        <text x="288" y="195">Thu</text>
-        <text x="368" y="195">Fri</text>
-        <text x="448" y="195">Sat</text>
-        <text x="528" y="195">Sun</text>
+      <g fontFamily="var(--af2-mono)" fontSize="9" fill="var(--af2-ink-3)">
+        {chart.xTicks.map((tick, idx) => (
+          <text key={idx} x={tick.x} y={chart.height - 6} textAnchor="middle">
+            {tick.label}
+          </text>
+        ))}
       </g>
     </svg>
   );
@@ -332,6 +333,26 @@ export default function BudgetDashboard() {
     }));
   }, [breakdown]);
 
+  // HEL-564: real stacked-area chart geometry from the daily breakdown series.
+  const spendChart = useMemo(
+    () => buildSpendChart(breakdown?.series ?? []),
+    [breakdown?.series],
+  );
+
+  // HEL-564: elevate the single most-severe fired budget alert into a banner.
+  const agentNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const agent of agentsQuery.data ?? []) map.set(agent.id, agent.name);
+    return map;
+  }, [agentsQuery.data]);
+  const worstAlert = useMemo(() => pickWorstAlert(budgetAlerts), [budgetAlerts]);
+  const worstAlertLabel = worstAlert
+    ? worstAlert.alert.agentId
+      ? agentNameById.get(worstAlert.alert.agentId) ??
+        `Agent ${worstAlert.alert.agentId.slice(0, 8)}`
+      : `Team ${worstAlert.alert.teamId.slice(0, 8)}`
+    : "";
+
   function openCeilingPopover(scopeId: string, current?: number) {
     setOpenPopover(scopeId);
     setPopoverCeiling(current != null ? String(current) : "");
@@ -395,6 +416,55 @@ export default function BudgetDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ---------------- Threshold banner (HEL-564) ---------------- */}
+      {worstAlert ? (
+        <div
+          role="status"
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 14px",
+            borderRadius: 8,
+            border: "1px solid",
+            borderColor:
+              worstAlert.tone === "over" ? "rgba(194,80,43,0.35)" : "rgba(184,134,44,0.35)",
+            borderLeftWidth: 3,
+            borderLeftColor: worstAlert.tone === "over" ? "var(--af2-clay)" : "var(--af2-mustard)",
+            background:
+              worstAlert.tone === "over" ? "rgba(194,80,43,0.08)" : "rgba(184,134,44,0.10)",
+            color: worstAlert.tone === "over" ? "#7a2f18" : "#7a5410",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+            fontSize: 13.5,
+          }}
+        >
+          <span>
+            <span aria-hidden style={{ marginRight: 6 }}>
+              ⚠
+            </span>
+            <b>{worstAlertLabel}</b> is at <b>{worstAlert.pct}%</b> of its{" "}
+            {formatCurrency(worstAlert.alert.budgetUsd)} budget.
+          </span>
+          {worstAlert.alert.agentId ? (
+            <Link
+              to={`/agents/${encodeURIComponent(worstAlert.alert.agentId)}`}
+              style={{ color: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}
+            >
+              Adjust ceiling →
+            </Link>
+          ) : (
+            <a
+              href="#budget-by-agent"
+              style={{ color: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}
+            >
+              Adjust ceiling →
+            </a>
+          )}
+        </div>
+      ) : null}
 
       {/* ---------------- Filter bar ---------------- */}
       <div className="filterbar">
@@ -471,18 +541,17 @@ export default function BudgetDashboard() {
       {/* ---------------- Chart ---------------- */}
       <div className="chart-wrap">
         <div className="chart-legend">
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-clay)" }} /> claude-opus-4-7
-          </span>
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-sage)" }} /> claude-haiku-4-5
-          </span>
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-mustard)" }} /> gpt-4o
-          </span>
-          <span className="lg">
-            <span className="sw" style={{ background: "var(--af2-plum)" }} /> gpt-4o-mini
-          </span>
+          {spendChart.bands.length > 0 ? (
+            spendChart.bands.map((band) => (
+              <span className="lg" key={band.model}>
+                <span className="sw" style={{ background: band.color }} /> {band.model}
+              </span>
+            ))
+          ) : (
+            <span className="lg" style={{ color: "var(--af2-ink-3)" }}>
+              Spend by model
+            </span>
+          )}
         </div>
         {breakdownLoading ? (
           <div style={{ fontSize: 12, color: "var(--af2-ink-3)", padding: "20px 0" }}>
@@ -493,7 +562,7 @@ export default function BudgetDashboard() {
             {breakdownError}
           </div>
         ) : (
-          <ProtoAreaChart />
+          <SpendAreaChart chart={spendChart} />
         )}
       </div>
 
@@ -631,8 +700,8 @@ export default function BudgetDashboard() {
         ))}
       </div>
 
-      {/* ---------------- Legacy "By agent" list (preserved for tests) ---------------- */}
-      <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+      {/* ---------------- "By agent" list with spend-vs-cap bars (HEL-564) ---------------- */}
+      <h3 id="budget-by-agent" className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
         By agent
       </h3>
       {agentRows.length === 0 ? (
@@ -678,7 +747,9 @@ export default function BudgetDashboard() {
             <div>Cap</div>
             <div></div>
           </div>
-          {agentRows.map((row) => (
+          {agentRows.map((row) => {
+            const st = spendStatus(row.spent, row.budget);
+            return (
             <div
               key={row.id}
               className="row"
@@ -691,6 +762,28 @@ export default function BudgetDashboard() {
                 <b>{row.name}</b>
                 <br />
                 <span style={{ color: "var(--af2-ink-3)", fontSize: 12 }}>{row.role}</span>
+                {row.budget > 0 ? (
+                  <div style={{ marginTop: 6, maxWidth: 200 }}>
+                    <div
+                      style={{
+                        height: 6,
+                        borderRadius: 999,
+                        background: "var(--af2-paper-2)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${st.barPct}%`,
+                          background: st.color,
+                          borderRadius: 999,
+                        }}
+                      />
+                    </div>
+                    <span style={{ color: "var(--af2-ink-3)", fontSize: 11 }}>{st.label}</span>
+                  </div>
+                ) : null}
               </div>
               <div>{formatCurrency(row.spent)}</div>
               <div>{formatCurrency(row.budget)}</div>
@@ -706,7 +799,8 @@ export default function BudgetDashboard() {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

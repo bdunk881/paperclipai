@@ -3228,4 +3228,29 @@ describe("control-plane budget edit endpoints (HEL-717)", () => {
       .send({ budgetMonthlyUsd: 100 });
     expect(res.status).toBe(403);
   });
+
+  it("rejects a cross-workspace team budget edit with 404 (Codex P1 tenancy)", async () => {
+    // Team is seeded in the default workspace ("test-workspace-id"). Issue the
+    // edit while the active/authorized workspace is a DIFFERENT one: requireRole
+    // passes for that workspace, but the team isn't in it, so it must 404.
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", "another-workspace-id")
+      .set("X-Paperclip-Run-Id", "run-xws-team")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a cross-workspace agent budget edit with 404 (Codex P1 tenancy)", async () => {
+    const { agents } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/agents/${agents[0].id}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", "another-workspace-id")
+      .set("X-Paperclip-Run-Id", "run-xws-agent")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
 });

@@ -2271,6 +2271,19 @@ export const controlPlaneStore = {
       throw new Error("team_not_found");
     }
 
+    const budgetCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!budgetCtx) {
+      throw new Error("team_budget_workspace_unresolved");
+    }
+    // HEL-717 (Codex P1): requireRole was only checked for the request's active
+    // workspace (input.workspaceId), but getTeamOwnedByUser can resolve a team
+    // the caller owns in ANOTHER workspace. Refuse cross-workspace edits so an
+    // admin/operator in workspace A can't change enforced caps in workspace B by
+    // id. Treat a mismatch as not-found so we don't leak the team's existence.
+    if (input.workspaceId && budgetCtx.workspaceId !== input.workspaceId) {
+      throw new Error("team_not_found");
+    }
+
     if (input.budgetMonthlyUsd !== undefined) {
       team.budgetMonthlyUsd = input.budgetMonthlyUsd;
     }
@@ -2282,10 +2295,6 @@ export const controlPlaneStore = {
     }
     team.updatedAt = nowIso();
 
-    const budgetCtx = await workspaceContextForTeam(team.id, input.userId);
-    if (!budgetCtx) {
-      throw new Error("team_budget_workspace_unresolved");
-    }
     await controlPlaneRepository.upsertTeam(budgetCtx, team, null);
     return team;
   },
@@ -2304,13 +2313,20 @@ export const controlPlaneStore = {
       throw new Error("agent_not_found");
     }
 
-    agent.budgetMonthlyUsd = input.budgetMonthlyUsd;
-    agent.updatedAt = nowIso();
-
     const budgetCtx = await workspaceContextForTeam(agent.teamId, input.userId);
     if (!budgetCtx) {
       throw new Error("agent_budget_workspace_unresolved");
     }
+    // HEL-717 (Codex P1): bind to the authorized workspace — see updateTeamBudget.
+    // Refuse editing an agent whose team lives in a different workspace than the
+    // one requireRole authorized.
+    if (input.workspaceId && budgetCtx.workspaceId !== input.workspaceId) {
+      throw new Error("agent_not_found");
+    }
+
+    agent.budgetMonthlyUsd = input.budgetMonthlyUsd;
+    agent.updatedAt = nowIso();
+
     await controlPlaneRepository.upsertAgent(budgetCtx, agent);
     return agent;
   },

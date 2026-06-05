@@ -356,6 +356,23 @@ export class SlackConnectorService {
     return client.listChannelMessages(channel);
   }
 
+  /**
+   * HEL-651: post a message to a Slack channel via chat.postMessage.
+   * Mirrors {@link listChannels} — resolves the active credential
+   * (throwing `ConnectorError(404)` when Slack isn't connected: the honest
+   * "not connected" failure) and posts through the authenticated client.
+   * Backs the `slack.notify` workflow action (HEL-647).
+   */
+  async sendMessage(
+    userId: string,
+    channel: string,
+    text: string
+  ): Promise<{ ts: string; channel: string }> {
+    const credential = await this.ensureValidCredential(userId);
+    const client = new SlackClient(slackCredentialStore.decryptAccessToken(credential));
+    return client.sendMessage(channel, text);
+  }
+
   private async ensureValidCredential(userId: string) {
     // HEL-180: hydrate from Postgres if the local bucket is empty
     // (post-restart / multi-worker). Sync `getActiveByUser` would only

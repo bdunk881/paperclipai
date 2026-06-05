@@ -221,6 +221,34 @@ describe("Slack connector", () => {
     expect(wrongUser).toBeNull();
   });
 
+  it("sendMessage posts to a channel via the active credential (HEL-651)", async () => {
+    await slackCredentialStore.saveOAuth({
+      userId: "user-send",
+      accessToken: "xoxb-send-1234",
+      scopes: ["chat:write"],
+      teamId: "T-send",
+    });
+
+    const fetchMock = jest
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(mockJsonResponse({ ok: true, ts: "1700000000.000100", channel: "C123" }));
+
+    const service = new SlackConnectorService();
+    const result = await service.sendMessage("user-send", "C123", "hello world");
+
+    expect(result).toEqual({ ts: "1700000000.000100", channel: "C123" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toContain("/chat.postMessage");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body as string)).toEqual({ channel: "C123", text: "hello world" });
+  });
+
+  it("sendMessage fails honestly when Slack is not connected (HEL-651)", async () => {
+    const service = new SlackConnectorService();
+    await expect(service.sendMessage("nobody", "C1", "hi")).rejects.toThrow(/not configured/i);
+  });
+
   it("reports degraded health with missing required scopes (HEL-181)", async () => {
     // Connect a Slack workspace that only granted channels:read — missing
     // chat:write + channels:history. health() must surface this as

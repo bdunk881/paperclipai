@@ -318,27 +318,30 @@ export default function BudgetDashboard() {
     return Array.from(set).sort();
   }, [providerFilter, breakdown?.series]);
 
+  // HEL-714: the workspace's top-3 models by real spend — these label the three
+  // per-model columns in the by-scope table, replacing the old hardcoded
+  // opus-4-7 / haiku-4-5 / gpt-4o that fabricated proportions (row.total * 0.55…)
+  // when the key was absent.
+  const topModels = useMemo(() => {
+    const totals = breakdown?.totals.byModel ?? {};
+    return Object.entries(totals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([model]) => model);
+  }, [breakdown?.totals.byModel]);
+
   const missionRows = useMemo(() => {
     if (!breakdown || breakdown.rows.length === 0) return [];
     return breakdown.rows.slice(0, 8).map((row, idx) => ({
       id: `M-${String(idx + 1).padStart(2, "0")}`, // positional — display/React key only
       scopeId: row.scopeId, // real id used for the ceiling save (HEL-661)
       label: row.scopeLabel,
-      opus:
-        row.byModel["claude-opus-4-7"] ??
-        row.byModel["opus-4-7"] ??
-        row.total * 0.55,
-      haiku:
-        row.byModel["claude-haiku-4-5"] ??
-        row.byModel["haiku-4-5"] ??
-        row.total * 0.2,
-      gpt4o:
-        row.byModel["gpt-4o"] ??
-        row.byModel["gpt-4o-mini"] ??
-        row.total * 0.25,
+      // HEL-714: real per-model spend for the top-3 models (0 if this scope
+      // didn't use that model) — no more fabricated *0.55 / 0.2 / 0.25.
+      cells: topModels.map((m) => row.byModel[m] ?? 0),
       total: row.total,
     }));
-  }, [breakdown]);
+  }, [breakdown, topModels]);
 
   // HEL-564: real stacked-area chart geometry from the daily breakdown series.
   const spendChart = useMemo(
@@ -620,9 +623,9 @@ export default function BudgetDashboard() {
           >
             <div>ID</div>
             <div>Mission</div>
-            <div>opus-4-7</div>
-            <div>haiku-4-5</div>
-            <div>gpt-4o</div>
+            {[0, 1, 2].map((i) => (
+              <div key={i}>{topModels[i] ?? ""}</div>
+            ))}
             <div>Total</div>
             <div></div>
           </div>
@@ -638,9 +641,13 @@ export default function BudgetDashboard() {
           >
             <div className="id">{row.id}</div>
             <div>{row.label}</div>
-            <div>{formatCurrency(row.opus, 2)}</div>
-            <div>{formatCurrency(row.haiku, 2)}</div>
-            <div>{formatCurrency(row.gpt4o, 2)}</div>
+            {[0, 1, 2].map((i) => (
+              <div key={i}>
+                {row.cells[i] != null && row.cells[i] > 0
+                  ? formatCurrency(row.cells[i], 2)
+                  : "—"}
+              </div>
+            ))}
             <div>
               <b>{formatCurrency(row.total, 2)}</b>
             </div>

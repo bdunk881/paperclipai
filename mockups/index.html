@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Feature Review mockups · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .wrap { max-width:980px; margin:0 auto; padding:40px clamp(16px,4vw,40px) 70px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-top:24px; }
+  .mk { display:block; text-decoration:none; color:inherit; background:var(--af2-card); border:1px solid var(--af2-line); border-radius:var(--af2-radius-lg); padding:18px; transition:box-shadow .15s, transform .15s, border-color .15s; }
+  .mk:hover { box-shadow:var(--af2-shadow-lg); transform:translateY(-2px); border-color:var(--af2-clay-soft); }
+  .mk .n { font-family:var(--af2-mono); font-size:12px; color:var(--af2-clay); }
+  .mk h3 { font-family:var(--af2-serif); font-weight:400; font-size:19px; margin:8px 0 6px; letter-spacing:-.01em; }
+  .mk p { margin:0; font-size:13px; color:var(--af2-ink-3); }
+  .mk .tags { margin-top:12px; display:flex; gap:6px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="af2-eyebrow" style="color:var(--af2-clay)">AutoFlow · Feature Review · 2026-06-03</div>
+  <h1 class="af2-display" style="font-size:clamp(36px,6vw,60px);margin:14px 0 10px">Mockups</h1>
+  <p class="muted" style="font-size:15px;max-width:680px">Throwaway, self-contained prototypes built from the verbatim <code>af2-*</code> v2 design tokens. Each is annotated with what changed and why it does <b>not</b> erode the v2 simplicity. Read the full write-up in <a href="../FEATURE_REVIEW.md" style="color:var(--af2-clay)">FEATURE_REVIEW.md</a>.</p>
+
+  <div class="grid">
+    <a class="mk" href="mockup-01-first-run-activation.html"><div class="n">01 · D1</div><h3>First-run activation</h3><p>Empty dashboard → guided checklist with hosted models pre-selected. Kills the invisible LLM-key cliff.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">quick win ★</span></div></a>
+    <a class="mk" href="mockup-02-honest-empty-states.html"><div class="n">02 · U1</div><h3>Honest empty states</h3><p>Stop rendering fake sample data in Memory &amp; Budget — show honest empty states with a CTA.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">quick win</span></div></a>
+    <a class="mk" href="mockup-03-run-timeline.html"><div class="n">03 · D2</div><h3>Run timeline</h3><p>New run-detail page: step-by-step status, output, cost, replay-from-step. The receipts, made visible.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">big bet ★</span></div></a>
+    <a class="mk" href="mockup-04-budget-dashboard.html"><div class="n">04 · I2</div><h3>Budget dashboard</h3><p>Static chart → real spend series + a "you're at 82% of budget" threshold alert.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">big bet</span></div></a>
+    <a class="mk" href="mockup-05-org-chart.html"><div class="n">05 · I1</div><h3>Agent org chart</h3><p>Card-list → visual manager→report graph with live presence. The wedge competitors can't copy.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">big bet ★</span></div></a>
+    <a class="mk" href="mockup-06-approvals-inbox.html"><div class="n">06 · D3</div><h3>Approvals inbox</h3><p>Surface the Ask-CEO escalation (endpoint exists, no UI) inside the existing Approvals queue.</p><div class="tags"><span class="af2-pill clay" style="font-size:10.5px">dev-app</span><span class="af2-pill" style="font-size:10.5px">big bet</span></div></a>
+    <a class="mk" href="mockup-07-landing-trust.html"><div class="n">07 · L1 · L3 · L4</div><h3>Landing trust</h3><p>Wire the already-built testimonials + FAQ, add OSS/PH badges, swap hand-drawn art for a real screenshot.</p><div class="tags"><span class="af2-pill" style="font-size:10.5px;background:var(--af2-mustard-soft);color:#8a6418">landing</span><span class="af2-pill" style="font-size:10.5px">quick win ★</span></div></a>
+  </div>
+
+  <p class="muted-2" style="font-size:12px;margin-top:32px">Throwaway prototypes · not production components · no production code was modified in this review.</p>
+</div>
+</body>
+</html>

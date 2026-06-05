@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 07 — Landing trust · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .browser { border:1px solid var(--af2-line-2); border-radius:10px; overflow:hidden; background:var(--af2-card); box-shadow:var(--af2-shadow-lg); }
+  .browser .bar { height:30px; background:var(--af2-paper-2); display:flex; align-items:center; gap:6px; padding:0 12px; border-bottom:1px solid var(--af2-line); }
+  .browser .bar i { width:9px; height:9px; border-radius:50%; background:var(--af2-line-2); display:inline-block; }
+  .hand { border:1.5px dashed var(--af2-line-2); border-radius:10px; padding:18px; background:var(--af2-paper-soft); }
+  .badge { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; padding:6px 11px; border-radius:999px; border:1px solid var(--af2-line-2); background:var(--af2-card); color:var(--af2-ink-2); }
+  .quote { background:var(--af2-card); border:1px solid var(--af2-line); border-radius:var(--af2-radius-lg); padding:16px; }
+  .quote p { margin:0 0 12px; font-size:14px; }
+  .faq-q { border-bottom:1px solid var(--af2-line); padding:13px 2px; display:flex; justify-content:space-between; font-weight:500; }
+  .mini-node { background:var(--af2-card); border:1px solid var(--af2-line); border-radius:8px; padding:7px 9px; font-size:11px; box-shadow:var(--af2-shadow); }
+  .mini-pdot { width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:5px; }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 07 · Landing · L1 + L3 + L4</span>
+    <h1 class="mk-title">Landing — wire the trust you already built</h1>
+    <p class="mk-sub">Testimonials + FAQ Sanity schemas exist but are never rendered; there's no <code>og:image</code>, no open-source signal, and the hero is hand-drawn art. A cold SMB visitor sees zero social proof. The cheapest conversion win available — the data layer is done.</p>
+  </div>
+  <div class="mk-note"><b>Why it does NOT add complexity:</b> the home page stays one scroll; we render <i>existing</i> Sanity content (testimonials, FAQ) and swap the hand-drawn illustration for a real screenshot. No new tokens — landing already uses Fraunces + Geist + clay.</div>
+
+  <div class="mk-ba stack">
+    <!-- BEFORE -->
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before — hero only, no proof</span>
+      <div class="row" style="gap:32px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div class="af2-eyebrow" style="color:var(--af2-clay)">Workforce automation, by the role · not by the node</div>
+          <h1 class="af2-display" style="margin:14px 0 12px">Hire a team of agents that actually ship.</h1>
+          <p class="muted" style="font-size:15px;max-width:460px">Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work.</p>
+          <div class="row gap10 mt20"><button class="af2-btn af2-btn-clay">Hire your first agent →</button><button class="af2-btn">See how it works</button></div>
+        </div>
+        <div style="flex:1;min-width:260px"><div class="hand"><div class="af2-eyebrow">Acme Robotics · hiring plan v3</div><div class="muted" style="font-size:13px;margin-top:10px">[ hand-drawn JSX roster card — not a real screenshot ]</div><div class="af2-pill clay" style="margin-top:12px">Drafted in 14 seconds</div></div></div>
+      </div>
+      <div class="mk-note" style="margin:16px 0 0;max-width:none">No testimonials, no FAQ, no customer logos, no GitHub/OSS signal, no <code>og:image</code>. Schemas for testimonials + FAQ exist in Sanity but the page never fetches them.</div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After — real product + social proof</span>
+      <!-- hero -->
+      <div class="row" style="gap:32px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div class="row gap10" style="margin-bottom:14px"><span class="badge">★ 2,431 on GitHub</span><span class="badge" style="color:var(--af2-clay)">▲ #2 Product of the Day</span><span class="badge">MIT · self-hostable</span></div>
+          <h1 class="af2-display" style="margin:0 0 12px">Hire a team of agents that actually ship.</h1>
+          <p class="muted" style="font-size:15px;max-width:460px">Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run.</p>
+          <div class="row gap10 mt20"><button class="af2-btn af2-btn-clay">Start free →</button><button class="af2-btn">Try the interactive demo</button></div>
+          <div class="muted-2" style="font-size:12px;margin-top:10px">14-day free · no card · bring your own keys</div>
+        </div>
+        <!-- real product screenshot -->
+        <div style="flex:1;min-width:280px">
+          <div class="browser">
+            <div class="bar"><i></i><i></i><i></i><span class="muted" style="font-size:10px;margin-left:8px">app.helloautoflow.com/org</span></div>
+            <div style="padding:16px;background:var(--af2-paper)">
+              <div style="text-align:center"><div class="mini-node" style="display:inline-block;border-color:var(--af2-clay-soft)"><span class="mini-pdot" style="background:var(--af2-sage)"></span>Avery · COO agent</div></div>
+              <div class="row" style="justify-content:center;gap:22px;margin-top:18px;position:relative">
+                <div style="position:absolute;top:-12px;left:25%;right:25%;height:12px;border-top:2px solid var(--af2-line-2);border-left:2px solid var(--af2-line-2);border-right:2px solid var(--af2-line-2);border-radius:6px 6px 0 0"></div>
+                <div class="mini-node"><span class="mini-pdot" style="background:var(--af2-sage)"></span>Morgan · Growth</div>
+                <div class="mini-node"><span class="mini-pdot" style="background:var(--af2-mustard)"></span>Riley · Support</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- social proof strip -->
+      <div class="stat-strip mt20" style="border-radius:var(--af2-radius-lg)">
+        <div class="stat"><div class="k">Hours saved / wk</div><div class="af2-stat-value">40+</div></div>
+        <div class="stat"><div class="k">Agents hired</div><div class="af2-stat-value">3,800</div></div>
+        <div class="stat"><div class="k">Integrations</div><div class="af2-stat-value">34</div></div>
+        <div class="stat"><div class="k">Model providers</div><div class="af2-stat-value">5</div></div>
+      </div>
+
+      <!-- testimonials -->
+      <div class="af2-eyebrow" style="margin:22px 0 12px">From early teams</div>
+      <div class="row gap14" style="align-items:stretch;flex-wrap:wrap">
+        <div class="quote" style="flex:1;min-width:230px"><p>"It drafted a 4-agent support team in a minute and the refund-approval gate paid for itself the first week."</p><div class="row gap10"><div class="avatar">PK</div><div style="font-size:12.5px"><b>Priya K.</b><div class="muted">Ops lead, DTC brand</div></div></div></div>
+        <div class="quote" style="flex:1;min-width:230px"><p>"Finally an 'AI workflow' tool my non-technical co-founder actually uses. The org chart sold her."</p><div class="row gap10"><div class="avatar">MT</div><div style="font-size:12.5px"><b>Marcus T.</b><div class="muted">Founder, agency</div></div></div></div>
+      </div>
+
+      <!-- FAQ -->
+      <div class="af2-eyebrow" style="margin:22px 0 6px">Questions</div>
+      <div class="faq-q">Do I need my own API keys?<span class="muted">＋</span></div>
+      <div class="faq-q">Is my data shared between workspaces?<span class="muted">＋</span></div>
+      <div class="faq-q">Can I self-host?<span class="muted">＋</span></div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Where:</b> <code>landing/app/page.tsx</code> loader + sections; <code>landing/lib/sanity.ts:39</code> (queries exist). Add <code>og:image</code> in <code>page.tsx:22</code> / <code>root.tsx</code>. Standardize the primary CTA verb (L6). Effort: <b>S</b> (testimonials/FAQ/badges) → <b>M</b> (real screenshots once I1/D2 ship).</p>
+</div>
+</body>
+</html>

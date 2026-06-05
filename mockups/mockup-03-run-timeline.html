@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 03 — Run timeline · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .tl { position:relative; padding-left:30px; }
+  .tl::before { content:""; position:absolute; left:9px; top:6px; bottom:6px; width:2px; background:var(--af2-line); }
+  .node { position:relative; padding:14px 0; border-bottom:1px solid var(--af2-line); }
+  .node:last-child { border-bottom:none; }
+  .node .pip { position:absolute; left:-26px; top:18px; width:14px; height:14px; border-radius:50%; background:var(--af2-card); border:2px solid var(--af2-sage); }
+  .node.fail .pip { border-color:var(--af2-clay); }
+  .node.run .pip { border-color:var(--af2-mustard); animation:af2pulse 1.4s infinite; }
+  .out { font-family:var(--af2-mono); font-size:12px; background:var(--af2-paper-2); border:1px solid var(--af2-line); border-radius:6px; padding:9px 11px; margin-top:10px; color:var(--af2-ink-2); white-space:pre-wrap; }
+  .meta-row { display:flex; gap:16px; font-size:12px; color:var(--af2-ink-3); margin-top:8px; }
+  .meta-row .mono { color:var(--af2-ink-2); }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 03 · Dev app · D2</span>
+    <h1 class="mk-title">Run timeline — make the receipts visible</h1>
+    <p class="mk-sub">The product promise is "watch the agents work, with a paper trail," but <code>GET /api/step-results/:runId</code> has <b>no UI</b> — runs are opaque. This is a new <code>/runs/:id</code> page: a step timeline with status, output, cost, duration, and one-click replay-from-step.</p>
+  </div>
+  <div class="mk-note"><b>Before:</b> activity-feed rows mention a run finished but dead-end — there's nowhere to click. <b>This screen is purely additive</b> (a new detail route), reachable from the activity feed, routines, and agent traces. <code>POST /api/runs/:runId/replay-from-step</code> already exists.</div>
+
+  <div class="mk-ba stack">
+    <div class="mk-panel after" style="max-width:860px;margin:0 auto">
+      <span class="mk-tag after">✓ New — /runs/run_01J8…</span>
+      <div class="app-page" style="padding:24px 26px">
+        <div class="af2-eyebrow"><a style="color:var(--af2-clay);text-decoration:none">Activity</a> › Run detail</div>
+        <div class="between mt8">
+          <h1 class="af2-h1" style="font-size:28px">Daily refund triage</h1>
+          <div class="row gap10">
+            <span class="af2-pill clay"><span class="dot"></span>1 step failed</span>
+            <button class="af2-btn af2-btn-sm">Replay failed step</button>
+          </div>
+        </div>
+        <div class="meta-row" style="margin-top:14px;gap:22px">
+          <span>Trigger <span class="mono">schedule · 9:00 AM</span></span>
+          <span>Agent <span class="mono">Riley (Support)</span></span>
+          <span>Cost <span class="mono">$0.0413</span></span>
+          <span>Duration <span class="mono">7.2s</span></span>
+        </div>
+
+        <div class="tl mt20">
+          <div class="node">
+            <div class="pip"></div>
+            <div class="between"><div class="row gap10"><b>Fetch new Shopify orders</b><span class="af2-pill sage" style="font-size:10.5px">done</span></div><span class="mono muted" style="font-size:12px">1.1s · $0.000</span></div>
+            <div class="out">{ "orders": 14, "refund_requests": 3 }</div>
+          </div>
+          <div class="node">
+            <div class="pip"></div>
+            <div class="between"><div class="row gap10"><b>Classify refund risk</b><span class="af2-pill sage" style="font-size:10.5px">done</span></div><span class="mono muted" style="font-size:12px">2.4s · $0.018</span></div>
+            <div class="out">3 requests → 2 auto-approve, 1 over $100 → needs human</div>
+          </div>
+          <div class="node fail">
+            <div class="pip"></div>
+            <div class="between"><div class="row gap10"><b>Post summary to Slack</b><span class="af2-pill clay" style="font-size:10.5px">failed</span></div><span class="mono muted" style="font-size:12px">0.3s · $0.000</span></div>
+            <div class="out" style="background:var(--af2-clay-wash);border-color:var(--af2-clay-soft);color:#7a3018">ConnectorError: Slack token expired (401). Reconnect in Connections › Slack.</div>
+            <div class="row gap10 mt14"><button class="af2-btn af2-btn-clay af2-btn-sm">Replay from here ↻</button><button class="af2-btn af2-btn-ghost af2-btn-sm">Reconnect Slack</button></div>
+          </div>
+          <div class="node">
+            <div class="pip" style="border-color:var(--af2-line-2);background:var(--af2-paper-2)"></div>
+            <div class="between"><div class="row gap10"><b style="color:var(--af2-ink-4)">Request approval (over $100)</b><span class="af2-pill" style="font-size:10.5px">skipped</span></div><span class="mono muted-2" style="font-size:12px">— blocked upstream</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Reuses:</b> <code>StatusBadge</code> color semantics (sage/clay/mustard), <code>Af2Pill</code>, <code>Af2Card</code>, the existing <code>useAgentTraceStream</code> SSE for live runs. <b>Data:</b> <code>GET /api/runs/:id</code>, <code>GET /api/step-results/:runId</code>. Effort: <b>M</b>.</p>
+</div>
+</body>
+</html>

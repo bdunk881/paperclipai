@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 05 — Org chart · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  /* classic CSS org tree */
+  .tree { text-align:center; overflow-x:auto; padding:8px 4px 4px; }
+  .tree ul { padding-top:22px; position:relative; display:inline-flex; gap:18px; margin:0; }
+  .tree li { list-style:none; position:relative; padding:22px 10px 0; }
+  .tree li::before, .tree li::after { content:""; position:absolute; top:0; right:50%; width:50%; height:22px; border-top:2px solid var(--af2-line-2); }
+  .tree li::after { right:auto; left:50%; border-left:2px solid var(--af2-line-2); }
+  .tree li:only-child::after, .tree li:only-child::before { display:none; }
+  .tree li:first-child::before, .tree li:last-child::after { border:0 none; }
+  .tree li:last-child::before { border-right:2px solid var(--af2-line-2); border-radius:0 6px 0 0; }
+  .tree li:first-child::after { border-radius:6px 0 0 0; }
+  .tree ul ul::before { content:""; position:absolute; top:0; left:50%; width:0; height:22px; border-left:2px solid var(--af2-line-2); }
+  .node { display:inline-block; width:188px; text-align:left; background:var(--af2-card); border:1px solid var(--af2-line); border-radius:var(--af2-radius-lg); padding:12px 13px; box-shadow:var(--af2-shadow); }
+  .node .nm { display:flex; align-items:center; gap:8px; font-weight:600; font-size:14px; }
+  .node .nm .pdot { width:8px; height:8px; border-radius:50%; flex:none; }
+  .node .role { font-size:11px; color:var(--af2-ink-3); margin:2px 0 9px; }
+  .node .task { font-size:12px; color:var(--af2-ink-2); background:var(--af2-paper-2); border-radius:6px; padding:6px 8px; line-height:1.35; }
+  .node .foot { display:flex; justify-content:space-between; align-items:center; margin-top:9px; font-size:11.5px; color:var(--af2-ink-3); }
+  .node.root { width:208px; border-color:var(--af2-clay-soft); box-shadow:0 1px 0 rgba(26,20,16,.04), 0 12px 28px rgba(194,80,43,.14); }
+  .pdot.sage{background:var(--af2-sage)} .pdot.mustard{background:var(--af2-mustard)} .pdot.clay{background:var(--af2-clay)} .pdot.idle{background:var(--af2-ink-4)}
+  /* before card-list */
+  .cl-card { border:1px solid var(--af2-line); border-radius:var(--af2-radius-lg); background:var(--af2-card); margin-bottom:10px; }
+  .cl-head { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; cursor:pointer; }
+  .cl-row { display:flex; justify-content:space-between; align-items:center; padding:11px 16px 11px 30px; border-top:1px solid var(--af2-line); font-size:13.5px; }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 05 · Dev app · I1 · Big bet</span>
+    <h1 class="mk-title">Agent org chart — the differentiator, made visual</h1>
+    <p class="mk-sub">"A workforce, not a flowchart" is the wedge n8n/Zapier structurally can't copy — but <code>OrgStructure</code> is a collapsible card-list, and the product's own E2E test asserts a graph (<code>data-testid="org-chart-node"</code>) that doesn't exist. Render the real manager→report graph from <code>org_edges</code> with live presence.</p>
+  </div>
+  <div class="mk-note"><b>Why it stays simple:</b> one node card per agent (same density as today's cards), generous spacing, calm palette — presence reuses the exact sage/mustard/clay status dots. Detail stays behind a click (node → <code>AgentDetail</code>); the canvas itself shows only name, role, current task, and month-to-date spend. <code>ReactFlow</code> is already a dependency (Studio uses it).</p></div>
+
+  <!-- BEFORE -->
+  <div class="mk-ba stack">
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before — collapsible card-list</span>
+      <div style="max-width:560px">
+        <div class="cl-card">
+          <div class="cl-head"><div class="row gap10"><span style="color:var(--af2-ink-4)">▾</span> <b>Growth team</b> <span class="af2-pill sage" style="font-size:10.5px"><span class="dot"></span>3 active</span></div><span class="muted" style="font-size:12px">$141.20</span></div>
+          <div class="cl-row"><span>Morgan · Growth Lead</span><span class="af2-pill sage" style="font-size:10px"><span class="dot"></span>working</span></div>
+          <div class="cl-row"><span>Dana · SDR</span><span class="af2-pill mustard" style="font-size:10px"><span class="dot"></span>awaiting</span></div>
+          <div class="cl-row"><span>Sam · Content</span><span class="af2-pill" style="font-size:10px">idle</span></div>
+        </div>
+        <div class="cl-card">
+          <div class="cl-head"><div class="row gap10"><span style="color:var(--af2-ink-4)">▸</span> <b>Support team</b> <span class="af2-pill sage" style="font-size:10.5px"><span class="dot"></span>2 active</span></div><span class="muted" style="font-size:12px">$106.90</span></div>
+        </div>
+        <div class="muted" style="font-size:12.5px;margin-top:6px">Reporting lines exist in <code>org_edges</code> but aren't drawn — you can't see who manages whom.</div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After — live org graph</span>
+      <div class="between" style="margin-bottom:6px"><div class="af2-eyebrow">Org structure · Acme Robotics</div><div class="row gap10"><span class="af2-pill live"><span class="dot"></span>5 working</span><span class="af2-pill mustard"><span class="dot"></span>1 awaiting</span><span class="af2-pill">2 idle</span></div></div>
+      <div class="tree">
+        <ul>
+          <li>
+            <div class="node root">
+              <div class="nm"><span class="pdot sage"></span> Avery <span class="muted-2" style="font-weight:400;font-size:11px">· COO agent</span></div>
+              <div class="role">Mission: grow MRR 20% this quarter</div>
+              <div class="task">Coordinating Growth + Support · routing 2 escalations</div>
+              <div class="foot"><span>MTD $58.40</span><span class="af2-pill blue" style="font-size:10px">opus tier</span></div>
+            </div>
+            <ul>
+              <li>
+                <div class="node">
+                  <div class="nm"><span class="pdot sage"></span> Morgan</div>
+                  <div class="role">Growth Lead · 2 reports</div>
+                  <div class="task">Drafting Q3 outbound sequence</div>
+                  <div class="foot"><span>MTD $61.10</span><span class="af2-pill sage" style="font-size:10px"><span class="dot"></span>working</span></div>
+                </div>
+                <ul>
+                  <li><div class="node"><div class="nm"><span class="pdot mustard"></span> Dana</div><div class="role">SDR</div><div class="task">Holding for approval on 12 emails</div><div class="foot"><span>MTD $44.90</span><span class="af2-pill mustard" style="font-size:10px"><span class="dot"></span>awaiting</span></div></div></li>
+                  <li><div class="node"><div class="nm"><span class="pdot idle"></span> Sam</div><div class="role">Content</div><div class="task">Idle · next run 4:00 PM</div><div class="foot"><span>MTD $35.20</span><span class="af2-pill" style="font-size:10px">idle</span></div></div></li>
+                </ul>
+              </li>
+              <li>
+                <div class="node">
+                  <div class="nm"><span class="pdot sage"></span> Riley</div>
+                  <div class="role">Support Lead · 1 report</div>
+                  <div class="task">Triaging refund queue (3 open)</div>
+                  <div class="foot"><span>MTD $52.30</span><span class="af2-pill sage" style="font-size:10px"><span class="dot"></span>working</span></div>
+                </div>
+                <ul>
+                  <li><div class="node"><div class="nm"><span class="pdot clay"></span> Jess</div><div class="role">Support Agent</div><div class="task">Blocked: Slack token expired</div><div class="foot"><span>MTD $18.70</span><span class="af2-pill clay" style="font-size:10px"><span class="dot"></span>blocked</span></div></div></li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Where:</b> <code>dashboard/src/pages/OrgStructure.tsx</code>; data from <code>GET /api/org-graph</code> + presence via <code>GET /api/agents/presence/stream</code>. <b>Reuses:</b> ReactFlow, status-dot semantics, <code>Af2Pill</code>, <code>Af2Card</code>. Effort: <b>M–L</b>.</p>
+</div>
+</body>
+</html>

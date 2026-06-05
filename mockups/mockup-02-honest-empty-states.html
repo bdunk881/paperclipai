@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 02 — Honest empty states · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .fake { position:relative; }
+  .fake::after { content:"SAMPLE DATA"; position:absolute; top:10px; right:10px; font-size:9.5px; font-weight:700; letter-spacing:.1em; color:var(--af2-clay); background:var(--af2-clay-wash); padding:3px 7px; border-radius:999px; }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 02 · Dev app · U1</span>
+    <h1 class="mk-title">Honest empty states — stop faking data</h1>
+    <p class="mk-sub">On an empty workspace, <code>Memory</code> and <code>BudgetDashboard</code> render fabricated sample rows. A new user can't tell real from theatrical — and the moment they realize it was fake, trust is gone. Replace with honest empty states that double as activation nudges.</p>
+  </div>
+  <div class="mk-note"><b>Why it does NOT add complexity:</b> it removes content, not adds it. The <code>EmptyState</code> primitive already exists in <code>UiStates.tsx</code>; this just deletes the <code>?? SAMPLE</code> fallbacks and renders the real empty path with one CTA.</div>
+
+  <!-- MEMORY -->
+  <h2 class="af2-h3" style="max-width:1280px;margin:6px auto 12px;font-size:15px;color:var(--af2-ink-3)">Memory › Knowledge</h2>
+  <div class="mk-ba">
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before</span>
+      <div class="af2-card fake">
+        <div class="af2-eyebrow" style="margin-bottom:12px">Knowledge · workspace</div>
+        <div class="af2-list">
+          <div class="af2-list-row" style="grid-template-columns:1fr auto"><div><b>Refund policy v3</b><div class="muted" style="font-size:12.5px">Refunds over $100 require manager approval…</div></div><span class="af2-pill">document</span></div>
+          <div class="af2-list-row" style="grid-template-columns:1fr auto"><div><b>Tone guide</b><div class="muted" style="font-size:12.5px">Friendly, concise, never blame the customer…</div></div><span class="af2-pill">verified</span></div>
+          <div class="af2-list-row" style="grid-template-columns:1fr auto"><div><b>Top SKUs by margin</b><div class="muted" style="font-size:12.5px">Synthesized from 1,204 orders…</div></div><span class="af2-pill">synthesized</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After</span>
+      <div class="af2-card">
+        <div class="af2-eyebrow" style="margin-bottom:12px">Knowledge · workspace</div>
+        <div class="af2-empty">
+          <div class="af2-h3">No knowledge yet</div>
+          <p class="muted" style="max-width:380px;margin:0 auto 16px">As your agents read docs and run, they'll save durable facts here — and you can add your own. Nothing is shared outside this workspace.</p>
+          <button class="af2-btn af2-btn-clay">Add your first instruction →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BUDGET -->
+  <h2 class="af2-h3" style="max-width:1280px;margin:30px auto 12px;font-size:15px;color:var(--af2-ink-3)">Budget · by mission</h2>
+  <div class="mk-ba">
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before</span>
+      <div class="af2-card fake">
+        <div class="af2-eyebrow" style="margin-bottom:12px">Spend this month</div>
+        <div class="af2-stat-value">$248.10</div>
+        <div class="af2-list mt14">
+          <div class="af2-list-row" style="grid-template-columns:1fr auto"><div><b>Growth team</b></div><span class="mono">$141.20</span></div>
+          <div class="af2-list-row" style="grid-template-columns:1fr auto"><div><b>Support team</b></div><span class="mono">$106.90</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After</span>
+      <div class="af2-card">
+        <div class="af2-eyebrow" style="margin-bottom:12px">Spend this month</div>
+        <div class="af2-empty">
+          <div class="af2-h3">No spend recorded yet</div>
+          <p class="muted" style="max-width:380px;margin:0 auto 16px">Once your agents run, every token and tool call shows up here with per-mission attribution — your receipts.</p>
+          <button class="af2-btn">Hire an agent to get started</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Where:</b> <code>dashboard/src/pages/Memory.tsx:13</code>, <code>BudgetDashboard.tsx:295</code>, <code>Routines.tsx</code> Library tab. <b>Reuses</b> the existing <code>EmptyState</code>. Effort: <b>S</b>.</p>
+</div>
+</body>
+</html>

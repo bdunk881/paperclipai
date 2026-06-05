@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 01 — First-run activation · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .check { width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;flex:none; }
+  .check.done { background:var(--af2-sage); color:#fff; }
+  .check.todo { border:1.5px solid var(--af2-line-2); color:var(--af2-ink-4); }
+  .step { display:grid; grid-template-columns:auto 1fr; gap:14px; padding:16px 0; border-bottom:1px solid var(--af2-line); }
+  .step:last-child { border-bottom:none; }
+  .radio { display:flex; gap:10px; padding:11px 13px; border:1px solid var(--af2-line-2); border-radius:var(--af2-radius); cursor:pointer; }
+  .radio.sel { border-color:var(--af2-clay); background:var(--af2-clay-wash); }
+  .radio .rd { width:16px;height:16px;border-radius:50%;border:1.5px solid var(--af2-line-2);flex:none;margin-top:2px; }
+  .radio.sel .rd { border:5px solid var(--af2-clay); }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 01 · Dev app · D1</span>
+    <h1 class="mk-title">First-run activation — default to hosted models</h1>
+    <p class="mk-sub">The single highest-leverage activation change. Replace the empty dashboard + invisible LLM-key cliff with a 3-step checklist where <b>hosted models are pre-selected</b>, so a brand-new user can generate their first hiring plan with zero setup.</p>
+  </div>
+  <div class="mk-note"><b>Why it does NOT add complexity:</b> it <i>removes</i> a hard dead-end (the <code>/hire</code> "no LLM config" block). One additive card on an otherwise-empty screen; it disappears the moment the workspace has a mission. No new nav, no new vocabulary.</div>
+
+  <div class="mk-ba stack">
+    <!-- BEFORE -->
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before — empty workspace</span>
+      <div class="app">
+        <aside class="app-side">
+          <div class="app-brand"><span class="mark"></span> AutoFlow</div>
+          <div class="nav-sec">Run</div>
+          <a class="nav-link active"><span class="ic">▦</span> Home</a>
+          <a class="nav-link"><span class="ic">▷</span> Approvals</a>
+          <a class="nav-link"><span class="ic">≣</span> Assignments</a>
+          <div class="nav-sec">Workforce</div>
+          <a class="nav-link"><span class="ic">✦</span> Hire</a>
+          <a class="nav-link"><span class="ic">⊞</span> Org structure</a>
+          <div class="nav-sec">Build</div>
+          <a class="nav-link"><span class="ic">◫</span> Studio</a>
+          <a class="nav-link"><span class="ic">⟳</span> Routines</a>
+        </aside>
+        <div class="app-main">
+          <div class="app-top">
+            <div class="app-search">⌕ Search…</div>
+            <button class="af2-btn af2-btn-primary af2-btn-sm">+ New mission</button>
+            <div class="avatar">JD</div>
+          </div>
+          <div class="app-page">
+            <div class="af2-page-head"><div><div class="af2-eyebrow">Workspace · Acme</div><h1 class="af2-h1" style="margin-top:10px">Good morning, there</h1></div></div>
+            <div class="stat-strip">
+              <div class="stat"><div class="k">Active missions</div><div class="af2-stat-value">0</div></div>
+              <div class="stat"><div class="k">Agents</div><div class="af2-stat-value">0</div></div>
+              <div class="stat"><div class="k">Spend (mo)</div><div class="af2-stat-value">$0</div></div>
+              <div class="stat"><div class="k">Approvals</div><div class="af2-stat-value">0</div></div>
+            </div>
+            <div class="af2-card mt20" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+              <div><div class="af2-h3">Welcome to AutoFlow</div><div class="muted" style="margin-top:4px">Brief your first mission to get started.</div></div>
+              <button class="af2-btn af2-btn-clay">Brief your first mission →</button>
+            </div>
+            <div class="mk-note" style="margin:16px 0 0;max-width:none">⚠ Clicking through lands on <code>/hire</code>, which is <b>hard-blocked</b>: "Add an LLM provider in Connections › Models before generating." The user must detour, find BYOK, paste a key — or churn. Hosted models exist but are never offered.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After — guided first run</span>
+      <div class="app">
+        <aside class="app-side">
+          <div class="app-brand"><span class="mark"></span> AutoFlow</div>
+          <div class="nav-sec">Run</div>
+          <a class="nav-link active"><span class="ic">▦</span> Home</a>
+          <a class="nav-link"><span class="ic">▷</span> Approvals</a>
+          <a class="nav-link"><span class="ic">≣</span> Assignments</a>
+          <div class="nav-sec">Workforce</div>
+          <a class="nav-link"><span class="ic">✦</span> Hire</a>
+          <a class="nav-link"><span class="ic">⊞</span> Org structure</a>
+          <div class="nav-sec">Build</div>
+          <a class="nav-link"><span class="ic">◫</span> Studio</a>
+          <a class="nav-link"><span class="ic">⟳</span> Routines</a>
+        </aside>
+        <div class="app-main">
+          <div class="app-top">
+            <div class="app-search">⌕ Search…</div>
+            <button class="af2-btn af2-btn-primary af2-btn-sm">+ New mission</button>
+            <div class="avatar">JD</div>
+          </div>
+          <div class="app-page">
+            <div class="af2-page-head"><div><div class="af2-eyebrow">Workspace · Acme</div><h1 class="af2-h1" style="margin-top:10px">Let's hire your first agent</h1><div class="meta">2 quick steps · about 2 minutes</div></div><span class="af2-pill sage"><span class="dot"></span>1 of 3 done</span></div>
+            <div class="af2-card">
+              <!-- step 1 -->
+              <div class="step">
+                <span class="check done">✓</span>
+                <div>
+                  <div class="between"><div class="af2-h3" style="font-size:16px">Choose how your agents think</div><span class="af2-pill sage" style="font-size:10.5px">Ready</span></div>
+                  <div class="row gap10 mt14" style="align-items:stretch">
+                    <label class="radio sel grow"><span class="rd"></span><span><b>Use AutoFlow hosted models</b><div class="muted" style="font-size:12.5px">No API key needed. Smart tier routing included.</div></span></label>
+                    <label class="radio grow"><span class="rd"></span><span><b>Bring your own key</b><div class="muted" style="font-size:12.5px">Anthropic, OpenAI, Gemini, Mistral, Bedrock.</div></span></label>
+                  </div>
+                </div>
+              </div>
+              <!-- step 2 -->
+              <div class="step">
+                <span class="check todo">2</span>
+                <div>
+                  <div class="af2-h3" style="font-size:16px">Brief your first mission</div>
+                  <div class="muted" style="font-size:12.5px;margin-top:2px">Plain English. AutoFlow drafts the team, org, and budget.</div>
+                  <textarea class="af2-input mt14" rows="2" placeholder="e.g. Keep our Shopify store's support inbox answered within 1 hour and flag refunds over $100 for me."></textarea>
+                  <button class="af2-btn af2-btn-clay mt14">Draft my hiring plan →</button>
+                </div>
+              </div>
+              <!-- step 3 -->
+              <div class="step">
+                <span class="check todo">3</span>
+                <div class="between">
+                  <div><div class="af2-h3" style="font-size:16px;color:var(--af2-ink-3)">Connect a tool <span class="muted" style="font-weight:400">· optional</span></div><div class="muted" style="font-size:12.5px;margin-top:2px">Slack, Gmail, HubSpot, Linear… Add later from Connections.</div></div>
+                  <button class="af2-btn af2-btn-ghost af2-btn-sm">Skip for now</button>
+                </div>
+              </div>
+            </div>
+            <div class="mk-note" style="margin:16px 0 0;max-width:none;background:var(--af2-sage-soft);border-color:rgba(74,107,74,.2);border-left-color:var(--af2-sage);color:#2f4a2f">✓ Step 1 is satisfied by default, so the user goes <b>signup → mission → real hiring plan</b> with no key, no detour. BYOK becomes an upgrade, not a gate.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Reuses:</b> <code>Af2Card</code>, <code>Af2Button</code> (clay/ghost), <code>Af2Pill</code>, <code>af2-input</code>, status semantics (sage = ready). <b>Backend already exists:</b> <code>GET /api/hosted-free-models</code>, <code>POST /api/missions/:id/generate-plan</code>. <b>No schema change</b> — step state derives from existing workspace data.</p>
+</div>
+</body>
+</html>

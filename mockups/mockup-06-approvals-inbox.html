@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 06 — Approvals inbox · AutoFlow</title>
+<link rel="stylesheet" href="_af2.css">
+<style>
+  .ap { border:1px solid var(--af2-line); border-radius:var(--af2-radius-lg); background:var(--af2-card); padding:14px 16px; margin-bottom:10px; }
+  .ap.esc { border-left:3px solid var(--af2-plum); background:linear-gradient(0deg, var(--af2-plum-soft), transparent 60%); }
+  .grp-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.12em; color:var(--af2-ink-3); margin:18px 2px 10px; display:flex; align-items:center; gap:8px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--af2-line); margin-bottom:16px; }
+  .tab { padding:8px 12px; font-size:13.5px; font-weight:500; color:var(--af2-ink-3); border-bottom:2px solid transparent; cursor:pointer; }
+  .tab.on { color:var(--af2-ink); border-bottom-color:var(--af2-ink); }
+</style>
+</head>
+<body>
+<div class="mk-doc">
+  <div class="mk-head">
+    <span class="mk-kicker">Mockup 06 · Dev app · D3</span>
+    <h1 class="mk-title">Surface the Ask-CEO escalation in the Approvals inbox</h1>
+    <p class="mk-sub"><code>POST /api/hitl/.../ask-ceo/requests</code> and the client helper <code>createAskCeoRequest</code> exist — but <b>no component imports them</b>, so agent escalations vanish. Add an "Escalations" group to the existing Approvals queue (not a new page) so a human can actually resolve them.</p>
+  </div>
+  <div class="mk-note"><b>Why it stays simple:</b> it's a new <i>group within the existing queue tab</i>, not a new screen or nav item — the 3-tab Approvals hub already exists. Escalations reuse the plum "governance" accent already defined in the token system.</div>
+
+  <div class="mk-ba">
+    <!-- BEFORE -->
+    <div class="mk-panel">
+      <span class="mk-tag before">● Before</span>
+      <div>
+        <div class="tabs"><span class="tab on">Queue</span><span class="tab">Policies</span><span class="tab">History</span></div>
+        <div class="grp-label">Action approvals · 2</div>
+        <div class="ap"><div class="between"><div><b>Send 12 outbound emails</b><div class="muted" style="font-size:12.5px">Dana (SDR) · Growth mission</div></div><div class="row gap6"><button class="af2-btn af2-btn-sm">Reject</button><button class="af2-btn af2-btn-clay af2-btn-sm">Approve</button></div></div></div>
+        <div class="ap"><div class="between"><div><b>Refund $140 to order #4821</b><div class="muted" style="font-size:12.5px">Riley (Support) · over $100 policy</div></div><div class="row gap6"><button class="af2-btn af2-btn-sm">Reject</button><button class="af2-btn af2-btn-clay af2-btn-sm">Approve</button></div></div></div>
+        <div class="mk-note" style="margin:14px 0 0;max-width:none">An agent has asked you a strategic question via Ask-CEO — but there is <b>nowhere in the UI to see or answer it.</b> It sits in the database, unread.</div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="mk-panel after">
+      <span class="mk-tag after">✓ After</span>
+      <div>
+        <div class="tabs"><span class="tab on">Queue <span class="af2-pill plum" style="font-size:10px;margin-left:4px">1 escalation</span></span><span class="tab">Policies</span><span class="tab">History</span></div>
+
+        <div class="grp-label"><span style="color:var(--af2-plum)">◆</span> Escalations to you · 1</div>
+        <div class="ap esc">
+          <div class="between" style="align-items:flex-start">
+            <div>
+              <div class="row gap6"><b>Should we extend the Q3 promo to win back churned accounts?</b></div>
+              <div class="muted" style="font-size:12.5px;margin-top:3px">Morgan (Growth Lead) escalated · est. impact +$3–5k MRR / −$900 spend</div>
+              <div class="task" style="font-size:12.5px;background:var(--af2-paper-2);border-radius:6px;padding:8px 10px;margin-top:9px;color:var(--af2-ink-2)">"12 accounts churned in the last 30 days fit the ICP. I can launch a win-back sequence, but it exceeds my discretion. Approve direction?"</div>
+            </div>
+            <span class="af2-pill plum" style="white-space:nowrap"><span class="dot"></span>awaiting CEO</span>
+          </div>
+          <div class="row gap6 mt14"><button class="af2-btn af2-btn-sm">Decline</button><button class="af2-btn af2-btn-sm">Reply with guidance</button><button class="af2-btn af2-btn-clay af2-btn-sm">Approve direction</button></div>
+        </div>
+
+        <div class="grp-label">Action approvals · 2</div>
+        <div class="ap"><div class="between"><div><b>Send 12 outbound emails</b><div class="muted" style="font-size:12.5px">Dana (SDR) · Growth mission</div></div><div class="row gap6"><button class="af2-btn af2-btn-sm">Reject</button><button class="af2-btn af2-btn-clay af2-btn-sm">Approve</button></div></div></div>
+        <div class="ap"><div class="between"><div><b>Refund $140 to order #4821</b><div class="muted" style="font-size:12.5px">Riley (Support) · over $100 policy</div></div><div class="row gap6"><button class="af2-btn af2-btn-sm">Reject</button><button class="af2-btn af2-btn-clay af2-btn-sm">Approve</button></div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mk-caption"><b>Where:</b> <code>dashboard/src/pages/Approvals.tsx</code>; wire <code>createAskCeoRequest</code> + resolve; tables <code>hitl_ask_ceo_requests</code>, <code>approvals</code>. <b>Also verify</b> HITL durability post-HEL-457. Effort: <b>M</b>.</p>
+</div>
+</body>
+</html>

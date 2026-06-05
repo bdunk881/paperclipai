@@ -39,7 +39,7 @@ export class AnthropicAdapter implements ProviderAdapter {
       model: request.model,
       max_tokens: request.maxTokens ?? 4096,
       temperature: request.temperature,
-      system: built.systemPrompt || undefined,
+      system: buildSystemParam(built.systemPrompt, request.cacheControl === true),
       messages: built.anthropicMessages,
       tools: built.tools.length > 0 ? built.tools : undefined,
       tool_choice: built.toolChoice,
@@ -57,7 +57,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         model: request.model,
         max_tokens: request.maxTokens ?? 4096,
         temperature: request.temperature,
-        system: built.systemPrompt || undefined,
+        system: buildSystemParam(built.systemPrompt, request.cacheControl === true),
         messages: built.anthropicMessages,
         tools: built.tools.length > 0 ? built.tools : undefined,
         tool_choice: built.toolChoice,
@@ -170,6 +170,21 @@ export class AnthropicAdapter implements ProviderAdapter {
       raw: response,
     };
   }
+}
+
+/**
+ * Build the Anthropic `system` param, optionally stamping a prompt-cache
+ * breakpoint (HEL-628). A `cache_control` on the system block caches the
+ * stable prefix (tools + system), so a multi-iteration tool loop re-uses it
+ * instead of re-billing it every turn. Returns undefined for an empty prompt.
+ */
+export function buildSystemParam(
+  systemPrompt: string,
+  cacheControl: boolean,
+): Anthropic.MessageCreateParams["system"] | undefined {
+  if (!systemPrompt) return undefined;
+  if (!cacheControl) return systemPrompt;
+  return [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }];
 }
 
 function mapAnthropicStopReason(reason: Anthropic.Message["stop_reason"]) {

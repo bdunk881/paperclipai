@@ -48,6 +48,11 @@ export interface AgentRunContext {
   readonly state: Map<string | symbol, unknown>;
   /** Which backend is executing — lets a middleware no-op where it can't run. */
   readonly backend: AgentBackendName;
+  /**
+   * When set by the prompt-caching middleware (HEL-628), the fallback loop
+   * forwards it to the model request so the adapter caches the stable prefix.
+   */
+  cacheControl?: boolean;
 }
 
 /**

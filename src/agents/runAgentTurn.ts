@@ -44,6 +44,7 @@ import { truncationMiddleware } from "./runtime/middleware/truncationMiddleware"
 import { modelRetryMiddleware } from "./runtime/middleware/modelRetryMiddleware";
 import { modelFallbackMiddleware } from "./runtime/middleware/modelFallbackMiddleware";
 import { compactionMiddleware } from "./runtime/middleware/compactionMiddleware";
+import { promptCachingMiddleware } from "./runtime/middleware/promptCachingMiddleware";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
 import type { AgentMiddleware } from "./runtime/middleware/types";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
@@ -279,8 +280,9 @@ export async function runAgentTurn(
   // fallback backend, which drives pipeline.modelCall), outermost-first:
   // context compaction (rewrites history) -> secondary-tier failover (wraps
   // retry) -> in-loop provider retry. Then tool-phase (every backend):
-  // tool-result truncation, budget enforcement (opt-out via enforceBudget),
-  // and audit logging. (HEL-621/622/623/624/626/627.)
+  // optional prompt caching, tool-result truncation, budget enforcement
+  // (opt-out via enforceBudget), and audit logging.
+  // (HEL-621/622/623/624/626/627/628.)
   const middleware: AgentMiddleware[] = [];
   if (isCompactionEnabled()) {
     middleware.push(compactionMiddleware({ thresholdChars: compactionThresholdChars }));
@@ -295,6 +297,9 @@ export async function runAgentTurn(
     }
   }
   middleware.push(modelRetryMiddleware({ maxAttempts: modelRetryMaxAttempts }));
+  if (isPromptCacheEnabled()) {
+    middleware.push(promptCachingMiddleware());
+  }
   middleware.push(truncationMiddleware(toolResultMaxChars));
   if (input.enforceBudget !== false) {
     middleware.push(
@@ -387,6 +392,13 @@ const COMPACTION_FLAG = "AUTOFLOW_AGENT_COMPACTION_ENABLED";
 
 function isCompactionEnabled(): boolean {
   const flag = process.env[COMPACTION_FLAG];
+  return flag === "1" || flag === "true";
+}
+
+const PROMPT_CACHE_FLAG = "AUTOFLOW_AGENT_PROMPT_CACHE_ENABLED";
+
+function isPromptCacheEnabled(): boolean {
+  const flag = process.env[PROMPT_CACHE_FLAG];
   return flag === "1" || flag === "true";
 }
 

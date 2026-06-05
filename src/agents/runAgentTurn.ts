@@ -41,6 +41,7 @@ import { loadAgentMcpServers } from "./runtime/mcpClient";
 import { budgetMiddleware } from "./runtime/middleware/budgetMiddleware";
 import { auditMiddleware } from "./runtime/middleware/auditMiddleware";
 import { truncationMiddleware } from "./runtime/middleware/truncationMiddleware";
+import { modelRetryMiddleware } from "./runtime/middleware/modelRetryMiddleware";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
 import type { AgentMiddleware } from "./runtime/middleware/types";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
@@ -267,13 +268,18 @@ export async function runAgentTurn(
       rows: [] as Array<{ skills: string[] | null; metadata: Record<string, unknown> | null }>,
     }));
   const resolvedSkills = input.skills ?? agentRow.rows[0]?.skills ?? [];
-  const toolResultMaxChars = readToolResultMaxChars(agentRow.rows[0]?.metadata);
+  const runtimeMetadata = agentRow.rows[0]?.metadata;
+  const toolResultMaxChars = readRuntimeNumber(runtimeMetadata, "toolResultMaxChars");
+  const modelRetryMaxAttempts = readRuntimeNumber(runtimeMetadata, "modelRetryMaxAttempts");
   const mcpServers = await loadAgentMcpServers({ userId: input.userId });
-  // Build the agent middleware pipeline: tool-result truncation (always on,
-  // per-agent override) + budget enforcement (opt-out via enforceBudget=false)
-  // + audit logging (always on). All run on every backend now that tool calls
-  // route through the pipeline (HEL-621/622/623).
-  const middleware: AgentMiddleware[] = [truncationMiddleware(toolResultMaxChars)];
+  // Build the agent middleware pipeline. Model-phase first (only acts on the
+  // fallback backend, which drives pipeline.modelCall): in-loop provider retry.
+  // Then tool-phase (every backend): tool-result truncation, budget enforcement
+  // (opt-out via enforceBudget=false), and audit logging. (HEL-621/622/623/626.)
+  const middleware: AgentMiddleware[] = [
+    modelRetryMiddleware({ maxAttempts: modelRetryMaxAttempts }),
+    truncationMiddleware(toolResultMaxChars),
+  ];
   if (input.enforceBudget !== false) {
     middleware.push(
       budgetMiddleware({
@@ -338,18 +344,19 @@ export async function runAgentTurn(
 }
 
 /**
- * Per-agent tool-result truncation budget, read from
- * `agents.metadata.runtime.toolResultMaxChars`. Returns undefined when unset
- * or invalid, so the middleware falls back to its default cap. A value of 0
- * disables truncation for that agent.
+ * Read a non-negative numeric per-agent runtime override from
+ * `agents.metadata.runtime[key]`. Returns undefined when unset or invalid, so
+ * each middleware falls back to its own default. (A value of 0 is honoured —
+ * e.g. it disables tool-result truncation / model retry for that agent.)
  */
-function readToolResultMaxChars(
+function readRuntimeNumber(
   metadata: Record<string, unknown> | null | undefined,
+  key: string,
 ): number | undefined {
   if (!metadata || typeof metadata !== "object") return undefined;
   const runtime = (metadata as { runtime?: unknown }).runtime;
   if (!runtime || typeof runtime !== "object") return undefined;
-  const raw = (runtime as { toolResultMaxChars?: unknown }).toolResultMaxChars;
+  const raw = (runtime as Record<string, unknown>)[key];
   return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
 }
 

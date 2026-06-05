@@ -214,6 +214,17 @@ describe("alertSubjectLabel (HEL-564)", () => {
     expect(alertSubjectLabel({ scope: "tool", teamId: "team-xyz12345" })).toBe("A tool");
   });
 
+  it("labels a tool alert that also carries an agentId as the tool, not the agent", () => {
+    // applyBudgetPolicies emits tool alerts with BOTH scope:"tool" and agentId,
+    // so scope must be checked before agentId.
+    expect(
+      alertSubjectLabel(
+        { scope: "tool", toolName: "web_search", agentId: "agent-atlas", teamId: "t" },
+        "Atlas",
+      ),
+    ).toBe("Tool web_search");
+  });
+
   it("labels team-scoped alerts with a short team id", () => {
     expect(alertSubjectLabel({ scope: "team", teamId: "team-xyz12345" })).toBe("Team team-xyz");
   });

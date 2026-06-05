@@ -45,7 +45,10 @@ export interface CommsGatewayDeps {
 }
 
 export class CommsGateway {
-  private readonly transports = new Map<string, CommsTransport>();
+  // Per (kind, channel) key → providers in priority order. Registration order
+  // is failover priority: the first registered is the primary, later ones are
+  // fallbacks tried on a retryable failure (HEL-617).
+  private readonly transports = new Map<string, CommsTransport[]>();
   private readonly store: CommsSendStore;
 
   constructor(deps: CommsGatewayDeps = {}) {
@@ -63,12 +66,27 @@ export class CommsGateway {
         `Transport ${transport.id} handles '${transport.channel}', not '${channel}'`,
       );
     }
-    this.transports.set(kind ? exactKey(kind, channel) : defaultKey(channel), transport);
+    // Append: registration order is failover priority within a (kind, channel).
+    const key = kind ? exactKey(kind, channel) : defaultKey(channel);
+    const existing = this.transports.get(key);
+    if (existing) {
+      existing.push(transport);
+    } else {
+      this.transports.set(key, [transport]);
+    }
     return this;
   }
 
-  private resolveTransport(kind: CommsKind, channel: CommsChannel): CommsTransport | undefined {
-    return this.transports.get(exactKey(kind, channel)) ?? this.transports.get(defaultKey(channel));
+  /**
+   * Priority-ordered transports for a (kind, channel): the kind-specific
+   * providers first, then the channel-wide defaults. {@link deliverExisting}
+   * tries them in order, failing over on a retryable failure (HEL-617).
+   */
+  private resolveTransports(kind: CommsKind, channel: CommsChannel): CommsTransport[] {
+    return [
+      ...(this.transports.get(exactKey(kind, channel)) ?? []),
+      ...(this.transports.get(defaultKey(channel)) ?? []),
+    ];
   }
 
   async send(input: CommsSendInput): Promise<CommsSendResult> {
@@ -82,12 +100,13 @@ export class CommsGateway {
     if (!input.to || !input.to.trim()) {
       throw new Error("comms.send: a recipient (to) is required");
     }
-    const transport = this.resolveTransport(input.kind, input.channel);
-    if (!transport) {
+    const transports = this.resolveTransports(input.kind, input.channel);
+    if (transports.length === 0) {
       throw new Error(
         `comms.send: no transport registered for ${input.kind}/${input.channel}`,
       );
     }
+    const primary = transports[0];
 
     // Idempotency: an existing row short-circuits before any provider call.
     const existing = await this.store.findByIdempotencyKey(
@@ -109,7 +128,7 @@ export class CommsGateway {
       to: input.to,
       idempotencyKey: input.idempotencyKey,
       template: input.template,
-      provider: transport.id,
+      provider: primary.id,
     });
     // Lost the insert race against a concurrent identical send.
     if (!created) {
@@ -134,7 +153,7 @@ export class CommsGateway {
         userId: input.userId,
         agentId: input.agentId,
         missionId: input.missionId,
-        transport,
+        transports,
       });
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
@@ -143,7 +162,7 @@ export class CommsGateway {
         id: record.id,
         status: "failed",
         deduped: false,
-        provider: transport.id,
+        provider: primary.id,
         error: errMessage,
       };
     }
@@ -164,42 +183,92 @@ export class CommsGateway {
     userId?: string;
     agentId?: string;
     missionId?: string;
-    transport?: CommsTransport;
+    transports?: CommsTransport[];
   }): Promise<CommsSendResult> {
-    const transport =
-      params.transport ?? this.resolveTransport(params.kind, params.channel);
-    if (!transport) {
+    const transports =
+      params.transports ?? this.resolveTransports(params.kind, params.channel);
+    if (transports.length === 0) {
       throw new TransportError(
         `comms.deliver: no transport registered for ${params.kind}/${params.channel}`,
         { retryable: false },
       );
     }
-    // Hand the transport the owning workspace so tenancy-aware transports
-    // (managed Layer-C email) can resolve policy / config set / tagging.
+    // Try providers in priority order, failing over to the next on a *retryable*
+    // failure (5xx / network). A permanent (4xx / config) failure stops here — a
+    // fallback would reject the same input. Each transport is handed the owning
+    // workspace so tenancy-aware transports (managed Layer-C email) can resolve
+    // policy / config set / tagging (HEL-615); a suppressed recipient short-
+    // circuits without failover. If every provider fails (last error retryable),
+    // rethrow so the durable worker retries the whole job (HEL-617).
     const message: TransportMessage = { ...params.message, workspaceId: params.workspaceId };
-    const result = await transport.send(message);
-    if (result.suppressed) {
-      await this.store.markSuppressed(
-        params.workspaceId,
-        params.id,
-        result.suppressedReason ?? "suppressed",
-        params.userId,
-      );
-      return {
-        id: params.id,
-        status: "suppressed",
-        deduped: false,
-        provider: transport.id,
-      };
+    let lastError: unknown;
+    for (let i = 0; i < transports.length; i++) {
+      const transport = transports[i];
+      try {
+        const result = await transport.send(message);
+        if (result.suppressed) {
+          await this.store.markSuppressed(
+            params.workspaceId,
+            params.id,
+            result.suppressedReason ?? "suppressed",
+            params.userId,
+          );
+          return {
+            id: params.id,
+            status: "suppressed",
+            deduped: false,
+            provider: transport.id,
+          };
+        }
+        await this.store.markSent(
+          params.workspaceId,
+          params.id,
+          { provider: transport.id, providerMessageId: result.providerMessageId },
+          params.userId,
+        );
+        await this.recordSpend(params, transport.id);
+        return {
+          id: params.id,
+          status: "sent",
+          deduped: false,
+          provider: transport.id,
+          providerMessageId: result.providerMessageId,
+        };
+      } catch (err) {
+        lastError = err;
+        const retryable = err instanceof TransportError ? err.retryable : true;
+        const isLast = i === transports.length - 1;
+        if (!retryable || isLast) {
+          throw err instanceof Error ? err : new TransportError(String(err), {});
+        }
+        console.warn(
+          `[comms] transport '${transport.id}' failed (retryable) for ${params.id}; ` +
+            `failing over to '${transports[i + 1].id}': ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
     }
-    await this.store.markSent(
-      params.workspaceId,
-      params.id,
-      { provider: transport.id, providerMessageId: result.providerMessageId },
-      params.userId,
-    );
-    // Best-effort spend attribution (HEL-611) — never fail a delivered message
-    // on a spend-ledger error.
+    // Unreachable — the loop always returns or throws — but satisfies the checker.
+    throw lastError instanceof Error
+      ? lastError
+      : new TransportError("comms.deliver: all transports failed", {});
+  }
+
+  /**
+   * Best-effort spend attribution (HEL-611) — never fail a delivered message on
+   * a spend-ledger error.
+   */
+  private async recordSpend(
+    params: {
+      id: string;
+      workspaceId: string;
+      channel: CommsChannel;
+      userId?: string;
+      agentId?: string;
+      missionId?: string;
+    },
+    providerId: string,
+  ): Promise<void> {
     try {
       await commsSpendStore.recordSpend({
         workspaceId: params.workspaceId,
@@ -208,22 +277,15 @@ export class CommsGateway {
         missionId: params.missionId,
         commsSendId: params.id,
         channel: params.channel,
-        provider: transport.id,
+        provider: providerId,
         units: 1,
-        costUsd: estimateCommsCostUsd(params.channel, transport.id, 1),
+        costUsd: estimateCommsCostUsd(params.channel, providerId, 1),
       });
     } catch (err) {
       console.error(
         `[comms] spend record failed for ${params.id}: ${(err as Error).message}`,
       );
     }
-    return {
-      id: params.id,
-      status: "sent",
-      deduped: false,
-      provider: transport.id,
-      providerMessageId: result.providerMessageId,
-    };
   }
 }
 

@@ -150,6 +150,44 @@ describe("credits key source store (in-memory mode)", () => {
     expect(afterRecover?.status).toBe("active");
   });
 
+  // HEL-600 — direct-provider failover (acceptance #2). A throttled direct
+  // source falls over to the OpenRouter catch-all; a post-cooldown success
+  // promotes it back so it wins again.
+  it("fails a throttled direct source over to OpenRouter, then recovers on success", async () => {
+    const orId = await insertKeySource({
+      sourceKind: "openrouter",
+      provider: "openrouter",
+      label: "or-prod",
+      apiKey: "sk-or-test",
+      priority: 100,
+    });
+    const antId = await insertKeySource({
+      sourceKind: "direct",
+      provider: "anthropic",
+      label: "anthropic-direct",
+      apiKey: "sk-ant-test",
+      priority: 10,
+    });
+
+    // Direct (priority 10) wins normally.
+    expect((await pickKeySource("anthropic"))?.id).toBe(antId);
+
+    // Anthropic 429 → throttled (cooldown not elapsed) → OpenRouter takes over.
+    await markThrottled(antId, 3600);
+    const failover = await pickKeySource("anthropic");
+    expect(failover?.id).toBe(orId);
+    expect(failover?.sourceKind).toBe("openrouter");
+
+    // Cooldown elapses and a successful retry promotes the direct row back to
+    // active, so it wins again.
+    await markThrottled(antId, 0);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await recordSuccess(antId, 0.05);
+    const recovered = await pickKeySource("anthropic");
+    expect(recovered?.id).toBe(antId);
+    expect(recovered?.status).toBe("active");
+  });
+
   describe("HEL-603 sub-agent affinity (preferSourceId)", () => {
     it("sticks to the preferred source even when a lower-priority row would win", async () => {
       const orId = await insertKeySource({

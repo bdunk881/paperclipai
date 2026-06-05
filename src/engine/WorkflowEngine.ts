@@ -14,6 +14,8 @@ import {
   StepResult,
   AgentSlotResult,
 } from "../types/workflow";
+import { assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
+import { signOutboundBody } from "../webhooks/verifySignature";
 import { runStore } from "./runStore";
 import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
 import { approvalStore } from "./approvalStore";
@@ -66,9 +68,29 @@ export function setLlmProvider(provider: LlmProvider): void {
 // Action registry — maps action identifiers to handler functions
 // ---------------------------------------------------------------------------
 
+/**
+ * HEL-650: identity + step threaded to every action handler.
+ *
+ * `inputs`/`config` alone can't back a real handler: per-step settings
+ * (e.g. a webhook URL) live on `step.config`, and connector services key
+ * credential lookups on `userId` (e.g. `slackConnectorService.listChannels(userId)`).
+ * `ActionContext` carries both so handlers can do real, workspace-scoped work.
+ */
+export interface ActionContext {
+  /** The full workflow step — gives handlers access to `step.config`. */
+  step: WorkflowStep;
+  /** Run owner. Connector credential stores key on this. */
+  userId?: string;
+  /** Active workspace — tenant scoping / connector lookups. */
+  workspaceId?: string;
+  /** The full accumulated run context (read access for handlers). */
+  context: Record<string, unknown>;
+}
+
 type ActionHandler = (
   inputs: Record<string, unknown>,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  action: ActionContext
 ) => Promise<Record<string, unknown>>;
 
 // allowlist: in-process registry / runtime state (not customer data)
@@ -97,6 +119,44 @@ actionRegistry.set("crm.upsertLead", async (inputs) => {
 
 actionRegistry.set("content.publish", async (inputs) => {
   return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
+});
+
+// HEL-650 / HEL-647: real outbound webhook — first genuinely side-effecting
+// action on the live registry path (replaces the silent unknown-action
+// `{key:null}` stub). Reads the per-step URL from `step.config` (threaded via
+// ActionContext), guards against SSRF, and optionally HMAC-signs the body.
+// Honest failure (`{sent:false, error}`) when no URL is configured — never a
+// fabricated success. The request body carries only the step's declared
+// inputKeys, so secrets in the run context are not exfiltrated.
+actionRegistry.set("webhook.send", async (inputs, config, action) => {
+  const stepConfig: Record<string, unknown> = action.step.config ?? {};
+  const url =
+    typeof stepConfig["url"] === "string"
+      ? (stepConfig["url"] as string)
+      : typeof inputs["url"] === "string"
+        ? (inputs["url"] as string)
+        : "";
+  if (!url) {
+    return { sent: false, error: "webhook.send: no url configured" };
+  }
+  const secret =
+    typeof inputs["outboundWebhookSecret"] === "string"
+      ? (inputs["outboundWebhookSecret"] as string)
+      : typeof config["outboundWebhookSecret"] === "string"
+        ? (config["outboundWebhookSecret"] as string)
+        : "";
+  const event =
+    typeof stepConfig["event"] === "string" ? (stepConfig["event"] as string) : "workflow.action";
+  const bodyPayload = JSON.stringify({ event, data: inputs });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (secret) {
+    headers["X-AutoFlow-Signature"] = signOutboundBody(secret, bodyPayload);
+  }
+  // HEL-255 — SSRF guard: reject loopback / RFC-1918 / link-local /
+  // cloud-metadata targets before issuing the request. Throws → step fails.
+  await assertSafeOutboundUrl(url);
+  const response = await fetch(url, { method: "POST", headers, body: bodyPayload });
+  return { sent: true, status: response.status };
 });
 
 export function registerAction(name: string, handler: ActionHandler): void {
@@ -243,7 +303,8 @@ async function executeCondition(
 async function executeAction(
   step: WorkflowStep,
   context: Record<string, unknown>,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  userId?: string
 ): Promise<Record<string, unknown>> {
   const actionName = step.action;
   if (!actionName) return {};
@@ -260,7 +321,16 @@ async function executeAction(
   for (const key of step.inputKeys) {
     inputs[key] = context[key] ?? config[key];
   }
-  return handler(inputs, config);
+  // HEL-650: thread run identity + the step so handlers can read
+  // step.config and look up the workspace/user's connected integrations.
+  const workspaceId =
+    typeof context["workspaceId"] === "string"
+      ? (context["workspaceId"] as string)
+      : typeof config["workspaceId"] === "string"
+        ? (config["workspaceId"] as string)
+        : undefined;
+  const action: ActionContext = { step, userId, workspaceId, context };
+  return handler(inputs, config, action);
 }
 
 async function executeOutput(
@@ -1187,7 +1257,7 @@ export class WorkflowEngine {
               break;
             }
 
-            const actionOutput = await executeAction(step, context, config);
+            const actionOutput = await executeAction(step, context, config, userId);
             stepOutput = {
               ...actionOutput,
               ...(governance.actionType

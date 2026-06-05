@@ -13,7 +13,7 @@
  *   - `pickWorstAlert`   → the most-severe fired `budget_alerts` row, for the
  *                          threshold banner.
  */
-import type { BudgetBreakdownBucket, BudgetBreakdownScope } from "../api/canonicalApi";
+import type { BudgetBreakdownBucket } from "../api/canonicalApi";
 import type { ControlPlaneBudgetAlert } from "../api/controlPlane";
 
 // Stable palette — top spender → clay, then sage / mustard / plum, tail → ink.
@@ -243,9 +243,21 @@ export interface WorstAlert {
  * Pick the most-severe fired alert (highest spent/budget ratio) for the
  * threshold banner. Returns null when there are no alerts.
  */
-export function pickWorstAlert(alerts: ControlPlaneBudgetAlert[]): WorstAlert | null {
+export function pickWorstAlert(
+  alerts: ControlPlaneBudgetAlert[],
+  sinceMs?: number,
+): WorstAlert | null {
   let worst: WorstAlert | null = null;
   for (const alert of alerts) {
+    // `/budget-alerts` returns the full workspace history (recorded_at DESC, no
+    // window/resolved filter), so without a cutoff the banner would elevate a
+    // stale alert forever — e.g. a workspace that blew a cap last month but is
+    // healthy now. Skip alerts recorded before `sinceMs` (caller passes the
+    // current billing-period start). Unparseable dates are kept (fail open).
+    if (sinceMs != null) {
+      const recordedMs = Date.parse(alert.recordedAt);
+      if (!Number.isNaN(recordedMs) && recordedMs < sinceMs) continue;
+    }
     const ratio = alert.budgetUsd > 0 ? alert.spentUsd / alert.budgetUsd : 0;
     if (!worst || ratio > worst.ratio) {
       const pct = Math.round(ratio * 100);
@@ -274,17 +286,4 @@ export function alertSubjectLabel(
     return alert.toolName ? `Tool ${alert.toolName}` : "A tool";
   }
   return `Team ${alert.teamId.slice(0, 8)}`;
-}
-
-/**
- * Which on-page "Set budget" scope an alert's "Adjust ceiling" CTA should route
- * to. agent/team/mission/workspace map to the by-scope ceiling control; `tool`
- * (and anything unrecognized) has no on-page ceiling editor — return null so the
- * CTA is suppressed rather than dumping the user on the wrong, disabled surface.
- */
-export function ceilingScopeForAlert(scope: string): BudgetBreakdownScope | null {
-  if (scope === "agent" || scope === "team" || scope === "mission" || scope === "workspace") {
-    return scope;
-  }
-  return null;
 }

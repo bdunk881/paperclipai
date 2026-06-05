@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import {
   alertSubjectLabel,
   buildSpendChart,
-  ceilingScopeForAlert,
   pickWorstAlert,
   spendStatus,
   type ChartDims,
@@ -165,6 +164,29 @@ describe("pickWorstAlert (HEL-564)", () => {
     expect(worst!.tone).toBe("warn");
     expect(worst!.pct).toBe(82);
   });
+
+  it("skips alerts older than the sinceMs cutoff (stale-banner guard)", () => {
+    const cutoff = Date.parse("2026-05-01T00:00:00Z");
+    const worst = pickWorstAlert(
+      [
+        alert({ id: "old", spentUsd: 900, budgetUsd: 500, recordedAt: "2026-04-20T00:00:00Z" }),
+        alert({ id: "new", spentUsd: 60, budgetUsd: 100, recordedAt: "2026-05-03T00:00:00Z" }),
+      ],
+      cutoff,
+    );
+    expect(worst!.alert.id).toBe("new"); // the stale 1.8-ratio April alert is excluded
+    expect(worst!.pct).toBe(60);
+  });
+
+  it("returns null when every alert predates the cutoff", () => {
+    const cutoff = Date.parse("2026-05-01T00:00:00Z");
+    expect(
+      pickWorstAlert(
+        [alert({ id: "old", spentUsd: 900, budgetUsd: 500, recordedAt: "2026-04-20T00:00:00Z" })],
+        cutoff,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("alertSubjectLabel (HEL-564)", () => {
@@ -194,23 +216,5 @@ describe("alertSubjectLabel (HEL-564)", () => {
 
   it("labels team-scoped alerts with a short team id", () => {
     expect(alertSubjectLabel({ scope: "team", teamId: "team-xyz12345" })).toBe("Team team-xyz");
-  });
-});
-
-describe("ceilingScopeForAlert (HEL-564)", () => {
-  it("maps agent/team/mission/workspace scopes to the by-scope ceiling control", () => {
-    expect(ceilingScopeForAlert("agent")).toBe("agent");
-    expect(ceilingScopeForAlert("team")).toBe("team");
-    expect(ceilingScopeForAlert("mission")).toBe("mission");
-    expect(ceilingScopeForAlert("workspace")).toBe("workspace");
-  });
-
-  it("returns null for tool scope (no on-page ceiling editor — don't misroute)", () => {
-    expect(ceilingScopeForAlert("tool")).toBeNull();
-  });
-
-  it("returns null for an unrecognized scope", () => {
-    expect(ceilingScopeForAlert("connector")).toBeNull();
-    expect(ceilingScopeForAlert("")).toBeNull();
   });
 });

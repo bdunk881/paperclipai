@@ -44,7 +44,6 @@ import { useExperienceMode } from "../context/ExperienceModeContext";
 import {
   alertSubjectLabel,
   buildSpendChart,
-  ceilingScopeForAlert,
   pickWorstAlert,
   spendStatus,
   type SpendChart,
@@ -353,18 +352,19 @@ export default function BudgetDashboard() {
     for (const agent of agentsQuery.data ?? []) map.set(agent.id, agent.name);
     return map;
   }, [agentsQuery.data]);
-  const worstAlert = useMemo(() => pickWorstAlert(budgetAlerts), [budgetAlerts]);
+  // Only consider alerts fired in the current billing month — older trips
+  // shouldn't keep the top-of-page status red on a now-healthy workspace.
+  const worstAlert = useMemo(() => {
+    const now = new Date();
+    const monthStartMs = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    return pickWorstAlert(budgetAlerts, monthStartMs);
+  }, [budgetAlerts]);
   const worstAlertLabel = worstAlert
     ? alertSubjectLabel(
         worstAlert.alert,
         worstAlert.alert.agentId ? agentNameById.get(worstAlert.alert.agentId) : undefined,
       )
     : "";
-  // Where "Adjust ceiling" should send the user: the by-scope Set-budget control,
-  // filtered to the alert's scope. null for tool/unknown scopes (no on-page editor).
-  const worstAlertCeilingScope = worstAlert
-    ? ceilingScopeForAlert(worstAlert.alert.scope)
-    : null;
 
   function openCeilingPopover(scopeId: string, current?: number) {
     setOpenPopover(scopeId);
@@ -461,30 +461,6 @@ export default function BudgetDashboard() {
             <b>{worstAlertLabel}</b> is at <b>{worstAlert.pct}%</b> of its{" "}
             {formatCurrency(worstAlert.alert.budgetUsd)} budget.
           </span>
-          {worstAlertCeilingScope ? (
-            <button
-              type="button"
-              onClick={() => {
-                setScope(worstAlertCeilingScope);
-                document
-                  .getElementById("budget-by-scope")
-                  ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-              }}
-              style={{
-                color: "inherit",
-                fontWeight: 600,
-                whiteSpace: "nowrap",
-                background: "none",
-                border: "none",
-                padding: 0,
-                font: "inherit",
-                textDecoration: "underline",
-                cursor: "pointer",
-              }}
-            >
-              Adjust ceiling →
-            </button>
-          ) : null}
         </div>
       ) : null}
 

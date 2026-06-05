@@ -69,6 +69,11 @@ const DEFAULT_BUCKETS: Record<string, BucketConfig> = {
   // HEL infra follow-up: platform admin revocation is the highest-blast-
   // radius action on the dashboard — extremely tight cap.
   revoke_platform_admin: { limit: 3, window: "day" },
+
+  // HEL-366: system-status-notice blast goes to every workspace owner —
+  // extremely high blast radius, so cap it tight to prevent accidental /
+  // runaway mass sends (each call already requires an explicit confirm).
+  system_notice_send: { limit: 5, window: "day" },
 };
 
 function envOverride(name: string): number | undefined {

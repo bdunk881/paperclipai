@@ -177,6 +177,7 @@ import {
   createAdminConsoleRoutes,
   createImpersonationVerifyRoute,
   createPublicAgentReplyRoute,
+  createSystemNoticeUnsubscribeRoute,
 } from "./adminConsole";
 import { createReflectionRoutes } from "./knowledge/reflectionRoutes";
 import {
@@ -1321,6 +1322,9 @@ app.use("/api/admin-console", requireAuth, adminConsoleRoutes);
 // Public impersonation verify — called by the customer dashboard with the
 // token from ?impersonate=<jwt>. Intentionally OUTSIDE the admin gate.
 app.use("/api/impersonation", createImpersonationVerifyRoute());
+// HEL-366: public token-gated system-notice unsubscribe — mounted OUTSIDE the
+// admin gate (recipients have no AutoFlow session; the HMAC token is the auth).
+app.use("/api/system-notices", createSystemNoticeUnsubscribeRoute());
 // HEL-91: manual reflection — clusters unreflected episodes and graduates
 // durable patterns to Layer-2 synthesized knowledge_items.
 const reflectionRoutes = isPostgresPersistenceEnabled()

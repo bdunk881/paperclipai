@@ -127,6 +127,9 @@ export const ADMIN_ACTIONS = [
   "delete_agent_webhook",
   "test_agent_webhook",
   "ask_agent",
+
+  // system status notices (HEL-366)
+  "send_system_notice",
 ] as const;
 
 export type AdminAction = (typeof ADMIN_ACTIONS)[number];

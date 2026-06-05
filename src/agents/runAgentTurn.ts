@@ -42,6 +42,7 @@ import { budgetMiddleware } from "./runtime/middleware/budgetMiddleware";
 import { auditMiddleware } from "./runtime/middleware/auditMiddleware";
 import { truncationMiddleware } from "./runtime/middleware/truncationMiddleware";
 import { modelRetryMiddleware } from "./runtime/middleware/modelRetryMiddleware";
+import { modelFallbackMiddleware } from "./runtime/middleware/modelFallbackMiddleware";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
 import type { AgentMiddleware } from "./runtime/middleware/types";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
@@ -273,13 +274,22 @@ export async function runAgentTurn(
   const modelRetryMaxAttempts = readRuntimeNumber(runtimeMetadata, "modelRetryMaxAttempts");
   const mcpServers = await loadAgentMcpServers({ userId: input.userId });
   // Build the agent middleware pipeline. Model-phase first (only acts on the
-  // fallback backend, which drives pipeline.modelCall): in-loop provider retry.
-  // Then tool-phase (every backend): tool-result truncation, budget enforcement
-  // (opt-out via enforceBudget=false), and audit logging. (HEL-621/622/623/626.)
-  const middleware: AgentMiddleware[] = [
-    modelRetryMiddleware({ maxAttempts: modelRetryMaxAttempts }),
-    truncationMiddleware(toolResultMaxChars),
-  ];
+  // fallback backend, which drives pipeline.modelCall): optional secondary-tier
+  // failover (wraps retry) + in-loop provider retry. Then tool-phase (every
+  // backend): tool-result truncation, budget enforcement (opt-out via
+  // enforceBudget=false), and audit logging. (HEL-621/622/623/626/627.)
+  const middleware: AgentMiddleware[] = [];
+  if (isModelFallbackEnabled()) {
+    const fallbackModel = resolveModelForTier(
+      providerName,
+      fallbackTierFor(input.tier ?? "standard"),
+    );
+    if (fallbackModel && fallbackModel !== model) {
+      middleware.push(modelFallbackMiddleware({ fallbackModel }));
+    }
+  }
+  middleware.push(modelRetryMiddleware({ maxAttempts: modelRetryMaxAttempts }));
+  middleware.push(truncationMiddleware(toolResultMaxChars));
   if (input.enforceBudget !== false) {
     middleware.push(
       budgetMiddleware({
@@ -358,6 +368,26 @@ function readRuntimeNumber(
   if (!runtime || typeof runtime !== "object") return undefined;
   const raw = (runtime as Record<string, unknown>)[key];
   return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
+}
+
+const MODEL_FALLBACK_FLAG = "AUTOFLOW_AGENT_MODEL_FALLBACK_ENABLED";
+
+function isModelFallbackEnabled(): boolean {
+  const flag = process.env[MODEL_FALLBACK_FLAG];
+  return flag === "1" || flag === "true";
+}
+
+/** Secondary tier to fail over to (same provider + API key, different model). */
+function fallbackTierFor(tier: AgentRunTier): AgentRunTier {
+  switch (tier) {
+    case "power":
+      return "standard";
+    case "standard":
+      return "lite";
+    case "lite":
+    default:
+      return "standard";
+  }
 }
 
 function composeSystemPrompt(

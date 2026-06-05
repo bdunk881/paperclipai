@@ -25,7 +25,8 @@ export type AuditCategory =
   | "entitlement"
   | "connector_connection"
   | "llm_credential"
-  | "budget";
+  | "budget"
+  | "storage";
 
 export interface AuditContext {
   workspaceId: string;

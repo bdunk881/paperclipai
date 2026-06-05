@@ -28,6 +28,10 @@ export {
   isUuid,
   StorageKeyError,
   WORKSPACE_PREFIX,
+  RETENTION_CLASSES,
+  DEFAULT_RETENTION_CLASS,
+  isRetentionClass,
+  assertValidRetention,
 } from "./storageKey";
 
 let cachedAdapter: StorageAdapter | undefined;

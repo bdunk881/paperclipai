@@ -38,6 +38,14 @@ export interface StorageObjectRef {
   workspaceId: string;
   collection: string;
   objectId: string;
+  /**
+   * Retention class — the TOP-LEVEL key prefix (HEL-358) so bucket lifecycle
+   * rules (prefix-based; R2 has no tag filters) can target a class across ALL
+   * workspaces with a bounded set of rules. Optional; `deriveStorageKey()`
+   * defaults it to `"standard"`. On a ref parsed from a stored key it reflects
+   * that key's actual prefix.
+   */
+  retentionClass?: RetentionClass;
 }
 
 export type StorageBody = Buffer | Uint8Array | Readable | string;
@@ -51,6 +59,8 @@ export interface PutObjectInput {
   contentType?: string;
   /** Byte length hint; required by some S3-compatible stores for streaming bodies. */
   contentLength?: number;
+  /** Retention class → key prefix + lifecycle (HEL-358). Defaults to "standard". */
+  retentionClass?: RetentionClass;
 }
 
 export interface PutObjectResult {
@@ -78,6 +88,8 @@ export interface SignedUploadInput {
   collection: string;
   filename: string;
   contentType?: string;
+  /** Retention class → key prefix + lifecycle (HEL-358). Defaults to "standard". */
+  retentionClass?: RetentionClass;
 }
 
 export interface SignedUploadResult {
@@ -95,6 +107,11 @@ export interface ListObjectsInput {
   workspaceId: string;
   /** Restrict to a single collection; omit to list the whole workspace. */
   collection?: string;
+  /**
+   * Restrict to a single retention class. Omit to list across all classes
+   * (the adapter fans out over each retention prefix). HEL-358.
+   */
+  retentionClass?: RetentionClass;
   limit?: number;
   cursor?: string;
 }
@@ -134,6 +151,47 @@ export interface StorageAdapter {
 
   deleteObject(ref: StorageObjectRef): Promise<void>;
 
-  /** List objects under `workspaces/{workspaceId}/[{collection}/]`. */
+  /** List objects under `{retention}/workspaces/{workspaceId}/[{collection}/]`. */
   listObjects(input: ListObjectsInput): Promise<ListObjectsResult>;
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle capability (HEL-358).
+//
+// Only the S3-API adapters (S3/R2) implement this — bucket lifecycle is a
+// server-side bucket config, meaningless for the in-memory adapter. Kept OFF
+// the base `StorageAdapter` so MemoryAdapter needn't implement it; callers
+// feature-detect with `isLifecycleCapable()`.
+//
+// Provider-agnostic shapes (an S3-API subset) so `retentionPolicy.ts` stays
+// SDK-free; the adapter converts to/from `@aws-sdk/client-s3` commands.
+// ---------------------------------------------------------------------------
+export interface LifecycleRule {
+  id: string;
+  status: "Enabled" | "Disabled";
+  /** Key prefix this rule applies to; omit for a bucket-wide rule. */
+  prefix?: string;
+  /** Delete objects this many days after creation. */
+  expirationDays?: number;
+  /** Abort incomplete multipart uploads this many days after initiation. */
+  abortIncompleteMultipartUploadDays?: number;
+}
+
+export interface LifecycleConfiguration {
+  rules: LifecycleRule[];
+}
+
+export interface LifecycleCapableAdapter {
+  /** Read the bucket's current lifecycle configuration (null if none set). */
+  getBucketLifecycle(): Promise<LifecycleConfiguration | null>;
+  /** Replace the bucket's lifecycle configuration. */
+  putBucketLifecycle(config: LifecycleConfiguration): Promise<void>;
+}
+
+/** True when the adapter supports bucket-lifecycle operations (S3/R2, not memory). */
+export function isLifecycleCapable(
+  adapter: StorageAdapter,
+): adapter is StorageAdapter & LifecycleCapableAdapter {
+  const a = adapter as Partial<LifecycleCapableAdapter>;
+  return typeof a.getBucketLifecycle === "function" && typeof a.putBucketLifecycle === "function";
 }

@@ -24,8 +24,16 @@ import {
   type SignedUploadResult,
   type ListObjectsInput,
   type ListObjectsResult,
+  type StorageObjectSummary,
 } from "./storageAdapter";
-import { deriveStorageKey, deriveListPrefix, generateObjectId, parseStorageKey } from "./storageKey";
+import {
+  deriveStorageKey,
+  deriveListPrefix,
+  generateObjectId,
+  parseStorageKey,
+  RETENTION_CLASSES,
+  DEFAULT_RETENTION_CLASS,
+} from "./storageKey";
 
 interface MemoryObject {
   body: Buffer;
@@ -64,6 +72,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
       workspaceId: input.workspaceId,
       collection: input.collection,
       objectId: generateObjectId(input.filename),
+      retentionClass: input.retentionClass ?? DEFAULT_RETENTION_CLASS,
     };
     const storageKey = deriveStorageKey(ref);
     const body = await toBuffer(input.body);
@@ -89,6 +98,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
       workspaceId: input.workspaceId,
       collection: input.collection,
       objectId: generateObjectId(input.filename),
+      retentionClass: input.retentionClass ?? DEFAULT_RETENTION_CLASS,
     };
     const storageKey = deriveStorageKey(ref);
     const ttl = options?.expiresInSeconds ?? DEFAULT_SIGNED_URL_TTL_SECONDS;
@@ -109,9 +119,11 @@ export class MemoryStorageAdapter implements StorageAdapter {
   }
 
   async listObjects(input: ListObjectsInput): Promise<ListObjectsResult> {
-    const prefix = deriveListPrefix(input.workspaceId, input.collection);
-    const objects = [...this.store.entries()]
-      .filter(([key]) => key.startsWith(prefix))
+    // Retention is the top-level prefix; list each requested class and merge.
+    const classes = input.retentionClass ? [input.retentionClass] : [...RETENTION_CLASSES];
+    const prefixes = classes.map((rc) => deriveListPrefix(rc, input.workspaceId, input.collection));
+    const objects: StorageObjectSummary[] = [...this.store.entries()]
+      .filter(([key]) => prefixes.some((p) => key.startsWith(p)))
       .map(([key, obj]) => {
         const ref = parseStorageKey(key);
         return ref
@@ -123,7 +135,7 @@ export class MemoryStorageAdapter implements StorageAdapter {
             }
           : null;
       })
-      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .filter((x): x is StorageObjectSummary => x !== null)
       .sort((a, b) => a.storageKey.localeCompare(b.storageKey));
     const limit = input.limit ?? objects.length;
     return { objects: objects.slice(0, limit) };

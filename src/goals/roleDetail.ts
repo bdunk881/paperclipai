@@ -35,7 +35,24 @@ export type RoleDetail = z.infer<typeof roleDetailSchema>;
  */
 function normalizeRoleDetailBatch(input: unknown): unknown {
   if (!input || typeof input !== "object") return input;
-  for (const value of Object.values(input as Record<string, unknown>)) {
+  let record = input as Record<string, unknown>;
+  // HEL-648: Anthropic's forced-tool JSON sometimes nests the whole record under
+  // a single {"input": {...}} envelope — the open-key record tool input_schema
+  // gives Claude no named keys to anchor to, so it falls back to the tool's
+  // "input" field. Unwrap it so the record validates. Guarded to the exact
+  // envelope shape (sole key "input" mapping to an object): a real fill is keyed
+  // by roleKey slugs (never a lone "input"), so bare records from gemini/openai
+  // — and single-role batches — are left untouched.
+  const keys = Object.keys(record);
+  if (
+    keys.length === 1 &&
+    keys[0] === "input" &&
+    record.input &&
+    typeof record.input === "object"
+  ) {
+    record = record.input as Record<string, unknown>;
+  }
+  for (const value of Object.values(record)) {
     if (!value || typeof value !== "object") continue;
     const detail = value as Record<string, unknown>;
     if (typeof detail.budgetMonthlyUsd !== "number" || !Number.isFinite(detail.budgetMonthlyUsd)) {
@@ -49,7 +66,7 @@ function normalizeRoleDetailBatch(input: unknown): unknown {
       detail.modelTier = "standard";
     }
   }
-  return input;
+  return record;
 }
 
 export const roleDetailBatchSchema = z.preprocess(

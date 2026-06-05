@@ -42,6 +42,13 @@ export interface SesNotificationsDeps {
   fetchFn?: typeof fetch;
   /** Override the suppression sink (test injection point). */
   suppress?: SuppressFn;
+  /**
+   * HEL-613: additive sink for the parsed SES event. Wired in app.ts to the
+   * comms wake-event ingest so a bounce/complaint also wakes the owning agent.
+   * Best-effort — a failure here never affects suppression or the SNS ack. This
+   * route still owns suppression (HEL-361); the ingest only publishes a wake.
+   */
+  onInboundEvent?: (event: SesEvent) => Promise<void>;
 }
 
 function workspaceIdFromEvent(event: SesEvent): string | null {
@@ -88,6 +95,7 @@ export function createSesNotificationsRoutes(deps: SesNotificationsDeps = {}): R
   const verify = deps.verify ?? verifySnsMessage;
   const fetchFn = deps.fetchFn ?? fetch;
   const suppress = deps.suppress ?? ((input) => suppressionStore.suppress(input));
+  const onInboundEvent = deps.onInboundEvent;
 
   const router = Router();
   router.post(
@@ -123,6 +131,13 @@ export function createSesNotificationsRoutes(deps: SesNotificationsDeps = {}): R
         const event = parseSesEvent(message.Message);
         if (event) {
           await handleSesEvent(event, suppress);
+          // HEL-613: forward the same event to the comms wake-event ingest
+          // (additive; suppression above is unaffected). Best-effort.
+          if (onInboundEvent) {
+            await onInboundEvent(event).catch(() => {
+              /* wake publish is best-effort; never breaks the SNS ack */
+            });
+          }
         }
         res.json({ ok: true });
         return;

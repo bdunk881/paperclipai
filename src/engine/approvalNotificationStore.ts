@@ -112,6 +112,10 @@ export const approvalNotificationStore = {
         message: request.message,
         timeoutMinutes: request.timeoutMinutes,
         requestedAt: request.requestedAt,
+        // HEL-364: carry the workspace so the out-of-band SES fallback can tag
+        // the send with workspace_id (bounce/complaint attribution, HEL-361/613).
+        // jsonb payload → no schema change; undefined is dropped on serialize.
+        workspaceId: request.workspaceId,
       },
       createdAt: new Date().toISOString(),
     }));

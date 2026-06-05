@@ -152,6 +152,7 @@ export class FallbackAgentBackend implements AgentBackend {
       messages: msgs,
       system,
       tools: includeTools && toolSpecs.length > 0 ? toolSpecs : undefined,
+      cacheControl: ctx.cacheControl,
       onTrace: input.onTrace,
     });
 

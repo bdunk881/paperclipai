@@ -32,6 +32,7 @@ import {
   getConnectorHealth,
   listLLMConfigs,
   setDefaultLLMConfig,
+  updateLLMConfig,
   type ConnectorHealthRecord,
   type LLMConfig,
   type ProviderName,
@@ -2278,6 +2279,23 @@ function ProviderManageBody({ entry, configs, onChange }: ProviderManageBodyProp
     }
   }
 
+  // HEL-644: change a saved config's model in place. The backend PATCH keeps
+  // the existing key (apiKey is optional), so swapping e.g. a retired
+  // claude-opus-4-7 for claude-opus-4-8 never re-prompts for credentials.
+  async function updateModel(id: string, model: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const token = (await getAccessToken()) ?? undefined;
+      await updateLLMConfig(id, { model }, token);
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update model.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <p style={{ fontSize: 13, color: "var(--af2-ink-2)", marginTop: 0 }}>
@@ -2309,9 +2327,30 @@ function ProviderManageBody({ entry, configs, onChange }: ProviderManageBodyProp
             <div>
               <div style={{ fontWeight: 500 }}>{c.label}</div>
               <div
-                className="id"
-                style={{ marginTop: 2 }}
-              >{`${c.model} · ${c.apiKeyMasked}`}</div>
+                style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}
+              >
+                {/* HEL-644: in-place model edit — no key re-entry. Falls back to
+                    showing the stored model as an option when it's no longer in
+                    the catalog (e.g. a retired id), so legacy values still render. */}
+                <select
+                  aria-label={`Model for ${c.label}`}
+                  value={c.model}
+                  disabled={busyId === c.id}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => void updateModel(c.id, e.target.value)}
+                  style={{ fontSize: 12, padding: "2px 6px" }}
+                >
+                  {entry.models.some((m) => m.id === c.model) ? null : (
+                    <option value={c.model}>{c.model} (current)</option>
+                  )}
+                  {entry.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="id">· {c.apiKeyMasked}</span>
+              </div>
             </div>
             <div>
               {c.isDefault ? (

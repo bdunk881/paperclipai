@@ -75,6 +75,7 @@ async function startServer() {
     { startCreditAutoTopupJob },
     { startIssuingTreasuryJob },
     { startDirectProviderHealthJobs },
+    { startStorageLifecycleReconcileJob },
   ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
@@ -82,6 +83,7 @@ async function startServer() {
     import("./billing/credits/creditAutoTopupJob"),
     import("./billing/credits/stripeIssuing"),
     import("./billing/credits/sourceHealthJob"),
+    import("./storage/storageLifecycleReconcileJob"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
@@ -93,6 +95,9 @@ async function startServer() {
   // HEL-601: per-provider direct funding watchdogs (Anthropic + OpenAI). Also
   // gated on STRIPE_ISSUING_ENABLED — no-op until go-live.
   startDirectProviderHealthJobs();
+  // HEL-358: storage lifecycle drift watchdog. No-op unless STORAGE_PROVIDER
+  // is a lifecycle-capable backend (r2/s3); the in-memory adapter is skipped.
+  startStorageLifecycleReconcileJob();
 }
 
 void startServer();

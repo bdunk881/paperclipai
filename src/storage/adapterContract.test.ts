@@ -11,7 +11,7 @@ import { Readable } from "stream";
 import { S3Client } from "@aws-sdk/client-s3";
 import { createR2Adapter } from "./r2Adapter";
 import { createS3Adapter } from "./s3Adapter";
-import type { StorageAdapter } from "./storageAdapter";
+import { isLifecycleCapable, type StorageAdapter } from "./storageAdapter";
 
 const WORKSPACE_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const WORKSPACE_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -26,7 +26,8 @@ interface Harness {
 }
 
 function keyPattern(wid: string, collection: string, filename: string): RegExp {
-  return new RegExp(`^workspaces/${wid}/${collection}/${ULID_RE}-${filename.replace(/\./g, "\\.")}$`);
+  // Default retention is "standard", so the key is prefixed with `standard/` (HEL-358).
+  return new RegExp(`^standard/workspaces/${wid}/${collection}/${ULID_RE}-${filename.replace(/\./g, "\\.")}$`);
 }
 
 function spyOnSend(client: S3Client): () => Array<{ constructor: { name: string }; input: Record<string, unknown> }> {
@@ -44,6 +45,13 @@ function spyOnSend(client: S3Client): () => Array<{ constructor: { name: string 
         return {
           Contents: [{ Key: `${prefix}01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf`, Size: 3, LastModified: new Date("2024-01-01T00:00:00Z") }],
           IsTruncated: false,
+        };
+      }
+      if (name === "GetBucketLifecycleConfigurationCommand") {
+        return {
+          Rules: [
+            { ID: "retention-short", Status: "Enabled", Filter: { Prefix: "short/" }, Expiration: { Days: 30 } },
+          ],
         };
       }
       return {};
@@ -110,7 +118,7 @@ describe.each<[string, () => Harness]>([
     expect(await streamToString(out.body)).toBe("contents");
     const get = sent().find((c) => c.constructor.name === "GetObjectCommand");
     expect(get?.input.Bucket).toBe(bucket);
-    expect(get?.input.Key).toBe(`workspaces/${WORKSPACE_A}/run-input/${SAMPLE_OBJECT_ID}`);
+    expect(get?.input.Key).toBe(`standard/workspaces/${WORKSPACE_A}/run-input/${SAMPLE_OBJECT_ID}`);
   });
 
   it("deleteObject DELETEs the derived key", async () => {
@@ -118,17 +126,18 @@ describe.each<[string, () => Harness]>([
     await adapter.deleteObject({ workspaceId: WORKSPACE_A, collection: "export", objectId: SAMPLE_OBJECT_ID });
     const del = sent().find((c) => c.constructor.name === "DeleteObjectCommand");
     expect(del?.input.Bucket).toBe(bucket);
-    expect(del?.input.Key).toBe(`workspaces/${WORKSPACE_A}/export/${SAMPLE_OBJECT_ID}`);
+    expect(del?.input.Key).toBe(`standard/workspaces/${WORKSPACE_A}/export/${SAMPLE_OBJECT_ID}`);
   });
 
-  it("listObjects lists under the workspace/collection prefix and parses refs", async () => {
+  it("listObjects lists under the {retention}/workspace/collection prefix and parses refs", async () => {
     const { adapter, sent } = makeHarness();
-    const res = await adapter.listObjects({ workspaceId: WORKSPACE_A, collection: "run-input" });
+    const res = await adapter.listObjects({ workspaceId: WORKSPACE_A, collection: "run-input", retentionClass: "standard" });
     const list = sent().find((c) => c.constructor.name === "ListObjectsV2Command");
-    expect(list?.input.Prefix).toBe(`workspaces/${WORKSPACE_A}/run-input/`);
+    expect(list?.input.Prefix).toBe(`standard/workspaces/${WORKSPACE_A}/run-input/`);
     expect(res.objects).toHaveLength(1);
     expect(res.objects[0].ref.workspaceId).toBe(WORKSPACE_A);
     expect(res.objects[0].ref.collection).toBe("run-input");
+    expect(res.objects[0].ref.retentionClass).toBe("standard");
   });
 
   it("getSignedDownloadUrl returns a presigned GET URL for the derived key", async () => {
@@ -171,9 +180,46 @@ describe.each<[string, () => Harness]>([
     const { adapter } = makeHarness();
     const a = await adapter.putObject({ workspaceId: WORKSPACE_A, collection: "run-input", filename: "f.txt", body: "a" });
     const b = await adapter.putObject({ workspaceId: WORKSPACE_B, collection: "run-input", filename: "f.txt", body: "b" });
-    expect(a.storageKey.startsWith(`workspaces/${WORKSPACE_A}/`)).toBe(true);
-    expect(b.storageKey.startsWith(`workspaces/${WORKSPACE_B}/`)).toBe(true);
+    expect(a.storageKey.startsWith(`standard/workspaces/${WORKSPACE_A}/`)).toBe(true);
+    expect(b.storageKey.startsWith(`standard/workspaces/${WORKSPACE_B}/`)).toBe(true);
     expect(a.storageKey).not.toContain(WORKSPACE_B);
+  });
+
+  it("putBucketLifecycle sends a PutBucketLifecycleConfiguration with mapped rules (HEL-358)", async () => {
+    const { adapter, bucket, sent } = makeHarness();
+    if (!isLifecycleCapable(adapter)) throw new Error("adapter should be lifecycle-capable");
+    await adapter.putBucketLifecycle({
+      rules: [
+        { id: "retention-short", status: "Enabled", prefix: "short/", expirationDays: 30 },
+        { id: "abort-incomplete-multipart-uploads", status: "Enabled", abortIncompleteMultipartUploadDays: 7 },
+      ],
+    });
+    const put = sent().find((c) => c.constructor.name === "PutBucketLifecycleConfigurationCommand");
+    expect(put?.input.Bucket).toBe(bucket);
+    const rules = (put?.input.LifecycleConfiguration as { Rules: Array<Record<string, unknown>> }).Rules;
+    expect(rules).toHaveLength(2);
+    expect(rules[0]).toMatchObject({
+      ID: "retention-short",
+      Status: "Enabled",
+      Filter: { Prefix: "short/" },
+      Expiration: { Days: 30 },
+    });
+    expect(rules[1]).toMatchObject({
+      ID: "abort-incomplete-multipart-uploads",
+      AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 },
+    });
+  });
+
+  it("getBucketLifecycle parses the bucket's existing rules (HEL-358)", async () => {
+    const { adapter } = makeHarness();
+    if (!isLifecycleCapable(adapter)) throw new Error("adapter should be lifecycle-capable");
+    const cfg = await adapter.getBucketLifecycle();
+    expect(cfg?.rules[0]).toMatchObject({
+      id: "retention-short",
+      status: "Enabled",
+      prefix: "short/",
+      expirationDays: 30,
+    });
   });
 });
 

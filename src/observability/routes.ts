@@ -264,6 +264,9 @@ router.post("/export", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     body,
     contentType: "text/csv",
     contentLength: body.length,
+    // HEL-358: short-retention export → object lands under the `short/` prefix so
+    // the 30-day lifecycle rule applies. Must match the insert's retentionClass.
+    retentionClass: "short",
   });
 
   const row = await fileObjectStore.insert(

@@ -16,6 +16,9 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
+  GetBucketLifecycleConfigurationCommand,
+  PutBucketLifecycleConfigurationCommand,
+  type LifecycleRule as S3LifecycleRule,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -25,6 +28,7 @@ import {
   type StorageProvider,
   type StorageBody,
   type StorageObjectRef,
+  type StorageObjectSummary,
   type PutObjectInput,
   type PutObjectResult,
   type GetObjectResult,
@@ -33,8 +37,18 @@ import {
   type SignedUploadResult,
   type ListObjectsInput,
   type ListObjectsResult,
+  type LifecycleCapableAdapter,
+  type LifecycleConfiguration,
+  type LifecycleRule,
 } from "./storageAdapter";
-import { deriveStorageKey, deriveListPrefix, generateObjectId, parseStorageKey } from "./storageKey";
+import {
+  deriveStorageKey,
+  deriveListPrefix,
+  generateObjectId,
+  parseStorageKey,
+  RETENTION_CLASSES,
+  DEFAULT_RETENTION_CLASS,
+} from "./storageKey";
 
 export interface S3CompatibleAdapterParams {
   client: S3Client;
@@ -42,7 +56,7 @@ export interface S3CompatibleAdapterParams {
   provider: StorageProvider;
 }
 
-export class S3CompatibleAdapter implements StorageAdapter {
+export class S3CompatibleAdapter implements StorageAdapter, LifecycleCapableAdapter {
   readonly provider: StorageProvider;
   readonly bucket: string;
   private readonly client: S3Client;
@@ -58,6 +72,7 @@ export class S3CompatibleAdapter implements StorageAdapter {
       workspaceId: input.workspaceId,
       collection: input.collection,
       objectId: generateObjectId(input.filename),
+      retentionClass: input.retentionClass ?? DEFAULT_RETENTION_CLASS,
     };
     const storageKey = deriveStorageKey(ref);
     await this.client.send(
@@ -100,6 +115,7 @@ export class S3CompatibleAdapter implements StorageAdapter {
       workspaceId: input.workspaceId,
       collection: input.collection,
       objectId: generateObjectId(input.filename),
+      retentionClass: input.retentionClass ?? DEFAULT_RETENTION_CLASS,
     };
     const storageKey = deriveStorageKey(ref);
     const expiresIn = options?.expiresInSeconds ?? DEFAULT_SIGNED_URL_TTL_SECONDS;
@@ -126,31 +142,62 @@ export class S3CompatibleAdapter implements StorageAdapter {
   }
 
   async listObjects(input: ListObjectsInput): Promise<ListObjectsResult> {
-    const prefix = deriveListPrefix(input.workspaceId, input.collection);
-    const out = await this.client.send(
-      new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: prefix,
-        MaxKeys: input.limit,
-        ContinuationToken: input.cursor,
-      }),
-    );
-    const objects = (out.Contents ?? [])
-      .map((o) => {
+    // Retention is the top-level prefix, so list each requested class and merge.
+    const classes = input.retentionClass ? [input.retentionClass] : [...RETENTION_CLASSES];
+    const objects: StorageObjectSummary[] = [];
+    let nextCursor: string | undefined;
+    for (const rc of classes) {
+      const prefix = deriveListPrefix(rc, input.workspaceId, input.collection);
+      const out = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          MaxKeys: input.limit,
+          // Cursor pagination only applies when scoped to a single class.
+          ContinuationToken: classes.length === 1 ? input.cursor : undefined,
+        }),
+      );
+      for (const o of out.Contents ?? []) {
         const ref = o.Key ? parseStorageKey(o.Key) : null;
-        if (!ref || !o.Key) return null;
-        return {
+        if (!ref || !o.Key) continue;
+        objects.push({
           ref,
           storageKey: o.Key,
           size: o.Size ?? 0,
           lastModified: (o.LastModified ?? new Date(0)).toISOString(),
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
-    return {
-      objects,
-      nextCursor: out.IsTruncated ? out.NextContinuationToken : undefined,
-    };
+        });
+      }
+      if (out.IsTruncated && classes.length === 1) {
+        nextCursor = out.NextContinuationToken;
+      }
+    }
+    return { objects, nextCursor };
+  }
+
+  // ----- LifecycleCapableAdapter (HEL-358) -----
+
+  async getBucketLifecycle(): Promise<LifecycleConfiguration | null> {
+    try {
+      const out = await this.client.send(
+        new GetBucketLifecycleConfigurationCommand({ Bucket: this.bucket }),
+      );
+      return { rules: (out.Rules ?? []).map(fromS3LifecycleRule) };
+    } catch (err) {
+      // S3 + R2 return NoSuchLifecycleConfiguration when no config is set.
+      if ((err as { name?: string }).name === "NoSuchLifecycleConfiguration") {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async putBucketLifecycle(config: LifecycleConfiguration): Promise<void> {
+    await this.client.send(
+      new PutBucketLifecycleConfigurationCommand({
+        Bucket: this.bucket,
+        LifecycleConfiguration: { Rules: config.rules.map(toS3LifecycleRule) },
+      }),
+    );
   }
 }
 
@@ -160,4 +207,39 @@ function byteLength(body: StorageBody, hint?: number): number | undefined {
   if (typeof body === "string") return Buffer.byteLength(body);
   if (Buffer.isBuffer(body) || body instanceof Uint8Array) return body.byteLength;
   return undefined;
+}
+
+// ----- Lifecycle rule <-> S3 API conversion (HEL-358) -----
+
+function toS3LifecycleRule(rule: LifecycleRule): S3LifecycleRule {
+  const s3: S3LifecycleRule = {
+    ID: rule.id,
+    Status: rule.status,
+    // A Filter is required by the modern API; an empty Prefix means bucket-wide.
+    Filter: { Prefix: rule.prefix ?? "" },
+  };
+  if (typeof rule.expirationDays === "number") {
+    s3.Expiration = { Days: rule.expirationDays };
+  }
+  if (typeof rule.abortIncompleteMultipartUploadDays === "number") {
+    s3.AbortIncompleteMultipartUpload = {
+      DaysAfterInitiation: rule.abortIncompleteMultipartUploadDays,
+    };
+  }
+  return s3;
+}
+
+function fromS3LifecycleRule(r: S3LifecycleRule): LifecycleRule {
+  const filterPrefix = (r.Filter as { Prefix?: string } | undefined)?.Prefix;
+  const prefix = filterPrefix ?? r.Prefix;
+  return {
+    id: String(r.ID ?? ""),
+    status: r.Status === "Enabled" ? "Enabled" : "Disabled",
+    prefix: prefix && prefix.length > 0 ? prefix : undefined,
+    expirationDays: typeof r.Expiration?.Days === "number" ? r.Expiration.Days : undefined,
+    abortIncompleteMultipartUploadDays:
+      typeof r.AbortIncompleteMultipartUpload?.DaysAfterInitiation === "number"
+        ? r.AbortIncompleteMultipartUpload.DaysAfterInitiation
+        : undefined,
+  };
 }

@@ -21,7 +21,7 @@ describe("MemoryStorageAdapter", () => {
       contentType: "text/plain",
     });
     expect(put.provider).toBe("memory");
-    expect(put.storageKey).toMatch(new RegExp(`^workspaces/${WID}/run-input/[0-9A-HJKMNP-TV-Z]{26}-hello_world\\.txt$`));
+    expect(put.storageKey).toMatch(new RegExp(`^standard/workspaces/${WID}/run-input/[0-9A-HJKMNP-TV-Z]{26}-hello_world\\.txt$`));
     expect(adapter.count).toBe(1);
 
     const got = await adapter.getObject(put.ref);
@@ -43,7 +43,7 @@ describe("MemoryStorageAdapter", () => {
     const adapter = new MemoryStorageAdapter("mem-bucket");
     const upload = await adapter.getSignedUploadUrl({ workspaceId: WID, collection: "export", filename: "x.csv", contentType: "text/csv" });
     expect(upload.method).toBe("PUT");
-    expect(upload.url).toMatch(new RegExp(`^memory://mem-bucket/workspaces/${WID}/export/`));
+    expect(upload.url).toMatch(new RegExp(`^memory://mem-bucket/standard/workspaces/${WID}/export/`));
     expect(upload.headers["Content-Type"]).toBe("text/csv");
 
     const download = await adapter.getSignedDownloadUrl({ workspaceId: WID, collection: "export", objectId: upload.ref.objectId });
@@ -66,5 +66,27 @@ describe("MemoryStorageAdapter", () => {
 
     const otherWorkspace = await adapter.listObjects({ workspaceId: OTHER });
     expect(otherWorkspace.objects).toHaveLength(1);
+  });
+
+  it("places objects under the retention-class prefix and lists by class (HEL-358)", async () => {
+    const adapter = new MemoryStorageAdapter();
+    const shortPut = await adapter.putObject({
+      workspaceId: WID,
+      collection: "export",
+      filename: "s.csv",
+      body: "s",
+      retentionClass: "short",
+    });
+    await adapter.putObject({ workspaceId: WID, collection: "export", filename: "n.csv", body: "n" }); // default standard
+    expect(shortPut.storageKey).toMatch(new RegExp(`^short/workspaces/${WID}/export/`));
+    expect(shortPut.ref.retentionClass).toBe("short");
+
+    const onlyShort = await adapter.listObjects({ workspaceId: WID, retentionClass: "short" });
+    expect(onlyShort.objects).toHaveLength(1);
+    expect(onlyShort.objects[0].ref.retentionClass).toBe("short");
+
+    // No class given → fans out over all retention prefixes.
+    const all = await adapter.listObjects({ workspaceId: WID });
+    expect(all.objects).toHaveLength(2);
   });
 });

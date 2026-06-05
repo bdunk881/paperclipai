@@ -10,7 +10,13 @@
 import { Router } from "express";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { asyncHandler } from "../middleware/asyncHandler";
-import { getStorageAdapter, parseStorageKey } from "./index";
+import {
+  getStorageAdapter,
+  parseStorageKey,
+  isRetentionClass,
+  DEFAULT_RETENTION_CLASS,
+  type RetentionClass,
+} from "./index";
 import { fileObjectStore } from "./fileObjectStore";
 import { enqueueObjectDeletion } from "../queue/storageQueue";
 import { auditService } from "../auditing/auditService";
@@ -115,11 +121,12 @@ export function createFileRoutes(): Router {
         return;
       }
 
-      const { filename, contentType, collection, sizeBytes } = (req.body ?? {}) as {
+      const { filename, contentType, collection, sizeBytes, retentionClass } = (req.body ?? {}) as {
         filename?: unknown;
         contentType?: unknown;
         collection?: unknown;
         sizeBytes?: unknown;
+        retentionClass?: unknown;
       };
 
       if (typeof filename !== "string" || filename.trim().length === 0) {
@@ -150,12 +157,27 @@ export function createFileRoutes(): Router {
         }
       }
 
+      // HEL-358: optional retention class (default standard) → drives both the
+      // key prefix (lifecycle) and the file_objects.retention_class column.
+      let retention: RetentionClass = DEFAULT_RETENTION_CLASS;
+      if (retentionClass !== undefined) {
+        if (typeof retentionClass !== "string" || !isRetentionClass(retentionClass)) {
+          await auditStorage(req, { action: "file_upload_url_denied", reason: "invalid_retention_class", extra: { filename } });
+          res.status(400).json({
+            error: "retentionClass must be one of short, standard, legal_hold",
+            code: "invalid_retention_class",
+          });
+          return;
+        }
+        retention = retentionClass;
+      }
+
       const adapter = getStorageAdapter();
       const coll = typeof collection === "string" && collection.length > 0 ? collection : DEFAULT_COLLECTION;
 
       let signed;
       try {
-        signed = await adapter.getSignedUploadUrl({ workspaceId, collection: coll, filename, contentType });
+        signed = await adapter.getSignedUploadUrl({ workspaceId, collection: coll, filename, contentType, retentionClass: retention });
       } catch (err) {
         // e.g. StorageKeyError for an invalid collection token.
         await auditStorage(req, { action: "file_upload_url_denied", reason: "adapter_error", extra: { filename, collection: coll } });
@@ -174,6 +196,7 @@ export function createFileRoutes(): Router {
           filename,
           mimeType: contentType,
           byteSize: typeof sizeBytes === "number" ? sizeBytes : null,
+          retentionClass: retention,
         },
       );
 

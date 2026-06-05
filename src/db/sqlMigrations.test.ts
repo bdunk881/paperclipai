@@ -364,6 +364,46 @@ describe("sql migrations", () => {
     expect(migration).toContain("CREATE POLICY ticket_sla_snapshots_tenant_isolation");
   });
 
+  describe("migration 100 audit_log storage category (HEL-359)", () => {
+    const migration = readFileSync(
+      path.resolve(__dirname, "..", "..", "migrations", "100_audit_log_storage_category.sql"),
+      "utf8"
+    );
+
+    it("adds 'storage' to the audit_log category CHECK constraint", () => {
+      expect(migration).toContain("ADD CONSTRAINT audit_log_category_check");
+      expect(migration).toContain("'storage'");
+    });
+
+    it("re-lists the full pre-existing category set (self-contained constraint)", () => {
+      for (const category of [
+        "secret",
+        "provisioning",
+        "team_lifecycle",
+        "agent_lifecycle",
+        "execution",
+        "auth",
+        "bypass_attempt",
+        "billing",
+        "entitlement",
+        "connector_connection",
+        "llm_credential",
+        "budget",
+      ]) {
+        expect(migration).toContain(`'${category}'`);
+      }
+    });
+
+    it("drops the old constraint idempotently before re-adding", () => {
+      expect(migration).toContain("DROP CONSTRAINT IF EXISTS audit_log_category_check");
+    });
+
+    it("wraps schema changes in a single transaction", () => {
+      expect(migration).toContain("BEGIN;");
+      expect(migration.trim().endsWith("COMMIT;")).toBe(true);
+    });
+  });
+
   describe("migration 015 control plane persistence (ALT-1984 Phase 2)", () => {
     const migration = readFileSync(
       path.resolve(__dirname, "..", "..", "migrations", "015_control_plane_persistence.sql"),

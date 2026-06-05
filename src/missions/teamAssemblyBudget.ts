@@ -67,10 +67,24 @@ function thinkingHeadroom(provider: ProviderName): number {
 const REASONING_RESERVE = 0.5;
 const NON_REASONING_RESERVE = 0.75;
 
-/** Providers whose default models spend output budget on hidden reasoning. */
+/**
+ * Providers whose default/flagship models spend output budget on hidden
+ * reasoning (those tokens count against `maxOutputTokens` alongside the JSON).
+ *
+ * HEL-652: anthropic (claude-opus-4-8) and openai (gpt-5 / o-series) belong
+ * here too — both reason internally and bill it against the output cap. A live
+ * 16-role Anthropic skeleton truncated mid-JSON at the old non-reasoning budget
+ * (12*45 + 900 + 2048 = 3488) because ~1.5k of that went to reasoning. With the
+ * reasoning headroom (24000, clamped to the provider ceiling) the skeleton +
+ * fills get the full ceiling and large teams no longer truncate. Batch sizes
+ * are unchanged — the per-provider latency cap (MAX_FILL_BATCH_BY_PROVIDER)
+ * still dominates — so this only raises the (ceiling-bounded) token budgets.
+ */
 const REASONING_PROVIDERS: ReadonlySet<ProviderName> = new Set<ProviderName>([
   "gemini",
   "vertex-ai",
+  "anthropic",
+  "openai",
 ]);
 
 /**

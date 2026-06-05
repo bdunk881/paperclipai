@@ -4,7 +4,7 @@
  * to draft blog posts only. Published documents are never patched directly.
  *
  * Required env:
- *   SANITY_AUTH_TOKEN (write token for koldjrka/production)
+ *   SANITY_BLOG_WRITE_TOKEN (write token for the koldjrka/production blog dataset)
  * Optional env:
  *   SANITY_PROJECT_ID (defaults koldjrka)
  *   SANITY_DATASET (defaults production)
@@ -21,10 +21,13 @@ const manifestPath = join(coversDir, "cover-image-manifest.json");
 
 const projectId = process.env.SANITY_PROJECT_ID ?? "koldjrka";
 const dataset = process.env.SANITY_DATASET ?? "production";
-const token = process.env.SANITY_AUTH_TOKEN;
+const token =
+  process.env.SANITY_BLOG_WRITE_TOKEN ??
+  process.env.SANITY_AUTH_TOKEN ??
+  process.env.SANITY_API_TOKEN;
 
 if (!token) {
-  console.error("SANITY_AUTH_TOKEN is required to upload and stage blog covers.");
+  console.error("A koldjrka Sanity write token (SANITY_BLOG_WRITE_TOKEN) is required to upload and stage blog covers.");
   process.exit(1);
 }
 

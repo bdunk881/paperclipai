@@ -75,12 +75,26 @@ export interface TransportMessage {
   text?: string;
   html?: string;
   vars?: Record<string, unknown>;
+  /**
+   * Owning workspace — populated by the gateway so tenancy-aware transports
+   * (e.g. the managed Layer-C email sender) can resolve per-workspace policy,
+   * SES configuration set, and tag the send. HEL-615.
+   */
+  workspaceId?: string;
 }
 
 /** Outcome of a transport send. Transports throw on failure. */
 export interface TransportResult {
   /** Provider-side message id, when available. */
   providerMessageId?: string;
+  /**
+   * When true, the transport declined to send (suppressed recipient or a
+   * policy opt-out) rather than failing — the gateway ledgers the row
+   * `status:'suppressed'` instead of `sent`. HEL-615.
+   */
+  suppressed?: boolean;
+  /** Short reason for the suppression (e.g. 'suppressed', 'managed_email_opt_out'). */
+  suppressedReason?: string;
 }
 
 /**

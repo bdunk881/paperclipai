@@ -350,6 +350,37 @@ export const commsSendStore = {
     );
   },
 
+  /**
+   * Mark a send suppressed — the recipient is on the suppression list, or a
+   * policy declined it (e.g. managed-email opt-out). Distinct from `failed`:
+   * nothing was sent and nothing should be retried. HEL-615.
+   */
+  async markSuppressed(
+    workspaceId: string,
+    id: string,
+    reason: string,
+    userId?: string,
+  ): Promise<void> {
+    if (!postgresPersistenceAvailable()) {
+      const record = memById.get(id);
+      if (record) {
+        record.status = "suppressed";
+        record.error = reason;
+        record.updatedAt = new Date().toISOString();
+      }
+      return;
+    }
+
+    await withWorkspaceContext(getPostgresPool(), context(workspaceId, userId), (client) =>
+      client.query(
+        `UPDATE comms_sends
+            SET status = 'suppressed', error = $3, updated_at = now()
+          WHERE id = $1 AND workspace_id = $2`,
+        [id, workspaceId, reason],
+      ),
+    );
+  },
+
   /** Test/dev only: wipe the ledger. */
   async clear(): Promise<void> {
     memById.clear();

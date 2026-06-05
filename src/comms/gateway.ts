@@ -174,7 +174,24 @@ export class CommsGateway {
         { retryable: false },
       );
     }
-    const result = await transport.send(params.message);
+    // Hand the transport the owning workspace so tenancy-aware transports
+    // (managed Layer-C email) can resolve policy / config set / tagging.
+    const message: TransportMessage = { ...params.message, workspaceId: params.workspaceId };
+    const result = await transport.send(message);
+    if (result.suppressed) {
+      await this.store.markSuppressed(
+        params.workspaceId,
+        params.id,
+        result.suppressedReason ?? "suppressed",
+        params.userId,
+      );
+      return {
+        id: params.id,
+        status: "suppressed",
+        deduped: false,
+        provider: transport.id,
+      };
+    }
     await this.store.markSent(
       params.workspaceId,
       params.id,

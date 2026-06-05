@@ -104,6 +104,17 @@ async function startServer() {
   // Postgres is configured; respects per-workspace opt-out + the SES mailer's
   // own gating (logs until AUTOFLOW_SYSTEM_EMAIL_FROM is set).
   startWorkflowFailureDigestJob();
+
+  // HEL-614/HEL-615: register env-configured comms transports (Telnyx SMS,
+  // managed SES customer email) on the process-wide gateway. Each is env-gated,
+  // so an unconfigured environment registers nothing and comms.send throws a
+  // clear "no transport" error rather than failing silently — this is the call
+  // that first makes the comms gateway live.
+  const { commsGateway, registerCommsTransports } = await import("./comms");
+  const commsTransports = registerCommsTransports(commsGateway);
+  if (commsTransports.length > 0) {
+    console.log(`[comms] registered transports: ${commsTransports.join(", ")}`);
+  }
 }
 
 void startServer();

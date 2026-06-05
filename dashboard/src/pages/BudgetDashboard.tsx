@@ -44,6 +44,7 @@ import { useExperienceMode } from "../context/ExperienceModeContext";
 import {
   alertSubjectLabel,
   buildSpendChart,
+  ceilingScopeForAlert,
   pickWorstAlert,
   spendStatus,
   type SpendChart,
@@ -358,6 +359,11 @@ export default function BudgetDashboard() {
         worstAlert.alert.agentId ? agentNameById.get(worstAlert.alert.agentId) : undefined,
       )
     : "";
+  // Where "Adjust ceiling" should send the user: the by-scope Set-budget control,
+  // filtered to the alert's scope. null for tool/unknown scopes (no on-page editor).
+  const worstAlertCeilingScope = worstAlert
+    ? ceilingScopeForAlert(worstAlert.alert.scope)
+    : null;
 
   function openCeilingPopover(scopeId: string, current?: number) {
     setOpenPopover(scopeId);
@@ -454,21 +460,30 @@ export default function BudgetDashboard() {
             <b>{worstAlertLabel}</b> is at <b>{worstAlert.pct}%</b> of its{" "}
             {formatCurrency(worstAlert.alert.budgetUsd)} budget.
           </span>
-          {worstAlert.alert.agentId ? (
-            <Link
-              to={`/agents/${encodeURIComponent(worstAlert.alert.agentId)}`}
-              style={{ color: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}
+          {worstAlertCeilingScope ? (
+            <button
+              type="button"
+              onClick={() => {
+                setScope(worstAlertCeilingScope);
+                document
+                  .getElementById("budget-by-scope")
+                  ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+              }}
+              style={{
+                color: "inherit",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                background: "none",
+                border: "none",
+                padding: 0,
+                font: "inherit",
+                textDecoration: "underline",
+                cursor: "pointer",
+              }}
             >
               Adjust ceiling →
-            </Link>
-          ) : (
-            <a
-              href="#budget-by-agent"
-              style={{ color: "inherit", fontWeight: 600, whiteSpace: "nowrap" }}
-            >
-              Adjust ceiling →
-            </a>
-          )}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -603,9 +618,11 @@ export default function BudgetDashboard() {
         {totals.top ? <span>{firstName(totals.top.name)}</span> : null}
       </div>
 
-      {/* ---------------- By mission card-list ---------------- */}
-      <div className="card card-list" style={{ padding: 0 }}>
-        <h3 style={{ padding: "14px 18px 4px" }}>By mission</h3>
+      {/* ---------------- By-scope card-list (ceiling editor) ---------------- */}
+      <div id="budget-by-scope" className="card card-list" style={{ padding: 0 }}>
+        <h3 style={{ padding: "14px 18px 4px" }}>
+          {SCOPE_OPTIONS.find((option) => option.value === scope)?.label ?? "By mission"}
+        </h3>
         {missionRows.length === 0 ? (
           <div style={{ padding: "16px 18px", color: "var(--af2-ink-3)", fontSize: 13 }}>
             No spend recorded yet for the selected window.
@@ -707,7 +724,7 @@ export default function BudgetDashboard() {
       </div>
 
       {/* ---------------- "By agent" list with spend-vs-cap bars (HEL-564) ---------------- */}
-      <h3 id="budget-by-agent" className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
+      <h3 className="af2-h3" style={{ marginTop: 28, marginBottom: 10 }}>
         By agent
       </h3>
       {agentRows.length === 0 ? (

@@ -13,7 +13,7 @@
  *   - `pickWorstAlert`   → the most-severe fired `budget_alerts` row, for the
  *                          threshold banner.
  */
-import type { BudgetBreakdownBucket } from "../api/canonicalApi";
+import type { BudgetBreakdownBucket, BudgetBreakdownScope } from "../api/canonicalApi";
 import type { ControlPlaneBudgetAlert } from "../api/controlPlane";
 
 // Stable palette — top spender → clay, then sage / mustard / plum, tail → ink.
@@ -274,4 +274,17 @@ export function alertSubjectLabel(
     return alert.toolName ? `Tool ${alert.toolName}` : "A tool";
   }
   return `Team ${alert.teamId.slice(0, 8)}`;
+}
+
+/**
+ * Which on-page "Set budget" scope an alert's "Adjust ceiling" CTA should route
+ * to. agent/team/mission/workspace map to the by-scope ceiling control; `tool`
+ * (and anything unrecognized) has no on-page ceiling editor — return null so the
+ * CTA is suppressed rather than dumping the user on the wrong, disabled surface.
+ */
+export function ceilingScopeForAlert(scope: string): BudgetBreakdownScope | null {
+  if (scope === "agent" || scope === "team" || scope === "mission" || scope === "workspace") {
+    return scope;
+  }
+  return null;
 }

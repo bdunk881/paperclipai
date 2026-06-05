@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   alertSubjectLabel,
   buildSpendChart,
+  ceilingScopeForAlert,
   pickWorstAlert,
   spendStatus,
   type ChartDims,
@@ -193,5 +194,23 @@ describe("alertSubjectLabel (HEL-564)", () => {
 
   it("labels team-scoped alerts with a short team id", () => {
     expect(alertSubjectLabel({ scope: "team", teamId: "team-xyz12345" })).toBe("Team team-xyz");
+  });
+});
+
+describe("ceilingScopeForAlert (HEL-564)", () => {
+  it("maps agent/team/mission/workspace scopes to the by-scope ceiling control", () => {
+    expect(ceilingScopeForAlert("agent")).toBe("agent");
+    expect(ceilingScopeForAlert("team")).toBe("team");
+    expect(ceilingScopeForAlert("mission")).toBe("mission");
+    expect(ceilingScopeForAlert("workspace")).toBe("workspace");
+  });
+
+  it("returns null for tool scope (no on-page ceiling editor — don't misroute)", () => {
+    expect(ceilingScopeForAlert("tool")).toBeNull();
+  });
+
+  it("returns null for an unrecognized scope", () => {
+    expect(ceilingScopeForAlert("connector")).toBeNull();
+    expect(ceilingScopeForAlert("")).toBeNull();
   });
 });

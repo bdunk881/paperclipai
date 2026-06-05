@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, jest } from "@jest/globals
 
 import { OpenAIAgentsBackend } from "./openaiAgentsBackend";
 import type { AgentRunInput, ResolvedModelBinding } from "./types";
+import type { AgentTool } from "../../engine/llmProviders/types";
 
 const agentCtor = jest.fn();
 const mcpCtor = jest.fn();
@@ -136,5 +137,41 @@ describe("OpenAIAgentsBackend MCP wiring (HEL-222)", () => {
       requestInit?: { headers: Record<string, string> };
     };
     expect(opts.requestInit?.headers.Authorization).toBe("Bearer secret-token");
+  });
+});
+
+describe("OpenAIAgentsBackend tool hooks (HEL-621)", () => {
+  it("routes tool calls through the middleware pipeline: a vetoing preToolUse blocks the handler", async () => {
+    const handler = jest
+      .fn<AgentTool["handler"]>()
+      .mockResolvedValue("should-not-run");
+    const tool: AgentTool = {
+      name: "do_thing",
+      description: "does a thing",
+      inputSchema: { type: "object", properties: {}, additionalProperties: true },
+      handler,
+    };
+
+    const backend = new OpenAIAgentsBackend();
+    await backend.run(
+      baseInput({
+        tools: [tool],
+        hooks: {
+          preToolUse: async () => ({ continue: false, reason: "budget exhausted" }),
+        },
+      }),
+      binding,
+    );
+
+    // Grab the execute() the SDK was handed for our tool and invoke it. Before
+    // HEL-621 this backend ignored input.hooks, so the handler ran and the
+    // veto string never surfaced — this assertion would fail.
+    const opts = toolFn.mock.calls
+      .map((c) => c[0] as { name: string; execute: (a: unknown) => Promise<string> })
+      .find((o) => o.name === "do_thing");
+    expect(opts).toBeDefined();
+    const result = await opts!.execute({});
+    expect(result).toContain("budget exhausted");
+    expect(handler).not.toHaveBeenCalled();
   });
 });

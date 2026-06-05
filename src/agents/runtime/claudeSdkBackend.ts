@@ -31,6 +31,8 @@ import {
   assertAnthropicApiKeyForCredits,
 } from "../../billing/credits/anthropicCreditsAuth";
 import { jsonSchemaToZodShape } from "./jsonSchemaToZod";
+import { buildPipeline, type MiddlewarePipeline } from "./middleware/pipeline";
+import type { AgentRunContext, ToolCall, ToolOutcome } from "./middleware/types";
 import {
   appendSkillsToPrompt,
   resolveSkills,
@@ -93,12 +95,27 @@ export class ClaudeSdkBackend implements AgentBackend {
     const tools = input.tools ?? [];
     const toolsByName = new Map(tools.map((t) => [t.name, t]));
 
+    // HEL-621: route every tool call through the shared middleware pipeline
+    // (budget / audit / future tool-phase middleware). The Claude SDK owns the
+    // model↔tool loop, so model-phase middleware can't run here; `ctx.messages`
+    // stays empty and is unused on this backend.
+    const pipeline = buildPipeline(input.hooks);
+    const ctx: AgentRunContext = {
+      run: input,
+      binding,
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+      state: new Map(),
+      backend: this.name,
+    };
+
     const mcpToolDefs = tools.map((t) =>
       sdk.tool(
         t.name,
         t.description,
         jsonSchemaToZodShape(t.inputSchema),
-        async (args) => invokeToolWithHooks(t.name, args, toolsByName, input),
+        async (args) =>
+          invokeToolWithHooks(t.name, args, toolsByName, pipeline, ctx, input.onTrace),
       ),
     );
 
@@ -260,16 +277,19 @@ function buildExternalMcpServerConfig(server: AgentMcpServer): Record<string, un
 }
 
 /**
- * Tool wrapper that runs the pre/post-tool hooks. PreToolUse can veto
- * the call (returning `{ continue: false }` makes us surface a clean
- * error to the model instead of executing the handler). PostToolUse is
- * fire-and-forget for accounting / audit logging.
+ * Tool wrapper that routes the call through the shared middleware pipeline
+ * (HEL-621). A `beforeToolCall` middleware (e.g. budget) can veto the call by
+ * returning a `ToolOutcome` — the handler never runs and the reason is
+ * surfaced to the model. `core` runs the real handler, emits the trace, and
+ * never throws (a handler error becomes an isError outcome).
  */
 async function invokeToolWithHooks(
   toolName: string,
   args: unknown,
   toolsByName: Map<string, AgentTool>,
-  input: AgentRunInput,
+  pipeline: MiddlewarePipeline,
+  ctx: AgentRunContext,
+  onTrace: AgentRunInput["onTrace"],
 ): Promise<ClaudeToolResult> {
   const handler = toolsByName.get(toolName);
   if (!handler) {
@@ -280,75 +300,53 @@ async function invokeToolWithHooks(
   }
 
   const toolInput = (args ?? {}) as Record<string, unknown>;
+  const call: ToolCall = { id: toolName, name: toolName, arguments: toolInput };
 
-  if (input.hooks?.preToolUse) {
+  let coreRan = false;
+  const core = async (): Promise<ToolOutcome> => {
+    coreRan = true;
     try {
-      const decision = await input.hooks.preToolUse({ toolName, toolInput });
-      if (decision && decision.continue === false) {
-        const reason = decision.reason ?? "Pre-tool-use hook blocked this call.";
-        if (input.onTrace) {
-          emitTrace(input.onTrace, {
-            type: "tool_call.failed",
-            callId: toolName,
-            name: toolName,
-            error: reason,
-          });
-        }
-        return { content: [{ type: "text", text: reason }], isError: true };
+      const result = await handler.handler(toolInput);
+      if (onTrace) {
+        emitTrace(onTrace, {
+          type: "tool_result",
+          callId: toolName,
+          name: toolName,
+          outputPreview: previewToolOutput(result),
+        });
       }
+      return { content: typeof result === "string" ? result : JSON.stringify(result) };
     } catch (err) {
-      // Hook errors must not break the tool path; treat as approve + log.
-      console.warn(
-        `[claudeSdkBackend] preToolUse hook threw on ${toolName}: ${(err as Error).message}`,
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      if (onTrace) {
+        emitTrace(onTrace, {
+          type: "tool_call.failed",
+          callId: toolName,
+          name: toolName,
+          error: message,
+        });
+      }
+      return { content: `Tool "${toolName}" failed: ${message}`, isError: true };
     }
+  };
+
+  const outcome = await pipeline.toolCall(ctx, call, core);
+
+  // A beforeToolCall middleware vetoed (e.g. budget): core never ran, so emit
+  // the failed-call trace the old hook path produced.
+  if (!coreRan && outcome.isError && onTrace) {
+    emitTrace(onTrace, {
+      type: "tool_call.failed",
+      callId: toolName,
+      name: toolName,
+      error: outcome.content,
+    });
   }
 
-  try {
-    const result = await handler.handler(toolInput);
-    if (input.onTrace) {
-      emitTrace(input.onTrace, {
-        type: "tool_result",
-        callId: toolName,
-        name: toolName,
-        outputPreview: previewToolOutput(result),
-      });
-    }
-    if (input.hooks?.postToolUse) {
-      try {
-        await input.hooks.postToolUse({ toolName, toolInput, result });
-      } catch (err) {
-        console.warn(
-          `[claudeSdkBackend] postToolUse hook threw on ${toolName}: ${(err as Error).message}`,
-        );
-      }
-    }
-    const text = typeof result === "string" ? result : JSON.stringify(result);
-    return { content: [{ type: "text", text }] };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (input.onTrace) {
-      emitTrace(input.onTrace, {
-        type: "tool_call.failed",
-        callId: toolName,
-        name: toolName,
-        error: message,
-      });
-    }
-    if (input.hooks?.postToolUse) {
-      try {
-        await input.hooks.postToolUse({ toolName, toolInput, result: null, error: message });
-      } catch (hookErr) {
-        console.warn(
-          `[claudeSdkBackend] postToolUse hook threw on error path: ${(hookErr as Error).message}`,
-        );
-      }
-    }
-    return {
-      content: [{ type: "text", text: `Tool "${toolName}" failed: ${message}` }],
-      isError: true,
-    };
-  }
+  return {
+    content: [{ type: "text", text: outcome.content }],
+    ...(outcome.isError ? { isError: true } : {}),
+  };
 }
 
 /**

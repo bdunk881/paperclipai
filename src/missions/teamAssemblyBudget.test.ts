@@ -40,6 +40,34 @@ describe("teamAssemblyBudget (HEL-501 / chunked generation PR1)", () => {
       // gemini 65536 * 0.05 = 3276 usable < 4000 target; 3276 / 320 = 10.
       expect(computeFillBatchSize("gemini", { reserveFraction: 0.05 })).toBe(10);
     });
+
+    // HEL-639: slow reasoning BYOK providers (OpenAI gpt-5/o-series, Anthropic
+    // opus) are capped below the budget-derived size so a single fill call
+    // stays under the 120s per-call timeout; the roles spread across more
+    // concurrent fills instead.
+    it("caps OpenAI at the latency ceiling (budget would allow 12)", () => {
+      // openai 16384 * 0.75 = 12288 usable; min(4000, 12288)/320 = 12 by
+      // budget, capped to 6 for latency.
+      expect(computeFillBatchSize("openai")).toBe(6);
+    });
+
+    it("caps Anthropic at the latency ceiling (budget would allow 12)", () => {
+      // anthropic 8192 * 0.75 = 6144 usable; min(4000, 6144)/320 = 12 by
+      // budget, capped to 6 for latency.
+      expect(computeFillBatchSize("anthropic")).toBe(6);
+    });
+
+    it("leaves a fast provider (gemini) uncapped", () => {
+      expect(computeFillBatchSize("gemini")).toBe(12);
+    });
+
+    it("only LOWERS the batch — never raises a sub-cap budget size", () => {
+      // openai budget: 4000 / 1000 = 4, which is already < the cap of 6, so the
+      // cap is a no-op and the smaller budget size wins.
+      expect(
+        computeFillBatchSize("openai", { estimatedTokensPerAgent: 1000 }),
+      ).toBe(4);
+    });
   });
 
   describe("splitRolesIntoFillBatches", () => {

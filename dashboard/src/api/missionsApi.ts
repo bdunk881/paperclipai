@@ -272,9 +272,19 @@ export async function deleteMission(
 // request after 15s and surfaced "Mission saved as a draft, but plan
 // generation failed: Request timed out after 15s" on /hire even when
 // the backend was still working and would have succeeded a few seconds
-// later. 90s is comfortably above observed p99 for the team-assembly
-// prompt without keeping a hung backend on screen indefinitely.
-const GENERATE_PLAN_TIMEOUT_MS = 90_000;
+// later.
+//
+// HEL-639: 90s was too low for LARGE teams (~15 agents) on a slow BYOK
+// reasoning model (OpenAI gpt-5/o-series, Anthropic opus). The chunked
+// backend runs a skeleton call THEN parallel fill batches; on a slow
+// model each stage can take up to the per-call server timeout (120s), so
+// two sequential stages legitimately need up to ~240s end-to-end. At 90s
+// the client aborted while the backend was still working, surfacing the
+// "Plan generation timed out" copy on a plan that would have succeeded.
+// 240s sits under MAX_FETCH_TIMEOUT_MS (300s); Hire.tsx shows a progress
+// ticker so the longer wait still has feedback. (Backend HEL-639 also caps
+// fill-batch size for these providers so each call stays under 120s.)
+const GENERATE_PLAN_TIMEOUT_MS = 240_000;
 
 export async function generateHiringPlan(
   missionId: string,

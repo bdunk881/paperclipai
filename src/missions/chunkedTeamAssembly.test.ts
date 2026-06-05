@@ -126,6 +126,22 @@ describe("generateTeamPlanChunked (HEL-553 / chunked generation PR5)", () => {
     await expect(generateTeamPlanChunked(request, llm)).rejects.toThrow(/persistent failure/);
     expect(fillFn).toHaveBeenCalledTimes(2);
   });
+
+  it("does NOT retry a fill batch that timed out (HEL-642)", async () => {
+    const skeletonFn = jest.fn().mockResolvedValue({
+      text: JSON.stringify(SKELETON),
+      usage: { promptTokens: 1, completionTokens: 1 },
+    });
+    const fillFn = jest
+      .fn()
+      .mockRejectedValue(new Error("OpenAI API error: Request timed out."));
+    mockedGetProvider.mockReturnValueOnce(skeletonFn).mockReturnValue(fillFn);
+
+    await expect(generateTeamPlanChunked(request, llm)).rejects.toThrow(/timed out/);
+    // A timeout already spent the full per-call budget — retrying just hits the
+    // wall again, so it fires exactly once (a transient failure would be 2).
+    expect(fillFn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("chunkedResponseFormat (HEL-625)", () => {

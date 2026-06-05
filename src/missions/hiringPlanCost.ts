@@ -55,6 +55,7 @@ const RATES: Partial<Record<ProviderName, Record<string, RateEntry>>> = {
   },
   anthropic: {
     // Claude 4.x family (2026-05 list).
+    "claude-opus-4-8": { promptPer1k: 0.005, completionPer1k: 0.025 },
     "claude-opus-4-7": { promptPer1k: 0.005, completionPer1k: 0.025 },
     "claude-opus-4-6": { promptPer1k: 0.005, completionPer1k: 0.025 },
     "claude-sonnet-4-6": { promptPer1k: 0.003, completionPer1k: 0.015 },

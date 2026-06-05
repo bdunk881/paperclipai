@@ -131,8 +131,15 @@ export async function generateTeamPlanChunked(
 }
 
 /**
- * Run one fill batch, retrying ONCE on any failure (parse/schema/provider).
- * gemini variance or a single malformed batch shouldn't sink the whole plan.
+ * Run one fill batch, retrying ONCE on a TRANSIENT failure (parse/schema blip,
+ * 5xx, connection reset) — gemini variance or a single malformed batch
+ * shouldn't sink the whole plan.
+ *
+ * A TIMEOUT is NOT retried (HEL-642): the first call already burned the full
+ * per-call budget (DEFAULT_LLM_REQUEST_TIMEOUT_MS = 120s), and a slow reasoning
+ * model that just hit that wall will hit it again — so an immediate retry only
+ * doubles wall-clock for nothing and can push the run past the dashboard's
+ * generate-plan budget. Timeouts surface straight away.
  */
 async function runFillBatch(
   fillProvider: ProviderFn,
@@ -146,8 +153,12 @@ async function runFillBatch(
     const resp = await fillProvider(prompt);
     accumulate(resp.usage);
     return parseRoleDetailResponse(resp.text, batch);
-  } catch {
-    // fall through to a single retry
+  } catch (firstErr) {
+    if (isTimeoutError(firstErr)) {
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      throw new Error(`fill[${batch.join(",")}] timed out — not retrying: ${msg}`);
+    }
+    // transient failure: fall through to a single retry
   }
   const resp = await fillProvider(prompt);
   accumulate(resp.usage);
@@ -156,6 +167,23 @@ async function runFillBatch(
   } catch (err) {
     throw augmentWithRaw(`fill[${batch.join(",")}]`, err, resp.text);
   }
+}
+
+/**
+ * True for an upstream timeout/abort — the per-call budget is already spent, so
+ * retrying is wasteful (HEL-642). Mirrors the needles userFacingError uses to
+ * classify the `timeout` category. Provider adapters surface these as
+ * "<label> API error: ... timed out / aborted / ETIMEDOUT".
+ */
+function isTimeoutError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout") ||
+    msg.includes("aborted") ||
+    msg.includes("econnreset")
+  );
 }
 
 /**

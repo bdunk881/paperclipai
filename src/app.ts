@@ -1425,24 +1425,24 @@ app.get("/api/workflows/schema", (_req, res) => {
 });
 
 /** Get a single template with full definition */
-app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
+app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
     const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(template);
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 /** Export a template in the portable AutoFlow workflow format */
-app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
+app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
     const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(createPortableWorkflowBundle(template));
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 /** Import a portable workflow template into the in-memory registry */
 app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
@@ -1486,7 +1486,7 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
 }));
 
 /** Get sample data for a template (for dashboard preview) */
-app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), async (req: WorkspaceAwareRequest, res) => {
+app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
     const template = await getTemplate(req.params.id, req.workspaceId);
     res.json({
@@ -1496,7 +1496,7 @@ app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Runs API — execute and monitor workflow runs

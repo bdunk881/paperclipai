@@ -20,7 +20,11 @@ import {
   socialMonitoringTemplate,
   supportTicketRoutingTemplate,
 } from "./additional-templates";
-import { getImportedTemplate, listImportedTemplates } from "./importedTemplateStore";
+import {
+  getImportedTemplate,
+  getImportedTemplateAsync,
+  listImportedTemplatesAsync,
+} from "./importedTemplateStore";
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   customerSupportBot,
@@ -49,22 +53,43 @@ export {
   supportTicketRoutingTemplate,
 };
 
-export function listTemplates(): WorkflowTemplate[] {
-  return [...WORKFLOW_TEMPLATES, ...listImportedTemplates()];
+// HEL-520: imported-template reads are workspace-scoped and Postgres-backed,
+// so getTemplate/listTemplates are async. Built-in seeds resolve globally and
+// synchronously from TEMPLATE_MAP; imported templates resolve only when visible
+// to `workspaceId`. Omitting `workspaceId` (internal re-resolution of an
+// already-owned run's DAG) sees every imported template — those paths are not a
+// cross-tenant enumeration vector.
+
+export async function listTemplates(workspaceId?: string | null): Promise<WorkflowTemplate[]> {
+  return [...WORKFLOW_TEMPLATES, ...(await listImportedTemplatesAsync(workspaceId))];
 }
 
 /** Returns templates filtered by category */
-export function getTemplatesByCategory(
-  category: WorkflowTemplate["category"]
-): WorkflowTemplate[] {
-  return listTemplates().filter((t) => t.category === category);
+export async function getTemplatesByCategory(
+  category: WorkflowTemplate["category"],
+  workspaceId?: string | null,
+): Promise<WorkflowTemplate[]> {
+  return (await listTemplates(workspaceId)).filter((t) => t.category === category);
 }
 
-/** Returns a template by ID, throwing if not found */
-export function getTemplate(id: string): WorkflowTemplate {
-  const tpl = TEMPLATE_MAP[id] ?? getImportedTemplate(id);
+/** Returns a template by ID, throwing if not found. */
+export async function getTemplate(id: string, workspaceId?: string | null): Promise<WorkflowTemplate> {
+  const tpl = TEMPLATE_MAP[id] ?? (await getImportedTemplateAsync(id, workspaceId));
   if (!tpl) {
     throw new Error(`Workflow template not found: ${id}`);
   }
   return tpl;
+}
+
+/**
+ * Synchronous, cache-only resolution (seeds + the warmed imported-template
+ * cache). For miss-tolerant synchronous contexts that already fall back to an
+ * inline `run.workflowDag` snapshot (e.g. the observability records builder),
+ * where awaiting a DB read inside a hot synchronous map would be invasive.
+ */
+export function getTemplateCached(
+  id: string,
+  workspaceId?: string | null,
+): WorkflowTemplate | undefined {
+  return TEMPLATE_MAP[id] ?? getImportedTemplate(id, workspaceId);
 }

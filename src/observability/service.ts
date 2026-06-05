@@ -1,5 +1,5 @@
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
-import { getTemplate } from "../templates";
+import { getTemplateCached } from "../templates";
 import type { WorkflowRun, StepResult, WorkflowStep } from "../types/workflow";
 import type { ObservabilityEvent } from "./types";
 
@@ -235,10 +235,12 @@ export async function buildObservabilityResponse(
   const records = runs
     .flatMap((run) => {
       let templateSteps = new Map<string, WorkflowStep>();
-      try {
-        templateSteps = new Map(getTemplate(run.templateId).steps.map((step) => [step.id, step]));
-      } catch {
-        templateSteps = new Map();
+      // HEL-520: cache-only (sync) resolution — this builder runs inside a
+      // synchronous flatMap and tolerates a miss (empty step map). Most runs
+      // carry their DAG inline; the cache (warmed on boot) covers the rest.
+      const cachedTemplate = getTemplateCached(run.templateId);
+      if (cachedTemplate) {
+        templateSteps = new Map(cachedTemplate.steps.map((step) => [step.id, step]));
       }
 
       return run.stepResults.map((step) => {

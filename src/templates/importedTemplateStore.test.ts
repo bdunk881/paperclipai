@@ -6,6 +6,7 @@ jest.mock("../db/postgres", () => ({
 
 import { makeWorkflowTemplate } from "../test-factories";
 import {
+  deleteImportedTemplate,
   getImportedTemplate,
   getImportedTemplateAsync,
   listImportedTemplates,
@@ -63,7 +64,7 @@ describe("importedTemplateStore", () => {
     expect(getImportedTemplate(template.id)).toEqual(template);
     expect(mockQueryPostgres).toHaveBeenCalledWith(
       expect.stringContaining("FROM workflows w"),
-      [template.id]
+      [null, template.id]
     );
   });
 
@@ -156,7 +157,10 @@ describe("importedTemplateStore", () => {
 
     expect(count).toBe(1);
     expect(getImportedTemplate(template.id)).toEqual(template);
-    expect(mockQueryPostgres).toHaveBeenCalledWith(expect.stringContaining("FROM workflows w"));
+    expect(mockQueryPostgres).toHaveBeenCalledWith(
+      expect.stringContaining("FROM workflows w"),
+      [null, null],
+    );
   });
 
   it("warmImportedTemplates is a no-op (0) when Postgres is not configured", async () => {
@@ -166,5 +170,46 @@ describe("importedTemplateStore", () => {
 
     expect(count).toBe(0);
     expect(mockQueryPostgres).not.toHaveBeenCalled();
+  });
+
+  // HEL-520: imported templates are workspace-scoped — a member of workspace B
+  // must not see workspace A's imported templates; legacy/global (workspace_id
+  // NULL) templates stay visible to everyone. Exercises the in-memory path.
+  describe("workspace scoping (HEL-520)", () => {
+    it("isolates imported templates by workspace, NULL-tolerant for globals", async () => {
+      const tplA = makeWorkflowTemplate({ id: "tpl-ws-a", name: "A only", category: "custom" });
+      const tplB = makeWorkflowTemplate({ id: "tpl-ws-b", name: "B only", category: "custom" });
+      const tplGlobal = makeWorkflowTemplate({ id: "tpl-global", name: "Legacy global", category: "custom" });
+
+      await saveImportedTemplate(tplA, undefined, "ws-a");
+      await saveImportedTemplate(tplB, undefined, "ws-b");
+      await saveImportedTemplate(tplGlobal, undefined, null);
+
+      // A sees its own + the global, never B's.
+      expect(getImportedTemplate(tplA.id, "ws-a")).toEqual(tplA);
+      expect(getImportedTemplate(tplB.id, "ws-a")).toBeUndefined();
+      expect(getImportedTemplate(tplGlobal.id, "ws-a")).toEqual(tplGlobal);
+
+      expect(listImportedTemplates("ws-a").map((t) => t.id).sort()).toEqual(
+        [tplA.id, tplGlobal.id].sort(),
+      );
+      expect(listImportedTemplates("ws-b").map((t) => t.id).sort()).toEqual(
+        [tplB.id, tplGlobal.id].sort(),
+      );
+
+      // The async path doesn't leak across workspaces either.
+      expect(await getImportedTemplateAsync(tplB.id, "ws-a")).toBeUndefined();
+      expect(await getImportedTemplateAsync(tplA.id, "ws-a")).toEqual(tplA);
+    });
+
+    it("deleteImportedTemplate will not drop another workspace's template", async () => {
+      const tplB = makeWorkflowTemplate({ id: "tpl-del-b", name: "B only", category: "custom" });
+      await saveImportedTemplate(tplB, undefined, "ws-b");
+
+      // ws-a can't see it, so a delete scoped to ws-a leaves it intact.
+      const removed = await deleteImportedTemplate(tplB.id, "ws-a");
+      expect(removed).toBe(false);
+      expect(getImportedTemplate(tplB.id, "ws-b")).toEqual(tplB);
+    });
   });
 });

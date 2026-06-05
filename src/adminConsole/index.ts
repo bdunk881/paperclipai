@@ -34,6 +34,10 @@ import { createInfraRoutes } from "./infra";
 import { createAgentWebhookRoutes } from "./agentWebhooks/routes";
 import { createAgentReplyRoute } from "./agentWebhooks/replyRoute";
 import { createPlatformAdminsRoutes } from "./platformAdminsRoutes";
+import {
+  createSystemNoticesRoutes,
+  createSystemNoticeUnsubscribeRoute,
+} from "./systemNotices/routes";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
 
@@ -70,9 +74,17 @@ export function createAdminConsoleRoutes(pool: Pool): Router {
   router.use("/infra", createInfraRoutes(pool));
   router.use("/agent-webhooks", createAgentWebhookRoutes(pool));
   router.use("/platform-admins", createPlatformAdminsRoutes(pool));
+  router.use("/system-notices", createSystemNoticesRoutes(pool));
 
   return router;
 }
+
+/**
+ * Public, token-gated system-notice unsubscribe — mounted OUTSIDE the admin
+ * gate in src/app.ts (recipients have no AutoFlow session); the HMAC token over
+ * the email is the auth. HEL-366.
+ */
+export { createSystemNoticeUnsubscribeRoute };
 
 /**
  * Public-facing impersonation token verifier — called by the customer

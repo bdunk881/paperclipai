@@ -103,7 +103,7 @@ export default function BlogPostPage() {
   const { cmsPost, article } = useLoaderData() as LoaderData;
 
   const title = cmsPost?.title ?? article!.title;
-  const author = cmsPost?.author ?? article!.author;
+  const author = cmsPost?.author?.name ?? article!.author;
   const publishedAt = cmsPost?.publishedAt ?? article!.publishedAt;
 
   return (

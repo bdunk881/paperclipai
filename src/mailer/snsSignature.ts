@@ -54,6 +54,7 @@ const SNS_HOST = /^sns\.[a-z0-9-]+\.amazonaws\.com$/;
 
 export type CertFetcher = (url: string) => Promise<string>;
 
+// allowlist: process-local SNS signing-cert cache (cert URL -> PEM); refetchable, not customer data
 const certCache = new Map<string, string>();
 
 /** True only for an `https://sns.<region>.amazonaws.com/...` URL (SSRF guard). */

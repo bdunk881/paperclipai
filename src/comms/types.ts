@@ -83,6 +83,24 @@ export interface TransportResult {
   providerMessageId?: string;
 }
 
+/**
+ * Error thrown by a transport. `retryable` tells the durable worker (HEL-612)
+ * whether to retry (transient: 5xx / network / timeout) or fail permanently
+ * (4xx / config). When `status` is given and `retryable` is omitted, 5xx ⇒
+ * retryable and 4xx ⇒ not; an unknown error defaults to retryable.
+ */
+export class TransportError extends Error {
+  readonly retryable: boolean;
+  readonly status?: number;
+
+  constructor(message: string, opts: { retryable?: boolean; status?: number } = {}) {
+    super(message);
+    this.name = "TransportError";
+    this.status = opts.status;
+    this.retryable = opts.retryable ?? (opts.status === undefined ? true : opts.status >= 500);
+  }
+}
+
 /** A provider-pluggable delivery transport for one channel. */
 export interface CommsTransport {
   /** Stable provider id recorded on the ledger row, e.g. 'ses' | 'resend' | 'telnyx'. */

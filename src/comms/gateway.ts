@@ -7,19 +7,23 @@
  * failures are recorded and returned (`status: 'failed'`); only programmer/
  * config errors (bad input, no transport) throw.
  *
- * This is the foundation PR: synchronous send path only. BullMQ retry/DLQ,
- * spend attribution, inbound webhooks, and the concrete provider transports
- * (SES system mailer, Telnyx, Vapi) land in follow-up tickets and register
- * against {@link CommsGateway.registerTransport}.
+ * `deliverExisting(...)` is the per-attempt unit shared with the durable worker
+ * (HEL-612): it sends an already-ledgered row and throws on failure (a
+ * {@link TransportError} carries retry classification) so the worker can retry
+ * or dead-letter. Concrete provider transports (SES system mailer, Telnyx,
+ * Vapi) register against {@link CommsGateway.registerTransport}.
  */
 
 import { commsSendStore } from "./commsSendStore";
+import { commsSpendStore } from "./commsSpendStore";
+import { estimateCommsCostUsd } from "./pricing";
 import {
   CommsChannel,
   CommsKind,
   CommsSendInput,
   CommsSendResult,
   CommsTransport,
+  TransportError,
   TransportMessage,
 } from "./types";
 
@@ -121,20 +125,17 @@ export class CommsGateway {
     };
 
     try {
-      const result = await transport.send(message);
-      await this.store.markSent(
-        input.workspaceId,
-        record.id,
-        { provider: transport.id, providerMessageId: result.providerMessageId },
-        input.userId,
-      );
-      return {
+      return await this.deliverExisting({
         id: record.id,
-        status: "sent",
-        deduped: false,
-        provider: transport.id,
-        providerMessageId: result.providerMessageId,
-      };
+        workspaceId: input.workspaceId,
+        kind: input.kind,
+        channel: input.channel,
+        message,
+        userId: input.userId,
+        agentId: input.agentId,
+        missionId: input.missionId,
+        transport,
+      });
     } catch (err) {
       const errMessage = err instanceof Error ? err.message : String(err);
       await this.store.markFailed(input.workspaceId, record.id, errMessage, input.userId);
@@ -146,6 +147,66 @@ export class CommsGateway {
         error: errMessage,
       };
     }
+  }
+
+  /**
+   * Deliver an already-ledgered send — the durable worker's per-attempt unit.
+   * Resolves the transport, sends, and marks the row `sent`. Throws on failure
+   * (a {@link TransportError} carries retry classification); the caller decides
+   * whether to retry, dead-letter, or record the failure.
+   */
+  async deliverExisting(params: {
+    id: string;
+    workspaceId: string;
+    kind: CommsKind;
+    channel: CommsChannel;
+    message: TransportMessage;
+    userId?: string;
+    agentId?: string;
+    missionId?: string;
+    transport?: CommsTransport;
+  }): Promise<CommsSendResult> {
+    const transport =
+      params.transport ?? this.resolveTransport(params.kind, params.channel);
+    if (!transport) {
+      throw new TransportError(
+        `comms.deliver: no transport registered for ${params.kind}/${params.channel}`,
+        { retryable: false },
+      );
+    }
+    const result = await transport.send(params.message);
+    await this.store.markSent(
+      params.workspaceId,
+      params.id,
+      { provider: transport.id, providerMessageId: result.providerMessageId },
+      params.userId,
+    );
+    // Best-effort spend attribution (HEL-611) — never fail a delivered message
+    // on a spend-ledger error.
+    try {
+      await commsSpendStore.recordSpend({
+        workspaceId: params.workspaceId,
+        userId: params.userId,
+        agentId: params.agentId,
+        missionId: params.missionId,
+        commsSendId: params.id,
+        channel: params.channel,
+        provider: transport.id,
+        units: 1,
+        costUsd: estimateCommsCostUsd(params.channel, transport.id, 1),
+      });
+    } catch (err) {
+      console.error(
+        `[comms] spend record failed for ${params.id}: ${(err as Error).message}`,
+      );
+    }
+    return {
+      id: params.id,
+      status: "sent",
+      deduped: false,
+      provider: transport.id,
+      providerMessageId: result.providerMessageId,
+    };
   }
 }
 

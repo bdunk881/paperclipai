@@ -137,6 +137,30 @@ export const commsSendStore = {
     return row ? fromRow(row) : null;
   },
 
+  /** Look up a send by id (workspace-scoped). Used by the durable worker. */
+  async findById(
+    workspaceId: string,
+    id: string,
+    userId?: string,
+  ): Promise<CommsSendRecord | null> {
+    if (!postgresPersistenceAvailable()) {
+      const record = memById.get(id);
+      return record && record.workspaceId === workspaceId ? clone(record) : null;
+    }
+
+    const result = await withWorkspaceContext(
+      getPostgresPool(),
+      context(workspaceId, userId),
+      (client) =>
+        client.query<CommsSendRow>(
+          `SELECT * FROM comms_sends WHERE id = $1 AND workspace_id = $2 LIMIT 1`,
+          [id, workspaceId],
+        ),
+    );
+    const row = result.rows[0];
+    return row ? fromRow(row) : null;
+  },
+
   /**
    * Insert a `queued` row. Returns `{ created: false }` (with the existing
    * row) when the idempotency key already exists — including when a concurrent

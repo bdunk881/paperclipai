@@ -38,6 +38,7 @@ export function toOpenRouterModelId(provider: string, model: string): string {
 
 const OPENROUTER_MODEL_MAP: Record<string, string> = {
   // Anthropic
+  "anthropic::claude-opus-4-8":           "anthropic/claude-opus-4.8",
   "anthropic::claude-opus-4-7":           "anthropic/claude-opus-4.7",
   "anthropic::claude-sonnet-4-6":         "anthropic/claude-sonnet-4.6",
   "anthropic::claude-haiku-4-5":          "anthropic/claude-haiku-4.5",

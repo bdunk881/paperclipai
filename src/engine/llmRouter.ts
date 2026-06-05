@@ -34,7 +34,7 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
   anthropic: {
     lite: "claude-haiku-4-5-20251001",
     standard: "claude-sonnet-4-6",
-    power: "claude-opus-4-7",
+    power: "claude-opus-4-8", // HEL-643: 4-7 retired
   },
   openai: {
     lite: "gpt-5.4-nano",
@@ -120,7 +120,7 @@ export const TIER_MODELS: Record<ProviderName, Record<LlmTier, string>> = {
     // when a BYOK caller somehow lands on openrouter directly.
     lite: "anthropic/claude-haiku-4.5",
     standard: "anthropic/claude-sonnet-4.6",
-    power: "anthropic/claude-opus-4.7",
+    power: "anthropic/claude-opus-4.8", // HEL-643: 4.7 retired
   },
 };
 
@@ -135,6 +135,7 @@ interface TokenCostRate {
 
 const MODEL_COST_RATES: Record<string, TokenCostRate> = {
   // Anthropic (per Anthropic's 2026-05 pricing page)
+  "claude-opus-4-8":            { input: 0.005,     output: 0.025   }, // HEL-643: current Opus; rates mirror 4-7
   "claude-opus-4-7":            { input: 0.005,     output: 0.025   },
   "claude-opus-4-6":            { input: 0.005,     output: 0.025   },
   "claude-sonnet-4-6":          { input: 0.003,     output: 0.015   },

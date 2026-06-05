@@ -67,6 +67,7 @@ export async function routeEvent(
       sourceRef: args.sourceRef ?? null,
       summary: args.summary,
       payload: args.payload ?? {},
+      dedupeKey: args.dedupeKey ?? null,
     },
     {
       agentId: args.candidateAgentId ?? "",

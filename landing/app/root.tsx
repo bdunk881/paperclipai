@@ -10,6 +10,7 @@ import {
 import "./globals.css";
 import "./tokens.css";
 import "./v2.css";
+import { serializeLd, siteGraphLd } from "@/lib/structuredData";
 
 export function meta() {
   return [
@@ -41,6 +42,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
         />
         <Meta />
         <Links />
+        {/* Sitewide entity graph (Organization + WebSite + SoftwareApplication).
+            Rendered here (not via meta()) because RR7 leaf-route meta replaces
+            ancestor meta, so this guarantees it on every page. */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: serializeLd(siteGraphLd()) }}
+        />
       </head>
       <body className="min-h-full flex flex-col">
         {children}

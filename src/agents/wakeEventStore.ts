@@ -92,12 +92,20 @@ export interface PublishInput {
   sourceRef?: string | null;
   summary: string;
   payload?: Record<string, unknown>;
+  /**
+   * HEL-613: stable per-source-event key. When set, a duplicate
+   * (workspace_id, dedupe_key) is a no-op that returns the existing row — so a
+   * provider webhook retry doesn't double-wake the agent. Left NULL by every
+   * other source (the partial unique index only constrains non-NULL keys).
+   */
+  dedupeKey?: string | null;
 }
 
 /**
  * Publish a new wake event. Returns the persisted row. The event starts as
  * `decision=PENDING`; the caller is expected to immediately call into the
- * triage layer (or enqueue it).
+ * triage layer (or enqueue it). When `dedupeKey` collides with an existing
+ * row, the prior row is returned unchanged (idempotent re-publish).
  */
 export async function publishWakeEvent(pool: Pool, input: PublishInput): Promise<WakeEvent> {
   const id = randomUUID();
@@ -107,8 +115,9 @@ export async function publishWakeEvent(pool: Pool, input: PublishInput): Promise
     async (client) => {
       const result = await client.query<WakeEventRow>(
         `INSERT INTO wake_events
-          (id, workspace_id, agent_id, source, source_ref, summary, payload)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+          (id, workspace_id, agent_id, source, source_ref, summary, payload, dedupe_key)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (workspace_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
         RETURNING *`,
         [
           id,
@@ -118,12 +127,67 @@ export async function publishWakeEvent(pool: Pool, input: PublishInput): Promise
           input.sourceRef ?? null,
           input.summary,
           JSON.stringify(input.payload ?? {}),
+          input.dedupeKey ?? null,
         ],
       );
-      return result.rows[0];
+      if (result.rows[0]) {
+        return result.rows[0];
+      }
+      // Duplicate dedupe_key — return the canonical pre-existing row.
+      const existing = await client.query<WakeEventRow>(
+        `SELECT * FROM wake_events WHERE workspace_id = $1 AND dedupe_key = $2 LIMIT 1`,
+        [input.workspaceId, input.dedupeKey],
+      );
+      return existing.rows[0];
     },
   );
+  if (!row) {
+    throw new Error("publishWakeEvent: insert returned no row and no dedupe match");
+  }
   return rowToEvent(row);
+}
+
+/**
+ * HEL-613: look up an existing wake event by its dedupe key (workspace-scoped).
+ * Lets a webhook ingest short-circuit a provider retry before re-triaging.
+ */
+export async function findWakeEventByDedupeKey(
+  pool: Pool,
+  input: { workspaceId: string; userId: string; dedupeKey: string },
+): Promise<WakeEvent | null> {
+  const row = await withWorkspaceContext(
+    pool,
+    { workspaceId: input.workspaceId, userId: input.userId },
+    async (client) => {
+      const result = await client.query<WakeEventRow>(
+        `SELECT * FROM wake_events WHERE workspace_id = $1 AND dedupe_key = $2 LIMIT 1`,
+        [input.workspaceId, input.dedupeKey],
+      );
+      return result.rows[0] ?? null;
+    },
+  );
+  return row ? rowToEvent(row) : null;
+}
+
+/**
+ * HEL-613: backfill the run that an ACTed wake event spawned. Narrow update so
+ * it never clobbers the triage decision/reason (unlike recordTriageDecision).
+ * Called by the agent-prompt worker (or the inline dispatch fallback) once
+ * executeAgentPrompt returns a runId.
+ */
+export async function setActedRunId(
+  pool: Pool,
+  input: { eventId: string; workspaceId: string; userId: string; runId: string },
+): Promise<void> {
+  await withWorkspaceContext(
+    pool,
+    { workspaceId: input.workspaceId, userId: input.userId },
+    (client) =>
+      client.query(`UPDATE wake_events SET acted_run_id = $2 WHERE id = $1`, [
+        input.eventId,
+        input.runId,
+      ]),
+  );
 }
 
 export interface RecordDecisionInput {

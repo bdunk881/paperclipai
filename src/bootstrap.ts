@@ -6,6 +6,7 @@ import {
 } from "./db/postgres";
 import { ensureSqlMigrationsApplied } from "./db/sqlMigrations";
 import { ensureKnowledgeSchema } from "./knowledge/knowledgeStore";
+import { warmImportedTemplates } from "./templates/importedTemplateStore";
 import { assertProductionSafety } from "./security/qaBypassGuard";
 
 type Logger = Pick<typeof console, "log" | "warn" | "error">;
@@ -67,6 +68,16 @@ export async function initializePersistence(logger: Logger = console): Promise<v
       logger.log("[knowledge] Schema initialized");
     } catch (err) {
       logger.error("[knowledge] Schema init failed:", (err as Error).message);
+    }
+
+    // HEL-485: warm the imported-template cache from Postgres so runs started
+    // with an imported templateId resolve after a restart / on a fresh machine
+    // (the in-memory Map is otherwise empty until the template is re-saved).
+    try {
+      const warmedTemplates = await warmImportedTemplates();
+      logger.log(`[templates] Warmed ${warmedTemplates} imported template(s) from Postgres`);
+    } catch (err) {
+      logger.error("[templates] Imported-template warm failed:", (err as Error).message);
     }
   }
 }

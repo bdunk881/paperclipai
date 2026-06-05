@@ -94,6 +94,23 @@ describe("handleTrigger", () => {
 
 const TEST_USER = "user-llm-test";
 
+// HEL-610 / Codex review: OPENCODE_ZEN_API_KEY is now the active hosted-free
+// fallback env var. Default EVERY test in this file to "no hosted-free key" so
+// the negative "no LLM provider configured" paths reliably exercise even if the
+// key leaks in from the shell/CI env. The hosted-free describe re-sets it for
+// its own positive cases; the original value is restored after the suite.
+const ORIGINAL_OPENCODE_ZEN_KEY = process.env.OPENCODE_ZEN_API_KEY;
+beforeEach(() => {
+  delete process.env.OPENCODE_ZEN_API_KEY;
+});
+afterAll(() => {
+  if (ORIGINAL_OPENCODE_ZEN_KEY === undefined) {
+    delete process.env.OPENCODE_ZEN_API_KEY;
+  } else {
+    process.env.OPENCODE_ZEN_API_KEY = ORIGINAL_OPENCODE_ZEN_KEY;
+  }
+});
+
 describe("handleLlm", () => {
   let mockProviderFn: jest.Mock;
 
@@ -236,29 +253,20 @@ describe("handleLlm", () => {
   describe("hosted-free fallback (PR B.1 + B.2)", () => {
     // These cases hit the new fallback path that lets Explore
     // workspaces with no BYOK config still run LLM steps via the
-    // hosted free tier. Tests run with GROQ_API_KEY set so
-    // getDefaultHostedFreeProvider() returns a real provider; the
+    // hosted free tier. Tests run with OPENCODE_ZEN_API_KEY set so
+    // getDefaultHostedFreeProvider() returns the sole free provider
+    // (OpenCode Zen "big-pickle" — Groq was dropped in HEL-605); the
     // engine then synthesizes a DecryptedLLMConfig + routes through
     // getProvider (mocked) and records token usage.
-    const previousGroqKey = process.env.GROQ_API_KEY;
-
     beforeEach(() => {
       llmConfigStore.clear();
-      process.env.GROQ_API_KEY = "gsk-test-fallback";
+      process.env.OPENCODE_ZEN_API_KEY = "ozk-test-fallback";
       // Reset the per-workspace counter so cap tests are independent.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       require("../hostedFreeModels/usageStore").resetHostedFreeUsageForTests();
     });
 
-    afterAll(() => {
-      if (previousGroqKey === undefined) {
-        delete process.env.GROQ_API_KEY;
-      } else {
-        process.env.GROQ_API_KEY = previousGroqKey;
-      }
-    });
-
-    it("falls back to the hosted-free Groq provider when no BYOK config exists", async () => {
+    it("falls back to the hosted-free OpenCode Zen provider when no BYOK config exists", async () => {
       (getProvider as jest.Mock).mockReturnValue(
         jest.fn().mockResolvedValue({
           text: "hosted-free result",
@@ -279,9 +287,9 @@ describe("handleLlm", () => {
 
       expect(getProvider).toHaveBeenCalledWith(
         expect.objectContaining({
-          provider: "groq",
-          model: "llama-3.1-8b-instant",
-          apiKey: "gsk-test-fallback",
+          provider: "opencode_zen",
+          model: "big-pickle",
+          apiKey: "ozk-test-fallback",
         })
       );
       expect(result.output.out).toBe("hosted-free result");
@@ -326,8 +334,8 @@ describe("handleLlm", () => {
       ).rejects.toThrow(/daily token cap/i);
     });
 
-    it("surfaces the original error when GROQ_API_KEY is not set", async () => {
-      delete process.env.GROQ_API_KEY;
+    it("surfaces the original error when OPENCODE_ZEN_API_KEY is not set", async () => {
+      delete process.env.OPENCODE_ZEN_API_KEY;
       const step = makeStep({
         kind: "llm",
         outputKeys: ["out"],
@@ -977,5 +985,37 @@ describe("SSRF guard wiring (HEL-255)", () => {
     expect(result.output["sent"]).toBe(true);
     expect(result.output["status"]).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HEL-426: stub action/transform steps mark their output `simulated`
+// ---------------------------------------------------------------------------
+
+describe("HEL-426 — stub steps mark output `simulated`", () => {
+  it.each([
+    ["email.send"],
+    ["support.sendOrEscalate"],
+    ["crm.upsertLead"],
+    ["content.queue"],
+    ["slack.notify"], // unmapped curated action → unknown-action passthrough
+  ])("handleAction %s output carries simulated: true", async (action) => {
+    const step = makeStep({ kind: "action", action, outputKeys: [] });
+    const result = await handleAction(step, {});
+    expect(result.output["simulated"]).toBe(true);
+  });
+
+  it("handleTransform enrichment.lookup output carries simulated: true", async () => {
+    const step = makeStep({ kind: "transform", action: "enrichment.lookup", outputKeys: [] });
+    const result = await handleTransform(step, { company: "Acme" });
+    expect(result.output["simulated"]).toBe(true);
+  });
+
+  it("does not mark the real webhook.send handler simulated", async () => {
+    // No url configured → early error return, but it's a real handler, not a
+    // simulation.
+    const step = makeStep({ kind: "action", action: "webhook.send", outputKeys: [] });
+    const result = await handleAction(step, {});
+    expect(result.output["simulated"]).toBeUndefined();
   });
 });

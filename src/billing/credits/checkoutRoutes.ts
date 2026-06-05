@@ -23,6 +23,7 @@ import { getStripe } from "../stripeClient";
 import { listEnabledPacks, getPackById } from "./packCatalog";
 import { claimSessionForGrant } from "./purchaseEventLog";
 import { grantCredits } from "./walletStore";
+import { sweepPurchaseToIssuing } from "./stripeIssuing";
 
 const router = Router();
 
@@ -246,6 +247,15 @@ router.post(
         });
         return;
       }
+
+      // HEL-599: sweep a share of this purchase into the Stripe Issuing
+      // balance (direct-provider wholesale funding). Best-effort + idempotent
+      // on the session id; the webhook path covers the case where this
+      // confirm saw a duplicate and returned above.
+      await sweepPurchaseToIssuing({
+        amountUsdCents: session.amount_total ?? pack.priceUsdCents,
+        sessionId: session.id,
+      });
 
       res.json({
         granted: result.granted,

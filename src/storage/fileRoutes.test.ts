@@ -1,8 +1,15 @@
+jest.mock("../auditing/auditService", () => ({
+  auditService: { recordAction: jest.fn().mockResolvedValue(undefined) },
+}));
+
 import express from "express";
 import request from "supertest";
 import { createFileRoutes } from "./fileRoutes";
 import { fileObjectStore } from "./fileObjectStore";
 import { __resetStorageAdapterForTests } from "./index";
+import { auditService } from "../auditing/auditService";
+
+const mockRecordAction = auditService.recordAction as jest.Mock;
 
 const WS_A = "11111111-1111-4111-8111-111111111111";
 const WS_B = "22222222-2222-4222-8222-222222222222";
@@ -47,6 +54,8 @@ describe("file routes (/api/files)", () => {
   beforeEach(() => {
     fileObjectStore.__resetForTests();
     __resetStorageAdapterForTests();
+    mockRecordAction.mockClear();
+    mockRecordAction.mockResolvedValue(undefined);
   });
 
   it("POST /upload-url issues a signed PUT URL and creates a row", async () => {
@@ -105,5 +114,99 @@ describe("file routes (/api/files)", () => {
     expect((await request(app).delete(`/api/files/${fileId}`)).status).toBe(204);
     expect((await request(app).get(`/api/files/${fileId}`).redirects(0)).status).toBe(404);
     expect((await request(appB()).delete(`/api/files/${fileId}`)).status).toBe(404);
+  });
+
+  // -----------------------------------------------------------------
+  // HEL-359 — storage audit logging for every /api/files operation.
+  // -----------------------------------------------------------------
+  describe("storage audit (HEL-359)", () => {
+    function auditCall(action: string) {
+      return mockRecordAction.mock.calls.find(
+        (c) => (c[1] as { action?: string } | undefined)?.action === action,
+      );
+    }
+
+    it("audits a successful upload-URL issue with file id + bytes", async () => {
+      const res = await uploadUrl(appA(), {
+        filename: "a.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 2048,
+      });
+      expect(res.status).toBe(201);
+      const call = auditCall("file_upload_url_issued");
+      expect(call).toBeTruthy();
+      const [ctx, entry] = call!;
+      expect(ctx).toMatchObject({ workspaceId: WS_A, userId: "user-a", actorUserId: "user-a" });
+      expect(entry).toMatchObject({
+        category: "storage",
+        target: { type: "file_object", id: res.body.fileId },
+      });
+      expect(entry.metadata).toMatchObject({ fileId: res.body.fileId, bytes: 2048 });
+    });
+
+    it("audits a denied upload (mime not allowed) with the reason", async () => {
+      await uploadUrl(appA(), { filename: "evil.exe", contentType: "application/x-msdownload" });
+      const call = auditCall("file_upload_url_denied");
+      expect(call).toBeTruthy();
+      expect(call![1].metadata).toMatchObject({ reason: "mime_not_allowed" });
+    });
+
+    it("audits a denied upload (size exceeded) with the reason", async () => {
+      await uploadUrl(appA(), {
+        filename: "big.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 60 * 1024 * 1024,
+      });
+      const call = auditCall("file_upload_url_denied");
+      expect(call).toBeTruthy();
+      expect(call![1].metadata).toMatchObject({ reason: "size_exceeded" });
+    });
+
+    it("audits a successful download-URL issue", async () => {
+      const app = appA();
+      const created = await uploadUrl(app, { filename: "a.pdf", contentType: "application/pdf" });
+      mockRecordAction.mockClear();
+      await request(app).get(`/api/files/${created.body.fileId}`).redirects(0);
+      const call = auditCall("file_download_url_issued");
+      expect(call).toBeTruthy();
+      expect(call![1].target).toMatchObject({ id: created.body.fileId });
+    });
+
+    it("audits a cross-workspace download denial in the requester's trail with the reason", async () => {
+      const created = await uploadUrl(appA(), { filename: "a.pdf", contentType: "application/pdf" });
+      mockRecordAction.mockClear();
+      await request(appB()).get(`/api/files/${created.body.fileId}`).redirects(0);
+      const call = auditCall("file_download_denied");
+      expect(call).toBeTruthy();
+      const [ctx, entry] = call!;
+      expect(ctx).toMatchObject({ workspaceId: WS_B, userId: "user-b" });
+      expect(entry.metadata).toMatchObject({
+        reason: "not_found_or_cross_workspace",
+        fileId: created.body.fileId,
+      });
+    });
+
+    it("audits a successful delete", async () => {
+      const app = appA();
+      const created = await uploadUrl(app, { filename: "a.pdf", contentType: "application/pdf" });
+      mockRecordAction.mockClear();
+      await request(app).delete(`/api/files/${created.body.fileId}`);
+      expect(auditCall("file_deleted")).toBeTruthy();
+    });
+
+    it("audits a cross-workspace delete denial with the reason", async () => {
+      const created = await uploadUrl(appA(), { filename: "a.pdf", contentType: "application/pdf" });
+      mockRecordAction.mockClear();
+      await request(appB()).delete(`/api/files/${created.body.fileId}`);
+      const call = auditCall("file_delete_denied");
+      expect(call).toBeTruthy();
+      expect(call![1].metadata).toMatchObject({ reason: "not_found_or_cross_workspace" });
+    });
+
+    it("never fails the storage op when the audit write throws (best-effort)", async () => {
+      mockRecordAction.mockRejectedValueOnce(new Error("audit down"));
+      const res = await uploadUrl(appA(), { filename: "a.pdf", contentType: "application/pdf" });
+      expect(res.status).toBe(201);
+    });
   });
 });

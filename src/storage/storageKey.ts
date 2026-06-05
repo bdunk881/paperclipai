@@ -1,18 +1,33 @@
 /**
  * Canonical storage-key derivation + segment validation (HEL-352).
  *
- * The key layout is `workspaces/{workspaceId}/{collection}/{objectId}` where
- * `objectId` is `{ulid}-{sanitizedFilename}`. This module is the SINGLE place
- * that turns `(workspaceId, collection, objectId)` into a bucket key. Every
- * adapter composes keys through here, so the workspace prefix is mandatory and
- * a caller can never reach another tenant's objects with a crafted segment.
+ * The key layout is `{retentionClass}/workspaces/{workspaceId}/{collection}/{objectId}`
+ * where `objectId` is `{ulid}-{sanitizedFilename}` and `retentionClass` is the
+ * top-level prefix that bucket lifecycle rules target (HEL-358 — R2 lifecycle is
+ * prefix-based, no tag filters). This module is the SINGLE place that turns
+ * `(retentionClass, workspaceId, collection, objectId)` into a bucket key. Every
+ * adapter composes keys through here, so the workspace segment is mandatory and a
+ * caller can never reach another tenant's objects with a crafted segment.
  */
 
 import { ulid } from "ulid";
-import type { StorageObjectRef } from "./storageAdapter";
+import type { RetentionClass, StorageObjectRef } from "./storageAdapter";
 
-/** Top-level prefix under which every workspace's objects live. */
+/** Workspace segment that follows the retention prefix in every key. */
 export const WORKSPACE_PREFIX = "workspaces";
+
+/**
+ * Retention classes, doubling as the TOP-LEVEL key prefix (HEL-358) so a bounded
+ * set of bucket lifecycle rules can target each class across all workspaces.
+ * Mirrors the `RetentionClass` union (storageAdapter.ts) and
+ * `file_objects.retention_class`.
+ */
+export const RETENTION_CLASSES = ["short", "standard", "legal_hold"] as const;
+export const DEFAULT_RETENTION_CLASS: RetentionClass = "standard";
+
+export function isRetentionClass(value: string): value is RetentionClass {
+  return (RETENTION_CLASSES as readonly string[]).includes(value);
+}
 
 /** Cap on the sanitized filename component (keeps keys well under S3's 1024-byte cap). */
 const MAX_FILENAME_LENGTH = 200;
@@ -59,6 +74,14 @@ export function assertValidCollection(collection: string): void {
   }
 }
 
+export function assertValidRetention(retentionClass: string): void {
+  if (!isRetentionClass(retentionClass)) {
+    throw new StorageKeyError(
+      `retentionClass must be one of ${RETENTION_CLASSES.join(", ")} (got '${retentionClass}')`,
+    );
+  }
+}
+
 /**
  * Reduce an arbitrary client-supplied filename to a safe key component: keep
  * the basename, allow only `[A-Za-z0-9._-]`, collapse the rest to `_`, strip
@@ -88,37 +111,70 @@ export function generateObjectId(filename: string): string {
  * workspaceId is not a UUID.
  */
 export function deriveStorageKey(ref: StorageObjectRef): string {
+  const retentionClass = ref.retentionClass ?? DEFAULT_RETENTION_CLASS;
+  assertValidRetention(retentionClass);
   if (!isUuid(ref.workspaceId)) {
     throw new StorageKeyError("workspaceId must be a UUID");
   }
   assertValidCollection(ref.collection);
   assertSafeSegment("objectId", ref.objectId);
-  return `${WORKSPACE_PREFIX}/${ref.workspaceId}/${ref.collection}/${ref.objectId}`;
+  return `${retentionClass}/${WORKSPACE_PREFIX}/${ref.workspaceId}/${ref.collection}/${ref.objectId}`;
 }
 
-/** Prefix for listing a workspace (optionally narrowed to one collection). */
-export function deriveListPrefix(workspaceId: string, collection?: string): string {
+/**
+ * Prefix for listing a single retention class of a workspace (optionally
+ * narrowed to one collection). Retention is required because it's the
+ * top-level key segment; list across classes by iterating RETENTION_CLASSES.
+ */
+export function deriveListPrefix(
+  retentionClass: RetentionClass,
+  workspaceId: string,
+  collection?: string,
+): string {
+  assertValidRetention(retentionClass);
   if (!isUuid(workspaceId)) {
     throw new StorageKeyError("workspaceId must be a UUID");
   }
   if (collection === undefined) {
-    return `${WORKSPACE_PREFIX}/${workspaceId}/`;
+    return `${retentionClass}/${WORKSPACE_PREFIX}/${workspaceId}/`;
   }
   assertValidCollection(collection);
-  return `${WORKSPACE_PREFIX}/${workspaceId}/${collection}/`;
+  return `${retentionClass}/${WORKSPACE_PREFIX}/${workspaceId}/${collection}/`;
 }
 
 /**
  * Inverse of {@link deriveStorageKey} for list results: parse a full bucket
- * key back into a ref. Returns null for keys that don't match the canonical
- * workspace layout.
+ * key back into a ref. Handles both the current 5-segment scheme and the
+ * legacy 4-segment scheme (pre-HEL-358, no retention prefix → treated as
+ * "standard"). Returns null for keys that don't match either layout.
  */
 export function parseStorageKey(storageKey: string): StorageObjectRef | null {
   const parts = storageKey.split("/");
-  if (parts.length !== 4) return null;
-  const [prefix, workspaceId, collection, objectId] = parts;
-  if (prefix !== WORKSPACE_PREFIX || !isUuid(workspaceId) || !collection || !objectId) {
-    return null;
+
+  // Current scheme: {retention}/workspaces/{workspaceId}/{collection}/{objectId}
+  if (parts.length === 5) {
+    const [retention, prefix, workspaceId, collection, objectId] = parts;
+    if (
+      !isRetentionClass(retention) ||
+      prefix !== WORKSPACE_PREFIX ||
+      !isUuid(workspaceId) ||
+      !collection ||
+      !objectId
+    ) {
+      return null;
+    }
+    return { workspaceId, collection, objectId, retentionClass: retention };
   }
-  return { workspaceId, collection, objectId };
+
+  // Legacy scheme: workspaces/{workspaceId}/{collection}/{objectId}. Default to
+  // "standard" so any stray pre-HEL-358 object still parses for read/delete.
+  if (parts.length === 4) {
+    const [prefix, workspaceId, collection, objectId] = parts;
+    if (prefix !== WORKSPACE_PREFIX || !isUuid(workspaceId) || !collection || !objectId) {
+      return null;
+    }
+    return { workspaceId, collection, objectId, retentionClass: DEFAULT_RETENTION_CLASS };
+  }
+
+  return null;
 }

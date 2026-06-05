@@ -1,8 +1,10 @@
 jest.mock("../engine/llmProviders", () => ({ getProvider: jest.fn() }));
 
 import { getProvider } from "../engine/llmProviders";
-import { generateTeamPlanChunked } from "./chunkedTeamAssembly";
+import { generateTeamPlanChunked, chunkedResponseFormat } from "./chunkedTeamAssembly";
 import { TEAM_ASSEMBLY_SCHEMA_VERSION, type TeamAssemblyRequest } from "../goals/teamAssembly";
+import { teamSkeletonSchema } from "../goals/teamSkeleton";
+import { roleDetailBatchSchema } from "../goals/roleDetail";
 
 const mockedGetProvider = getProvider as jest.MockedFunction<typeof getProvider>;
 
@@ -123,5 +125,50 @@ describe("generateTeamPlanChunked (HEL-553 / chunked generation PR5)", () => {
 
     await expect(generateTeamPlanChunked(request, llm)).rejects.toThrow(/persistent failure/);
     expect(fillFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT retry a fill batch that timed out (HEL-642)", async () => {
+    const skeletonFn = jest.fn().mockResolvedValue({
+      text: JSON.stringify(SKELETON),
+      usage: { promptTokens: 1, completionTokens: 1 },
+    });
+    const fillFn = jest
+      .fn()
+      .mockRejectedValue(new Error("OpenAI API error: Request timed out."));
+    mockedGetProvider.mockReturnValueOnce(skeletonFn).mockReturnValue(fillFn);
+
+    await expect(generateTeamPlanChunked(request, llm)).rejects.toThrow(/timed out/);
+    // A timeout already spent the full per-call budget — retrying just hits the
+    // wall again, so it fires exactly once (a transient failure would be 2).
+    expect(fillFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("chunkedResponseFormat (HEL-625)", () => {
+  it("gives Anthropic a REAL json_schema (not the permissive {} that yielded empty output)", () => {
+    const rf = chunkedResponseFormat("anthropic", teamSkeletonSchema);
+    expect(rf.type).toBe("json_schema");
+    if (rf.type !== "json_schema") throw new Error("unreachable");
+    expect(rf.schema.type).toBe("object");
+    const props = rf.schema.properties as Record<string, unknown>;
+    expect(props).toBeDefined();
+    expect(Object.keys(props)).toEqual(
+      expect.arrayContaining(["company", "summary", "roles", "reportingLines", "roadmap306090"]),
+    );
+    // $schema meta-key stripped (Anthropic tool input_schema wants the bare shape).
+    expect(rf.schema.$schema).toBeUndefined();
+  });
+
+  it("converts the preprocess-wrapped fill record to an object schema", () => {
+    const rf = chunkedResponseFormat("anthropic", roleDetailBatchSchema);
+    expect(rf.type).toBe("json_schema");
+    if (rf.type !== "json_schema") throw new Error("unreachable");
+    expect(rf.schema.type).toBe("object");
+    expect(rf.schema.additionalProperties).toBeDefined();
+  });
+
+  it("leaves gemini + openai on json_object (they follow the prompt; OpenAI json_schema is strict)", () => {
+    expect(chunkedResponseFormat("gemini", teamSkeletonSchema)).toEqual({ type: "json_object" });
+    expect(chunkedResponseFormat("openai", roleDetailBatchSchema)).toEqual({ type: "json_object" });
   });
 });

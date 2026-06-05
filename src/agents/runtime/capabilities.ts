@@ -55,3 +55,33 @@ export const BACKEND_CAPABILITIES: Record<AgentBackendName, AgentBackendCapabili
 export function getBackendCapabilities(backend: AgentBackendName): AgentBackendCapabilities {
   return BACKEND_CAPABILITIES[backend];
 }
+
+/**
+ * Middleware-pipeline support per backend (HEL-621).
+ *
+ * `toolPhase` covers `beforeToolCall`/`afterToolCall` middleware (budget,
+ * audit, tool-result truncation, tool-call-limit, PII-on-tool-IO). Every
+ * backend funnels our `AgentTool.handler` through a wrapper we own, so this is
+ * always `"full"`.
+ *
+ * `modelPhase` covers `beforeModelCall`/`afterModelCall` middleware
+ * (compaction, model-retry, model-fallback, prompt-caching, model-call-limit).
+ * Only the FallbackAgentBackend exposes per-turn model boundaries; the SDK
+ * backends own their model↔tool loop and handle the equivalent natively, so
+ * model-phase middleware is `"delegated"` there — model-phase middleware
+ * should no-op when `getMiddlewareSupport(ctx.backend).modelPhase !== "full"`.
+ */
+export interface MiddlewareSupport {
+  toolPhase: "full";
+  modelPhase: "full" | "delegated";
+}
+
+const MIDDLEWARE_SUPPORT: Record<AgentBackendName, MiddlewareSupport> = {
+  fallback: { toolPhase: "full", modelPhase: "full" },
+  claude_sdk: { toolPhase: "full", modelPhase: "delegated" },
+  openai_agents: { toolPhase: "full", modelPhase: "delegated" },
+};
+
+export function getMiddlewareSupport(backend: AgentBackendName): MiddlewareSupport {
+  return MIDDLEWARE_SUPPORT[backend];
+}

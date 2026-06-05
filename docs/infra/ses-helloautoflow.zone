@@ -1,0 +1,33 @@
+; ============================================================================
+; AWS SES DNS records for the AutoFlow system mailer (HEL-360)
+; Sending subdomain: mail.helloautoflow.com   |   SES region: us-east-1
+; Generated 2026-06-05.
+;
+; Import into Cloudflare:  DNS > Records > Import and Export > Import DNS records
+;
+; ⚠️  AFTER IMPORT: set every record below to "DNS only" (GREY cloud), NOT
+;     proxied. Proxying DKIM/MX/SPF breaks mail auth + delivery. Cloudflare may
+;     default CNAMEs to proxied on import — flip them to DNS-only.
+;
+; These names are absolute (trailing dot), so $ORIGIN does not matter.
+; SOA/NS are intentionally omitted — Cloudflare manages those for the zone.
+; ============================================================================
+$TTL 3600
+
+; --- Easy DKIM (3 x CNAME) — authorizes SES to DKIM-sign for mail.helloautoflow.com ---
+ecoyh5caeig5ap6njbi3cf6g4evzes2b._domainkey.mail.helloautoflow.com. 3600 IN CNAME ecoyh5caeig5ap6njbi3cf6g4evzes2b.dkim.amazonses.com.
+crwedrnoxybrwnkhhspyobqxlxop4jof._domainkey.mail.helloautoflow.com. 3600 IN CNAME crwedrnoxybrwnkhhspyobqxlxop4jof.dkim.amazonses.com.
+fdg57an2zlzk2knfagemztdhloooib2o._domainkey.mail.helloautoflow.com. 3600 IN CNAME fdg57an2zlzk2knfagemztdhloooib2o.dkim.amazonses.com.
+
+; --- Custom MAIL FROM domain: bounce.mail.helloautoflow.com (SPF alignment + bounce routing) ---
+bounce.mail.helloautoflow.com. 3600 IN MX 10 feedback-smtp.us-east-1.amazonses.com.
+bounce.mail.helloautoflow.com. 3600 IN TXT "v=spf1 include:amazonses.com ~all"
+
+; --- DMARC for the sending subdomain (start at p=none; escalate to quarantine/reject later) ---
+_dmarc.mail.helloautoflow.com. 3600 IN TXT "v=DMARC1; p=none; rua=mailto:dmarc@helloautoflow.com"
+
+; ----------------------------------------------------------------------------
+; OPTIONAL (only if you want the From subdomain itself to publish SPF; DKIM
+; alignment already satisfies DMARC, so this is belt-and-suspenders):
+; mail.helloautoflow.com. 3600 IN TXT "v=spf1 include:amazonses.com ~all"
+; ----------------------------------------------------------------------------

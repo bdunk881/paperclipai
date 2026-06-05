@@ -69,7 +69,7 @@ export const PROVIDER_TIER_DEFAULTS: Record<ProviderName, Partial<Record<TierKey
   anthropic: {
     small: "claude-haiku-4-5-20251001",
     medium: "claude-sonnet-4-6",
-    large: "claude-opus-4-7",
+    large: "claude-opus-4-8", // HEL-643: 4-7 retired
     vision: "claude-sonnet-4-6",
   },
   openai: {

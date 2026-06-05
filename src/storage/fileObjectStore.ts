@@ -14,6 +14,7 @@
 import { randomUUID } from "crypto";
 import { isPostgresConfigured, inMemoryAllowed, getPostgresPool } from "../db/postgres";
 import { withWorkspaceContext } from "../middleware/workspaceContext";
+import { parseStorageKey } from "./storageKey";
 
 export interface FileObjectRow {
   id: string;
@@ -50,7 +51,10 @@ export interface InsertFileObjectInput {
   retentionClass?: string;
 }
 
-// In-memory backend: Map<workspaceId, Map<fileId, row>>.
+// In-memory backend: Map<workspaceId, Map<fileId, row>>. Production uses the
+// "pg" backend (see backend() below); this in-memory path is reachable only
+// when Postgres is unconfigured AND inMemoryAllowed() (development/test).
+// allowlist: dev/test-only fallback when Postgres is unconfigured — never holds prod data of record (HEL-606).
 const memStore = new Map<string, Map<string, FileObjectRow>>();
 
 function memWorkspace(workspaceId: string): Map<string, FileObjectRow> {
@@ -112,6 +116,17 @@ function rowFromDb(r: FileObjectDbRow): FileObjectRow {
 
 export const fileObjectStore = {
   async insert(ctx: FileObjectContext, input: InsertFileObjectInput): Promise<FileObjectRow> {
+    // HEL-358 invariant: the stored key's retention prefix MUST match the
+    // retention_class column — otherwise the bucket lifecycle rule (keyed on the
+    // prefix) and the DB row would disagree about when the object expires.
+    const declaredRetention = input.retentionClass ?? "standard";
+    const parsedRef = parseStorageKey(input.storageKey);
+    if (parsedRef?.retentionClass && parsedRef.retentionClass !== declaredRetention) {
+      throw new Error(
+        `fileObjectStore.insert: retention_class '${declaredRetention}' != storage key prefix ` +
+          `'${parsedRef.retentionClass}' (${input.storageKey})`,
+      );
+    }
     if (backend() === "pg") {
       const pool = getPostgresPool();
       return withWorkspaceContext(pool, ctx, async (client) => {

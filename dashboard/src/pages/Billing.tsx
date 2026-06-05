@@ -48,6 +48,7 @@ export default function Billing() {
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     document.title = "Billing | AutoFlow";
@@ -118,6 +119,34 @@ export default function Billing() {
       toast.error(msg);
     } finally {
       setCancelling(false);
+    }
+  }
+
+  // HEL-402: open the Stripe billing portal to update the card / payment method.
+  async function openBillingPortal() {
+    setPortalLoading(true);
+    try {
+      const token = await requireAccessToken();
+      const res = await trackedFetch(`${getApiBasePath()}/billing/portal-session`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? `Could not open billing portal (${res.status})`);
+      }
+      const { url } = (await res.json()) as { url: string };
+      // Navigate away to Stripe's hosted portal; leave portalLoading set so the
+      // button stays disabled during the redirect.
+      window.location.assign(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to open billing portal";
+      toast.error(msg);
+      setPortalLoading(false);
     }
   }
 
@@ -205,10 +234,10 @@ export default function Billing() {
                       type="button"
                       className="btn"
                       style={{ marginTop: 10 }}
-                      disabled
-                      title="Card updates land alongside HEL-213 PR ii"
+                      onClick={() => void openBillingPortal()}
+                      disabled={portalLoading}
                     >
-                      Update card
+                      {portalLoading ? "Opening…" : "Update card"}
                     </button>
                   </>
                 ) : (

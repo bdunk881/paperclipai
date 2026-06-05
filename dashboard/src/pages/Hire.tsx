@@ -95,7 +95,8 @@ export default function Hire() {
   const [notice, setNotice] = useState<string | null>(null);
   // Phase 2b Phase 1: client-side progress signal during plan generation.
   // The backend's /api/missions/:id/generate-plan is a sync POST that can
-  // take up to 90s on a power-tier LLM. Without feedback the user sees a
+  // take a couple of minutes on a power-tier reasoning model (240s client
+  // budget). Without feedback the user sees a
   // spinning button and assumes the app froze. We tick a counter every
   // 250ms while submitState === "generating" and surface reassurance
   // messages at 15s / 30s / 60s thresholds so it's obvious something's
@@ -667,14 +668,15 @@ export default function Hire() {
                   </>
                 ) : generationElapsedMs < 60_000 ? (
                   <>
-                    Taking a little longer than usual. The request will time
-                    out at 90s if the model doesn't respond by then.
+                    Taking a little longer than usual — large teams on a
+                    power-tier reasoning model can run a couple of minutes.
+                    Hang tight.
                   </>
                 ) : (
                   <>
-                    Almost at the 90s cutoff. If this times out, your
-                    mission is saved as a draft and you can retry from the
-                    list below.
+                    Still drafting — big plans on a power model can take a few
+                    minutes. If it does time out, your mission is saved as a
+                    draft and you can retry from the list below.
                   </>
                 )}
               </div>

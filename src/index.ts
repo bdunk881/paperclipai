@@ -9,6 +9,7 @@
 // `instrument`.
 import "./instrument";
 import { initializePersistence } from "./bootstrap";
+import { assertRequiredSecrets } from "./config/requiredSecrets";
 
 const PORT = process.env.PORT || 3000;
 
@@ -21,6 +22,12 @@ async function startServer() {
   }
 
   const runtimeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
+
+  // HEL-500: fail fast in production when a required secret is unset (mirrors
+  // HEL-262's connector-key fail-fast); warn for recommended/feature-gating
+  // secrets in every environment. No-op when everything is configured.
+  assertRequiredSecrets({ isProduction: runtimeEnv === "production" });
+
   const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
   if (!supabaseUrl && (runtimeEnv === "development" || runtimeEnv === "test")) {
     console.warn(
@@ -66,16 +73,31 @@ async function startServer() {
     { startCreditExpirationJob },
     { startCreditAnomalyDetector },
     { startCreditAutoTopupJob },
+    { startIssuingTreasuryJob },
+    { startDirectProviderHealthJobs },
+    { startStorageLifecycleReconcileJob },
   ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
     import("./billing/credits/creditAnomalyDetectorJob"),
     import("./billing/credits/creditAutoTopupJob"),
+    import("./billing/credits/stripeIssuing"),
+    import("./billing/credits/sourceHealthJob"),
+    import("./storage/storageLifecycleReconcileJob"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
   startCreditAnomalyDetector();
   startCreditAutoTopupJob();
+  // HEL-599: Stripe Issuing treasury underfund watchdog. No-op unless
+  // STRIPE_ISSUING_ENABLED is set (the whole treasury layer ships disabled).
+  startIssuingTreasuryJob();
+  // HEL-601: per-provider direct funding watchdogs (Anthropic + OpenAI). Also
+  // gated on STRIPE_ISSUING_ENABLED — no-op until go-live.
+  startDirectProviderHealthJobs();
+  // HEL-358: storage lifecycle drift watchdog. No-op unless STORAGE_PROVIDER
+  // is a lifecycle-capable backend (r2/s3); the in-memory adapter is skipped.
+  startStorageLifecycleReconcileJob();
 }
 
 void startServer();

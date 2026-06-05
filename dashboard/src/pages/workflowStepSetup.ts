@@ -67,6 +67,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Your prompt is sent to the model with {{variables}} from earlier steps. Pick a tier or specific model.",
     tone: "clay",
   },
+  knowledge: {
+    displayLabel: "Recall knowledge",
+    subtitle: "Retrieve relevant facts from your workspace knowledge base",
+    learnText:
+      "Semantic search over your connected knowledge bases; the matched passages are passed to later steps (e.g. an Ask AI step) as context.",
+    tone: "plum",
+  },
   transform: {
     displayLabel: "Shape data",
     subtitle: "Rename, filter, or reformat fields before the next step",

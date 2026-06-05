@@ -5,13 +5,27 @@ import { creditPackSchema } from "./schemas/creditPack";
 import { testimonialSchema } from "./schemas/testimonials";
 import { faqSchema } from "./schemas/faq";
 import { blogPostSchema } from "./schemas/blogPost";
+import { seoSchema } from "./schemas/objects/seo";
+import { blogFaqSchema } from "./schemas/objects/blogFaq";
+import { authorSchema } from "./schemas/author";
+import { categorySchema } from "./schemas/category";
+import { redirectSchema } from "./schemas/redirect";
+import { siteSettingsSchema } from "./schemas/siteSettings";
 
 export const schemaTypes = [
+  // objects (referenced by documents below)
+  seoSchema,
+  blogFaqSchema,
+  // documents
   heroSchema,
   featureSchema,
   pricingSchema,
   creditPackSchema,
   testimonialSchema,
   faqSchema,
+  authorSchema,
+  categorySchema,
   blogPostSchema,
+  redirectSchema,
+  siteSettingsSchema,
 ];

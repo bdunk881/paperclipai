@@ -89,6 +89,25 @@ describe("roleDetail (HEL-551 / chunked generation PR3)", () => {
       const out = parseRoleDetailResponse(raw, ["lead"]);
       expect(out["lead"]).toBeDefined();
     });
+
+    it("unwraps Anthropic's forced-tool {\"input\": {...}} envelope (HEL-648)", () => {
+      // Opus 4.8 nests the whole record under the tool's "input" field when the
+      // open-key record schema gives it no named keys to anchor to. Bare records
+      // (gemini/openai) have roleKey slugs at top level and are untouched.
+      const raw = JSON.stringify({ input: { lead: detail(), "op-1": detail() } });
+      const out = parseRoleDetailResponse(raw, ["lead", "op-1"]);
+      expect(Object.keys(out).sort()).toEqual(["lead", "op-1"]);
+      expect(out["lead"].mandate).toBe("Own X");
+    });
+
+    it("still coerces fragile fields after unwrapping the envelope (HEL-648)", () => {
+      const raw = JSON.stringify({
+        input: { lead: detail({ budgetMonthlyUsd: "$500/mo", modelTier: "premium" }) },
+      });
+      const out = parseRoleDetailResponse(raw, ["lead"]);
+      expect(out["lead"].budgetMonthlyUsd).toBeNull();
+      expect(out["lead"].modelTier).toBe("standard");
+    });
   });
 
   describe("buildRoleDetailPrompt", () => {

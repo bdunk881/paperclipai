@@ -515,7 +515,7 @@ router.post(
   try {
     const template =
       typeof templateId === "string" && templateId.trim()
-        ? getTemplate(templateId)
+        ? await getTemplate(templateId, context.workspaceId)
         : (templateDefinition as WorkflowTemplate);
     const deployment = await controlPlaneStore.deployWorkflowAsTeam({
       workspaceId: context.workspaceId,

@@ -88,6 +88,7 @@ import {
 import socialAuthRoutes from "./auth/socialAuthRoutes";
 import passwordAuthRoutes from "./auth/passwordAuthRoutes";
 import stripeWebhookRoutes from "./billing/stripeWebhook";
+import issuingWebhookRoutes from "./billing/credits/issuingWebhook";
 import apolloWebhookRoutes from "./integrations/apollo-attio/webhookRoute";
 import checkoutRoutes from "./billing/checkoutRoutes";
 import creditsCheckoutRoutes from "./billing/credits/checkoutRoutes";
@@ -101,6 +102,7 @@ import apolloRoutes from "./integrations/apollo/routes";
 import hubSpotRoutes, { hubSpotWebhookRouter } from "./integrations/hubspot/routes";
 import sentryRoutes, { sentryWebhookRouter } from "./integrations/sentry/routes";
 import subscriptionRoutes from "./billing/subscriptionRoutes";
+import billingInfoRoutes from "./billing/billingInfoRoutes";
 import slackRoutes, { slackWebhookRouter } from "./integrations/slack/routes";
 import shopifyRoutes, { shopifyWebhookRouter } from "./integrations/shopify/routes";
 import docuSignRoutes, { docuSignWebhookRouter } from "./integrations/docusign/routes";
@@ -110,6 +112,16 @@ import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
+import {
+  createSesNotificationsRoutes,
+  type SesNotificationsDeps,
+} from "./mailer/sesNotificationsRoutes";
+import {
+  createCommsInboundIngest,
+  createCommsWebhookRoutes,
+  normalizeSesEvent,
+  type CommsInboundIngest,
+} from "./comms/webhooks";
 import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
@@ -153,6 +165,9 @@ import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createFileRoutes } from "./storage/fileRoutes";
+import { getStorageAdapter } from "./storage";
+import { fileObjectStore } from "./storage/fileObjectStore";
+import { auditService } from "./auditing/auditService";
 import { createInstructionRoutes } from "./instructions/instructionRoutes";
 import { createKnowledgeItemRoutes } from "./knowledge/knowledgeItemRoutes";
 import { createEpisodeRoutes } from "./episodes/episodeRoutes";
@@ -193,6 +208,21 @@ import("./billing/subscriptionStore")
   .catch((err) => {
     console.warn("[billing] subscription hydration failed:", (err as Error).message);
   });
+
+// HEL-613: forward parsed SES events to the comms wake-event ingest. Defined
+// here (away from the route-mounting block) so this async callback isn't read as
+// an unwrapped route handler by the HEL-184 asyncHandler guard — the real SES
+// route handlers inside createSesNotificationsRoutes() are already wrapped.
+function buildSesInboundForwarder(ingest: CommsInboundIngest): SesNotificationsDeps {
+  return {
+    onInboundEvent: async (event) => {
+      const normalized = normalizeSesEvent(event);
+      if (normalized) {
+        await ingest(normalized);
+      }
+    },
+  };
+}
 
 const app = express();
 const workspaceResolver = isPostgresPersistenceEnabled()
@@ -549,6 +579,10 @@ app.use("/api/webhooks", webhookRateLimiter);
 // is available for signature verification
 // ---------------------------------------------------------------------------
 app.use("/api/webhooks/stripe", express.raw({ type: "application/json" }), stripeWebhookRoutes);
+// Stripe Issuing webhook (HEL-599) — real-time provider-card authorization
+// decisions. Separate endpoint + signing secret from the main Stripe webhook;
+// raw body before express.json() for signature verification.
+app.use("/api/webhooks/stripe/issuing", express.raw({ type: "application/json" }), issuingWebhookRoutes);
 // Slack webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/slack", slackWebhookRouter);
 // Shopify webhook — mounted before express.json() for signature verification
@@ -571,6 +605,29 @@ app.use("/api/webhooks/composio", composioWebhookRouter);
 app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// HEL-613: inbound comms ingest (provider webhooks → wake_events → triage → run).
+// Postgres-gated (wake_events writes need it). Shared by the Telnyx route and
+// the SES route's onInboundEvent hook below.
+const commsInboundIngest = isPostgresPersistenceEnabled()
+  ? createCommsInboundIngest({ pool: getPostgresPool() })
+  : null;
+
+// SES notifications (SNS) webhook (HEL-361) — bounce/complaint → suppression list.
+// Mounted before express.json(); the router parses its own (text/plain) body.
+// HEL-613 additively forwards each parsed event to the comms ingest so a
+// bounce/complaint also wakes the owning agent (suppression unchanged).
+app.use(
+  "/api/webhooks/ses-notifications",
+  createSesNotificationsRoutes(
+    commsInboundIngest ? buildSesInboundForwarder(commsInboundIngest) : {},
+  ),
+);
+// HEL-613: inbound comms provider webhooks (Telnyx SMS DLR + inbound). Mounted
+// before express.json(); each provider route parses its own raw body for
+// signature verification.
+if (commsInboundIngest) {
+  app.use("/api/webhooks/comms", createCommsWebhookRoutes({ ingest: commsInboundIngest }));
+}
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Composio webhook — mounted before express.json() because the route verifies the raw payload
@@ -646,6 +703,13 @@ app.use("/api/webhooks/apollo", apolloWebhookRoutes);
 // ensures only members with the billing role can manage subscriptions.
 app.use("/api/billing/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, checkoutRoutes);
 app.use("/api/billing/subscription", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, subscriptionRoutes);
+// HEL-402: read-only billing info (payment method + next invoice) + a Stripe
+// billing-portal session for the "Update card" action. Mounted AFTER the
+// specific /checkout + /subscription mounts (which terminate their own paths),
+// so this only serves /payment-method, /next-invoice, /portal-session. Reads
+// are display-only for billing-role members (no step-up, mirroring the wallet
+// read); the Stripe-hosted portal is the security boundary for the card change.
+app.use("/api/billing", requireAuth, workspaceResolver, requireRole("billing"), billingInfoRoutes);
 // HEL-credits-mvp: hosted-credits pack purchases. Same role + rate-limit
 // gates as subscription checkout — billing role required.
 app.use("/api/credits/checkout", requireAuth, requireAAL2, workspaceResolver, requireRole("billing"), billingMutationRateLimiter, creditsCheckoutRoutes);
@@ -1318,14 +1382,14 @@ app.get("/api/me", requireAuth, (req: AuthenticatedRequest, res) => {
 // ---------------------------------------------------------------------------
 
 /** List all templates (optionally filtered by category) */
-app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { category } = req.query;
   let templates: WorkflowTemplate[];
 
   if (category && typeof category === "string") {
-    templates = getTemplatesByCategory(category as WorkflowTemplate["category"]);
+    templates = await getTemplatesByCategory(category as WorkflowTemplate["category"], req.workspaceId);
   } else {
-    templates = listTemplates();
+    templates = await listTemplates(req.workspaceId);
   }
 
   // Distinguish seeded (built-in library) templates from user-imported/created
@@ -1346,10 +1410,10 @@ app.get("/api/templates", requireAuth, workspaceResolver, requireRole(...ALL_MEM
     })),
     total: templates.length,
   });
-});
+}));
 
 /** Create or update a user-managed template */
-app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const payload = req.body as Partial<WorkflowTemplate> | null;
   if (!payload || typeof payload !== "object") {
     res.status(400).json({ error: "Template payload is required" });
@@ -1381,7 +1445,7 @@ app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", 
       ? payload.id.trim()
       : `tpl-custom-${Date.now()}`;
 
-  const importedTemplate = getImportedTemplate(nextId);
+  const importedTemplate = getImportedTemplate(nextId, req.workspaceId);
   const builtInTemplateExists = Boolean(TEMPLATE_MAP[nextId]);
   if (builtInTemplateExists && !importedTemplate) {
     nextId = `${nextId}-custom-${Date.now()}`;
@@ -1399,7 +1463,7 @@ app.post("/api/templates", requireAuth, workspaceResolver, requireRole("admin", 
     expectedOutput,
   };
 
-  await saveImportedTemplate(template);
+  await saveImportedTemplate(template, req.auth?.sub, req.workspaceId);
   res.status(importedTemplate ? 200 : 201).json(template);
 }));
 
@@ -1409,33 +1473,33 @@ app.get("/api/workflows/schema", (_req, res) => {
 });
 
 /** Get a single template with full definition */
-app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(template);
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 /** Export a template in the portable AutoFlow workflow format */
-app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id/export", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json(createPortableWorkflowBundle(template));
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 /** Import a portable workflow template into the in-memory registry */
-app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const id = req.params.id;
   if (!id) {
     res.status(400).json({ error: "Template id is required" });
     return;
   }
-  const removed = await deleteImportedTemplate(id);
+  const removed = await deleteImportedTemplate(id, req.workspaceId);
   if (!removed) {
     res.status(404).json({ error: "Template not found" });
     return;
@@ -1443,7 +1507,7 @@ app.delete("/api/templates/:id", requireAuth, workspaceResolver, requireRole("ad
   res.status(204).end();
 }));
 
-app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler(async (req, res) => {
+app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("admin", "developer"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   let bundle;
   try {
     bundle = parsePortableWorkflowBundle(req.body);
@@ -1454,14 +1518,14 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
   }
 
   try {
-    getTemplate(bundle.template.id);
+    await getTemplate(bundle.template.id, req.workspaceId);
     res.status(409).json({ error: `Template already exists: ${bundle.template.id}` });
     return;
   } catch {
     // Template id is available; continue with import.
   }
 
-  await saveImportedTemplate(bundle.template);
+  await saveImportedTemplate(bundle.template, req.auth?.sub, req.workspaceId);
   res.status(201).json({
     imported: true,
     template: bundle.template,
@@ -1470,9 +1534,9 @@ app.post("/api/templates/import", requireAuth, workspaceResolver, requireRole("a
 }));
 
 /** Get sample data for a template (for dashboard preview) */
-app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), (req, res) => {
+app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole(...ALL_MEMBER_ROLES), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   try {
-    const template = getTemplate(req.params.id);
+    const template = await getTemplate(req.params.id, req.workspaceId);
     res.json({
       sampleInput: template.sampleInput,
       expectedOutput: template.expectedOutput,
@@ -1480,7 +1544,7 @@ app.get("/api/templates/:id/sample", requireAuth, workspaceResolver, requireRole
   } catch {
     res.status(404).json({ error: `Template not found: ${req.params.id}` });
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Runs API — execute and monitor workflow runs
@@ -1515,7 +1579,7 @@ app.post(
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    template = await getTemplate(templateId, req.workspaceId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -1802,7 +1866,7 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
 
   if (!latestDag) {
     try {
-      latestDag = getTemplate(run.templateId);
+      latestDag = await getTemplate(run.templateId, run.workspaceId);
     } catch {
       res.status(404).json({ error: `Original template not found: ${run.templateId}` });
       return;
@@ -2072,7 +2136,7 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    template = await getTemplate(templateId, req.workspaceId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -2102,6 +2166,43 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
     return;
   }
 
+  // HEL-355: persist the uploaded bytes to object storage + record a
+  // file_objects row, then thread the fileId into the run. Best-effort — a
+  // storage hiccup (or a QA-bypass user without a user_profiles row) must not
+  // break run creation; the run still receives the parsed `content`.
+  let fileId: string | undefined;
+  if (req.workspaceId && userId) {
+    try {
+      const put = await getStorageAdapter().putObject({
+        workspaceId: req.workspaceId,
+        collection: "run-input",
+        filename: req.file.originalname,
+        body: req.file.buffer,
+        contentType: req.file.mimetype,
+        contentLength: req.file.size,
+      });
+      const row = await fileObjectStore.insert(
+        { workspaceId: req.workspaceId, userId },
+        {
+          uploadedBy: userId,
+          collection: "run-input",
+          storageKey: put.storageKey,
+          provider: put.provider,
+          bucket: put.bucket,
+          filename: req.file.originalname,
+          mimeType: req.file.mimetype,
+          byteSize: req.file.size,
+        },
+      );
+      fileId = row.id;
+    } catch (err) {
+      console.error(
+        "[runs/file] storage persistence failed; continuing without fileId:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   const input: Record<string, unknown> = {
     content: parsed.content,
     mimeType: parsed.mimeType,
@@ -2110,8 +2211,32 @@ app.post("/api/runs/file", requireAuthOrQaBypass, workspaceResolver, requireRole
   if (req.workspaceId) {
     input.workspaceId = req.workspaceId;
   }
+  if (fileId) {
+    input.fileId = fileId;
+  }
 
   const run = await workflowEngine.startRun(template, input, undefined, userId);
+
+  // HEL-355: record the persisted file in the run's audit trail (best-effort).
+  if (fileId && req.workspaceId && userId) {
+    try {
+      await auditService.recordAction(
+        { workspaceId: req.workspaceId, userId, actorUserId: userId },
+        {
+          category: "execution",
+          action: "run_file_persisted",
+          target: { type: "file_object", id: fileId },
+          metadata: { runId: run.id, collection: "run-input", byteSize: req.file.size },
+        },
+      );
+    } catch (err) {
+      console.error(
+        "[runs/file] audit recordAction failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   res.status(202).json(run);
 }));
 
@@ -2333,7 +2458,9 @@ app.post("/api/webhooks/:templateId", asyncHandler(async (req, res) => {
 
   let template: WorkflowTemplate;
   try {
-    template = getTemplate(templateId);
+    // Webhook trigger is authenticated by the per-template secret below, not a
+    // workspace session — resolve the template id globally.
+    template = await getTemplate(templateId);
   } catch {
     res.status(404).json({ error: `Template not found: ${templateId}` });
     return;
@@ -2541,7 +2668,7 @@ app.post("/api/executions/:id/resume", requireAuth, workspaceResolver, requireRo
       !Array.isArray(run.workflowDag) &&
       Array.isArray((run.workflowDag as Partial<WorkflowTemplate>).steps)
         ? (run.workflowDag as WorkflowTemplate)
-        : getTemplate(run.templateId);
+        : await getTemplate(run.templateId, run.workspaceId);
   } catch (error) {
     res.status(404).json({ error: String(error) });
     return;
@@ -2580,7 +2707,7 @@ app.get("/health", asyncHandler(async (_req, res) => {
 
   res.json({
     status: degraded ? "degraded" : "ok",
-    templates: listTemplates().length,
+    templates: (await listTemplates()).length,
     runs: {
       total: runs.length,
       running: runs.filter((r) => r.status === "running").length,
@@ -2621,7 +2748,14 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
   startApprovalNotificationCoordinator();
 }
 
-if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+// HEL-502: the ticket-SLA notification senders (inbox/email/agent_wake) are all
+// no-ops and setTicketNotificationSender is never wired, so running this sweeper
+// only churns durable rows to `sent` with zero actual delivery — masking the
+// gap. Gate it OPT-IN (default off) until real transports exist; until then
+// pending SLA notifications stay visible (as `pending`) via the ticket
+// notifications API rather than being falsely marked delivered. Flip
+// AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER=true once a real sender is wired.
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER === "true") {
   startTicketNotificationCoordinator();
 }
 

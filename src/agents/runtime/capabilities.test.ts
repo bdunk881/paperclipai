@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@jest/globals";
 
-import { BACKEND_CAPABILITIES, getBackendCapabilities } from "./capabilities";
+import {
+  BACKEND_CAPABILITIES,
+  getBackendCapabilities,
+  getMiddlewareSupport,
+} from "./capabilities";
 
 describe("backend capabilities", () => {
   it("flags claude_sdk as full-native", () => {
@@ -29,5 +33,19 @@ describe("backend capabilities", () => {
 
   it("exposes the same map via the constant and the helper", () => {
     expect(getBackendCapabilities("fallback")).toBe(BACKEND_CAPABILITIES.fallback);
+  });
+});
+
+describe("middleware support (HEL-621)", () => {
+  it("supports tool-phase middleware on every backend", () => {
+    for (const backend of ["fallback", "claude_sdk", "openai_agents"] as const) {
+      expect(getMiddlewareSupport(backend).toolPhase).toBe("full");
+    }
+  });
+
+  it("supports model-phase middleware only on the fallback backend", () => {
+    expect(getMiddlewareSupport("fallback").modelPhase).toBe("full");
+    expect(getMiddlewareSupport("claude_sdk").modelPhase).toBe("delegated");
+    expect(getMiddlewareSupport("openai_agents").modelPhase).toBe("delegated");
   });
 });

@@ -6,9 +6,13 @@ import {
   sanitizeFilename,
   assertSafeSegment,
   assertValidCollection,
+  assertValidRetention,
   isUuid,
+  isRetentionClass,
   StorageKeyError,
   WORKSPACE_PREFIX,
+  RETENTION_CLASSES,
+  DEFAULT_RETENTION_CLASS,
 } from "./storageKey";
 
 const WID = "11111111-1111-4111-8111-111111111111";
@@ -54,9 +58,25 @@ describe("storageKey", () => {
   });
 
   describe("deriveStorageKey", () => {
-    it("composes the canonical workspaces/{wid}/{collection}/{objectId} key", () => {
+    it("composes {retention}/workspaces/{wid}/{collection}/{objectId}, defaulting retention to standard", () => {
       const key = deriveStorageKey({ workspaceId: WID, collection: "run-input", objectId: "01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf" });
-      expect(key).toBe(`${WORKSPACE_PREFIX}/${WID}/run-input/01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf`);
+      expect(key).toBe(`standard/${WORKSPACE_PREFIX}/${WID}/run-input/01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf`);
+    });
+
+    it("uses the retention class as the top-level prefix (HEL-358)", () => {
+      const ref = { workspaceId: WID, collection: "export", objectId: "01ARZ3NDEKTSV4RRFFQ69G5FAV-r.csv" };
+      expect(deriveStorageKey({ ...ref, retentionClass: "short" })).toBe(
+        `short/${WORKSPACE_PREFIX}/${WID}/export/01ARZ3NDEKTSV4RRFFQ69G5FAV-r.csv`,
+      );
+      expect(deriveStorageKey({ ...ref, retentionClass: "legal_hold" })).toBe(
+        `legal_hold/${WORKSPACE_PREFIX}/${WID}/export/01ARZ3NDEKTSV4RRFFQ69G5FAV-r.csv`,
+      );
+    });
+
+    it("rejects an invalid retention class", () => {
+      expect(() =>
+        deriveStorageKey({ workspaceId: WID, collection: "export", objectId: "x", retentionClass: "forever" as never }),
+      ).toThrow(StorageKeyError);
     });
 
     it("rejects a non-UUID workspaceId", () => {
@@ -78,26 +98,57 @@ describe("storageKey", () => {
   });
 
   describe("deriveListPrefix", () => {
-    it("returns the workspace prefix, optionally narrowed to a collection", () => {
-      expect(deriveListPrefix(WID)).toBe(`${WORKSPACE_PREFIX}/${WID}/`);
-      expect(deriveListPrefix(WID, "export")).toBe(`${WORKSPACE_PREFIX}/${WID}/export/`);
+    it("returns the {retention}/workspace prefix, optionally narrowed to a collection", () => {
+      expect(deriveListPrefix("standard", WID)).toBe(`standard/${WORKSPACE_PREFIX}/${WID}/`);
+      expect(deriveListPrefix("short", WID, "export")).toBe(`short/${WORKSPACE_PREFIX}/${WID}/export/`);
     });
 
-    it("rejects a non-UUID workspaceId", () => {
-      expect(() => deriveListPrefix("nope")).toThrow(StorageKeyError);
+    it("rejects a non-UUID workspaceId and an invalid retention class", () => {
+      expect(() => deriveListPrefix("standard", "nope")).toThrow(StorageKeyError);
+      expect(() => deriveListPrefix("nope" as never, WID)).toThrow(StorageKeyError);
     });
   });
 
   describe("parseStorageKey", () => {
-    it("round-trips a derived key back into a ref", () => {
-      const ref = { workspaceId: WID, collection: "run-input", objectId: "01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf" };
+    it("round-trips a derived key back into a ref (incl. retention)", () => {
+      const ref = {
+        workspaceId: WID,
+        collection: "run-input",
+        objectId: "01ARZ3NDEKTSV4RRFFQ69G5FAV-a.pdf",
+        retentionClass: "short" as const,
+      };
       expect(parseStorageKey(deriveStorageKey(ref))).toEqual(ref);
+    });
+
+    it("parses a legacy 4-segment key as standard retention", () => {
+      expect(parseStorageKey(`${WORKSPACE_PREFIX}/${WID}/run-input/01ARZ-a.pdf`)).toEqual({
+        workspaceId: WID,
+        collection: "run-input",
+        objectId: "01ARZ-a.pdf",
+        retentionClass: "standard",
+      });
     });
 
     it("returns null for keys outside the canonical layout", () => {
       expect(parseStorageKey("foo/bar")).toBeNull();
       expect(parseStorageKey(`other/${WID}/run-input/x`)).toBeNull();
       expect(parseStorageKey(`${WORKSPACE_PREFIX}/not-a-uuid/run-input/x`)).toBeNull();
+      // 5-segment but the leading segment isn't a valid retention class.
+      expect(parseStorageKey(`bogus/${WORKSPACE_PREFIX}/${WID}/run-input/x`)).toBeNull();
+    });
+  });
+
+  describe("retention", () => {
+    it("exposes the three classes + a standard default", () => {
+      expect(RETENTION_CLASSES).toEqual(["short", "standard", "legal_hold"]);
+      expect(DEFAULT_RETENTION_CLASS).toBe("standard");
+      expect(isRetentionClass("short")).toBe(true);
+      expect(isRetentionClass("forever")).toBe(false);
+    });
+
+    it("assertValidRetention throws on unknown classes", () => {
+      expect(() => assertValidRetention("nope")).toThrow(StorageKeyError);
+      expect(() => assertValidRetention("legal_hold")).not.toThrow();
     });
   });
 

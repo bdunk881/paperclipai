@@ -14,7 +14,14 @@ import {
   StepResult,
   AgentSlotResult,
 } from "../types/workflow";
+import { assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
+import { signOutboundBody } from "../webhooks/verifySignature";
+// HEL-656: importing the barrel registers the built-in connector actions and
+// exposes the dynamic action-library lookup. Registration is cheap (connector
+// SDKs load lazily inside each action's invoke).
+import { getConnectorAction } from "./connectorActions";
 import { runStore } from "./runStore";
+import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
 import { approvalStore } from "./approvalStore";
 import { approvalPolicyStore } from "../approvals/policyStore";
 import {
@@ -65,9 +72,29 @@ export function setLlmProvider(provider: LlmProvider): void {
 // Action registry — maps action identifiers to handler functions
 // ---------------------------------------------------------------------------
 
+/**
+ * HEL-650: identity + step threaded to every action handler.
+ *
+ * `inputs`/`config` alone can't back a real handler: per-step settings
+ * (e.g. a webhook URL) live on `step.config`, and connector services key
+ * credential lookups on `userId` (e.g. `slackConnectorService.listChannels(userId)`).
+ * `ActionContext` carries both so handlers can do real, workspace-scoped work.
+ */
+export interface ActionContext {
+  /** The full workflow step — gives handlers access to `step.config`. */
+  step: WorkflowStep;
+  /** Run owner. Connector credential stores key on this. */
+  userId?: string;
+  /** Active workspace — tenant scoping / connector lookups. */
+  workspaceId?: string;
+  /** The full accumulated run context (read access for handlers). */
+  context: Record<string, unknown>;
+}
+
 type ActionHandler = (
   inputs: Record<string, unknown>,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  action: ActionContext
 ) => Promise<Record<string, unknown>>;
 
 // allowlist: in-process registry / runtime state (not customer data)
@@ -96,6 +123,44 @@ actionRegistry.set("crm.upsertLead", async (inputs) => {
 
 actionRegistry.set("content.publish", async (inputs) => {
   return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
+});
+
+// HEL-650 / HEL-647: real outbound webhook — first genuinely side-effecting
+// action on the live registry path (replaces the silent unknown-action
+// `{key:null}` stub). Reads the per-step URL from `step.config` (threaded via
+// ActionContext), guards against SSRF, and optionally HMAC-signs the body.
+// Honest failure (`{sent:false, error}`) when no URL is configured — never a
+// fabricated success. The request body carries only the step's declared
+// inputKeys, so secrets in the run context are not exfiltrated.
+actionRegistry.set("webhook.send", async (inputs, config, action) => {
+  const stepConfig: Record<string, unknown> = action.step.config ?? {};
+  const url =
+    typeof stepConfig["url"] === "string"
+      ? (stepConfig["url"] as string)
+      : typeof inputs["url"] === "string"
+        ? (inputs["url"] as string)
+        : "";
+  if (!url) {
+    return { sent: false, error: "webhook.send: no url configured" };
+  }
+  const secret =
+    typeof inputs["outboundWebhookSecret"] === "string"
+      ? (inputs["outboundWebhookSecret"] as string)
+      : typeof config["outboundWebhookSecret"] === "string"
+        ? (config["outboundWebhookSecret"] as string)
+        : "";
+  const event =
+    typeof stepConfig["event"] === "string" ? (stepConfig["event"] as string) : "workflow.action";
+  const bodyPayload = JSON.stringify({ event, data: inputs });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (secret) {
+    headers["X-AutoFlow-Signature"] = signOutboundBody(secret, bodyPayload);
+  }
+  // HEL-255 — SSRF guard: reject loopback / RFC-1918 / link-local /
+  // cloud-metadata targets before issuing the request. Throws → step fails.
+  await assertSafeOutboundUrl(url);
+  const response = await fetch(url, { method: "POST", headers, body: bodyPayload });
+  return { sent: true, status: response.status };
 });
 
 export function registerAction(name: string, handler: ActionHandler): void {
@@ -242,10 +307,44 @@ async function executeCondition(
 async function executeAction(
   step: WorkflowStep,
   context: Record<string, unknown>,
-  config: Record<string, unknown>
+  config: Record<string, unknown>,
+  userId?: string
 ): Promise<Record<string, unknown>> {
   const actionName = step.action;
   if (!actionName) return {};
+
+  const inputs: Record<string, unknown> = {};
+  for (const key of step.inputKeys) {
+    inputs[key] = context[key] ?? config[key];
+  }
+
+  // HEL-656: the dynamic connector-action library takes precedence over the
+  // legacy in-process actionRegistry. A registered connector action resolves
+  // its credential by the run owner's userId (+ optional connectionId from
+  // step.config), so a run with no user can't perform it — fail honestly
+  // rather than fabricate success.
+  const connectorAction = getConnectorAction(actionName);
+  if (connectorAction) {
+    if (!userId) {
+      throw new Error(
+        `Action '${actionName}' needs a run user to resolve its connector credentials`,
+      );
+    }
+    const connectionId =
+      typeof step.config?.["connectionId"] === "string"
+        ? (step.config["connectionId"] as string)
+        : undefined;
+    return connectorAction.invoke({ userId, connectionId, inputs, config, step });
+  }
+
+  // HEL-650: thread run identity + the step so legacy handlers can read
+  // step.config and look up the workspace/user's connected integrations.
+  const workspaceId =
+    typeof context["workspaceId"] === "string"
+      ? (context["workspaceId"] as string)
+      : typeof config["workspaceId"] === "string"
+        ? (config["workspaceId"] as string)
+        : undefined;
 
   const handler = actionRegistry.get(actionName);
   if (!handler) {
@@ -255,11 +354,8 @@ async function executeAction(
     return out;
   }
 
-  const inputs: Record<string, unknown> = {};
-  for (const key of step.inputKeys) {
-    inputs[key] = context[key] ?? config[key];
-  }
-  return handler(inputs, config);
+  const action: ActionContext = { step, userId, workspaceId, context };
+  return handler(inputs, config, action);
 }
 
 async function executeOutput(
@@ -316,9 +412,104 @@ export class WorkflowEngine {
         completedAt: new Date().toISOString(),
         error: String(err),
       });
+      void this._publishRunLifecycle(run.id, "failed", { error: String(err) });
     });
 
     return run;
+  }
+
+  /**
+   * HEL-478: execute an already-created, queued run.
+   *
+   * Unlike {@link startRun} (which creates the run row *and* executes it
+   * inline), the run record here already exists with status `queued` —
+   * created by the BullMQ enqueue paths in app.ts:
+   *   - POST /api/runs                      (fresh run,     stepIndex 0)
+   *   - POST /api/runs/:id/retry            (failed re-run, stepIndex 0)
+   *   - POST /api/runs/:id/replay-with-latest (new run,     stepIndex 0)
+   *   - POST /api/runs/:id/replay-from-step (cloned prefix, stepIndex N>0)
+   *
+   * The "runs" BullMQ worker (src/worker.ts) is the sole executor on the
+   * queue path; it calls this for every non-cron job. We load the run's
+   * persisted DAG + context, then drive {@link _runSteps} from
+   * `startStepIndex`, which owns the `running → completed/failed`
+   * transitions and per-step `step_results` persistence.
+   *
+   * Idempotency (HEL-107): only a run still in a *pre-execution* state
+   * (`queued`/`pending`) is executed. A run already `running` or terminal
+   * is left untouched and the call is a no-op, so a BullMQ retry of the
+   * same job never re-runs side-effecting steps. (`_runSteps` re-executes
+   * every step from `startStepIndex` with no per-step idempotency skip, so
+   * re-entering a partially-complete run would double external effects —
+   * the guard is what prevents that.)
+   *
+   * Step results / context selection:
+   *   - `startStepIndex === 0` (fresh / retry / replay-with-latest): start
+   *     from a CLEAN context (config + input) and an EMPTY step_results
+   *     array. A retried run still carries the prior attempt's stale
+   *     step_results + a polluted runtimeState.context, so we deliberately
+   *     ignore both and re-run from scratch.
+   *   - `startStepIndex > 0` (replay-from-step): the persisted
+   *     runtimeState.context already layers the cloned prefix outputs over
+   *     config + input, and run.stepResults holds the cloned prefix — both
+   *     are authoritative, so we resume on top of them.
+   */
+  async executeQueuedRun(runId: string, startStepIndex = 0): Promise<void> {
+    const run = await runStore.get(runId);
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    // Idempotency guard — see method doc.
+    if (run.status !== "queued" && run.status !== "pending") {
+      console.log(
+        `[WorkflowEngine] executeQueuedRun skip run=${runId} status=${run.status} (already handled)`,
+      );
+      return;
+    }
+
+    const template = this._resolveTemplate(run);
+    const config = run.runtimeState?.config ?? this._buildDefaultConfig(template);
+
+    const resumeIndex =
+      Number.isInteger(startStepIndex) && startStepIndex > 0 ? startStepIndex : 0;
+
+    // Resume (stepIndex > 0): trust the persisted context + cloned prefix.
+    // Fresh/retry (stepIndex 0): rebuild a clean context and drop any stale
+    // step_results so the run re-executes from the top.
+    const baseContext: Record<string, unknown> =
+      resumeIndex > 0
+        ? run.runtimeState?.context ?? { ...config, ...(run.input ?? {}) }
+        : { ...config, ...(run.input ?? {}) };
+    const stepResults: StepResult[] =
+      resumeIndex > 0 ? (run.stepResults ?? []).map((sr) => ({ ...sr })) : [];
+
+    // Build the memory snapshot BEFORE flipping to `running` so a transient
+    // failure here leaves the run `queued` and a BullMQ retry can re-enter
+    // cleanly (the idempotency guard only skips post-`running` runs).
+    const context: Record<string, unknown> = {
+      ...baseContext,
+      memory: await this._buildMemoryContext(template, run.userId),
+    };
+
+    await runStore.update(runId, { status: "running" });
+    void this._publishRunLifecycle(runId, "started");
+
+    try {
+      await this._runSteps(runId, template, config, context, stepResults, resumeIndex, run.userId);
+    } catch (err) {
+      // `_runSteps` marks the run `failed` for per-step failures itself; a
+      // throw escaping it is an infra error (store write, memory, etc.).
+      // Mark failed so the run isn't stranded `running`, then rethrow so the
+      // worker's failed/DLQ machinery records the infra fault.
+      await runStore.update(runId, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: String(err),
+      });
+      void this._publishRunLifecycle(runId, "failed", { error: String(err) });
+      throw err;
+    }
   }
 
   /**
@@ -449,15 +640,17 @@ export class WorkflowEngine {
     // completed/failed and persisting per-step updates.
     void runStore
       .update(newRun.id, { status: "running" })
-      .then(() =>
-        this._runSteps(newRun.id, template, config, context, clonedStepResults, stepIndex, userId)
-      )
+      .then(() => {
+        void this._publishRunLifecycle(newRun.id, "started");
+        return this._runSteps(newRun.id, template, config, context, clonedStepResults, stepIndex, userId);
+      })
       .catch((err) => {
         void runStore.update(newRun.id, {
           status: "failed",
           completedAt: new Date().toISOString(),
           error: String(err),
         });
+        void this._publishRunLifecycle(newRun.id, "failed", { error: String(err) });
       });
 
     return newRun;
@@ -847,6 +1040,39 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * HEL-489: emit a `run.lifecycle` SSE event for a DAG run so the RunTray and
+   * routine streams update live (the agent-prompt path publishes these; the DAG
+   * path was silent — subscribers only refreshed on the ~20s poll). Best-effort
+   * and fire-and-forget at the call sites; fetches the run for its workspace +
+   * routine so the per-resource SSE channels can filter. DAG runs aren't owned
+   * by a single agent, so `agentId` is empty.
+   */
+  private async _publishRunLifecycle(
+    runId: string,
+    phase: RunLifecyclePhase,
+    extra?: { error?: string },
+  ): Promise<void> {
+    try {
+      const run = await runStore.get(runId);
+      if (!run?.workspaceId) {
+        return;
+      }
+      await publishWorkspaceStreamEvent(run.workspaceId, {
+        kind: "run.lifecycle",
+        phase,
+        runId,
+        agentId: "",
+        routineId: run.routineId ?? null,
+        ...(extra?.error ? { error: extra.error } : {}),
+      });
+    } catch (err) {
+      console.warn(
+        `[WorkflowEngine] run.lifecycle publish failed run=${runId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   private async _executeRun(
     runId: string,
     template: WorkflowTemplate,
@@ -855,6 +1081,7 @@ export class WorkflowEngine {
     userId?: string
   ): Promise<void> {
     await runStore.update(runId, { status: "running" });
+    void this._publishRunLifecycle(runId, "started");
 
     // The execution context accumulates outputs from all steps + initial input + config
     // memory helpers are injected so LLM prompt templates can reference them.
@@ -909,6 +1136,7 @@ export class WorkflowEngine {
       status: "running",
       runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
     });
+    void this._publishRunLifecycle(run.id, "started");
 
     let stepStatus: StepResult["status"] = "success";
     let stepError: string | undefined;
@@ -965,6 +1193,7 @@ export class WorkflowEngine {
         stepResults,
         runtimeState: makeRuntimeState(config, context, runtimeState.currentStepIndex),
       });
+      void this._publishRunLifecycle(run.id, "failed", { error: stepError });
       return;
     }
 
@@ -1053,7 +1282,7 @@ export class WorkflowEngine {
               break;
             }
 
-            const actionOutput = await executeAction(step, context, config);
+            const actionOutput = await executeAction(step, context, config, userId);
             stepOutput = {
               ...actionOutput,
               ...(governance.actionType
@@ -1178,6 +1407,7 @@ export class WorkflowEngine {
           stepResults,
           runtimeState: makeRuntimeState(config, context, currentStepIndex),
         });
+        void this._publishRunLifecycle(runId, "failed", { error: stepError });
         return;
       }
 
@@ -1202,6 +1432,7 @@ export class WorkflowEngine {
       stepResults,
       runtimeState: makeRuntimeState(config, context, template.steps.length - 1),
     });
+    void this._publishRunLifecycle(runId, "completed");
   }
 }
 

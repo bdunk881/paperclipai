@@ -7,8 +7,10 @@
     "dev": "infisical run --env=dev -- react-router dev",
     "dev:no-secrets": "react-router dev",
     "build": "react-router build",
-    "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc",
+    "preview": "vite preview",
+    "deploy": "wrangler deploy",
+    "start": "vite preview",
+    "typecheck": "react-router typegen && wrangler types && tsc",
     "lint": "eslint"
   },
   "dependencies": {
@@ -38,6 +40,7 @@
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.40.0",
     "@eslint/eslintrc": "^3",
     "@eslint/js": "^9",
     "@react-router/dev": "^7.16.0",
@@ -48,8 +51,11 @@
     "eslint": "^9",
     "eslint-plugin-react-hooks": "^5",
     "globals": "^15",
+    "sanity": "^5.30.0",
+    "styled-components": "^6.4.2",
     "typescript": "^5",
     "typescript-eslint": "^8",
-    "vite": "^8.0.14"
+    "vite": "^8.0.14",
+    "wrangler": "^4.98.0"
   }
 }

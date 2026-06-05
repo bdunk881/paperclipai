@@ -26,7 +26,13 @@ export interface AgentPromptJobPayload {
   llmTier?: "lite" | "standard" | "power";
   sourceTicketId?: string;
   sourceRoutineId?: string;
-  triggerKind: "assignment" | "assignment_update" | "schedule" | "manual";
+  triggerKind: "assignment" | "assignment_update" | "schedule" | "manual" | "wake";
+  /**
+   * HEL-613: when this job was dispatched by a wake-event ACT decision, the
+   * originating wake_events row id. The worker backfills `acted_run_id` on
+   * that row once executeAgentPrompt returns the run id.
+   */
+  wakeEventId?: string;
   /**
    * HEL-507: permission mode forwarded to `executeAgentPrompt`. "plan"
    * makes the agent stop for HITL approval. Must travel on the payload so

@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { getProvider } from "../../engine/llmProviders";
 import type { LLMProviderConfig, LLMResponse } from "../../engine/llmProviders/types";
 import { actualCallCredits, estimateWorstCaseCredits } from "./costCalculator";
+import { assertAnthropicApiKeyForCredits } from "./anthropicCreditsAuth";
 import {
   pickKeySource,
   markThrottled,
@@ -52,6 +53,15 @@ export interface CreditsCallArgs {
   /** For ledger attribution. */
   relatedKind?: string;
   relatedId?: string;
+  /**
+   * HEL-603 sub-agent affinity: the parent run's last successful key
+   * `source_id` (read from `workspace_credit_ledger` metadata and threaded
+   * down the delegation chain). When set and still eligible, pickKeySource
+   * sticks to it instead of re-selecting by priority — keeping a
+   * delegate_to_subagent fan-out on one upstream source for prompt-cache
+   * locality. Safe to pass blindly: an ineligible hint just falls through.
+   */
+  parentSourceHint?: string;
 }
 
 export type CreditsCallError =
@@ -126,10 +136,26 @@ export async function callWithCredits(args: CreditsCallArgs): Promise<CreditsCal
   const commitKey = `${callKey}__commit`;
   const releaseKey = `${callKey}__release`;
 
-  // 1. Pick key source.
-  const source = await pickKeySource(args.provider);
+  // 1. Pick key source. HEL-603: prefer the parent run's source when the
+  // caller threaded a hint and that source is still eligible.
+  const source = await pickKeySource(args.provider, {
+    preferSourceId: args.parentSourceHint,
+  });
   if (!source) {
     return { ok: false, error: { kind: "no_key_source", provider: args.provider } };
+  }
+
+  // HEL-602: a direct Anthropic key source must bill our prepaid balance
+  // via an API key, never a subscription-OAuth token (which lands in the
+  // capped Agent-SDK pool from the 2026-06-15 billing split). Fail fast,
+  // before reserving credits. OpenRouter sources carry an OpenRouter key
+  // and route Anthropic downstream, so they're not subject to this.
+  if (source.sourceKind === "direct") {
+    assertAnthropicApiKeyForCredits({
+      provider: source.provider,
+      apiKey: source.apiKey,
+      sourceLabel: source.label,
+    });
   }
 
   // 2. Worst-case estimate + reserve.

@@ -40,6 +40,34 @@ describe("teamAssemblyBudget (HEL-501 / chunked generation PR1)", () => {
       // gemini 65536 * 0.05 = 3276 usable < 4000 target; 3276 / 320 = 10.
       expect(computeFillBatchSize("gemini", { reserveFraction: 0.05 })).toBe(10);
     });
+
+    // HEL-639: slow reasoning BYOK providers (OpenAI gpt-5/o-series, Anthropic
+    // opus) are capped below the budget-derived size so a single fill call
+    // stays under the 120s per-call timeout; the roles spread across more
+    // concurrent fills instead.
+    it("caps OpenAI at the latency ceiling (budget would allow 12)", () => {
+      // openai 16384 * 0.75 = 12288 usable; min(4000, 12288)/320 = 12 by
+      // budget, capped to 6 for latency.
+      expect(computeFillBatchSize("openai")).toBe(6);
+    });
+
+    it("caps Anthropic at the latency ceiling (budget would allow 12)", () => {
+      // anthropic 8192 * 0.75 = 6144 usable; min(4000, 6144)/320 = 12 by
+      // budget, capped to 6 for latency.
+      expect(computeFillBatchSize("anthropic")).toBe(6);
+    });
+
+    it("leaves a fast provider (gemini) uncapped", () => {
+      expect(computeFillBatchSize("gemini")).toBe(12);
+    });
+
+    it("only LOWERS the batch — never raises a sub-cap budget size", () => {
+      // openai budget: 4000 / 1000 = 4, which is already < the cap of 6, so the
+      // cap is a no-op and the smaller budget size wins.
+      expect(
+        computeFillBatchSize("openai", { estimatedTokensPerAgent: 1000 }),
+      ).toBe(4);
+    });
   });
 
   describe("splitRolesIntoFillBatches", () => {
@@ -91,13 +119,30 @@ describe("teamAssemblyBudget (HEL-501 / chunked generation PR1)", () => {
     });
 
     it("scales up for a large team but stays under the provider cap", () => {
-      // anthropic: (200*45 + 900) + 2048 headroom = 11948 desired, clamped to 8192.
+      // anthropic (now a reasoning provider): (200*45 + 900) + 24000 headroom
+      // far exceeds the 8192 ceiling, so it clamps.
       expect(recommendedSkeletonMaxTokens("anthropic", 200)).toBe(8192);
     });
 
     it("scales the skeleton budget with team size on a high-cap provider", () => {
       // gemini, 40 roles: (40*45 + 900) = 2700 JSON + 24000 = 26700.
       expect(recommendedSkeletonMaxTokens("gemini", 40)).toBe(26700);
+    });
+
+    // HEL-652: anthropic (opus-4-8) + openai (gpt-5) are reasoning providers, so a
+    // larger-team skeleton gets the full reasoning headroom — clamped to the
+    // provider ceiling — instead of the old non-reasoning 12*45+900+2048=3488 that
+    // truncated a live 16-role Opus skeleton mid-JSON.
+    it("gives anthropic + openai the full ceiling for a large-team skeleton", () => {
+      expect(recommendedSkeletonMaxTokens("anthropic", 16)).toBe(
+        clampMaxOutputTokens("anthropic", 1_000_000),
+      );
+      expect(recommendedSkeletonMaxTokens("anthropic", 16)).toBe(8192);
+      expect(recommendedSkeletonMaxTokens("openai", 16)).toBe(
+        clampMaxOutputTokens("openai", 1_000_000),
+      );
+      // Far above the old non-reasoning 3488 that truncated.
+      expect(recommendedSkeletonMaxTokens("openai", 16)).toBeGreaterThan(3488);
     });
   });
 });

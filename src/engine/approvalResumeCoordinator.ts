@@ -8,7 +8,7 @@ import { CoordinatorLockKey, runWithAdvisoryLock } from "./coordinatorLock";
 const activeResumes = new Set<string>();
 let resumeSweepTimer: ReturnType<typeof setInterval> | undefined;
 
-function resolveRunTemplateSnapshot(run: WorkflowRun): WorkflowTemplate {
+async function resolveRunTemplateSnapshot(run: WorkflowRun): Promise<WorkflowTemplate> {
   if (
     run.workflowDag &&
     typeof run.workflowDag === "object" &&
@@ -18,7 +18,8 @@ function resolveRunTemplateSnapshot(run: WorkflowRun): WorkflowTemplate {
     return run.workflowDag as WorkflowTemplate;
   }
 
-  return getTemplate(run.templateId);
+  // Re-resolution of an already-owned run's DAG — scope to the run's workspace.
+  return getTemplate(run.templateId, run.workspaceId);
 }
 
 export async function runApprovalResumeSweep(): Promise<{
@@ -65,7 +66,7 @@ export async function runApprovalResumeSweep(): Promise<{
 
       let template;
       try {
-        template = resolveRunTemplateSnapshot(run);
+        template = await resolveRunTemplateSnapshot(run);
       } catch {
         skippedMissingSnapshot += 1;
         continue;

@@ -347,6 +347,7 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
     "gpt-5-nano",
   ],
   anthropic: [
+    "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",
@@ -441,6 +442,7 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
   // our internal { provider, model } pairs at call time.
   openrouter: [
     "anthropic/claude-sonnet-4.6",
+    "anthropic/claude-opus-4.8",
     "anthropic/claude-opus-4.7",
     "anthropic/claude-haiku-4.5",
     "openai/gpt-5.5",

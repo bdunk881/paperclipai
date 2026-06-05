@@ -18,13 +18,15 @@
     "health-report": "ts-node src/integrations/apollo-attio/health-metrics.ts",
     "worker": "node dist/worker.js",
     "worker:dev": "infisical run --env=dev -- ts-node src/worker.ts",
-    "skills:import": "ts-node --transpile-only scripts/import-skills.ts"
+    "skills:import": "ts-node --transpile-only scripts/import-skills.ts",
+    "storage:apply-lifecycle": "ts-node --transpile-only src/storage/applyBucketLifecycle.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@anthropic-ai/sdk": "^0.94.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1034.0",
     "@aws-sdk/client-s3": "^3.1059.0",
+    "@aws-sdk/client-sesv2": "^3.1062.0",
     "@aws-sdk/s3-request-presigner": "^3.1059.0",
     "@bull-board/api": "^7.1.5",
     "@bull-board/express": "^7.1.5",

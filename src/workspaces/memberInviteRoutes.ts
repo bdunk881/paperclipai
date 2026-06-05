@@ -5,12 +5,11 @@
  *   POST   /api/workspace/members/invite/:token/accept  — any authenticated user
  *   DELETE /api/workspace/members/invite/:id            — owner/admin only
  *
- * Backed by the `workspace_member_invites` table (migration 063). Email is
- * sent via the existing mailer — TODO(HEL-213): we couldn't locate a
- * canonical sendMail helper in the repo at PR-cut time (grep for
- * `sendMail|nodemailer|resend` returned no matches), so the invite handler
- * stamps the row + logs the invite URL. Wire the actual transport in a
- * follow-up once the mailer surface lands.
+ * Backed by the `workspace_member_invites` table (migration 063). The invite
+ * email is sent via the app-side mailer (HEL-362): `buildSystemMailer()
+ * .sendTemplate('workspace-invite', …)` — SES in prod, a logging fallback in
+ * dev. Best-effort: a mail failure never blocks the invite (the row + URL
+ * already exist), and the invite URL is still logged for dev/e2e redemption.
  *
  * The accept handler optimistically bumps the workspace's Stripe
  * subscription quantity by 1 to reflect the new paid seat. Failures during
@@ -25,6 +24,9 @@ import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { subscriptionStore } from "../billing/subscriptionStore";
 import { getStripe } from "../billing/stripeClient";
+import { buildSystemMailer } from "../mailer/sesMailer";
+import type { Mailer } from "../mailer/types";
+import "../mailer/systemTemplates";
 
 type InviteRole = "admin" | "operator" | "viewer";
 const ALLOWED_ROLES: ReadonlySet<InviteRole> = new Set(["admin", "operator", "viewer"]);
@@ -118,8 +120,52 @@ async function bumpStripeSubscriptionSeat(workspaceId: string, userId: string): 
   }
 }
 
-export function createMemberInviteRoutes(pool: Pool): Router {
+/**
+ * Send the workspace-invite email, best-effort. Never throws — a mail failure
+ * must not block the invite (the row + redemption URL already exist). Returns a
+ * coarse status the API surfaces so the dashboard can message the admin (e.g.
+ * when the recipient address is suppressed).
+ */
+export async function sendWorkspaceInviteEmail(
+  mailer: Mailer,
+  args: {
+    email: string;
+    inviteUrl: string;
+    role: string;
+    expiresAt: string;
+    workspaceId: string;
+    workspaceName?: string;
+    inviterName?: string;
+  },
+): Promise<"sent" | "suppressed" | "logged" | "failed"> {
+  try {
+    const result = await mailer.sendTemplate({
+      template: "workspace-invite",
+      to: args.email,
+      workspaceId: args.workspaceId,
+      data: {
+        workspaceName: args.workspaceName,
+        inviterName: args.inviterName,
+        inviteLink: args.inviteUrl,
+        role: args.role,
+        expiresAt: args.expiresAt,
+      },
+    });
+    if (result.suppressed) {
+      return "suppressed";
+    }
+    return result.providerMessageId ? "sent" : "logged";
+  } catch (err) {
+    console.error(
+      `[member-invite] invite email to ${args.email} failed: ${(err as Error).message}`,
+    );
+    return "failed";
+  }
+}
+
+export function createMemberInviteRoutes(pool: Pool, deps: { mailer?: Mailer } = {}): Router {
   const router = Router();
+  const mailer = deps.mailer ?? buildSystemMailer();
 
   // ------------------------------------------------------------------
   // POST /api/workspace/members/invite
@@ -175,13 +221,21 @@ export function createMemberInviteRoutes(pool: Pool): Router {
         return;
       }
 
-      // TODO(HEL-213-mail): replace this log with the real mailer once it
-      // exists in the repo. The invite URL surfaces here so e2e tests + dev
-      // workflows have a deterministic redemption path.
+      // The invite URL is logged so dev/e2e keep a deterministic redemption
+      // path even when the mailer is the dev logging fallback.
       const inviteUrl = `${process.env.APP_URL ?? "http://localhost:5173"}/auth/accept-invite?token=${token}`;
       console.log(
         `[member-invite] Created invite ${row.id} for ${email} (workspace=${workspaceId} role=${role}). Redeem via ${inviteUrl}`,
       );
+
+      // HEL-362: email the invite (best-effort — never blocks the invite).
+      const emailStatus = await sendWorkspaceInviteEmail(mailer, {
+        email,
+        inviteUrl,
+        role,
+        expiresAt: row.expires_at,
+        workspaceId,
+      });
 
       res.status(201).json({
         invite: {
@@ -191,6 +245,7 @@ export function createMemberInviteRoutes(pool: Pool): Router {
           expiresAt: row.expires_at,
           createdAt: row.created_at,
         },
+        email: { status: emailStatus },
       });
     }),
   );

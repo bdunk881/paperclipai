@@ -12,7 +12,8 @@
  *     For cron fires of prompt-backed routines (HEL-174), the scheduler
  *     enqueues a job whose idempotencyKey starts with "scheduler:";
  *     this worker looks up the routine and dispatches to the agent-prompt
- *     queue. DAG run execution itself remains stubbed (HEL-107+).
+ *     queue. Non-cron DAG run jobs are driven through
+ *     `workflowEngine.executeQueuedRun` (HEL-478).
  *   - "agent-prompt" — ad-hoc + cron-fired agent NL execution
  *     (HEL-174). The worker calls `executeAgentPrompt` and persists
  *     results to the `runs` table + ticket updates + activity feed.
@@ -39,10 +40,12 @@ import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 import { executeAgentPrompt } from "./agents/agentPromptExecution";
+import { setActedRunId } from "./agents/wakeEventStore";
 import {
   startPlanApprovalResumeCoordinator,
   stopPlanApprovalResumeCoordinator,
 } from "./agents/runtime/planApprovalResumeCoordinator";
+import { startDlqDepthMonitor } from "./queue/dlqMonitor";
 
 const redisConnection = getRedisClient();
 if (!redisConnection) {
@@ -65,10 +68,25 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
   const isCronFire =
     data.idempotencyKey?.startsWith("scheduler:") && !data.runId && !data.templateId;
   if (!isCronFire) {
-    // Existing workflow-run dispatch path — stub until HEL-107+.
-    console.log(
-      `[worker] Received run ${data.runId} step ${data.stepIndex} (template: ${data.templateId})`,
-    );
+    // HEL-478: execute a queued workflow DAG run. POST /api/runs (and
+    // /retry, /replay-with-latest, /replay-from-step) create the run row
+    // with status "queued" and enqueue here; drive it through the engine.
+    // `data.stepIndex` is 0 for fresh/retry/replay-latest and N>0 for
+    // replay-from-step (resume on top of the cloned prefix). executeQueuedRun
+    // is idempotent (skips any run already past "queued"/"pending") so a
+    // BullMQ retry never double-runs side-effecting steps.
+    if (!data.runId) {
+      console.warn(
+        `[worker] runs job missing runId; ignoring (idempotencyKey=${data.idempotencyKey})`,
+      );
+      return;
+    }
+    // Lazy import: WorkflowEngine statically pulls the llmProviders barrel
+    // (→ ESM-only @mistralai/mistralai), which breaks module-eval in jest.
+    // Deferring the load keeps worker boot — and worker.test.ts's import-time
+    // smoke test — off that chain, mirroring the HEL-492 lazy-import fix.
+    const { workflowEngine } = await import("./engine/WorkflowEngine");
+    await workflowEngine.executeQueuedRun(data.runId, data.stepIndex ?? 0);
     return;
   }
   const routineId = data.idempotencyKey.slice("scheduler:".length);
@@ -258,7 +276,7 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       return;
     }
     const pool = getPostgresPool();
-    await executeAgentPrompt({
+    const { runId } = await executeAgentPrompt({
       pool,
       workspaceId: job.data.workspaceId,
       userId: job.data.userId,
@@ -271,6 +289,19 @@ const agentPromptWorker = new Worker<AgentPromptJobPayload>(
       triggerKind: job.data.triggerKind,
       permissionMode: job.data.permissionMode,
     });
+    // HEL-613: link an ACTed wake event to the run it spawned.
+    if (job.data.wakeEventId) {
+      await setActedRunId(pool, {
+        eventId: job.data.wakeEventId,
+        workspaceId: job.data.workspaceId,
+        userId: job.data.userId,
+        runId,
+      }).catch((err: Error) => {
+        console.error(
+          `[worker:agent-prompt] acted_run_id backfill failed for wake ${job.data.wakeEventId}: ${err.message}`,
+        );
+      });
+    }
   },
   {
     connection,
@@ -420,5 +451,10 @@ process.on("SIGINT", () => {
 // with permissionMode: 'auto'. Skipped silently when Postgres isn't
 // configured (in-memory dev / tests) — the sweep is a no-op there.
 startPlanApprovalResumeCoordinator();
+
+// HEL-490: runs-dlq has no drain consumer (by design — retry-exhausted jobs
+// shouldn't auto-replay). Monitor its depth and Sentry-alert when it grows, so
+// an operator drains it via the admin-console manual replay. No-op without Redis.
+startDlqDepthMonitor();
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' + 'storage-deletion' queues");

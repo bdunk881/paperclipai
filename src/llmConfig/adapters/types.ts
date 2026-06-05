@@ -85,6 +85,12 @@ export interface NormalizedRequest {
   temperature?: number;
   /** Provider-specific overrides (region, endpoint, etc.) — adapter respects what it understands. */
   providerOptions?: Record<string, unknown>;
+  /**
+   * Request prompt caching of the stable prefix (HEL-628). Anthropic stamps
+   * `cache_control` on the system block (which caches tools + system); other
+   * adapters ignore it. Set by the prompt-caching middleware.
+   */
+  cacheControl?: boolean;
   /** API key / credentials. */
   apiKey?: string;
   /** Optional live trace callback (HEL live trace streaming). */

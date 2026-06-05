@@ -1,5 +1,5 @@
 /**
- * API Integration Catalog — 34 curated REST/webhook integrations across 15 verticals.
+ * API Integration Catalog — 35 curated REST/webhook integrations across 15 verticals.
  *
  * Each entry is a complete IntegrationManifest that the framework uses to:
  *  - Render the connection wizard UI
@@ -356,6 +356,49 @@ const twilio: IntegrationManifest = {
   ],
   verified: true,
   docsUrl: "https://www.twilio.com/docs/sms/api",
+};
+
+const telnyx: IntegrationManifest = {
+  slug: "telnyx",
+  name: "Telnyx",
+  description: "Send SMS and voice messages via Telnyx — a cost-efficient Twilio alternative.",
+  category: "communication",
+  icon: "telnyx",
+  logoDomain: "telnyx.com",
+  authKind: "bearer",
+  baseUrl: "https://api.telnyx.com",
+  setupInstructions:
+    "1. Log in to portal.telnyx.com.\n" +
+    "2. Go to API Keys and create a V2 API Key.\n" +
+    "3. Paste the API key here.\n" +
+    "4. Create a Messaging Profile and a sending number (or alphanumeric sender ID) in Telnyx.",
+  actions: [
+    {
+      id: "sms.send",
+      name: "Send SMS",
+      description: "Send an SMS message",
+      method: "POST",
+      path: "/v2/messages",
+      inputSchema: [
+        { key: "from", label: "From (E.164 sender)", type: "string", required: false },
+        { key: "messaging_profile_id", label: "Messaging Profile ID", type: "string", required: false },
+        { key: "to", label: "To Phone Number (E.164)", type: "string", required: true },
+        { key: "text", label: "Message Text", type: "string", required: true },
+      ],
+      outputKeys: ["data"],
+    },
+  ],
+  triggers: [
+    {
+      id: "sms.received",
+      name: "SMS Received",
+      description: "Fires when an inbound SMS arrives",
+      kind: "webhook",
+      webhookEventTypes: ["message.received"],
+    },
+  ],
+  verified: true,
+  docsUrl: "https://developers.telnyx.com/docs/messaging",
 };
 
 const sendgrid: IntegrationManifest = {
@@ -2335,6 +2378,7 @@ export const INTEGRATION_CATALOG: IntegrationManifest[] = [
   // Communication
   slack,
   twilio,
+  telnyx,
   sendgrid,
   gmail,
   microsoftTeams,

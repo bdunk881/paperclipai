@@ -67,11 +67,46 @@ function thinkingHeadroom(provider: ProviderName): number {
 const REASONING_RESERVE = 0.5;
 const NON_REASONING_RESERVE = 0.75;
 
-/** Providers whose default models spend output budget on hidden reasoning. */
+/**
+ * Providers whose default/flagship models spend output budget on hidden
+ * reasoning (those tokens count against `maxOutputTokens` alongside the JSON).
+ *
+ * HEL-652: anthropic (claude-opus-4-8) and openai (gpt-5 / o-series) belong
+ * here too — both reason internally and bill it against the output cap. A live
+ * 16-role Anthropic skeleton truncated mid-JSON at the old non-reasoning budget
+ * (12*45 + 900 + 2048 = 3488) because ~1.5k of that went to reasoning. With the
+ * reasoning headroom (24000, clamped to the provider ceiling) the skeleton +
+ * fills get the full ceiling and large teams no longer truncate. Batch sizes
+ * are unchanged — the per-provider latency cap (MAX_FILL_BATCH_BY_PROVIDER)
+ * still dominates — so this only raises the (ceiling-bounded) token budgets.
+ */
 const REASONING_PROVIDERS: ReadonlySet<ProviderName> = new Set<ProviderName>([
   "gemini",
   "vertex-ai",
+  "anthropic",
+  "openai",
 ]);
+
+/**
+ * Latency ceiling on fill-batch size for SLOW reasoning BYOK providers. (HEL-639)
+ *
+ * The output-budget math alone packs ~12 agents into one fill call on a
+ * high-cap provider. That's fine for a FAST model (gemini ran 15 agents as
+ * [12,3] comfortably under budget), but on a slow reasoning model — OpenAI's
+ * gpt-5 / o-series, Anthropic's opus — a 12-agent fill (≈4k JSON + hidden
+ * reasoning) can push a SINGLE call past the per-call request timeout
+ * (DEFAULT_LLM_REQUEST_TIMEOUT_MS = 120s) and, summed with the skeleton call,
+ * past the dashboard's generate-plan budget. Capping the batch smaller spreads
+ * the same roles across MORE fill calls, which run *concurrently* — so each
+ * call finishes well under the per-call timeout and total wall-clock DROPS.
+ * Providers not listed here are uncapped (sized purely by output budget).
+ * See src/missions/chunkedTeamAssembly.ts and the dashboard's
+ * GENERATE_PLAN_TIMEOUT_MS.
+ */
+const MAX_FILL_BATCH_BY_PROVIDER: Partial<Record<ProviderName, number>> = {
+  openai: 6,
+  anthropic: 6,
+};
 
 export interface FillBatchSizeOptions {
   /** Override the per-agent token estimate (e.g. if the fill prompt grows). */
@@ -109,7 +144,12 @@ export function computeFillBatchSize(
   const reserve = resolveReserve(provider, options);
   const usableCap = Math.floor(providerOutputCeiling(provider) * reserve);
   const jsonTarget = Math.min(TARGET_FILL_JSON_TOKENS, usableCap);
-  return Math.max(1, Math.floor(jsonTarget / perAgent));
+  const budgetSize = Math.max(1, Math.floor(jsonTarget / perAgent));
+  // Apply the latency cap for slow reasoning providers (HEL-639). It only ever
+  // LOWERS the budget-derived size, and budgetSize is already >= 1, so the
+  // result stays >= 1.
+  const latencyCap = MAX_FILL_BATCH_BY_PROVIDER[provider];
+  return typeof latencyCap === "number" ? Math.min(budgetSize, latencyCap) : budgetSize;
 }
 
 /**

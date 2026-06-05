@@ -59,6 +59,17 @@ export function createOpenAICompatibleProvider(
     (options.baseURLEnvVar ? process.env[options.baseURLEnvVar] : undefined);
   const resolvedApiKey = config.apiKey ?? config.credentials?.apiKey;
   const resolvedModel = options.resolveModel?.(config) ?? config.model;
+  // HEL-625: OpenAI's GPT-5 / o-series reject `max_tokens` and require
+  // `max_completion_tokens`. Other OpenAI-compatible providers (groq,
+  // fireworks, together, perplexity, …) still use the legacy `max_tokens`,
+  // so only switch the field for provider === "openai". Computed once and
+  // spread into each chat-completions call (empty when no limit is set).
+  const tokenLimitParam: { max_tokens?: number; max_completion_tokens?: number } =
+    typeof config.maxOutputTokens !== "number"
+      ? {}
+      : config.provider === "openai"
+        ? { max_completion_tokens: config.maxOutputTokens }
+        : { max_tokens: config.maxOutputTokens };
 
   if (options.baseURLEnvVar && !resolvedBaseURL) {
     throw new Error(
@@ -138,9 +149,7 @@ export function createOpenAICompatibleProvider(
           messages: buildMessages(prompt),
           stream: true,
           stream_options: { include_usage: true },
-          ...(typeof config.maxOutputTokens === "number"
-            ? { max_tokens: config.maxOutputTokens }
-            : {}),
+          ...tokenLimitParam,
         });
         for await (const chunk of stream) {
           mapOpenAIStreamChunk(chunk, onTrace, acc);
@@ -175,9 +184,7 @@ export function createOpenAICompatibleProvider(
         model: resolvedModel,
         messages: buildMessages(prompt),
         ...(responseFormat ? { response_format: responseFormat } : {}),
-        ...(typeof config.maxOutputTokens === "number"
-          ? { max_tokens: config.maxOutputTokens }
-          : {}),
+        ...tokenLimitParam,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

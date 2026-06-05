@@ -3,14 +3,18 @@ import { createImageUrlBuilder } from "@sanity/image-url";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SanityImageSource = any;
 
-const isSanityConfigured =
-  !!process.env.NEXT_PUBLIC_SANITY_PROJECT_ID &&
-  process.env.NEXT_PUBLIC_SANITY_PROJECT_ID !== "replace-me";
+// `wrangler types` narrows this env var to the literal "koldjrka" (from
+// wrangler.jsonc vars), but at build/dev time it may be undefined or
+// "replace-me", so widen before comparing.
+const sanityProjectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID as
+  | string
+  | undefined;
+const isSanityConfigured = !!sanityProjectId && sanityProjectId !== "replace-me";
 
 export const sanityClient = createClient({
   projectId: process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "replace-me",
   dataset: process.env.NEXT_PUBLIC_SANITY_DATASET ?? "production",
-  apiVersion: "2024-01-01",
+  apiVersion: "2026-02-01",
   useCdn: process.env.NODE_ENV === "production",
   token: process.env.SANITY_API_TOKEN,
 });
@@ -57,21 +61,141 @@ export async function getFaqItems() {
 export async function getBlogPosts() {
   return sanityFetch<
     { title: string; slug: string; author: string; publishedAt: string; excerpt: string; coverImage: SanityImageSource | null }[]
-  >(`*[_type == "blogPost"] | order(publishedAt desc) { title, "slug": slug.current, author, publishedAt, excerpt, coverImage }`);
+  >(`*[_type == "blogPost"] | order(publishedAt desc) { title, "slug": slug.current, "author": coalesce(authorRef->name, author), publishedAt, excerpt, coverImage }`);
+}
+
+export interface BlogAuthor {
+  name: string;
+  slug?: string | null;
+  role?: string | null;
+  bio?: unknown[] | null;
+  avatarUrl?: string | null;
+  links?: string[] | null;
+}
+
+export interface BlogCategory {
+  title: string;
+  slug: string;
+}
+
+export interface BlogFaq {
+  question: string;
+  answer: string;
+}
+
+export interface BlogSeo {
+  metaTitle: string | null;
+  metaDescription: string | null;
+  ogImage: SanityImageSource | null;
+  canonicalUrl: string | null;
+  noIndex: boolean;
+}
+
+export interface BlogPost {
+  title: string;
+  slug: string;
+  author: BlogAuthor | null;
+  publishedAt: string;
+  dateModified: string | null;
+  body: unknown[];
+  excerpt: string;
+  coverImage: SanityImageSource | null;
+  categories: BlogCategory[] | null;
+  faqs: BlogFaq[] | null;
+  seo: BlogSeo;
 }
 
 export async function getBlogPost(slug: string) {
-  return sanityFetch<{
-    title: string;
-    slug: string;
-    author: string;
-    publishedAt: string;
-    body: unknown[];
-    excerpt: string;
-    coverImage: SanityImageSource | null;
-  }>(
-    `*[_type == "blogPost" && slug.current == $slug][0] { title, "slug": slug.current, author, publishedAt, body, excerpt, coverImage }`,
+  // Internal-link markDefs expand `reference` to the target slug so the
+  // PortableText link renderer (PR-4) can build /blog/<slug> hrefs. `author`
+  // coalesces the new authorRef entity over the legacy string fallback, and
+  // `seo` fills smart defaults (title/excerpt/coverImage) at the query layer.
+  return sanityFetch<BlogPost>(
+    `*[_type == "blogPost" && slug.current == $slug][0]{
+      title,
+      "slug": slug.current,
+      "author": coalesce(authorRef->{ name, "slug": slug.current, role, bio, "avatarUrl": avatar.asset->url, links }, { "name": author }),
+      publishedAt,
+      "dateModified": coalesce(dateModified, _updatedAt),
+      body[]{
+        ...,
+        markDefs[]{
+          ...,
+          reference->{ "slug": slug.current }
+        }
+      },
+      excerpt,
+      coverImage,
+      "categories": categories[]->{ title, "slug": slug.current },
+      "faqs": faqs[]{ question, answer },
+      "seo": {
+        "metaTitle": coalesce(seo.metaTitle, title),
+        "metaDescription": coalesce(seo.metaDescription, excerpt),
+        "ogImage": coalesce(seo.ogImage, coverImage),
+        "canonicalUrl": seo.canonicalUrl,
+        "noIndex": seo.noIndex == true
+      }
+    }`,
     { slug },
+  );
+}
+
+/* ── SEO/AEO support queries (HEL-633) ─────────────────────── */
+
+export interface SiteSettingsProduct {
+  name: string;
+  description?: string | null;
+  price?: string | null;
+  priceCurrency?: string | null;
+  url?: string | null;
+}
+
+export interface SiteSettings {
+  orgName: string;
+  logoUrl: string | null;
+  defaultMetaDescription: string | null;
+  sameAs: string[] | null;
+  products: SiteSettingsProduct[] | null;
+}
+
+/** Brand-entity singleton — source for Organization/WebSite/SoftwareApplication JSON-LD. */
+export async function getSiteSettings() {
+  return sanityFetch<SiteSettings>(
+    `*[_type == "siteSettings"][0]{
+      orgName,
+      "logoUrl": logo.asset->url,
+      defaultMetaDescription,
+      sameAs,
+      products[]{ name, description, price, priceCurrency, url }
+    }`,
+  );
+}
+
+export interface BlogRedirect {
+  source: string;
+  destination: string;
+  permanent: boolean;
+}
+
+/** Enabled editor-managed redirects (consumed by the redirect mechanism in PR-7). */
+export async function getEnabledRedirects() {
+  return sanityFetch<BlogRedirect[]>(
+    `*[_type == "redirect" && isEnabled == true]{ source, destination, permanent }`,
+  );
+}
+
+export interface BlogSitemapEntry {
+  slug: string;
+  lastmod: string;
+}
+
+/** Indexable blog posts for the sitemap — excludes seo.noIndex, per-post lastmod (PR-5). */
+export async function getBlogSitemapEntries() {
+  return sanityFetch<BlogSitemapEntry[]>(
+    `*[_type == "blogPost" && defined(slug.current) && seo.noIndex != true]{
+      "slug": slug.current,
+      "lastmod": coalesce(dateModified, _updatedAt)
+    }`,
   );
 }
 

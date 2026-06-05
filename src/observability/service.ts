@@ -1,6 +1,7 @@
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
-import { getTemplate } from "../templates";
+import { getTemplateCached } from "../templates";
 import type { WorkflowRun, StepResult, WorkflowStep } from "../types/workflow";
+import type { ObservabilityEvent } from "./types";
 
 export interface ToolAuditEntry {
   timestamp: string;
@@ -234,10 +235,12 @@ export async function buildObservabilityResponse(
   const records = runs
     .flatMap((run) => {
       let templateSteps = new Map<string, WorkflowStep>();
-      try {
-        templateSteps = new Map(getTemplate(run.templateId).steps.map((step) => [step.id, step]));
-      } catch {
-        templateSteps = new Map();
+      // HEL-520: cache-only (sync) resolution — this builder runs inside a
+      // synchronous flatMap and tolerates a miss (empty step map). Most runs
+      // carry their DAG inline; the cache (warmed on boot) covers the rest.
+      const cachedTemplate = getTemplateCached(run.templateId);
+      if (cachedTemplate) {
+        templateSteps = new Map(cachedTemplate.steps.map((step) => [step.id, step]));
       }
 
       return run.stepResults.map((step) => {
@@ -319,4 +322,56 @@ export async function buildObservabilityResponse(
 
 export function buildObservabilityCsv(records: ObservabilityRecord[]): string {
   return toCsv(records);
+}
+
+/**
+ * Serialize the live (event-based) observability feed to CSV for export
+ * (HEL-357). One row per `ObservabilityEvent`, in the order given (callers
+ * paginate the store ascending by sequence). The `payload` is emitted as a
+ * single JSON column so the schema stays flat across all event categories.
+ *
+ * Distinct from the orphaned, pre-HEL-481 `buildObservabilityCsv`/`toCsv`
+ * (runs/records model). This is the one wired to `POST /api/observability/export`.
+ */
+export function buildObservabilityEventsCsv(events: ObservabilityEvent[]): string {
+  const header = [
+    "occurred_at",
+    "sequence",
+    "category",
+    "type",
+    "actor_type",
+    "actor_id",
+    "actor_label",
+    "subject_type",
+    "subject_id",
+    "subject_label",
+    "summary",
+    "payload_json",
+  ];
+
+  const escape = (value: unknown): string => {
+    const text = typeof value === "string" ? value : value == null ? "" : JSON.stringify(value);
+    return `"${text.replace(/"/g, `""`)}"`;
+  };
+
+  const rows = events.map((event) =>
+    [
+      event.occurredAt,
+      event.sequence,
+      event.category,
+      event.type,
+      event.actor?.type ?? "",
+      event.actor?.id ?? "",
+      event.actor?.label ?? "",
+      event.subject?.type ?? "",
+      event.subject?.id ?? "",
+      event.subject?.label ?? "",
+      event.summary,
+      event.payload ?? {},
+    ]
+      .map(escape)
+      .join(",")
+  );
+
+  return [header.join(","), ...rows].join("\n");
 }

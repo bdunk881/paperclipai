@@ -5,6 +5,8 @@ import type { AuthenticatedRequest } from "../auth/authMiddleware";
 import { grantCredits } from "../billing/credits/walletStore";
 import { provisionDefaultWorkspace } from "../middleware/workspaceResolver";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { fileObjectStore } from "../storage/fileObjectStore";
+import { enqueueObjectDeletion } from "../queue/storageQueue";
 
 const DEFAULT_SIGNUP_TRIAL_CREDITS = 10000n;
 
@@ -260,6 +262,111 @@ export function createWorkspaceRoutes(pool: Pool) {
     } catch (error) {
       console.error("[workspaces] Failed to patch workspace:", (error as Error).message);
       res.status(500).json({ error: "Failed to update workspace" });
+    }
+  }));
+
+  // -------------------------------------------------------------------
+  // DELETE /api/workspaces/:id — permanently delete a workspace (HEL-356)
+  //
+  // OWNER-ONLY, destructive, irreversible. Requires a typed confirmation
+  // (body.confirm must equal the workspace name) and refuses while a paid
+  // subscription is active. Queues object-storage cleanup for every
+  // file_objects row BEFORE the workspace DELETE, whose ON DELETE CASCADE
+  // FKs then remove all child rows (file_objects, companies, missions,
+  // runs, …).
+  // -------------------------------------------------------------------
+  router.delete("/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const userId = req.auth?.sub?.trim();
+    if (!userId) {
+      res.status(401).json({ error: "Authenticated user required" });
+      return;
+    }
+
+    const workspaceId = req.params.id;
+    if (!workspaceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(workspaceId)) {
+      res.status(400).json({ error: "Invalid workspace ID format" });
+      return;
+    }
+
+    try {
+      // Owner-only. Opaque 404 — never leak the existence of another user's
+      // workspace.
+      const wsResult = await pool.query<{ name: string; owner_user_id: string }>(
+        `SELECT name, owner_user_id FROM workspaces WHERE id = $1 LIMIT 1`,
+        [workspaceId],
+      );
+      const workspace = wsResult.rows[0];
+      if (!workspace || workspace.owner_user_id !== userId) {
+        res.status(404).json({ error: "Workspace not found" });
+        return;
+      }
+
+      // Typed confirmation — guards against accidental deletion.
+      const confirm = typeof req.body?.confirm === "string" ? req.body.confirm : "";
+      if (confirm !== workspace.name) {
+        res.status(400).json({
+          error: 'Confirmation required: send { confirm: "<workspace name>" } matching the workspace name.',
+          code: "confirmation_required",
+        });
+        return;
+      }
+
+      // Refuse while billing is active — deletion would orphan the Stripe
+      // subscription. (Programmatic cancellation is a separate concern.)
+      const subResult = await pool.query(
+        `SELECT 1 FROM subscriptions
+          WHERE workspace_id = $1 AND status IN ('active', 'trialing', 'past_due')
+          LIMIT 1`,
+        [workspaceId],
+      );
+      if (subResult.rows.length > 0) {
+        res.status(409).json({
+          error: "Cancel the workspace's billing subscription before deleting it.",
+          code: "active_subscription",
+        });
+        return;
+      }
+
+      // Queue object-storage cleanup for every stored file BEFORE the cascade
+      // removes the file_objects rows (each job carries the storage key).
+      let fileObjectsQueued = 0;
+      try {
+        const files = await fileObjectStore.listByWorkspace({ workspaceId, userId });
+        for (const file of files) {
+          await enqueueObjectDeletion({
+            workspaceId,
+            fileId: file.id,
+            storageKey: file.storageKey,
+            provider: file.provider,
+            bucket: file.bucket,
+          });
+          fileObjectsQueued += 1;
+        }
+      } catch (err) {
+        // Best-effort: a cleanup-enqueue failure must not block deletion, but
+        // log loudly — objects may linger until a reconciliation sweep.
+        console.error(
+          `[workspaces] storage cleanup enqueue failed for workspace ${workspaceId}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
+      const deleted = await pool.query(
+        `DELETE FROM workspaces WHERE id = $1 AND owner_user_id = $2`,
+        [workspaceId, userId],
+      );
+      if ((deleted.rowCount ?? 0) === 0) {
+        res.status(404).json({ error: "Workspace not found" });
+        return;
+      }
+
+      console.log(
+        `[workspaces] workspace ${workspaceId} deleted by ${userId}; queued ${fileObjectsQueued} object(s) for storage cleanup`,
+      );
+      res.json({ deleted: true, fileObjectsQueued });
+    } catch (error) {
+      console.error("[workspaces] Failed to delete workspace:", (error as Error).message);
+      res.status(500).json({ error: "Failed to delete workspace" });
     }
   }));
 

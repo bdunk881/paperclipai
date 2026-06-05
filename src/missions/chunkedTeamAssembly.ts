@@ -13,10 +13,21 @@
  */
 
 import { getProvider } from "../engine/llmProviders";
-import type { ProviderName } from "../engine/llmProviders/types";
+import type { ProviderName, ResponseFormat } from "../engine/llmProviders/types";
 import type { TeamAssemblyRequest, TeamAssemblyResult } from "../goals/teamAssembly";
-import { buildTeamSkeletonPrompt, parseTeamSkeletonResponse, type TeamSkeleton } from "../goals/teamSkeleton";
-import { buildRoleDetailPrompt, parseRoleDetailResponse, type RoleDetail } from "../goals/roleDetail";
+import {
+  buildTeamSkeletonPrompt,
+  parseTeamSkeletonResponse,
+  teamSkeletonSchema,
+  type TeamSkeleton,
+} from "../goals/teamSkeleton";
+import {
+  buildRoleDetailPrompt,
+  parseRoleDetailResponse,
+  roleDetailBatchSchema,
+  type RoleDetail,
+} from "../goals/roleDetail";
+import { z } from "zod";
 import { assembleTeamPlan } from "../goals/assembleTeamPlan";
 import {
   computeFillBatchSize,
@@ -28,6 +39,25 @@ import {
 /** True when the chunked generation path is enabled for this process. */
 export function isChunkedTeamAssemblyEnabled(): boolean {
   return process.env.TEAM_ASSEMBLY_CHUNKED === "true";
+}
+
+/**
+ * Per-provider structured-output mode for the chunked calls. (HEL-625)
+ *
+ * Anthropic forces JSON via a tool; in `json_object` mode its tool input_schema
+ * is permissive and claude-opus-4-7 satisfies it with `{}`. Giving Anthropic the
+ * REAL schema (`json_schema` → real tool input_schema) makes it fill the shape.
+ * gemini + openai follow `json_object` from the prompt reliably, and OpenAI's
+ * `json_schema` is strict (rejects the record-shaped fill), so they stay on it.
+ */
+export function chunkedResponseFormat(provider: ProviderName, schema: z.ZodType): ResponseFormat {
+  if (provider === "anthropic") {
+    // Strip the $schema meta-key; Anthropic's tool input_schema wants the bare shape.
+    const jsonSchema = z.toJSONSchema(schema) as Record<string, unknown>;
+    delete jsonSchema.$schema;
+    return { type: "json_schema", schema: jsonSchema };
+  }
+  return { type: "json_object" };
 }
 
 export interface ChunkedLlm {
@@ -67,7 +97,7 @@ export async function generateTeamPlanChunked(
     provider: llm.provider,
     model: llm.model,
     apiKey: llm.apiKey,
-    responseFormat: { type: "json_object" },
+    responseFormat: chunkedResponseFormat(llm.provider, teamSkeletonSchema),
     maxOutputTokens: recommendedSkeletonMaxTokens(llm.provider),
   });
   const skeletonResp = await skeletonProvider(buildTeamSkeletonPrompt(request));
@@ -86,7 +116,7 @@ export async function generateTeamPlanChunked(
     provider: llm.provider,
     model: llm.model,
     apiKey: llm.apiKey,
-    responseFormat: { type: "json_object" },
+    responseFormat: chunkedResponseFormat(llm.provider, roleDetailBatchSchema),
     maxOutputTokens: recommendedFillCallMaxTokens(llm.provider, batchSize),
   });
   const batches = splitRolesIntoFillBatches(roleKeys, llm.provider);
@@ -101,8 +131,15 @@ export async function generateTeamPlanChunked(
 }
 
 /**
- * Run one fill batch, retrying ONCE on any failure (parse/schema/provider).
- * gemini variance or a single malformed batch shouldn't sink the whole plan.
+ * Run one fill batch, retrying ONCE on a TRANSIENT failure (parse/schema blip,
+ * 5xx, connection reset) — gemini variance or a single malformed batch
+ * shouldn't sink the whole plan.
+ *
+ * A TIMEOUT is NOT retried (HEL-642): the first call already burned the full
+ * per-call budget (DEFAULT_LLM_REQUEST_TIMEOUT_MS = 120s), and a slow reasoning
+ * model that just hit that wall will hit it again — so an immediate retry only
+ * doubles wall-clock for nothing and can push the run past the dashboard's
+ * generate-plan budget. Timeouts surface straight away.
  */
 async function runFillBatch(
   fillProvider: ProviderFn,
@@ -116,8 +153,12 @@ async function runFillBatch(
     const resp = await fillProvider(prompt);
     accumulate(resp.usage);
     return parseRoleDetailResponse(resp.text, batch);
-  } catch {
-    // fall through to a single retry
+  } catch (firstErr) {
+    if (isTimeoutError(firstErr)) {
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      throw new Error(`fill[${batch.join(",")}] timed out — not retrying: ${msg}`);
+    }
+    // transient failure: fall through to a single retry
   }
   const resp = await fillProvider(prompt);
   accumulate(resp.usage);
@@ -126,6 +167,23 @@ async function runFillBatch(
   } catch (err) {
     throw augmentWithRaw(`fill[${batch.join(",")}]`, err, resp.text);
   }
+}
+
+/**
+ * True for an upstream timeout/abort — the per-call budget is already spent, so
+ * retrying is wasteful (HEL-642). Mirrors the needles userFacingError uses to
+ * classify the `timeout` category. Provider adapters surface these as
+ * "<label> API error: ... timed out / aborted / ETIMEDOUT".
+ */
+function isTimeoutError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("timed out") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout") ||
+    msg.includes("aborted") ||
+    msg.includes("econnreset")
+  );
 }
 
 /**

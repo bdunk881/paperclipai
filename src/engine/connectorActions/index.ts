@@ -6,5 +6,6 @@
 // SDKs/services are imported lazily inside each action's `invoke`, so loading
 // this barrel never pulls connector credential vaults into module-eval.
 import "./slackActions";
+import "./hubspotActions";
 
 export * from "./registry";

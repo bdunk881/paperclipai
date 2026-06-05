@@ -74,12 +74,14 @@ async function startServer() {
     { startCreditAnomalyDetector },
     { startCreditAutoTopupJob },
     { startIssuingTreasuryJob },
+    { startDirectProviderHealthJobs },
   ] = await Promise.all([
     import("./billing/credits/openrouterHealthJob"),
     import("./billing/credits/creditExpirationJob"),
     import("./billing/credits/creditAnomalyDetectorJob"),
     import("./billing/credits/creditAutoTopupJob"),
     import("./billing/credits/stripeIssuing"),
+    import("./billing/credits/sourceHealthJob"),
   ]);
   startOpenrouterHealthJob();
   startCreditExpirationJob();
@@ -88,6 +90,9 @@ async function startServer() {
   // HEL-599: Stripe Issuing treasury underfund watchdog. No-op unless
   // STRIPE_ISSUING_ENABLED is set (the whole treasury layer ships disabled).
   startIssuingTreasuryJob();
+  // HEL-601: per-provider direct funding watchdogs (Anthropic + OpenAI). Also
+  // gated on STRIPE_ISSUING_ENABLED — no-op until go-live.
+  startDirectProviderHealthJobs();
 }
 
 void startServer();

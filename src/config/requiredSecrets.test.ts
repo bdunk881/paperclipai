@@ -17,6 +17,7 @@ const FULL_ENV = {
   MFA_RP_NAME: "AutoFlow",
   MFA_ORIGIN: "https://app.helloautoflow.com",
   REDIS_URL: "redis://localhost:6379",
+  OPENCODE_ZEN_API_KEY: "ocz-test-key",
 } as Record<string, string>;
 
 describe("checkRequiredSecrets (HEL-500)", () => {
@@ -42,6 +43,13 @@ describe("checkRequiredSecrets (HEL-500)", () => {
     const names = result.missingRecommended.map((s) => s.name);
     expect(names).toContain("MFA_RP_ID");
     expect(names).toContain("MFA_ORIGIN");
+  });
+
+  it("flags OPENCODE_ZEN_API_KEY as recommended (HEL-420) — feature-gates the Explore free tier", () => {
+    const result = checkRequiredSecrets({ ...FULL_ENV, OPENCODE_ZEN_API_KEY: "" });
+    // Warn-only — the app stays up (BYOK keeps working), so it must not be required.
+    expect(result.missingRequired).toHaveLength(0);
+    expect(result.missingRecommended.map((s) => s.name)).toContain("OPENCODE_ZEN_API_KEY");
   });
 });
 

@@ -298,13 +298,13 @@ export default function BudgetDashboard() {
       ? Math.round(breakdown.totals.cacheHitRate * 100)
       : null;
 
-  // Stat-grid display values — prefer real breakdown numbers, fall back to
-  // the prototype sample so the layout demos cleanly on empty workspaces.
-  const statSpent = breakdownTotalSpent > 0 ? formatCurrency(breakdownTotalSpent, 2) : "$148.40";
-  const statAvg = avgPerDay > 0 ? formatCurrency(avgPerDay, 2) : "$21.20";
-  const statTokens =
-    breakdownTokens > 0 ? `${Math.round(breakdownTokens / 1000).toLocaleString()}k` : "4,847k";
-  const statCache = cacheHitPct != null ? `${cacheHitPct}%` : "73%";
+  // Stat-grid display values — real breakdown numbers, with honest zeros / em-dash
+  // on an empty workspace (HEL-714: never fabricate sample spend as if it were real;
+  // formatCurrency(0) renders "$0.00", and an undefined cache rate shows "—").
+  const statSpent = formatCurrency(breakdownTotalSpent, 2);
+  const statAvg = formatCurrency(avgPerDay, 2);
+  const statTokens = `${Math.round(breakdownTokens / 1000).toLocaleString()}k`;
+  const statCache = cacheHitPct != null ? `${cacheHitPct}%` : "—";
 
   // Model list for the model-version select.
   const versionOptions = useMemo(() => {
@@ -414,8 +414,9 @@ export default function BudgetDashboard() {
     );
   }
 
-  const totalSpentLabel = totals.spent > 0 ? formatCurrency(totals.spent, 2) : "$148.40";
-  const totalCapLabel = totals.cap > 0 ? formatCurrency(totals.cap, 2) : "$1,000.00";
+  const totalSpentLabel = formatCurrency(totals.spent, 2);
+  // HEL-714: no fabricated $1,000 cap — an unset cap shows "—".
+  const totalCapLabel = totals.cap > 0 ? formatCurrency(totals.cap, 2) : "—";
 
   return (
     <div className="af2-page af2-v2" data-pro={isPro ? "on" : undefined}>

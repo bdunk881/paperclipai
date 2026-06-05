@@ -40,6 +40,7 @@ import { pickBackend, withAgentConversation } from "./runtime/runAgent";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
 import { budgetMiddleware } from "./runtime/middleware/budgetMiddleware";
 import { auditMiddleware } from "./runtime/middleware/auditMiddleware";
+import { truncationMiddleware } from "./runtime/middleware/truncationMiddleware";
 import { createDelegateToSubagentTool } from "./runtime/delegateToSubagentTool";
 import type { AgentMiddleware } from "./runtime/middleware/types";
 import type { AgentPermissionMode, ResolvedModelBinding } from "./runtime/types";
@@ -257,19 +258,22 @@ export async function runAgentTurn(
   // we call into the backend. Skills come from explicit input override or
   // the agent row's stored list; MCP from the user's mcp_servers; the
   // budget hook is opt-out (enforceBudget defaults to true).
-  const agentSkillsRow = await input.pool
-    .query<{ skills: string[] | null }>(
-      `SELECT skills FROM agents WHERE id = $1::uuid AND workspace_id = $2::uuid LIMIT 1`,
+  const agentRow = await input.pool
+    .query<{ skills: string[] | null; metadata: Record<string, unknown> | null }>(
+      `SELECT skills, metadata FROM agents WHERE id = $1::uuid AND workspace_id = $2::uuid LIMIT 1`,
       [input.agentId, input.workspaceId],
     )
-    .catch(() => ({ rows: [] as Array<{ skills: string[] | null }> }));
-  const resolvedSkills =
-    input.skills ?? agentSkillsRow.rows[0]?.skills ?? [];
+    .catch(() => ({
+      rows: [] as Array<{ skills: string[] | null; metadata: Record<string, unknown> | null }>,
+    }));
+  const resolvedSkills = input.skills ?? agentRow.rows[0]?.skills ?? [];
+  const toolResultMaxChars = readToolResultMaxChars(agentRow.rows[0]?.metadata);
   const mcpServers = await loadAgentMcpServers({ userId: input.userId });
-  // Build the agent middleware pipeline: budget enforcement (opt-out via
-  // enforceBudget=false) + audit logging (always on). Both run on every
-  // backend now that all tool calls route through the pipeline (HEL-621/622).
-  const middleware: AgentMiddleware[] = [];
+  // Build the agent middleware pipeline: tool-result truncation (always on,
+  // per-agent override) + budget enforcement (opt-out via enforceBudget=false)
+  // + audit logging (always on). All run on every backend now that tool calls
+  // route through the pipeline (HEL-621/622/623).
+  const middleware: AgentMiddleware[] = [truncationMiddleware(toolResultMaxChars)];
   if (input.enforceBudget !== false) {
     middleware.push(
       budgetMiddleware({
@@ -331,6 +335,22 @@ export async function runAgentTurn(
     model,
     turnId: shouldTrace ? turnId : undefined,
   };
+}
+
+/**
+ * Per-agent tool-result truncation budget, read from
+ * `agents.metadata.runtime.toolResultMaxChars`. Returns undefined when unset
+ * or invalid, so the middleware falls back to its default cap. A value of 0
+ * disables truncation for that agent.
+ */
+function readToolResultMaxChars(
+  metadata: Record<string, unknown> | null | undefined,
+): number | undefined {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const runtime = (metadata as { runtime?: unknown }).runtime;
+  if (!runtime || typeof runtime !== "object") return undefined;
+  const raw = (runtime as { toolResultMaxChars?: unknown }).toolResultMaxChars;
+  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
 }
 
 function composeSystemPrompt(

@@ -2700,7 +2700,14 @@ if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_APPROVAL_NOTI
   startApprovalNotificationCoordinator();
 }
 
-if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER !== "false") {
+// HEL-502: the ticket-SLA notification senders (inbox/email/agent_wake) are all
+// no-ops and setTicketNotificationSender is never wired, so running this sweeper
+// only churns durable rows to `sent` with zero actual delivery — masking the
+// gap. Gate it OPT-IN (default off) until real transports exist; until then
+// pending SLA notifications stay visible (as `pending`) via the ticket
+// notifications API rather than being falsely marked delivered. Flip
+// AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER=true once a real sender is wired.
+if (process.env.NODE_ENV !== "test" && process.env.AUTOFLOW_ENABLE_TICKET_NOTIFICATION_SWEEPER === "true") {
   startTicketNotificationCoordinator();
 }
 

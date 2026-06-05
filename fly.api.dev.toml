@@ -58,6 +58,16 @@ primary_region = "ord"
   # staging stay on the legacy single call until this is validated on dev.
   # Unset (default) = legacy single-call path.
   TEAM_ASSEMBLY_CHUNKED = "true"
+  # HEL-654 (Composable agent-runtime middleware pipeline): enable the
+  # flag-gated agent middlewares on dev for validation before staging/prod.
+  # Compaction (HEL-624) rewrites in-flight history; model-fallback (HEL-627)
+  # swaps the model mid-turn on persistent transient errors; prompt-caching
+  # (HEL-628) stamps Anthropic cache_control on the system block. The always-on
+  # middlewares (budget/audit/truncation/retry) need no flag. Unset (default)
+  # on staging/prod = features dormant until validated here.
+  AUTOFLOW_AGENT_COMPACTION_ENABLED = "true"
+  AUTOFLOW_AGENT_MODEL_FALLBACK_ENABLED = "true"
+  AUTOFLOW_AGENT_PROMPT_CACHE_ENABLED = "true"
   # AUTOFLOW_ALLOW_INMEMORY is intentionally unset — HEL-80 enforces double-locked
   # production safety. The server will fail-fast if Postgres is unreachable.
 

@@ -987,3 +987,35 @@ describe("SSRF guard wiring (HEL-255)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// HEL-426: stub action/transform steps mark their output `simulated`
+// ---------------------------------------------------------------------------
+
+describe("HEL-426 — stub steps mark output `simulated`", () => {
+  it.each([
+    ["email.send"],
+    ["support.sendOrEscalate"],
+    ["crm.upsertLead"],
+    ["content.queue"],
+    ["slack.notify"], // unmapped curated action → unknown-action passthrough
+  ])("handleAction %s output carries simulated: true", async (action) => {
+    const step = makeStep({ kind: "action", action, outputKeys: [] });
+    const result = await handleAction(step, {});
+    expect(result.output["simulated"]).toBe(true);
+  });
+
+  it("handleTransform enrichment.lookup output carries simulated: true", async () => {
+    const step = makeStep({ kind: "transform", action: "enrichment.lookup", outputKeys: [] });
+    const result = await handleTransform(step, { company: "Acme" });
+    expect(result.output["simulated"]).toBe(true);
+  });
+
+  it("does not mark the real webhook.send handler simulated", async () => {
+    // No url configured → early error return, but it's a real handler, not a
+    // simulation.
+    const step = makeStep({ kind: "action", action: "webhook.send", outputKeys: [] });
+    const result = await handleAction(step, {});
+    expect(result.output["simulated"]).toBeUndefined();
+  });
+});

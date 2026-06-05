@@ -453,7 +453,9 @@ export async function handleTransform(
 
   // Built-in transform actions
   if (action === "enrichment.lookup") {
-    // Stub: real implementation calls a data enrichment API
+    // HEL-426: simulated — a real implementation would call a data-enrichment
+    // API. `simulated: true` marks the step so the trace/UI can show it as
+    // "simulated" rather than presenting the hardcoded data as a real lookup.
     const output: Record<string, unknown> = {
       employees: 250,
       revenue: "10M–50M",
@@ -461,6 +463,7 @@ export async function handleTransform(
       techStack: ["React", "Node.js", "PostgreSQL"],
       linkedinUrl: `https://linkedin.com/company/${String(ctx["company"] ?? "unknown").toLowerCase().replace(/\s+/g, "-")}`,
       _stub: true,
+      simulated: true,
     };
     return { output };
   }
@@ -525,8 +528,13 @@ export async function handleAction(
 ): Promise<StepHandlerResult> {
   const action = step.action ?? "";
 
+  // HEL-426: these App-action branches are stubs that fabricate success — no
+  // email is sent, no CRM record written, etc. Mark each output `simulated:
+  // true` (alongside the legacy `_stub`) so the trace/UI surfaces it as
+  // "simulated" instead of a real side effect. Real handlers wired to the
+  // workspace's connected integrations are tracked as follow-up feature work.
   if (action === "email.send") {
-    const output: Record<string, unknown> = { sent: true, _stub: true };
+    const output: Record<string, unknown> = { sent: true, _stub: true, simulated: true };
     return { output };
   }
 
@@ -536,6 +544,7 @@ export async function handleAction(
       resolution: shouldAutoRespond ? "auto_responded" : "escalated",
       escalated: !shouldAutoRespond,
       _stub: true,
+      simulated: true,
     };
     return { output };
   }
@@ -545,6 +554,7 @@ export async function handleAction(
       crmId: `lead_${Math.floor(Math.random() * 10000)}`,
       crmUrl: "https://crm.example.com/leads/stub",
       _stub: true,
+      simulated: true,
     };
     return { output };
   }
@@ -553,6 +563,7 @@ export async function handleAction(
     const output: Record<string, unknown> = {
       queueId: `cq-${String(Math.floor(Math.random() * 99999)).padStart(5, "0")}`,
       _stub: true,
+      simulated: true,
     };
     return { output };
   }
@@ -575,8 +586,11 @@ export async function handleAction(
     return { output: { sent: true, status: response.status } };
   }
 
-  // Unknown action — pass through outputKeys from context
-  const output: Record<string, unknown> = { _stub: true, _action: action };
+  // HEL-426: unknown/unmapped action — e.g. the builder's curated
+  // slack.notify / hubspot.upsert / support.reply.draft, which have no handler
+  // branch. Previously this passed through as a silent fake success; mark it
+  // `simulated: true` so it isn't presented as a real side effect.
+  const output: Record<string, unknown> = { _stub: true, simulated: true, _action: action };
   for (const key of step.outputKeys) {
     if (key in ctx) output[key] = ctx[key];
   }

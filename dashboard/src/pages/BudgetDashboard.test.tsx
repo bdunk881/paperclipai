@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "../api/agentApi";
@@ -249,6 +249,38 @@ describe("BudgetDashboard", () => {
     render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText("Fallback Agent")).toBeInTheDocument());
     expect(screen.getByText("$75")).toBeInTheDocument();
+  });
+
+  // HEL-661: the by-scope "Set budget" popover must save with the row's real
+  // scopeId, not the positional "M-01" display id (PUT /api/budget rejects
+  // non-UUID scope_id for non-workspace scopes).
+  it("saves a by-scope ceiling with the real scopeId, not the positional row id", async () => {
+    const scopeId = "11111111-2222-3333-4444-555555555555";
+    listAgentsMock.mockResolvedValue([agent({ id: "a1", name: "Devon", budgetMonthlyUsd: 100 })]);
+    getBudgetBreakdownMock.mockResolvedValue({
+      scope: "mission",
+      since: "2026-04-01T00:00:00Z",
+      until: "2026-05-01T00:00:00Z",
+      model: null,
+      rows: [{ scopeId, scopeLabel: "Growth", byModel: {}, total: 42 }],
+      series: [],
+      totals: { byModel: {}, all: 42, tokens: 0, cacheHitRate: null },
+    });
+    setBudgetCeilingMock.mockResolvedValue({});
+
+    render(<MemoryRouter><BudgetDashboard /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole("button", { name: /set budget/i }));
+    fireEvent.change(screen.getByLabelText(/budget ceiling in usd/i), {
+      target: { value: "200" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    await waitFor(() => expect(setBudgetCeilingMock).toHaveBeenCalled());
+    expect(setBudgetCeilingMock).toHaveBeenCalledWith(
+      "token-123",
+      expect.objectContaining({ scope_kind: "mission", scope_id: scopeId }),
+    );
   });
 
   // HEL-143: budget_alerts surface

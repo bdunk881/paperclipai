@@ -322,7 +322,8 @@ export default function BudgetDashboard() {
   const missionRows = useMemo(() => {
     if (!breakdown || breakdown.rows.length === 0) return [];
     return breakdown.rows.slice(0, 8).map((row, idx) => ({
-      id: `M-${String(idx + 1).padStart(2, "0")}`,
+      id: `M-${String(idx + 1).padStart(2, "0")}`, // positional — display/React key only
+      scopeId: row.scopeId, // real id used for the ceiling save (HEL-661)
       label: row.scopeLabel,
       opus:
         row.byModel["claude-opus-4-7"] ??
@@ -669,7 +670,7 @@ export default function BudgetDashboard() {
             <div className="actions">
               {openPopover === row.id ? (
                 <form
-                  onSubmit={(e) => handleSaveCeiling(e, row.id)}
+                  onSubmit={(e) => handleSaveCeiling(e, row.scopeId)}
                   style={{ display: "inline-flex", gap: 4, alignItems: "center" }}
                 >
                   <input

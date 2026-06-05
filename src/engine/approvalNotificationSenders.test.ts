@@ -1,5 +1,6 @@
 import { buildApprovalNotificationSenders } from "./approvalNotificationSenders";
 import { ApprovalNotification } from "./approvalNotificationStore";
+import type { Mailer, MailerSendInput, MailerSendResult } from "../mailer/types";
 
 const baseNotification: ApprovalNotification = {
   id: "notif-1",
@@ -92,5 +93,98 @@ describe("buildApprovalNotificationSenders", () => {
       "AUTOFLOW_APPROVAL_EMAIL_FROM is not configured"
     );
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // HEL-364: when no configured sender (Resend) exists, fall back to the
+  // internal SES mailer so the approval still leaves the app.
+  describe("out-of-band SES fallback (HEL-364)", () => {
+    function fakeMailer(result: MailerSendResult = { providerMessageId: "ses-1" }): {
+      mailer: Mailer;
+      calls: MailerSendInput[];
+    } {
+      const calls: MailerSendInput[] = [];
+      return {
+        mailer: {
+          sendTemplate: async (input) => {
+            calls.push(input);
+            return result;
+          },
+        },
+        calls,
+      };
+    }
+
+    const wsNotification: ApprovalNotification = {
+      ...baseNotification,
+      payload: { ...baseNotification.payload, workspaceId: "ws-123" },
+    };
+
+    it("delivers via the injected SES mailer when Resend is unset", async () => {
+      process.env.DASHBOARD_APP_URL = "https://dashboard.example.com";
+      const { mailer, calls } = fakeMailer();
+      const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+      const senders = buildApprovalNotificationSenders({ mailer });
+      await expect(senders.email(wsNotification)).resolves.toBeUndefined();
+
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({
+        template: "approval-request-out-of-band",
+        to: "manager@example.com",
+        workspaceId: "ws-123",
+      });
+      expect(calls[0].data).toMatchObject({
+        workflowName: "Support Bot",
+        stepName: "Manager Approval",
+        message: "Please review this escalation",
+        reviewUrl: "https://dashboard.example.com/approvals/approval-1",
+        approveUrl: "https://dashboard.example.com/approvals/approval-1?decision=approve",
+        denyUrl: "https://dashboard.example.com/approvals/approval-1?decision=reject",
+      });
+      // expiry = requestedAt (10:00) + 60m
+      expect(calls[0].data.expiresAt).toBe("2026-04-22T11:00:00.000Z");
+      // distinct audit log so we can monitor opt-in conversion
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("out-of-band SES fallback"),
+      );
+    });
+
+    it("does NOT use the SES fallback when Resend is configured (no double-send)", async () => {
+      process.env.RESEND_API_KEY = "re_test";
+      process.env.AUTOFLOW_APPROVAL_EMAIL_FROM = "autoflow@example.com";
+      (global.fetch as jest.Mock).mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => "",
+      });
+      const { mailer, calls } = fakeMailer();
+
+      const senders = buildApprovalNotificationSenders({ mailer });
+      await expect(senders.email(baseNotification)).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledTimes(1); // Resend delivered
+      expect(calls).toHaveLength(0); // SES mailer never touched
+    });
+
+    it("logs distinctly when the SES send is suppressed", async () => {
+      const { mailer } = fakeMailer({ suppressed: true });
+      const logSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
+
+      const senders = buildApprovalNotificationSenders({ mailer });
+      await expect(senders.email(baseNotification)).resolves.toBeUndefined();
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("suppressed"));
+    });
+
+    it("throws on a non-email recipient before calling the mailer", async () => {
+      const { mailer, calls } = fakeMailer();
+      const senders = buildApprovalNotificationSenders({ mailer });
+
+      await expect(
+        senders.email({ ...baseNotification, recipient: "user-uuid-not-email" }),
+      ).rejects.toThrow(/not a valid email address/);
+      expect(calls).toHaveLength(0);
+    });
   });
 });

@@ -766,6 +766,10 @@ router.put("/teams/:id/budget", requirePaperclipRunId, asyncHandler<WorkspaceAwa
   if (!context) {
     return;
   }
+  if (!context.workspaceId) {
+    res.status(400).json({ error: "Active workspace is required" });
+    return;
+  }
 
   const { budgetMonthlyUsd, toolBudgetCeilings, alertThresholds } = req.body as {
     budgetMonthlyUsd?: unknown;
@@ -838,6 +842,10 @@ router.put("/teams/:id/budget", requirePaperclipRunId, asyncHandler<WorkspaceAwa
 router.put("/agents/:id/budget", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const context = resolveWorkspaceContext(req, res);
   if (!context) {
+    return;
+  }
+  if (!context.workspaceId) {
+    res.status(400).json({ error: "Active workspace is required" });
     return;
   }
 

@@ -3253,4 +3253,31 @@ describe("control-plane budget edit endpoints (HEL-717)", () => {
       .send({ budgetMonthlyUsd: 100 });
     expect(res.status).toBe(404);
   });
+
+  it("lets a non-creator workspace admin edit a team budget (collaborative, Codex P2)", async () => {
+    // The in-memory harness keys workspace by user unless x-workspace-id is set,
+    // so pin BOTH requests to a shared workspace to model two members of one
+    // workspace. Team is created by "teammate-user"; edited by the default
+    // "test-user" — a different member with admin/operator.
+    const sharedWorkspace = "shared-ws-collab";
+    const seedRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth("teammate-user"))
+      .set("x-workspace-id", sharedWorkspace)
+      .set("X-Paperclip-Run-Id", "run-seed-collab")
+      .send({ templateId: "tpl-support-bot" });
+    const teamId = seedRes.body.team.id as string;
+
+    // Editing as a non-creator member must succeed — workspace access, not
+    // creator ownership, is the boundary (would 404 under the old creator-only
+    // lookup).
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", sharedWorkspace)
+      .set("X-Paperclip-Run-Id", "run-collab-budget")
+      .send({ budgetMonthlyUsd: 321 });
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(321);
+  });
 });

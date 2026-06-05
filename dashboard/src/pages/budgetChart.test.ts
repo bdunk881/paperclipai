@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  alertSubjectLabel,
   buildSpendChart,
   pickWorstAlert,
   spendStatus,
@@ -162,5 +163,35 @@ describe("pickWorstAlert (HEL-564)", () => {
     const worst = pickWorstAlert([alert({ id: "1", spentUsd: 82, budgetUsd: 100 })]);
     expect(worst!.tone).toBe("warn");
     expect(worst!.pct).toBe(82);
+  });
+});
+
+describe("alertSubjectLabel (HEL-564)", () => {
+  it("uses the resolved agent name for agent-scoped alerts", () => {
+    expect(
+      alertSubjectLabel({ scope: "agent", agentId: "agent-atlas", teamId: "t" }, "Atlas"),
+    ).toBe("Atlas");
+  });
+
+  it("falls back to a short agent id when the name is unknown", () => {
+    expect(
+      alertSubjectLabel({ scope: "agent", agentId: "agent-atlas-123", teamId: "t" }),
+    ).toBe("Agent agent-at");
+  });
+
+  it("labels tool-scoped alerts as the tool, not the team", () => {
+    // The bug this guards: a tool ceiling has no agentId — it must NOT be
+    // labeled "Team <id>" (which sends users to the wrong budget surface).
+    expect(
+      alertSubjectLabel({ scope: "tool", toolName: "web_search", teamId: "team-xyz12345" }),
+    ).toBe("Tool web_search");
+  });
+
+  it("labels a tool-scoped alert without a tool name generically", () => {
+    expect(alertSubjectLabel({ scope: "tool", teamId: "team-xyz12345" })).toBe("A tool");
+  });
+
+  it("labels team-scoped alerts with a short team id", () => {
+    expect(alertSubjectLabel({ scope: "team", teamId: "team-xyz12345" })).toBe("Team team-xyz");
   });
 });

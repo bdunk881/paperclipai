@@ -41,7 +41,13 @@ import {
 import { ErrorState } from "../components/UiStates";
 import { useAuth } from "../context/AuthContext";
 import { useExperienceMode } from "../context/ExperienceModeContext";
-import { buildSpendChart, pickWorstAlert, spendStatus, type SpendChart } from "./budgetChart";
+import {
+  alertSubjectLabel,
+  buildSpendChart,
+  pickWorstAlert,
+  spendStatus,
+  type SpendChart,
+} from "./budgetChart";
 
 interface AgentBudgetRow {
   id: string;
@@ -347,10 +353,10 @@ export default function BudgetDashboard() {
   }, [agentsQuery.data]);
   const worstAlert = useMemo(() => pickWorstAlert(budgetAlerts), [budgetAlerts]);
   const worstAlertLabel = worstAlert
-    ? worstAlert.alert.agentId
-      ? agentNameById.get(worstAlert.alert.agentId) ??
-        `Agent ${worstAlert.alert.agentId.slice(0, 8)}`
-      : `Team ${worstAlert.alert.teamId.slice(0, 8)}`
+    ? alertSubjectLabel(
+        worstAlert.alert,
+        worstAlert.alert.agentId ? agentNameById.get(worstAlert.alert.agentId) : undefined,
+      )
     : "";
 
   function openCeilingPopover(scopeId: string, current?: number) {

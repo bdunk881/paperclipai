@@ -255,3 +255,23 @@ export function pickWorstAlert(alerts: ControlPlaneBudgetAlert[]): WorstAlert | 
   }
   return worst;
 }
+
+/**
+ * Human label for the subject of a budget alert, honoring its scope. Alerts can
+ * be agent-, tool-, or team-scoped — labeling every non-agent alert as a team
+ * (and sending users to the team budget) is wrong for tool ceilings. `agentName`
+ * is the caller-resolved display name for agent-scoped alerts (falls back to a
+ * short id).
+ */
+export function alertSubjectLabel(
+  alert: Pick<ControlPlaneBudgetAlert, "scope" | "agentId" | "toolName" | "teamId">,
+  agentName?: string,
+): string {
+  if (alert.agentId) {
+    return agentName ?? `Agent ${alert.agentId.slice(0, 8)}`;
+  }
+  if (alert.scope === "tool" || alert.toolName) {
+    return alert.toolName ? `Tool ${alert.toolName}` : "A tool";
+  }
+  return `Team ${alert.teamId.slice(0, 8)}`;
+}

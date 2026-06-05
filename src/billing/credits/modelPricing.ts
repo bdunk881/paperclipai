@@ -32,6 +32,8 @@ export interface ModelRate {
  * the DB seed wins (it has higher precedence), this is the fallback.
  */
 export const DEFAULT_MODEL_RATES: readonly ModelRate[] = [
+  // HEL-643: claude-opus-4-8 is the current Opus (4-7 retired); rates mirror 4-7 until Anthropic publishes 4.8-specific pricing. 4-7 retained for historical cost lookups.
+  { provider: "anthropic", model: "claude-opus-4-8",           inputUsdPerMillion: 5.00, cachedInputUsdPerMillion: 0.50, cacheWriteUsdPerMillion: 6.25, outputUsdPerMillion: 25.00, markupMultiplier: 1.50, enabled: true },
   { provider: "anthropic", model: "claude-opus-4-7",           inputUsdPerMillion: 5.00, cachedInputUsdPerMillion: 0.50, cacheWriteUsdPerMillion: 6.25, outputUsdPerMillion: 25.00, markupMultiplier: 1.50, enabled: true },
   { provider: "anthropic", model: "claude-sonnet-4-6",         inputUsdPerMillion: 3.00, cachedInputUsdPerMillion: 0.30, cacheWriteUsdPerMillion: 3.75, outputUsdPerMillion: 15.00, markupMultiplier: 1.50, enabled: true },
   { provider: "anthropic", model: "claude-haiku-4-5",          inputUsdPerMillion: 1.00, cachedInputUsdPerMillion: 0.10, cacheWriteUsdPerMillion: 1.25, outputUsdPerMillion:  5.00, markupMultiplier: 1.50, enabled: true },

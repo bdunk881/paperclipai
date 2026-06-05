@@ -49,13 +49,14 @@ jest.mock("../billing/credits/packCatalog", () => ({
 }));
 
 jest.mock("../auth/authMiddleware", () => ({
-  requireAuth: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
+  requireAuth: (req: { headers: Record<string, string | undefined>; auth?: { sub: string; workspaceId?: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Missing or malformed Authorization header." });
       return;
     }
-    req.auth = { sub: auth.slice(7) };
+    const ws = req.headers["x-workspace-id"];
+    req.auth = { sub: auth.slice(7), ...(ws ? { workspaceId: ws } : {}) };
     next();
   },
   requireAuthOrQaBypass: (req: { headers: { authorization?: string }; auth?: { sub: string } }, res: { status: (code: number) => { json: (body: unknown) => void } }, next: () => void) => {
@@ -242,14 +243,37 @@ describe("GET /api/public/landing/pricing", () => {
   });
 });
 
-describe("POST /api/public/landing/checkout", () => {
-  it("creates an unauthenticated checkout session for landing traffic", async () => {
+describe("POST /api/public/landing/checkout (HEL-486)", () => {
+  it("401s without authentication — an anonymous session can't carry a workspaceId", async () => {
+    const response = await request(app)
+      .post("/api/public/landing/checkout")
+      .set("Origin", "https://helloautoflow.com")
+      .send({ tier: "flow", email: "buyer@example.com" });
+
+    expect(response.status).toBe(401);
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("400s when the authenticated token has no workspace", async () => {
+    const response = await request(app)
+      .post("/api/public/landing/checkout")
+      .set("Authorization", "Bearer user-1")
+      .send({ tier: "flow", email: "buyer@example.com" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("workspace_required");
+    expect(stripeMock.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("includes workspaceId (+ userId) in the Stripe session metadata for an authenticated workspace", async () => {
     stripeMock.checkout.sessions.create.mockResolvedValue({
       url: "https://checkout.stripe.test/session_123",
     });
 
     const response = await request(app)
       .post("/api/public/landing/checkout")
+      .set("Authorization", "Bearer user-1")
+      .set("x-workspace-id", "ws-42")
       .set("Origin", "https://helloautoflow.com")
       .send({
         tier: "flow",
@@ -262,11 +286,14 @@ describe("POST /api/public/landing/checkout", () => {
     expect(response.body).toEqual({ url: "https://checkout.stripe.test/session_123" });
     expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        success_url: "https://helloautoflow.com/success?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url: "https://helloautoflow.com/#pricing",
+        metadata: expect.objectContaining({
+          tier: "flow",
+          workspaceId: "ws-42",
+          userId: "user-1",
+        }),
         customer_email: "buyer@example.com",
         subscription_data: { trial_period_days: 14 },
-      })
+      }),
     );
   });
 });

@@ -3123,3 +3123,109 @@ describe("Content-Type and error handling", () => {
     expect(res.headers["content-type"]).toMatch(/application\/json/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// HEL-717 — control-plane budget edit endpoints (the ENFORCED caps)
+// ---------------------------------------------------------------------------
+describe("control-plane budget edit endpoints (HEL-717)", () => {
+  async function seedTeam(): Promise<{
+    teamId: string;
+    agents: Array<{ id: string; roleKey: string }>;
+  }> {
+    const res = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-seed-budget")
+      .send({ templateId: "tpl-support-bot" });
+    return { teamId: res.body.team.id as string, agents: res.body.agents };
+  }
+
+  it("updates a team's monthly budget + tool ceilings (enforced fields)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-budget")
+      .send({ budgetMonthlyUsd: 500, toolBudgetCeilings: { web_search: 50 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(500);
+    expect(res.body.toolBudgetCeilings).toEqual({ web_search: 50 });
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "team_lifecycle",
+        action: "team_budget_updated",
+        target: { type: "team", id: teamId },
+      })
+    );
+  });
+
+  it("updates an agent's monthly budget", async () => {
+    const { agents } = await seedTeam();
+    const agentId = agents[0].id;
+    const res = await request(app)
+      .put(`/api/control-plane/agents/${agentId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-budget")
+      .send({ budgetMonthlyUsd: 200 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(200);
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "agent_lifecycle",
+        action: "agent_budget_updated",
+        target: { type: "agent", id: agentId },
+      })
+    );
+  });
+
+  it("rejects a negative team budget with 400", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-neg-budget")
+      .send({ budgetMonthlyUsd: -5 });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty team budget update with 400", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-empty-budget")
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for an unknown team", async () => {
+    const res = await request(app)
+      .put("/api/control-plane/teams/00000000-0000-0000-0000-000000000000/budget")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-missing-team")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
+
+  it("requires the X-Paperclip-Run-Id header (400)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(400);
+  });
+
+  it("forbids viewers from editing a budget (403, role-gated at the mount)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-test-role", "viewer")
+      .set("X-Paperclip-Run-Id", "run-viewer-budget")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(403);
+  });
+});

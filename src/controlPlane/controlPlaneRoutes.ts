@@ -757,6 +757,127 @@ router.post("/agents/:id/skills", requirePaperclipRunId, asyncHandler<WorkspaceA
   }
 }));
 
+// HEL-717: edit a team's ENFORCED budget caps (budget_monthly_usd +
+// tool_budget_ceilings + alert_thresholds — the fields buildTeamSpendSnapshot
+// reads to fire budget_alerts). Inherits requireRole("admin","operator") from
+// the /api/control-plane mount.
+router.put("/teams/:id/budget", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+
+  const { budgetMonthlyUsd, toolBudgetCeilings, alertThresholds } = req.body as {
+    budgetMonthlyUsd?: unknown;
+    toolBudgetCeilings?: unknown;
+    alertThresholds?: unknown;
+  };
+
+  if (
+    budgetMonthlyUsd === undefined &&
+    toolBudgetCeilings === undefined &&
+    alertThresholds === undefined
+  ) {
+    res
+      .status(400)
+      .json({ error: "Provide at least one of budgetMonthlyUsd, toolBudgetCeilings, or alertThresholds" });
+    return;
+  }
+  if (budgetMonthlyUsd !== undefined && (typeof budgetMonthlyUsd !== "number" || budgetMonthlyUsd < 0)) {
+    res.status(400).json({ error: "budgetMonthlyUsd must be a non-negative number when provided" });
+    return;
+  }
+  const parsedToolBudgetCeilings =
+    toolBudgetCeilings === undefined ? undefined : parseToolBudgetCeilings(toolBudgetCeilings);
+  if (toolBudgetCeilings !== undefined && !parsedToolBudgetCeilings) {
+    res.status(400).json({ error: "toolBudgetCeilings must be an object of non-negative numbers when provided" });
+    return;
+  }
+  const parsedAlertThresholds =
+    alertThresholds === undefined ? undefined : parseAlertThresholds(alertThresholds);
+  if (alertThresholds !== undefined && !parsedAlertThresholds) {
+    res.status(400).json({ error: "alertThresholds must be an array of numbers between 0 and 1 when provided" });
+    return;
+  }
+
+  try {
+    const team = await controlPlaneStore.updateTeamBudget({
+      workspaceId: context.workspaceId,
+      teamId: req.params.id,
+      userId: context.userId,
+      budgetMonthlyUsd: typeof budgetMonthlyUsd === "number" ? budgetMonthlyUsd : undefined,
+      toolBudgetCeilings: parsedToolBudgetCeilings ?? undefined,
+      alertThresholds: parsedAlertThresholds ?? undefined,
+    });
+
+    await recordControlPlaneAudit({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "team_lifecycle",
+      action: "team_budget_updated",
+      target: { type: "team", id: team.id },
+      metadata: {
+        runId: req.header("X-Paperclip-Run-Id"),
+        budgetMonthlyUsd: team.budgetMonthlyUsd,
+        toolBudgetCeilings: team.toolBudgetCeilings,
+        alertThresholds: team.alertThresholds,
+      },
+    });
+
+    res.json(team);
+  } catch (error) {
+    if (error instanceof Error && error.message === "team_not_found") {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane budget update failure" });
+  }
+}));
+
+// HEL-717: edit an agent's ENFORCED monthly budget.
+router.put("/agents/:id/budget", requirePaperclipRunId, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+  const context = resolveWorkspaceContext(req, res);
+  if (!context) {
+    return;
+  }
+
+  const { budgetMonthlyUsd } = req.body as { budgetMonthlyUsd?: unknown };
+  if (typeof budgetMonthlyUsd !== "number" || budgetMonthlyUsd < 0) {
+    res.status(400).json({ error: "budgetMonthlyUsd must be a non-negative number" });
+    return;
+  }
+
+  try {
+    const agent = await controlPlaneStore.updateAgentBudget({
+      workspaceId: context.workspaceId,
+      agentId: req.params.id,
+      userId: context.userId,
+      budgetMonthlyUsd,
+    });
+
+    await recordControlPlaneAudit({
+      workspaceId: context.workspaceId,
+      userId: context.userId,
+      category: "agent_lifecycle",
+      action: "agent_budget_updated",
+      target: { type: "agent", id: agent.id },
+      metadata: {
+        runId: req.header("X-Paperclip-Run-Id"),
+        teamId: agent.teamId,
+        budgetMonthlyUsd: agent.budgetMonthlyUsd,
+      },
+    });
+
+    res.json(agent);
+  } catch (error) {
+    if (error instanceof Error && error.message === "agent_not_found") {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    res.status(500).json({ error: "Unexpected control-plane budget update failure" });
+  }
+}));
+
 router.post("/tasks", requirePaperclipRunId, asyncHandler<AuthenticatedRequest>(async (req, res) => {
   const userId = getUserId(req);
   if (!userId) {

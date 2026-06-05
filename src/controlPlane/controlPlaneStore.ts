@@ -2252,6 +2252,69 @@ export const controlPlaneStore = {
     return agent;
   },
 
+  // HEL-717: edit a team's ENFORCED budget caps post-creation (the fields
+  // buildTeamSpendSnapshot reads to fire budget_alerts). Mirrors
+  // updateTeamLifecycle: fetch → mutate → persist via upsertTeam (no repo
+  // change; the upsert already writes budget_monthly_usd / tool_budget_ceilings
+  // / alert_thresholds). Each field is optional — only provided ones change.
+  async updateTeamBudget(input: {
+    workspaceId?: string;
+    teamId: string;
+    userId: string;
+    budgetMonthlyUsd?: number;
+    toolBudgetCeilings?: Record<string, number>;
+    alertThresholds?: number[];
+  }): Promise<ControlPlaneTeam> {
+    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+    const team = await getTeamOwnedByUser(input.teamId, input.userId);
+    if (!team) {
+      throw new Error("team_not_found");
+    }
+
+    if (input.budgetMonthlyUsd !== undefined) {
+      team.budgetMonthlyUsd = input.budgetMonthlyUsd;
+    }
+    if (input.toolBudgetCeilings !== undefined) {
+      team.toolBudgetCeilings = { ...input.toolBudgetCeilings };
+    }
+    if (input.alertThresholds !== undefined) {
+      team.alertThresholds = [...input.alertThresholds].sort((left, right) => left - right);
+    }
+    team.updatedAt = nowIso();
+
+    const budgetCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!budgetCtx) {
+      throw new Error("team_budget_workspace_unresolved");
+    }
+    await controlPlaneRepository.upsertTeam(budgetCtx, team, null);
+    return team;
+  },
+
+  // HEL-717: edit an agent's ENFORCED monthly budget post-creation. Mirrors
+  // updateAgentSkills: fetch → mutate → persist via upsertAgent.
+  async updateAgentBudget(input: {
+    workspaceId?: string;
+    agentId: string;
+    userId: string;
+    budgetMonthlyUsd: number;
+  }): Promise<ControlPlaneAgent> {
+    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+    const agent = await getAgentOwnedByUser(input.agentId, input.userId);
+    if (!agent) {
+      throw new Error("agent_not_found");
+    }
+
+    agent.budgetMonthlyUsd = input.budgetMonthlyUsd;
+    agent.updatedAt = nowIso();
+
+    const budgetCtx = await workspaceContextForTeam(agent.teamId, input.userId);
+    if (!budgetCtx) {
+      throw new Error("agent_budget_workspace_unresolved");
+    }
+    await controlPlaneRepository.upsertAgent(budgetCtx, agent);
+    return agent;
+  },
+
   async createTask(input: {
     userId: string;
     teamId: string;

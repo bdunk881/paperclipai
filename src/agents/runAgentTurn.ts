@@ -37,6 +37,7 @@ import {
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
 import { pickBackend, withAgentConversation } from "./runtime/runAgent";
+import { readRuntimeNumber } from "./runtime/runtimeConfig";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
 import { budgetMiddleware } from "./runtime/middleware/budgetMiddleware";
 import { auditMiddleware } from "./runtime/middleware/auditMiddleware";
@@ -275,6 +276,10 @@ export async function runAgentTurn(
   const toolResultMaxChars = readRuntimeNumber(runtimeMetadata, "toolResultMaxChars");
   const modelRetryMaxAttempts = readRuntimeNumber(runtimeMetadata, "modelRetryMaxAttempts");
   const compactionThresholdChars = readRuntimeNumber(runtimeMetadata, "compactionThresholdChars");
+  // Per-agent model-call ceiling (HEL-629): overrides the backend's default
+  // loop cap. Replaces the redundant model-call-limit middleware — the loop
+  // already bounds model calls to maxToolIterations.
+  const maxToolIterationsOverride = readRuntimeNumber(runtimeMetadata, "maxToolIterations");
   const mcpServers = await loadAgentMcpServers({ userId: input.userId });
   // Build the agent middleware pipeline. Model-phase first (only acts on the
   // fallback backend, which drives pipeline.modelCall), outermost-first:
@@ -330,7 +335,10 @@ export async function runAgentTurn(
             userPrompt: input.userPrompt,
             tier: input.tier ?? "standard",
             tools,
-            maxToolIterations: undefined,
+            maxToolIterations:
+              maxToolIterationsOverride !== undefined && maxToolIterationsOverride >= 1
+                ? maxToolIterationsOverride
+                : undefined,
             requestTimeoutMs: input.requestTimeoutMs ?? DEFAULT_TIMEOUT_MS,
             onTrace: streamEnabled || shouldTrace ? handleTraceEvent : undefined,
             skills: resolvedSkills,
@@ -362,23 +370,6 @@ export async function runAgentTurn(
     model,
     turnId: shouldTrace ? turnId : undefined,
   };
-}
-
-/**
- * Read a non-negative numeric per-agent runtime override from
- * `agents.metadata.runtime[key]`. Returns undefined when unset or invalid, so
- * each middleware falls back to its own default. (A value of 0 is honoured —
- * e.g. it disables tool-result truncation / model retry for that agent.)
- */
-function readRuntimeNumber(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): number | undefined {
-  if (!metadata || typeof metadata !== "object") return undefined;
-  const runtime = (metadata as { runtime?: unknown }).runtime;
-  if (!runtime || typeof runtime !== "object") return undefined;
-  const raw = (runtime as Record<string, unknown>)[key];
-  return typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
 }
 
 const MODEL_FALLBACK_FLAG = "AUTOFLOW_AGENT_MODEL_FALLBACK_ENABLED";

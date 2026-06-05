@@ -12,6 +12,13 @@
  *   3. Otherwise return the final text + cumulative usage.
  *   4. Cap at maxToolIterations; on cap, ask the model to summarize without
  *      tools so the caller always gets readable text.
+ *
+ * HEL-621: cross-cutting concerns are no longer wired inline. The model call
+ * and every tool call are routed through a `MiddlewarePipeline` built from the
+ * caller's `hooks` (and, later, explicit middleware). This is the only backend
+ * where model-phase middleware (compaction / retry / fallback / caching) can
+ * run; the SDK backends own their own loop. With no middleware the pipeline is
+ * a transparent pass-through, so the default path is byte-for-byte unchanged.
  */
 
 import { getProviderAdapter } from "../../llmConfig/adapters";
@@ -24,13 +31,11 @@ import type {
 } from "../../llmConfig/adapters/types";
 import type { AgentTool } from "../../engine/llmProviders/types";
 import { emitTrace } from "../../engine/agentTrace/emitCallbacks";
-import {
-  appendSkillsToPrompt,
-  resolveSkills,
-  type LoadedSkill,
-} from "../../skills/skillsLoader";
+import { appendSkillsToPrompt, resolveSkills } from "../../skills/skillsLoader";
 import { buildMcpToolBridge } from "./mcpToolBridge";
 import { executeToolCalls } from "./executeToolCalls";
+import { buildPipeline, type MiddlewarePipeline } from "./middleware/pipeline";
+import type { AgentRunContext } from "./middleware/types";
 import type {
   AgentBackend,
   AgentRunInput,
@@ -67,9 +72,8 @@ export class FallbackAgentBackend implements AgentBackend {
 
     const callerTools = input.tools ?? [];
     const tools = [...callerTools, ...bridge.tools];
-    const wrappedTools = wrapWithHooks(tools, input);
-    const toolsByName = new Map(wrappedTools.map((t) => [t.name, t]));
-    const toolSpecs: ToolSpec[] = wrappedTools.map((t) => ({
+    const toolsByName = new Map(tools.map((t) => [t.name, t]));
+    const toolSpecs: ToolSpec[] = tools.map((t) => ({
       name: t.name,
       description: t.description,
       parameters: t.inputSchema,
@@ -77,6 +81,7 @@ export class FallbackAgentBackend implements AgentBackend {
     const maxIterations = input.maxToolIterations ?? DEFAULT_MAX_TOOL_ITERATIONS;
     const loadedSkills = resolveSkills(input.skills ?? []);
     const system = appendSkillsToPrompt(input.systemPrompt, loadedSkills);
+    const pipeline = buildPipeline(input.hooks);
 
     try {
       return await this.runInner({
@@ -84,10 +89,10 @@ export class FallbackAgentBackend implements AgentBackend {
         binding,
         adapter,
         system,
-        wrappedTools,
         toolsByName,
         toolSpecs,
         maxIterations,
+        pipeline,
       });
     } finally {
       await bridge.close();
@@ -99,12 +104,13 @@ export class FallbackAgentBackend implements AgentBackend {
     binding: ResolvedModelBinding;
     adapter: ReturnType<typeof getProviderAdapter>;
     system: string;
-    wrappedTools: AgentTool[];
     toolsByName: Map<string, AgentTool>;
     toolSpecs: ToolSpec[];
     maxIterations: number;
+    pipeline: MiddlewarePipeline;
   }): Promise<AgentRunResult> {
-    const { input, binding, adapter, system, toolsByName, toolSpecs, maxIterations } = args;
+    const { input, binding, adapter, system, toolsByName, toolSpecs, maxIterations, pipeline } =
+      args;
     if (input.permissionMode === "plan") {
       // Plan mode: don't run tools — produce a plan and stop. The fallback
       // backend doesn't have a native plan mode like the Claude SDK, so we
@@ -112,21 +118,33 @@ export class FallbackAgentBackend implements AgentBackend {
       return runPlanMode(input, binding, adapter, system);
     }
 
-    const messages: NormalizedMessage[] = [
-      { role: "user", content: input.userPrompt },
-    ];
-
-    let cumulativeInput = 0;
-    let cumulativeOutput = 0;
-    let cumulativeCached = 0;
-
-    const addUsage = (u: NormalizedUsage) => {
-      cumulativeInput += u.inputTokens;
-      cumulativeOutput += u.outputTokens;
-      cumulativeCached += u.cachedInputTokens ?? 0;
+    const ctx: AgentRunContext = {
+      run: input,
+      binding,
+      messages: [{ role: "user", content: input.userPrompt }],
+      usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+      state: new Map(),
+      backend: this.name,
     };
 
-    const buildRequest = (msgs: NormalizedMessage[], includeTools: boolean): NormalizedRequest => ({
+    const addUsage = (u: NormalizedUsage) => {
+      ctx.usage.inputTokens += u.inputTokens;
+      ctx.usage.outputTokens += u.outputTokens;
+      ctx.usage.cachedInputTokens =
+        (ctx.usage.cachedInputTokens ?? 0) + (u.cachedInputTokens ?? 0);
+    };
+
+    const finalUsage = () => ({
+      promptTokens: ctx.usage.inputTokens,
+      completionTokens: ctx.usage.outputTokens,
+      cachedPromptTokens:
+        (ctx.usage.cachedInputTokens ?? 0) > 0 ? ctx.usage.cachedInputTokens : undefined,
+    });
+
+    const buildRequest = (
+      msgs: NormalizedMessage[],
+      includeTools: boolean,
+    ): NormalizedRequest => ({
       provider: binding.provider,
       model: binding.model,
       apiKey: binding.apiKey,
@@ -146,10 +164,12 @@ export class FallbackAgentBackend implements AgentBackend {
 
       let response: NormalizedResponse;
       try {
-        const request = buildRequest(messages, true);
-        response = adapter.invokeStream
-          ? await adapter.invokeStream(request)
-          : await adapter.invoke(request);
+        response = await pipeline.modelCall(ctx, () => {
+          const request = buildRequest(ctx.messages, true);
+          return adapter.invokeStream
+            ? adapter.invokeStream(request)
+            : adapter.invoke(request);
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (input.onTrace) emitTrace(input.onTrace, { type: "turn.error", message });
@@ -157,18 +177,14 @@ export class FallbackAgentBackend implements AgentBackend {
       }
 
       addUsage(response.usage);
-      messages.push({
+      ctx.messages.push({
         role: "assistant",
         content: response.content || undefined,
         toolCalls: response.toolCalls.length > 0 ? response.toolCalls : undefined,
       });
 
       if (response.toolCalls.length === 0) {
-        const usage = {
-          promptTokens: cumulativeInput,
-          completionTokens: cumulativeOutput,
-          cachedPromptTokens: cumulativeCached > 0 ? cumulativeCached : undefined,
-        };
+        const usage = finalUsage();
         if (input.onTrace) {
           emitTrace(input.onTrace, {
             type: "turn.completed",
@@ -189,14 +205,15 @@ export class FallbackAgentBackend implements AgentBackend {
         toolCalls: response.toolCalls,
         toolsByName,
         onTrace: input.onTrace,
+        runToolCall: (call, core) => pipeline.toolCall(ctx, call, core),
       });
-      messages.push({ role: "tool", toolResults });
+      ctx.messages.push({ role: "tool", toolResults });
     }
 
     // Cap exceeded: one final summarize-only turn.
     try {
       const wrapMessages: NormalizedMessage[] = [
-        ...messages,
+        ...ctx.messages,
         { role: "user", content: MAX_ITER_SUMMARY_PROMPT },
       ];
       const wrap = await (adapter.invokeStream ?? adapter.invoke).call(
@@ -205,11 +222,7 @@ export class FallbackAgentBackend implements AgentBackend {
       );
       addUsage(wrap.usage);
       const text = (wrap.content || "[interrupted: max iterations]") + MAX_ITER_SUFFIX;
-      const usage = {
-        promptTokens: cumulativeInput,
-        completionTokens: cumulativeOutput,
-        cachedPromptTokens: cumulativeCached > 0 ? cumulativeCached : undefined,
-      };
+      const usage = finalUsage();
       if (input.onTrace) emitTrace(input.onTrace, { type: "turn.completed", text, usage });
       return {
         text,
@@ -220,11 +233,7 @@ export class FallbackAgentBackend implements AgentBackend {
       };
     } catch {
       const text = "[interrupted: max iterations]";
-      const usage = {
-        promptTokens: cumulativeInput,
-        completionTokens: cumulativeOutput,
-        cachedPromptTokens: cumulativeCached > 0 ? cumulativeCached : undefined,
-      };
+      const usage = finalUsage();
       if (input.onTrace) emitTrace(input.onTrace, { type: "turn.completed", text, usage });
       return {
         text,
@@ -235,69 +244,6 @@ export class FallbackAgentBackend implements AgentBackend {
       };
     }
   }
-}
-
-/**
- * Wrap each AgentTool with pre/post-tool hooks. Returning a tool whose
- * handler short-circuits when `preToolUse` returns `{ continue: false }`
- * keeps the loop semantics identical between backends — the wrapped
- * handler either throws (caught by executeToolCalls and surfaced as an
- * isError tool_result) or returns the original result.
- */
-function wrapWithHooks(tools: AgentTool[], input: AgentRunInput): AgentTool[] {
-  if (!input.hooks?.preToolUse && !input.hooks?.postToolUse) return tools;
-  return tools.map((t) => ({
-    ...t,
-    handler: async (toolInput: Record<string, unknown>) => {
-      if (input.hooks?.preToolUse) {
-        try {
-          const decision = await input.hooks.preToolUse({
-            toolName: t.name,
-            toolInput,
-          });
-          if (decision && decision.continue === false) {
-            throw new Error(
-              decision.reason ?? "Pre-tool-use hook blocked this call.",
-            );
-          }
-        } catch (err) {
-          // PreToolUse hooks may throw; propagate to executeToolCalls
-          // which marks the tool_result as isError.
-          throw err;
-        }
-      }
-      let result: unknown;
-      try {
-        result = await t.handler(toolInput);
-      } catch (err) {
-        if (input.hooks?.postToolUse) {
-          try {
-            await input.hooks.postToolUse({
-              toolName: t.name,
-              toolInput,
-              result: null,
-              error: (err as Error).message,
-            });
-          } catch (hookErr) {
-            console.warn(
-              `[fallbackAgentBackend] postToolUse hook threw: ${(hookErr as Error).message}`,
-            );
-          }
-        }
-        throw err;
-      }
-      if (input.hooks?.postToolUse) {
-        try {
-          await input.hooks.postToolUse({ toolName: t.name, toolInput, result });
-        } catch (err) {
-          console.warn(
-            `[fallbackAgentBackend] postToolUse hook threw: ${(err as Error).message}`,
-          );
-        }
-      }
-      return result;
-    },
-  }));
 }
 
 /**

@@ -28,6 +28,8 @@ import {
   resolveSkills,
   type LoadedSkill,
 } from "../../skills/skillsLoader";
+import { buildPipeline, type MiddlewarePipeline } from "./middleware/pipeline";
+import type { AgentRunContext, ToolCall, ToolOutcome } from "./middleware/types";
 import type {
   AgentBackend,
   AgentMcpServer,
@@ -55,8 +57,21 @@ export class OpenAIAgentsBackend implements AgentBackend {
     process.env.OPENAI_API_KEY = binding.apiKey;
 
     try {
+      // HEL-621: route every tool call through the shared middleware pipeline
+      // (budget / audit / future tool-phase middleware). Until now this
+      // backend ignored `input.hooks` entirely, so budget enforcement and
+      // audit logging silently never ran on the OpenAI Agents path.
+      const pipeline = buildPipeline(input.hooks);
+      const ctx: AgentRunContext = {
+        run: input,
+        binding,
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+        state: new Map(),
+        backend: this.name,
+      };
       const sdkTools = (input.tools ?? []).map((t) =>
-        buildSdkTool(sdk, t, input.onTrace),
+        buildSdkTool(sdk, t, pipeline, ctx, input.onTrace),
       );
 
       // Skills are vendor-agnostic — we fold the same SKILL.md bodies
@@ -142,6 +157,8 @@ export class OpenAIAgentsBackend implements AgentBackend {
 function buildSdkTool(
   sdk: typeof import("@openai/agents"),
   agentTool: AgentTool,
+  pipeline: MiddlewarePipeline,
+  ctx: AgentRunContext,
   onTrace?: AgentRunInput["onTrace"],
 ) {
   return sdk.tool({
@@ -150,31 +167,54 @@ function buildSdkTool(
     parameters: agentTool.inputSchema as never,
     strict: false,
     async execute(args: unknown) {
-      try {
-        const result = await agentTool.handler(
-          (args ?? {}) as Record<string, unknown>,
-        );
-        if (onTrace) {
-          emitTrace(onTrace, {
-            type: "tool_result",
-            callId: agentTool.name,
-            name: agentTool.name,
-            outputPreview: previewToolOutput(result),
-          });
+      const toolInput = (args ?? {}) as Record<string, unknown>;
+      const call: ToolCall = {
+        id: agentTool.name,
+        name: agentTool.name,
+        arguments: toolInput,
+      };
+      let coreRan = false;
+      const core = async (): Promise<ToolOutcome> => {
+        coreRan = true;
+        try {
+          const result = await agentTool.handler(toolInput);
+          if (onTrace) {
+            emitTrace(onTrace, {
+              type: "tool_result",
+              callId: agentTool.name,
+              name: agentTool.name,
+              outputPreview: previewToolOutput(result),
+            });
+          }
+          return {
+            content: typeof result === "string" ? result : JSON.stringify(result),
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (onTrace) {
+            emitTrace(onTrace, {
+              type: "tool_call.failed",
+              callId: agentTool.name,
+              name: agentTool.name,
+              error: message,
+            });
+          }
+          return { content: JSON.stringify({ error: message, ok: false }), isError: true };
         }
-        return typeof result === "string" ? result : JSON.stringify(result);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (onTrace) {
-          emitTrace(onTrace, {
-            type: "tool_call.failed",
-            callId: agentTool.name,
-            name: agentTool.name,
-            error: message,
-          });
-        }
-        return JSON.stringify({ error: message, ok: false });
+      };
+      const outcome = await pipeline.toolCall(ctx, call, core);
+      // A beforeToolCall middleware vetoed (e.g. budget): core never ran.
+      if (!coreRan && outcome.isError && onTrace) {
+        emitTrace(onTrace, {
+          type: "tool_call.failed",
+          callId: agentTool.name,
+          name: agentTool.name,
+          error: outcome.content,
+        });
       }
+      // The OpenAI Agents SDK expects the tool to return the string the model
+      // sees; on a veto that's the middleware's reason.
+      return outcome.content;
     },
   });
 }

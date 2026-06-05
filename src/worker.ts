@@ -12,7 +12,8 @@
  *     For cron fires of prompt-backed routines (HEL-174), the scheduler
  *     enqueues a job whose idempotencyKey starts with "scheduler:";
  *     this worker looks up the routine and dispatches to the agent-prompt
- *     queue. DAG run execution itself remains stubbed (HEL-107+).
+ *     queue. Non-cron DAG run jobs are driven through
+ *     `workflowEngine.executeQueuedRun` (HEL-478).
  *   - "agent-prompt" — ad-hoc + cron-fired agent NL execution
  *     (HEL-174). The worker calls `executeAgentPrompt` and persists
  *     results to the `runs` table + ticket updates + activity feed.
@@ -66,10 +67,25 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
   const isCronFire =
     data.idempotencyKey?.startsWith("scheduler:") && !data.runId && !data.templateId;
   if (!isCronFire) {
-    // Existing workflow-run dispatch path — stub until HEL-107+.
-    console.log(
-      `[worker] Received run ${data.runId} step ${data.stepIndex} (template: ${data.templateId})`,
-    );
+    // HEL-478: execute a queued workflow DAG run. POST /api/runs (and
+    // /retry, /replay-with-latest, /replay-from-step) create the run row
+    // with status "queued" and enqueue here; drive it through the engine.
+    // `data.stepIndex` is 0 for fresh/retry/replay-latest and N>0 for
+    // replay-from-step (resume on top of the cloned prefix). executeQueuedRun
+    // is idempotent (skips any run already past "queued"/"pending") so a
+    // BullMQ retry never double-runs side-effecting steps.
+    if (!data.runId) {
+      console.warn(
+        `[worker] runs job missing runId; ignoring (idempotencyKey=${data.idempotencyKey})`,
+      );
+      return;
+    }
+    // Lazy import: WorkflowEngine statically pulls the llmProviders barrel
+    // (→ ESM-only @mistralai/mistralai), which breaks module-eval in jest.
+    // Deferring the load keeps worker boot — and worker.test.ts's import-time
+    // smoke test — off that chain, mirroring the HEL-492 lazy-import fix.
+    const { workflowEngine } = await import("./engine/WorkflowEngine");
+    await workflowEngine.executeQueuedRun(data.runId, data.stepIndex ?? 0);
     return;
   }
   const routineId = data.idempotencyKey.slice("scheduler:".length);

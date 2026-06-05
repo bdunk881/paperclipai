@@ -324,6 +324,100 @@ export class WorkflowEngine {
   }
 
   /**
+   * HEL-478: execute an already-created, queued run.
+   *
+   * Unlike {@link startRun} (which creates the run row *and* executes it
+   * inline), the run record here already exists with status `queued` —
+   * created by the BullMQ enqueue paths in app.ts:
+   *   - POST /api/runs                      (fresh run,     stepIndex 0)
+   *   - POST /api/runs/:id/retry            (failed re-run, stepIndex 0)
+   *   - POST /api/runs/:id/replay-with-latest (new run,     stepIndex 0)
+   *   - POST /api/runs/:id/replay-from-step (cloned prefix, stepIndex N>0)
+   *
+   * The "runs" BullMQ worker (src/worker.ts) is the sole executor on the
+   * queue path; it calls this for every non-cron job. We load the run's
+   * persisted DAG + context, then drive {@link _runSteps} from
+   * `startStepIndex`, which owns the `running → completed/failed`
+   * transitions and per-step `step_results` persistence.
+   *
+   * Idempotency (HEL-107): only a run still in a *pre-execution* state
+   * (`queued`/`pending`) is executed. A run already `running` or terminal
+   * is left untouched and the call is a no-op, so a BullMQ retry of the
+   * same job never re-runs side-effecting steps. (`_runSteps` re-executes
+   * every step from `startStepIndex` with no per-step idempotency skip, so
+   * re-entering a partially-complete run would double external effects —
+   * the guard is what prevents that.)
+   *
+   * Step results / context selection:
+   *   - `startStepIndex === 0` (fresh / retry / replay-with-latest): start
+   *     from a CLEAN context (config + input) and an EMPTY step_results
+   *     array. A retried run still carries the prior attempt's stale
+   *     step_results + a polluted runtimeState.context, so we deliberately
+   *     ignore both and re-run from scratch.
+   *   - `startStepIndex > 0` (replay-from-step): the persisted
+   *     runtimeState.context already layers the cloned prefix outputs over
+   *     config + input, and run.stepResults holds the cloned prefix — both
+   *     are authoritative, so we resume on top of them.
+   */
+  async executeQueuedRun(runId: string, startStepIndex = 0): Promise<void> {
+    const run = await runStore.get(runId);
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    // Idempotency guard — see method doc.
+    if (run.status !== "queued" && run.status !== "pending") {
+      console.log(
+        `[WorkflowEngine] executeQueuedRun skip run=${runId} status=${run.status} (already handled)`,
+      );
+      return;
+    }
+
+    const template = this._resolveTemplate(run);
+    const config = run.runtimeState?.config ?? this._buildDefaultConfig(template);
+
+    const resumeIndex =
+      Number.isInteger(startStepIndex) && startStepIndex > 0 ? startStepIndex : 0;
+
+    // Resume (stepIndex > 0): trust the persisted context + cloned prefix.
+    // Fresh/retry (stepIndex 0): rebuild a clean context and drop any stale
+    // step_results so the run re-executes from the top.
+    const baseContext: Record<string, unknown> =
+      resumeIndex > 0
+        ? run.runtimeState?.context ?? { ...config, ...(run.input ?? {}) }
+        : { ...config, ...(run.input ?? {}) };
+    const stepResults: StepResult[] =
+      resumeIndex > 0 ? (run.stepResults ?? []).map((sr) => ({ ...sr })) : [];
+
+    // Build the memory snapshot BEFORE flipping to `running` so a transient
+    // failure here leaves the run `queued` and a BullMQ retry can re-enter
+    // cleanly (the idempotency guard only skips post-`running` runs).
+    const context: Record<string, unknown> = {
+      ...baseContext,
+      memory: await this._buildMemoryContext(template, run.userId),
+    };
+
+    await runStore.update(runId, { status: "running" });
+    void this._publishRunLifecycle(runId, "started");
+
+    try {
+      await this._runSteps(runId, template, config, context, stepResults, resumeIndex, run.userId);
+    } catch (err) {
+      // `_runSteps` marks the run `failed` for per-step failures itself; a
+      // throw escaping it is an infra error (store write, memory, etc.).
+      // Mark failed so the run isn't stranded `running`, then rethrow so the
+      // worker's failed/DLQ machinery records the infra fault.
+      await runStore.update(runId, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        error: String(err),
+      });
+      void this._publishRunLifecycle(runId, "failed", { error: String(err) });
+      throw err;
+    }
+  }
+
+  /**
    * HEL-176: step-level replay.
    *
    * Creates a new run that resumes execution from `stepIndex`, cloning the

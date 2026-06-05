@@ -1,22 +1,56 @@
 import { PortableText } from "@portabletext/react";
-import type { MetaFunction } from "react-router";
+import type { MetaDescriptor, MetaFunction } from "react-router";
 import { Link, useLoaderData } from "react-router";
 import sanitizeHtml from "sanitize-html";
 import { getBlogPost, urlFor } from "@/lib/sanity";
 import { getArticle } from "@/lib/articles";
+import { SITE_URL, blogPostingLd, breadcrumbLd, faqPageLd } from "@/lib/structuredData";
 
 interface LoaderData {
   article: ReturnType<typeof getArticle>;
   cmsPost: Awaited<ReturnType<typeof getBlogPost>>;
+  canonical: string;
+  ogImageUrl: string;
 }
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
-  const title = data?.cmsPost?.title ?? data?.article?.title ?? "Blog Post";
-  const description = data?.cmsPost?.excerpt ?? data?.article?.excerpt ?? "";
-  return [
+  if (!data) return [{ title: "Blog Post | AutoFlow" }];
+  const { cmsPost, article, canonical, ogImageUrl } = data;
+  const title =
+    cmsPost?.seo?.metaTitle ?? cmsPost?.title ?? article?.title ?? "Blog Post";
+  const description =
+    cmsPost?.seo?.metaDescription ?? cmsPost?.excerpt ?? article?.excerpt ?? "";
+
+  const tags: MetaDescriptor[] = [
     { title: `${title} | AutoFlow Blog` },
     { name: "description", content: description },
+    { tagName: "link", rel: "canonical", href: canonical },
+    { property: "og:type", content: "article" },
+    { property: "og:title", content: title },
+    { property: "og:description", content: description },
+    { property: "og:url", content: canonical },
+    { property: "og:image", content: ogImageUrl },
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:title", content: title },
+    { name: "twitter:description", content: description },
+    { name: "twitter:image", content: ogImageUrl },
   ];
+
+  if (cmsPost?.seo?.noIndex) {
+    tags.push({ name: "robots", content: "noindex,nofollow" });
+  }
+
+  if (cmsPost) {
+    const graph: Record<string, unknown>[] = [
+      blogPostingLd(cmsPost, { url: canonical, imageUrl: ogImageUrl }),
+      breadcrumbLd(cmsPost, { url: canonical }),
+    ];
+    const faq = faqPageLd(cmsPost);
+    if (faq) graph.push(faq);
+    tags.push({ "script:ld+json": graph });
+  }
+
+  return tags;
 };
 
 export async function loader({ params }: { params: { slug?: string } }) {
@@ -32,13 +66,19 @@ export async function loader({ params }: { params: { slug?: string } }) {
     throw new Response("Not Found", { status: 404 });
   }
 
-  return { cmsPost, article };
+  const canonical = cmsPost?.seo?.canonicalUrl ?? `${SITE_URL}/blog/${slug}`;
+  const ogImageUrl = cmsPost?.seo?.ogImage
+    ? urlFor(cmsPost.seo.ogImage).width(1200).height(630).fit("crop").url()
+    : `${SITE_URL}/og.svg`;
+
+  return { cmsPost, article, canonical, ogImageUrl };
 }
 
 const portableTextComponents = {
   types: {
-    image: ({ value }: { value: { asset: unknown; alt?: string } }) => {
+    image: ({ value }: { value: { asset: unknown; alt?: string; caption?: string } }) => {
       const url = urlFor(value).width(800).url();
+      const caption = value.caption ?? value.alt;
       return (
         <figure className="my-8">
           <img
@@ -48,9 +88,9 @@ const portableTextComponents = {
             height={450}
             className="rounded-lg"
           />
-          {value.alt && (
+          {caption && (
             <figcaption className="mt-2 text-center text-sm text-gray-500">
-              {value.alt}
+              {caption}
             </figcaption>
           )}
         </figure>
@@ -80,6 +120,40 @@ const portableTextComponents = {
     em: ({ children }: { children?: React.ReactNode }) => (
       <em>{children}</em>
     ),
+    link: ({
+      children,
+      value,
+    }: {
+      children?: React.ReactNode;
+      value?: {
+        linkType?: string;
+        href?: string;
+        openInNewTab?: boolean;
+        reference?: { slug?: string } | null;
+      };
+    }) => {
+      const v = value ?? {};
+      const className =
+        "text-indigo-600 underline underline-offset-2 hover:text-indigo-700";
+      if (v.linkType === "internal" && v.reference?.slug) {
+        return (
+          <Link to={`/blog/${v.reference.slug}`} className={className}>
+            {children}
+          </Link>
+        );
+      }
+      return (
+        <a
+          href={v.href ?? "#"}
+          {...(v.openInNewTab
+            ? { target: "_blank", rel: "noopener noreferrer" }
+            : {})}
+          className={className}
+        >
+          {children}
+        </a>
+      );
+    },
   },
   list: {
     bullet: ({ children }: { children?: React.ReactNode }) => (
@@ -127,6 +201,16 @@ export default function BlogPostPage() {
           {title}
         </h1>
         <p className="mt-2 text-sm text-gray-500">By {author}</p>
+
+        {cmsPost?.coverImage && (
+          <img
+            src={urlFor(cmsPost.coverImage).width(1200).height(630).fit("crop").url()}
+            alt={(cmsPost.coverImage as { alt?: string }).alt ?? title}
+            width={1200}
+            height={630}
+            className="mt-8 w-full rounded-2xl object-cover"
+          />
+        )}
 
         {cmsPost?.body && (
           <div className="mt-10 max-w-none">

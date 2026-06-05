@@ -21,6 +21,7 @@ import { getPackById } from "./credits/packCatalog";
 import { claimSessionForGrant } from "./credits/purchaseEventLog";
 import { grantCredits } from "./credits/walletStore";
 import { sweepPurchaseToIssuing } from "./credits/stripeIssuing";
+import { sendBillingPaymentFailedEmail, sendBillingReceiptEmail } from "./billingEmails";
 
 const router = Router();
 
@@ -256,6 +257,36 @@ function getCurrentPeriodEnd(stripeSub: Stripe.Subscription): string {
 
 function getStripeCustomerId(value: Stripe.Subscription["customer"] | Stripe.Checkout.Session["customer"]): string {
   return typeof value === "string" ? value : value?.id ?? "";
+}
+
+// HEL-363: formatting helpers for the billing receipt / payment-failed emails.
+function formatInvoiceMoney(
+  amountMinor: number | null | undefined,
+  currency: string | null | undefined,
+): string {
+  const minor = typeof amountMinor === "number" && Number.isFinite(amountMinor) ? amountMinor : 0;
+  const code = (currency ?? "usd").toUpperCase();
+  const major = minor / 100;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(major);
+  } catch {
+    return `${major.toFixed(2)} ${code}`;
+  }
+}
+
+function unixToIsoDate(ts: number | null | undefined): string | null {
+  if (typeof ts !== "number" || !Number.isFinite(ts)) return null;
+  return new Date(ts * 1000).toISOString().slice(0, 10);
+}
+
+function displayPlanName(tier: string | null | undefined): string | null {
+  if (!tier) return null;
+  return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
+
+function dashboardBillingUrl(): string | null {
+  const raw = (process.env.DASHBOARD_APP_URL ?? "").trim();
+  return raw ? `${raw.replace(/\/$/, "")}/settings/billing` : null;
 }
 
 async function syncSubscriptionEntitlements(sub: Subscription): Promise<void> {
@@ -574,6 +605,24 @@ async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
   }
 
   console.log(`[stripe/webhook] invoice.paid — access extended for subscription ${stripeSubId}`);
+
+  // HEL-363: receipt email (best-effort; never throws). Skip $0 / trial-advance
+  // invoices — only real charges get a receipt.
+  const amountPaid = typeof invoice.amount_paid === "number" ? invoice.amount_paid : 0;
+  if (amountPaid > 0) {
+    const billed = updated ?? sub;
+    await sendBillingReceiptEmail({
+      to: billed.email || invoice.customer_email || null,
+      workspaceId: billed.workspaceId ?? null,
+      planName: displayPlanName(billed.tier),
+      amount: formatInvoiceMoney(amountPaid, invoice.currency),
+      invoiceNumber: invoice.number ?? null,
+      periodStart: unixToIsoDate(invoice.period_start),
+      periodEnd: unixToIsoDate(invoice.period_end),
+      invoiceUrl: invoice.hosted_invoice_url ?? null,
+      invoicePdf: invoice.invoice_pdf ?? null,
+    });
+  }
 }
 
 /**
@@ -601,7 +650,23 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void
   }
 
   console.log(`[stripe/webhook] invoice.payment_failed — flagged subscription ${stripeSubId} as past_due (attempt ${invoice.attempt_count})`);
-  // TODO: Trigger dunning email flow via email provider
+
+  // HEL-363: dunning / recovery email (best-effort; never throws).
+  const billed = updated ?? sub;
+  const amountDue =
+    typeof invoice.amount_due === "number" && invoice.amount_due > 0
+      ? formatInvoiceMoney(invoice.amount_due, invoice.currency)
+      : null;
+  await sendBillingPaymentFailedEmail({
+    to: billed.email || invoice.customer_email || null,
+    workspaceId: billed.workspaceId ?? null,
+    planName: displayPlanName(billed.tier),
+    amount: amountDue,
+    attempt: typeof invoice.attempt_count === "number" ? String(invoice.attempt_count) : null,
+    nextAttemptAt: unixToIsoDate(invoice.next_payment_attempt),
+    updatePaymentUrl: invoice.hosted_invoice_url ?? null,
+    billingUrl: dashboardBillingUrl(),
+  });
 }
 
 /**

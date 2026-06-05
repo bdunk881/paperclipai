@@ -112,6 +112,7 @@ import gmailRoutes, { gmailWebhookRouter } from "./integrations/gmail/routes";
 import stripeRoutes, { stripeConnectorWebhookRouter } from "./integrations/stripe/routes";
 import posthogRoutes, { posthogWebhookRouter } from "./integrations/posthog/routes";
 import intercomRoutes, { intercomWebhookRouter } from "./integrations/intercom/routes";
+import { createSesNotificationsRoutes } from "./mailer/sesNotificationsRoutes";
 import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
@@ -580,6 +581,9 @@ app.use("/api/webhooks/composio", composioWebhookRouter);
 app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/posthog", posthogWebhookRouter);
+// SES notifications (SNS) webhook (HEL-361) — bounce/complaint → suppression list.
+// Mounted before express.json(); the router parses its own (text/plain) body.
+app.use("/api/webhooks/ses-notifications", createSesNotificationsRoutes());
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Composio webhook — mounted before express.json() because the route verifies the raw payload

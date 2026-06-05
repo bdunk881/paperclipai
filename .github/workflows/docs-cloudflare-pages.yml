@@ -74,6 +74,20 @@ jobs:
             echo "deploy=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Ensure Cloudflare Pages project exists
+        if: steps.artifact.outputs.deploy == 'true'
+        working-directory: docs
+        run: |
+          set -uo pipefail
+          # Idempotent (HEL-660): create the autoflow-docs Pages project if it
+          # doesn't exist yet — it was never created, so `pages deploy` had no
+          # target and failed. Tolerate the already-exists case so reruns stay
+          # green. The CI token already has Pages:Edit (it deploys the dashboard
+          # and landing Pages projects), which covers project creation.
+          create_output="$(npx wrangler@4 pages project create autoflow-docs \
+            --production-branch dev 2>&1)" || true
+          printf '%s\n' "$create_output"
+
       - name: Deploy to Cloudflare Pages
         if: steps.artifact.outputs.deploy == 'true'
         id: deploy
@@ -83,12 +97,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          deploy_output="$(npx wrangler@4 pages deploy "${{ steps.artifact.outputs.path }}" \
+          # Stream wrangler output to the job log (HEL-660: the previous
+          # capture-into-a-var pattern hid the real error on failure).
+          npx wrangler@4 pages deploy "${{ steps.artifact.outputs.path }}" \
             --project-name=autoflow-docs \
-            --branch="${DEPLOY_BRANCH}" 2>&1)"
-          printf '%s\n' "$deploy_output"
+            --branch="${DEPLOY_BRANCH}" 2>&1 | tee /tmp/docs-deploy.log
 
-          deploy_url="$(printf '%s\n' "$deploy_output" | grep -Eo 'https://[^[:space:]]+\.pages\.dev' | tail -n 1)"
+          deploy_url="$(grep -Eo 'https://[^[:space:]]+\.pages\.dev' /tmp/docs-deploy.log | tail -n 1)"
           if [[ -z "$deploy_url" ]]; then
             echo "::error::Cloudflare Pages deploy did not return a deployment URL"
             exit 1

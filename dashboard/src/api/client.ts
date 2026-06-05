@@ -54,6 +54,7 @@ export const PROVIDER_MODELS: Record<ProviderName, string[]> = {
     "gpt-5-nano",
   ],
   anthropic: [
+    "claude-opus-4-8",
     "claude-opus-4-7",
     "claude-sonnet-4-6",
     "claude-haiku-4-5",

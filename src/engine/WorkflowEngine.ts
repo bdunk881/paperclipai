@@ -16,6 +16,10 @@ import {
 } from "../types/workflow";
 import { assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
 import { signOutboundBody } from "../webhooks/verifySignature";
+// HEL-656: importing the barrel registers the built-in connector actions and
+// exposes the dynamic action-library lookup. Registration is cheap (connector
+// SDKs load lazily inside each action's invoke).
+import { getConnectorAction } from "./connectorActions";
 import { runStore } from "./runStore";
 import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
 import { approvalStore } from "./approvalStore";
@@ -309,6 +313,39 @@ async function executeAction(
   const actionName = step.action;
   if (!actionName) return {};
 
+  const inputs: Record<string, unknown> = {};
+  for (const key of step.inputKeys) {
+    inputs[key] = context[key] ?? config[key];
+  }
+
+  // HEL-656: the dynamic connector-action library takes precedence over the
+  // legacy in-process actionRegistry. A registered connector action resolves
+  // its credential by the run owner's userId (+ optional connectionId from
+  // step.config), so a run with no user can't perform it — fail honestly
+  // rather than fabricate success.
+  const connectorAction = getConnectorAction(actionName);
+  if (connectorAction) {
+    if (!userId) {
+      throw new Error(
+        `Action '${actionName}' needs a run user to resolve its connector credentials`,
+      );
+    }
+    const connectionId =
+      typeof step.config?.["connectionId"] === "string"
+        ? (step.config["connectionId"] as string)
+        : undefined;
+    return connectorAction.invoke({ userId, connectionId, inputs, config, step });
+  }
+
+  // HEL-650: thread run identity + the step so legacy handlers can read
+  // step.config and look up the workspace/user's connected integrations.
+  const workspaceId =
+    typeof context["workspaceId"] === "string"
+      ? (context["workspaceId"] as string)
+      : typeof config["workspaceId"] === "string"
+        ? (config["workspaceId"] as string)
+        : undefined;
+
   const handler = actionRegistry.get(actionName);
   if (!handler) {
     // Unknown action: return a stub with output keys set to null
@@ -317,18 +354,6 @@ async function executeAction(
     return out;
   }
 
-  const inputs: Record<string, unknown> = {};
-  for (const key of step.inputKeys) {
-    inputs[key] = context[key] ?? config[key];
-  }
-  // HEL-650: thread run identity + the step so handlers can read
-  // step.config and look up the workspace/user's connected integrations.
-  const workspaceId =
-    typeof context["workspaceId"] === "string"
-      ? (context["workspaceId"] as string)
-      : typeof config["workspaceId"] === "string"
-        ? (config["workspaceId"] as string)
-        : undefined;
   const action: ActionContext = { step, userId, workspaceId, context };
   return handler(inputs, config, action);
 }

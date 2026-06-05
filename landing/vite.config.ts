@@ -1,4 +1,5 @@
 import path from "node:path";
+import { cloudflare } from "@cloudflare/vite-plugin";
 import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig, loadEnv } from "vite";
 
@@ -18,7 +19,7 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_LOGO_DEV_PUBLISHABLE_KEY":
         JSON.stringify(logoDevPublishableKey),
     },
-    plugins: [reactRouter()],
+    plugins: [cloudflare({ viteEnvironment: { name: "ssr" } }), reactRouter()],
     resolve: {
       tsconfigPaths: true,
       alias: {

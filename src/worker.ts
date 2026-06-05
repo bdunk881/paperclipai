@@ -43,6 +43,7 @@ import {
   startPlanApprovalResumeCoordinator,
   stopPlanApprovalResumeCoordinator,
 } from "./agents/runtime/planApprovalResumeCoordinator";
+import { startDlqDepthMonitor } from "./queue/dlqMonitor";
 
 const redisConnection = getRedisClient();
 if (!redisConnection) {
@@ -420,5 +421,10 @@ process.on("SIGINT", () => {
 // with permissionMode: 'auto'. Skipped silently when Postgres isn't
 // configured (in-memory dev / tests) — the sweep is a no-op there.
 startPlanApprovalResumeCoordinator();
+
+// HEL-490: runs-dlq has no drain consumer (by design — retry-exhausted jobs
+// shouldn't auto-replay). Monitor its depth and Sentry-alert when it grows, so
+// an operator drains it via the admin-console manual replay. No-op without Redis.
+startDlqDepthMonitor();
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' + 'storage-deletion' queues");

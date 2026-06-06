@@ -11,10 +11,12 @@
 -- `assembleAllowedAgentTools` in src/agents/agentToolPermissions.ts).
 -- RLS is already on `agents`; the column is just a JSON array.
 --
--- Hiring plan provisioner (src/missions/hiringPlanRoutes.ts) seeds
--- this from the staffing recommendation's `tools` field so the
--- agent inherits the LLM's draft. Owner can edit later via
--- /agents/:id/settings.
+-- HEL-762: the hiring-plan provisioner (src/missions/hiringPlanRoutes.ts)
+-- seeds this from the staffing recommendation's `tools` field, normalized to
+-- the toolkit slugs recognized in the Composio catalog (so free-text /
+-- non-toolkit slugs don't poison the allowlist). When no toolkit is recognized
+-- (or Composio is disabled) the column is left NULL = unrestricted. Owner can
+-- edit later via /agents/:id/settings.
 
 BEGIN;
 

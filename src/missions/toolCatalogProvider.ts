@@ -19,7 +19,7 @@
 
 import { isComposioEnabled } from "../integrations/composio/broker/config";
 import { listConnections } from "../integrations/composio/broker/connectionService";
-import { queryToolkitCatalog } from "../integrations/composio/broker/toolkitCatalog";
+import { loadCatalog, queryToolkitCatalog } from "../integrations/composio/broker/toolkitCatalog";
 
 export interface ConnectedToolkit {
   /** Composio toolkit slug, e.g. "github". */
@@ -103,4 +103,32 @@ export async function loadGenerationToolCatalog(
     // Best-effort — never let a broker/catalog failure break generation.
     return { ...EMPTY };
   }
+}
+
+/**
+ * The set of all known Composio toolkit slugs (lowercased) — for recognizing
+ * which of a generated plan's free-text tool slugs are real Composio toolkits
+ * (e.g. to persist an agent's `allowed_integration_slugs`, HEL-762, or to
+ * compute the connect-the-gap, HEL-763). Empty when the broker is disabled or
+ * the catalog can't be loaded (best-effort — callers treat empty as "recognize
+ * nothing" and degrade to current behavior).
+ */
+export async function loadComposioToolkitSlugSet(): Promise<Set<string>> {
+  if (!isComposioEnabled()) return new Set();
+  try {
+    const all = await loadCatalog();
+    return new Set(all.map((t) => t.slug.toLowerCase()));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Recognize which of `tools` are real Composio toolkit slugs, deduped + lowercased. */
+export function recognizeComposioToolkitSlugs(tools: string[], slugSet: Set<string>): string[] {
+  const out = new Set<string>();
+  for (const t of tools) {
+    const slug = t.trim().toLowerCase();
+    if (slug && slugSet.has(slug)) out.add(slug);
+  }
+  return Array.from(out);
 }

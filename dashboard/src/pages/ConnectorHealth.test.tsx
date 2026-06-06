@@ -136,8 +136,10 @@ describe("ConnectorHealth", () => {
     renderPage();
 
     const reconnect = await screen.findByRole("link", { name: /reconnect/i });
-    // Targets the Slack row specifically.
-    expect(reconnect).toHaveAttribute("href", "/integrations/mcp?reconnect=slack");
+    // HEL-751 retired the legacy /integrations/mcp marketplace; Reconnect now
+    // routes into the Composio connections tab (the catalog-driven panel
+    // reconnects by re-running Connect, so the per-connector deep-link is gone).
+    expect(reconnect).toHaveAttribute("href", "/connections?tab=integrations");
     // Healthy HubSpot row should NOT have a Reconnect CTA.
     expect(screen.getAllByRole("link", { name: /reconnect/i })).toHaveLength(1);
     // Auth-failure copy surfaces.

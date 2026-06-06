@@ -52,7 +52,7 @@ const STEPS: TourStep[] = [
     body: "Every task an agent is supposed to pick up lives here. Create one any time from the New assignment button.",
   },
   {
-    selector: 'nav a[href="/integrations/mcp"]',
+    selector: 'nav a[href="/connections"]',
     title: "Connect the tools your agents need",
     body: "Slack, Gmail, HubSpot, Stripe — connect once and every agent in the workspace can use them. OAuth or API key, your choice.",
   },

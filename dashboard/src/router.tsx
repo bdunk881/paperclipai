@@ -44,7 +44,6 @@ import Connections from "./pages/Connections";
 import LLMProviders from "./pages/LLMProviders";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
-import MCPIntegrations from "./pages/MCPIntegrations";
 import ConnectorHealth from "./pages/ConnectorHealth";
 import McpServers from "./pages/McpServers";
 import Memory from "./pages/Memory";
@@ -324,7 +323,13 @@ const routes: RouteObject[] = [
       // and `/integrations`, `/settings/llm`, `/settings/mcp` redirect into
       // the hub with the right tab pre-selected.
       { path: "connections", element: <Connections /> },
-      { path: "integrations/mcp", element: <MCPIntegrations /> },
+      // HEL-751: the legacy MCPIntegrations marketplace is retired (replaced by
+      // the Composio connections tab). Keep the path as a redirect so old
+      // bookmarks / deep-links (e.g. ConnectorHealth reconnect) land in the hub.
+      {
+        path: "integrations/mcp",
+        element: <Navigate to="/connections?tab=integrations" replace />,
+      },
       // HEL-206 (PR C): encrypted env vars surface. Lives as a standalone
       // route until PR B (HEL-205) lands the Connections hub with tabs.
       { path: "env-vars", element: <EnvVars /> },

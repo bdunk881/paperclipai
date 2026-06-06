@@ -92,6 +92,17 @@ export const DEFAULT_TRIAGE_INVOKER: TriageInvoker = async (input) => {
       costUsd: 0,
     };
   }
+  if (src === "composio_trigger") {
+    // HEL-766: the user explicitly subscribed this trigger and bound it to this
+    // agent, so a firing IS the signal to act. (A custom triage_policy via the
+    // LLM invoker can still narrow this; the default-stub must not IGNORE it the
+    // way it does a bare "webhook" — else every subscribed trigger silently drops.)
+    return {
+      decision: "ACT",
+      reason: "Default policy: a Composio trigger the user subscribed for this agent fired.",
+      costUsd: 0,
+    };
+  }
   if (src === "webhook") {
     return {
       decision: "IGNORE",

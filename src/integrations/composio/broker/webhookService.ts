@@ -15,9 +15,11 @@
  * empty for this event, so do not read it.
  */
 
-import { isComposioEnabled, composioUserId } from "./config";
+import { isComposioEnabled, composioUserId, workspaceIdFromComposioUserId } from "./config";
 import { getComposioBroker } from "./client";
 import { connectedAccountStore } from "./connectedAccountStore";
+import { getPostgresPool } from "../../../db/postgres";
+import { createComposioTriggerIngest, type ComposioTriggerIngest } from "./composioTriggerIngest";
 
 const EXPIRED_EVENT = "composio.connected_account.expired";
 
@@ -35,6 +37,16 @@ export interface ComposioWebhookOutcome {
   body: { received: boolean; handled?: string; error?: string };
 }
 
+export interface HandleComposioWebhookDeps {
+  /**
+   * Injectable trigger ingest (for tests). Default:
+   * createComposioTriggerIngest({ pool: getPostgresPool() }), constructed lazily
+   * only when a real trigger event arrives (so EXPIRED-only deployments and unit
+   * tests never touch the pool).
+   */
+  triggerIngest?: ComposioTriggerIngest;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -47,6 +59,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function handleComposioWebhook(
   rawBody: string,
   headers: ComposioWebhookHeaders,
+  deps?: HandleComposioWebhookDeps,
 ): Promise<ComposioWebhookOutcome> {
   if (!isComposioEnabled()) {
     return { status: 503, body: { received: false, error: "Composio is not enabled." } };
@@ -74,36 +87,56 @@ export async function handleComposioWebhook(
     return { status: 401, body: { received: false, error: "Invalid webhook signature." } };
   }
 
-  if (result.payload.triggerSlug !== EXPIRED_EVENT) {
-    return { status: 200, body: { received: true, handled: "ignored" } };
+  const triggerSlug = result.payload.triggerSlug;
+
+  // ---- connected_account.expired (P1d): mark the local row for re-auth -------
+  if (triggerSlug === EXPIRED_EVENT) {
+    // The real account data is the raw event `data` (payload.payload), not metadata.
+    const data = isRecord(result.payload.payload) ? result.payload.payload : {};
+    const caId = typeof data.id === "string" ? data.id.trim() : "";
+    if (!caId) {
+      return { status: 200, body: { received: true, handled: "missing-account-id" } };
+    }
+
+    const row = await connectedAccountStore.findByConnectedAccountId(caId);
+    if (!row) {
+      // Unknown / foreign ca_ — ack so Composio stops retrying.
+      return { status: 200, body: { received: true, handled: "unknown-account" } };
+    }
+
+    await connectedAccountStore.markStatus(
+      { workspaceId: row.workspaceId, userId: "composio-webhook" },
+      caId,
+      "EXPIRED",
+    );
+
+    // Best-effort re-auth signal. Wiring this to the notification / connection-health
+    // UX is a follow-up; for now it's a structured log keyed by the broker userId.
+    const reason = typeof data.status_reason === "string" ? `: ${data.status_reason}` : "";
+    console.warn(
+      `[composio] connected account ${caId} (${row.toolkit}, ${composioUserId(row.workspaceId)}) ` +
+        `expired — re-auth needed${reason}`,
+    );
+
+    return { status: 200, body: { received: true, handled: "expired" } };
   }
 
-  // The real account data is the raw event `data` (payload.payload), not metadata.
-  const data = isRecord(result.payload.payload) ? result.payload.payload : {};
-  const caId = typeof data.id === "string" ? data.id.trim() : "";
-  if (!caId) {
-    return { status: 200, body: { received: true, handled: "missing-account-id" } };
+  // ---- trigger event (P4-b): route into the wake/triage engine --------------
+  // A real trigger self-identifies its tenancy via userId = ws_<workspaceId> (the
+  // V3 normalizer path). Other lifecycle events take the fallback branch and have
+  // no parseable userId, so they fall through to "ignored".
+  const workspaceId = workspaceIdFromComposioUserId(result.payload.userId);
+  if (workspaceId) {
+    const ingest = deps?.triggerIngest ?? createComposioTriggerIngest({ pool: getPostgresPool() });
+    const outcome = await ingest({
+      workspaceId,
+      triggerSlug,
+      connectedAccountId: result.payload.metadata.connectedAccount.id,
+      eventId: result.payload.id,
+      payload: isRecord(result.payload.payload) ? result.payload.payload : {},
+    });
+    return { status: 200, body: { received: true, handled: `trigger:${outcome.status}` } };
   }
 
-  const row = await connectedAccountStore.findByConnectedAccountId(caId);
-  if (!row) {
-    // Unknown / foreign ca_ — ack so Composio stops retrying.
-    return { status: 200, body: { received: true, handled: "unknown-account" } };
-  }
-
-  await connectedAccountStore.markStatus(
-    { workspaceId: row.workspaceId, userId: "composio-webhook" },
-    caId,
-    "EXPIRED",
-  );
-
-  // Best-effort re-auth signal. Wiring this to the notification / connection-health
-  // UX is a follow-up; for now it's a structured log keyed by the broker userId.
-  const reason = typeof data.status_reason === "string" ? `: ${data.status_reason}` : "";
-  console.warn(
-    `[composio] connected account ${caId} (${row.toolkit}, ${composioUserId(row.workspaceId)}) ` +
-      `expired — re-auth needed${reason}`,
-  );
-
-  return { status: 200, body: { received: true, handled: "expired" } };
+  return { status: 200, body: { received: true, handled: "ignored" } };
 }

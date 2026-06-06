@@ -76,7 +76,7 @@ describe("handleComposioWebhook (HEL-749)", () => {
     expect(out.status).toBe(401);
   });
 
-  it("ignores non-expired events with 200", async () => {
+  it("ignores a non-expired lifecycle event with no parseable userId (200)", async () => {
     verifyMock.mockResolvedValue({
       version: "V3",
       payload: { triggerSlug: "composio.trigger.message", payload: {} },
@@ -85,6 +85,40 @@ describe("handleComposioWebhook (HEL-749)", () => {
     const out = await handleComposioWebhook("{}", { id: "wh", timestamp: "1", signature: "x" });
     expect(out.status).toBe(200);
     expect(out.body.handled).toBe("ignored");
+  });
+
+  it("routes a real trigger event into the wake engine (P4-b)", async () => {
+    // A real trigger (V3-normalized) self-identifies tenancy via userId = ws_<id>.
+    verifyMock.mockResolvedValue({
+      version: "V3",
+      payload: {
+        id: "evt_1",
+        triggerSlug: "GITHUB_COMMIT_EVENT",
+        userId: "ws_ws-A",
+        payload: { sha: "abc" },
+        metadata: { connectedAccount: { id: "ca_1" } },
+      },
+      rawPayload: {},
+    });
+    const triggerIngest = jest
+      .fn()
+      .mockResolvedValue({ status: "ok", wakeEventId: "we_1", decision: "ACT" });
+
+    const out = await handleComposioWebhook(
+      "{raw}",
+      { id: "wh", timestamp: "1", signature: "x" },
+      { triggerIngest },
+    );
+
+    expect(out.status).toBe(200);
+    expect(out.body.handled).toBe("trigger:ok");
+    expect(triggerIngest).toHaveBeenCalledWith({
+      workspaceId: "ws-A",
+      triggerSlug: "GITHUB_COMMIT_EVENT",
+      connectedAccountId: "ca_1",
+      eventId: "evt_1",
+      payload: { sha: "abc" },
+    });
   });
 
   it("acks an unknown/foreign account with 200 (no retry)", async () => {

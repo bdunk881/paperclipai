@@ -211,6 +211,39 @@ export const triggerInstanceStore = {
     return null;
   },
 
+  /**
+   * Sessionless lookup by (trigger_slug, connected_account_id) — the natural key
+   * the inbound trigger webhook uses to route a fired event to its bound agent.
+   * A ca_ is globally unique to one workspace, so (slug, ca_) is unambiguous.
+   * Reads under withSystemAdminContext (the migration-109 admin_read policy).
+   */
+  async findBySlugAndConnectedAccount(
+    triggerSlug: string,
+    connectedAccountId: string,
+  ): Promise<ComposioTriggerInstanceRow | null> {
+    if (backend() === "pg") {
+      const pool = getPostgresPool();
+      return withSystemAdminContext(pool, async (client) => {
+        const res = await client.query<TriggerInstanceDbRow>(
+          `SELECT * FROM composio_trigger_instances
+           WHERE trigger_slug = $1 AND connected_account_id = $2
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [triggerSlug, connectedAccountId],
+        );
+        return res.rows[0] ? rowFromDb(res.rows[0]) : null;
+      });
+    }
+    for (const bucket of memStore.values()) {
+      for (const row of bucket.values()) {
+        if (row.triggerSlug === triggerSlug && row.connectedAccountId === connectedAccountId) {
+          return row;
+        }
+      }
+    }
+    return null;
+  },
+
   async listByWorkspace(ctx: ComposioWorkspaceContext): Promise<ComposioTriggerInstanceRow[]> {
     if (backend() === "pg") {
       const pool = getPostgresPool();

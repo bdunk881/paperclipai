@@ -63,6 +63,20 @@ primary_region = "ord"
   # is the secret; this flag is non-secret config). isComposioEnabled() needs
   # BOTH. Staging/prod stay default-off until validated here.
   COMPOSIO_ENABLED = "true"
+  # HEL-750: the API's public origins. Until these were pinned, every code path
+  # that builds a user-facing URL fell back to a localhost default — most
+  # visibly, completing a Composio OAuth connection 302'd the user to
+  # http://localhost:5173 (oauthRoutes.dashboardRedirect's DASHBOARD_APP_URL
+  # fallback). DASHBOARD_APP_URL is the dashboard origin we return users to (read
+  # by 8 sites: MFA magic-link verify, Stripe webhook, approval/failure-digest
+  # notification links, agent-catalog + integration OAuth bridges, and Composio);
+  # DASHBOARD_ORIGIN is the Supabase auth-email redirect origin (defaulted to the
+  # PROD domain, wrong on dev); COMPOSIO_REDIRECT_BASE_URL is this API's own
+  # origin, used to build the callbackUrl handed to Composio. Canonical dev
+  # dashboard host is dev.helloautoflow.com (dashboard-cloudflare-pages.yml).
+  DASHBOARD_APP_URL = "https://dev.helloautoflow.com"
+  DASHBOARD_ORIGIN = "https://dev.helloautoflow.com"
+  COMPOSIO_REDIRECT_BASE_URL = "https://dev-api.helloautoflow.com"
   # HEL-654 (Composable agent-runtime middleware pipeline): enable the
   # flag-gated agent middlewares on dev for validation before staging/prod.
   # Compaction (HEL-624) rewrites in-flight history; model-fallback (HEL-627)

@@ -94,5 +94,40 @@ describe("composio broker config (HEL-721)", () => {
       warnIfComposioUnconfigured(log);
       expect(log).not.toHaveBeenCalled();
     });
+
+    it("warns on a deployed env when the OAuth redirect origins are unset (HEL-750)", () => {
+      process.env.COMPOSIO_ENABLED = "true";
+      process.env.COMPOSIO_API_KEY = "ck_test";
+      process.env.NODE_ENV = "production";
+      delete process.env.DASHBOARD_APP_URL;
+      delete process.env.COMPOSIO_REDIRECT_BASE_URL;
+      const log = jest.fn();
+      warnIfComposioUnconfigured(log);
+      const messages = log.mock.calls.map((c) => c[0]).join("\n");
+      expect(messages).toMatch(/DASHBOARD_APP_URL is unset/);
+      expect(messages).toMatch(/COMPOSIO_REDIRECT_BASE_URL is unset/);
+    });
+
+    it("does not warn about redirects when the origins are pinned", () => {
+      process.env.COMPOSIO_ENABLED = "true";
+      process.env.COMPOSIO_API_KEY = "ck_test";
+      process.env.NODE_ENV = "production";
+      process.env.DASHBOARD_APP_URL = "https://dev.helloautoflow.com";
+      process.env.COMPOSIO_REDIRECT_BASE_URL = "https://dev-api.helloautoflow.com";
+      const log = jest.fn();
+      warnIfComposioUnconfigured(log);
+      expect(log).not.toHaveBeenCalled();
+    });
+
+    it("does not warn about redirects on a non-deployed (local) env", () => {
+      process.env.COMPOSIO_ENABLED = "true";
+      process.env.COMPOSIO_API_KEY = "ck_test";
+      process.env.NODE_ENV = "development";
+      delete process.env.DASHBOARD_APP_URL;
+      delete process.env.COMPOSIO_REDIRECT_BASE_URL;
+      const log = jest.fn();
+      warnIfComposioUnconfigured(log);
+      expect(log).not.toHaveBeenCalled();
+    });
   });
 });

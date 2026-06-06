@@ -66,15 +66,42 @@ export function workspaceIdFromComposioUserId(userId: string): string | null {
 let warned = false;
 
 /**
- * Boot-time warning when the flag is on but the key is missing, so a misconfig
- * is visible in logs instead of failing silently at first use. Idempotent.
+ * Boot-time warnings when the broker is enabled but misconfigured, so a misconfig
+ * is visible in logs instead of failing silently at first use. Idempotent (fires
+ * at most once per process).
+ *
+ * Two classes of misconfig:
+ *  1. Flag on but no API key → the broker is inert.
+ *  2. Deployed (NODE_ENV=production, i.e. on Fly) but the public-origin env vars
+ *     are unset → oauthRoutes falls back to http://localhost:5173 (dashboard
+ *     redirect) and the request host (callbackUrl), so every completed OAuth
+ *     connection bounces the user to localhost (HEL-750). Local dev keeps the
+ *     localhost fallback, which is correct there, so this only warns when
+ *     deployed.
  */
 export function warnIfComposioUnconfigured(log: (msg: string) => void = console.warn): void {
-  if (process.env.COMPOSIO_ENABLED === "true" && !process.env.COMPOSIO_API_KEY?.trim() && !warned) {
-    warned = true;
+  if (warned || process.env.COMPOSIO_ENABLED !== "true") {
+    return;
+  }
+  warned = true;
+
+  if (!process.env.COMPOSIO_API_KEY?.trim()) {
     log(
       "[composio] COMPOSIO_ENABLED=true but COMPOSIO_API_KEY is unset — the Composio broker is inert until the key is provided.",
     );
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.DASHBOARD_APP_URL?.trim()) {
+      log(
+        "[composio] DASHBOARD_APP_URL is unset on a deployed environment — completed OAuth connections will redirect to http://localhost:5173. Set it to the dashboard origin (e.g. https://dev.helloautoflow.com).",
+      );
+    }
+    if (!process.env.COMPOSIO_REDIRECT_BASE_URL?.trim()) {
+      log(
+        "[composio] COMPOSIO_REDIRECT_BASE_URL is unset on a deployed environment — the OAuth callbackUrl falls back to the request host. Set it to this API's public origin (e.g. https://dev-api.helloautoflow.com).",
+      );
+    }
   }
 }
 

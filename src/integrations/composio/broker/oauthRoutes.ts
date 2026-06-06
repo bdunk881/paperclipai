@@ -14,6 +14,7 @@ import { asyncHandler } from "../../../middleware/asyncHandler";
 import type { WorkspaceAwareRequest } from "../../../middleware/workspaceResolver";
 import { isComposioEnabled } from "./config";
 import { beginConnect, completeConnect, listConnections, disconnectAccount } from "./connectionService";
+import { queryToolkitCatalog } from "./toolkitCatalog";
 
 /** Build the dashboard redirect target (mirrors oauthBridgeRoutes.dashboardRedirect). */
 function dashboardRedirect(params: { status: "success" | "error"; message?: string }): string {
@@ -78,6 +79,25 @@ composioConnectRouter.post(
       connectedAccountId: result.connectedAccountId,
       toolkit: result.toolkit,
     });
+  }),
+);
+
+// GET /api/composio/toolkits — the connectable-app catalog (cached; search/filter/paginate).
+composioConnectRouter.get(
+  "/toolkits",
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    if (!isComposioEnabled()) {
+      res.status(503).json({ error: "Composio is not enabled." });
+      return;
+    }
+    const limitRaw = firstString(req.query.limit);
+    const page = await queryToolkitCatalog({
+      search: firstString(req.query.search),
+      category: firstString(req.query.category),
+      cursor: firstString(req.query.cursor),
+      limit: limitRaw ? Number(limitRaw) : undefined,
+    });
+    res.json(page);
   }),
 );
 

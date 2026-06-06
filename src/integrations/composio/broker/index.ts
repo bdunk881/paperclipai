@@ -61,3 +61,14 @@ export {
 } from "./connectStateStore";
 
 export { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";
+
+export {
+  loadCatalog,
+  queryToolkitCatalog,
+  isToolkitCatalogAvailable,
+  resetToolkitCatalogForTests,
+  type ToolkitCatalogEntry,
+  type ToolkitCatalogQuery,
+  type ToolkitCatalogPage,
+  type ToolkitCategory,
+} from "./toolkitCatalog";

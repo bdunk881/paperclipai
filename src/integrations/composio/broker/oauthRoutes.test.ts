@@ -8,12 +8,15 @@ jest.mock("./connectionService", () => ({
   listConnections: jest.fn(),
   disconnectAccount: jest.fn(),
 }));
+jest.mock("./toolkitCatalog", () => ({ queryToolkitCatalog: jest.fn() }));
 
 import { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";
 import { isComposioEnabled } from "./config";
 import { beginConnect, completeConnect, listConnections, disconnectAccount } from "./connectionService";
+import { queryToolkitCatalog } from "./toolkitCatalog";
 
 const enabled = isComposioEnabled as jest.MockedFunction<typeof isComposioEnabled>;
+const catalog = queryToolkitCatalog as jest.MockedFunction<typeof queryToolkitCatalog>;
 const begin = beginConnect as jest.MockedFunction<typeof beginConnect>;
 const complete = completeConnect as jest.MockedFunction<typeof completeConnect>;
 const list = listConnections as jest.MockedFunction<typeof listConnections>;
@@ -156,5 +159,39 @@ describe("composio oauth routes (HEL-740)", () => {
     const res = await request(authedApp()).delete("/api/composio/connections/ca_unknown");
 
     expect(res.status).toBe(404);
+  });
+
+  it("GET /toolkits returns 200 with a catalog page", async () => {
+    catalog.mockResolvedValue({
+      toolkits: [
+        {
+          slug: "github",
+          name: "GitHub",
+          logo: null,
+          description: null,
+          categories: [],
+          toolsCount: null,
+          triggersCount: null,
+          authSchemes: [],
+          composioManagedAuthSchemes: [],
+          noAuth: false,
+        },
+      ],
+      total: 1,
+      nextCursor: null,
+    });
+
+    const res = await request(authedApp()).get("/api/composio/toolkits?search=git&limit=10");
+
+    expect(res.status).toBe(200);
+    expect(res.body.toolkits).toHaveLength(1);
+    expect(catalog).toHaveBeenCalledWith(expect.objectContaining({ search: "git", limit: 10 }));
+  });
+
+  it("GET /toolkits returns 503 when Composio is disabled", async () => {
+    enabled.mockReturnValue(false);
+    const res = await request(authedApp()).get("/api/composio/toolkits");
+    expect(res.status).toBe(503);
+    expect(catalog).not.toHaveBeenCalled();
   });
 });

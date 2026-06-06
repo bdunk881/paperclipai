@@ -54,7 +54,6 @@ const intercomDisconnect = jest.fn();
 const stripeBeginOAuth = jest.fn();
 const stripeCompleteOAuth = jest.fn();
 const stripeDisconnect = jest.fn();
-const composioDisconnect = jest.fn();
 
 const slackGetActiveByUser = jest.fn();
 const linearGetActiveByUser = jest.fn();
@@ -68,7 +67,6 @@ const teamsGetActiveByUser = jest.fn();
 const posthogGetActiveByUser = jest.fn();
 const intercomGetActiveByUser = jest.fn();
 const stripeGetActiveByUser = jest.fn();
-const composioGetActiveByUser = jest.fn();
 
 jest.mock("./slack/service", () => ({
   slackConnectorService: {
@@ -166,12 +164,6 @@ jest.mock("./stripe/service", () => ({
   },
 }));
 
-jest.mock("./composio/service", () => ({
-  composioConnectorService: {
-    disconnect: (...args: unknown[]) => composioDisconnect(...args),
-  },
-}));
-
 jest.mock("./slack/credentialStore", () => ({
   slackCredentialStore: {
     getActiveByUser: (...args: unknown[]) => slackGetActiveByUser(...args),
@@ -251,12 +243,6 @@ jest.mock("./stripe/credentialStore", () => ({
   },
 }));
 
-jest.mock("./composio/credentialStore", () => ({
-  composioCredentialStore: {
-    getActiveByUser: (...args: unknown[]) => composioGetActiveByUser(...args),
-  },
-}));
-
 describe("unified oauth bridge routes", () => {
   const app = express();
   app.use(express.json());
@@ -303,7 +289,6 @@ describe("unified oauth bridge routes", () => {
     posthogDisconnect.mockReturnValue(true);
     intercomDisconnect.mockReturnValue(true);
     stripeDisconnect.mockReturnValue(true);
-    composioDisconnect.mockResolvedValue(true);
     slackGetActiveByUser.mockReturnValue(null);
     linearGetActiveByUser.mockReturnValue(null);
     apolloGetActiveByUser.mockReturnValue(null);
@@ -316,7 +301,6 @@ describe("unified oauth bridge routes", () => {
     posthogGetActiveByUser.mockReturnValue(null);
     intercomGetActiveByUser.mockReturnValue(null);
     stripeGetActiveByUser.mockReturnValue(null);
-    composioGetActiveByUser.mockReturnValue(null);
   });
 
   afterAll(() => {
@@ -445,11 +429,6 @@ describe("unified oauth bridge routes", () => {
       createdAt: "2026-04-18T12:30:00.000Z",
       scopes: ["contacts:read"],
     });
-    composioGetActiveByUser.mockReturnValue({
-      id: "composio-1",
-      createdAt: "2026-04-18T13:00:00.000Z",
-      authMethod: "api_key",
-    });
     const response = await request(app)
       .get("/api/integrations/status")
       .set("Authorization", "Bearer user-123");
@@ -469,10 +448,6 @@ describe("unified oauth bridge routes", () => {
       connected: true,
       connectedAt: "2026-04-18T12:30:00.000Z",
       scopes: ["contacts:read"],
-    });
-    expect(response.body.providers.composio).toEqual({
-      connected: true,
-      connectedAt: "2026-04-18T13:00:00.000Z",
     });
     expect(response.body.providers.stripe).toEqual({ connected: false });
     expect(response.body.providers.intercom).toEqual({ connected: false });
@@ -517,20 +492,6 @@ describe("unified oauth bridge routes", () => {
 
     expect(response.status).toBe(204);
     expect(linearDisconnect).not.toHaveBeenCalled();
-  });
-
-  it("disconnects Composio by revoking the active API-key credential", async () => {
-    composioGetActiveByUser.mockReturnValue({
-      id: "composio-credential-1",
-      createdAt: "2026-04-18T13:00:00.000Z",
-    });
-
-    const response = await request(app)
-      .delete("/api/integrations/composio/disconnect")
-      .set("Authorization", "Bearer user-123");
-
-    expect(response.status).toBe(204);
-    expect(composioDisconnect).toHaveBeenCalledWith("user-123", "composio-credential-1");
   });
 
 });

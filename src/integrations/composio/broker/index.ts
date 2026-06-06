@@ -73,3 +73,11 @@ export {
   type ToolkitCatalogPage,
   type ToolkitCategory,
 } from "./toolkitCatalog";
+
+export {
+  executeComposioTool,
+  resolveActiveConnectedAccount,
+  listComposioToolsForToolkit,
+  type ExecuteComposioToolInput,
+  type ComposioToolResult,
+} from "./toolExecution";

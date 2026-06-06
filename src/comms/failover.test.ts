@@ -1,5 +1,6 @@
 import { CommsGateway, type CommsGatewayDeps } from "./gateway";
 import { TransportError, type CommsTransport, type TransportResult } from "./types";
+import { recordFailure, resetProviderHealthForTests } from "./providerHealth";
 
 interface StoreCalls {
   sent: string[];
@@ -38,6 +39,9 @@ const INPUT = {
 };
 
 describe("CommsGateway failover (HEL-617)", () => {
+  // The provider-health circuit (HEL-729) is process-global; isolate each test.
+  beforeEach(() => resetProviderHealthForTests());
+
   it("fails over to the secondary on a retryable (5xx) primary failure", async () => {
     const calls: StoreCalls = { sent: [], failed: [] };
     const gateway = new CommsGateway({ store: fakeStore(calls) });
@@ -133,5 +137,49 @@ describe("CommsGateway failover (HEL-617)", () => {
     expect(res.status).toBe("sent");
     expect(res.provider).toBe("channel-default");
     expect(calls.sent).toEqual(["channel-default"]);
+  });
+
+  it("HEL-729: skips a provider whose health circuit is open", async () => {
+    for (let i = 0; i < 3; i++) {
+      recordFailure("primary");
+    }
+    const calls: StoreCalls = { sent: [], failed: [] };
+    let primaryCalled = false;
+    const gateway = new CommsGateway({ store: fakeStore(calls) });
+    gateway.registerTransport(
+      "email",
+      emailTransport("primary", async () => {
+        primaryCalled = true;
+        return { providerMessageId: "p" };
+      }),
+      "customer",
+    );
+    gateway.registerTransport(
+      "email",
+      emailTransport("secondary", async () => ({ providerMessageId: "s" })),
+      "customer",
+    );
+
+    const res = await gateway.send(INPUT);
+    expect(res.status).toBe("sent");
+    expect(res.provider).toBe("secondary"); // primary skipped — circuit open
+    expect(primaryCalled).toBe(false);
+  });
+
+  it("HEL-729: never refuses to send when EVERY provider is degraded", async () => {
+    for (let i = 0; i < 3; i++) {
+      recordFailure("only");
+    }
+    const calls: StoreCalls = { sent: [], failed: [] };
+    const gateway = new CommsGateway({ store: fakeStore(calls) });
+    gateway.registerTransport(
+      "email",
+      emailTransport("only", async () => ({ providerMessageId: "x" })),
+      "customer",
+    );
+
+    const res = await gateway.send(INPUT);
+    expect(res.status).toBe("sent"); // all degraded → try anyway
+    expect(res.provider).toBe("only");
   });
 });

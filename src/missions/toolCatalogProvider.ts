@@ -132,3 +132,40 @@ export function recognizeComposioToolkitSlugs(tools: string[], slugSet: Set<stri
   }
   return Array.from(out);
 }
+
+export interface ToolkitToConnect {
+  slug: string;
+  name: string;
+}
+
+/**
+ * The toolkits a generated plan needs but the workspace hasn't connected yet
+ * (HEL-763): the recognized Composio toolkit slugs chosen across the plan's
+ * agents MINUS the ACTIVE connected set. Drives the dashboard "connect these to
+ * run this plan" prompt. Empty when Composio is disabled, nothing is recognized,
+ * or everything chosen is already connected. Best-effort (never throws).
+ */
+export async function computeToolkitsToConnect(input: {
+  workspaceId: string;
+  userId: string;
+  planToolSlugs: string[];
+}): Promise<ToolkitToConnect[]> {
+  if (!isComposioEnabled()) return [];
+  try {
+    const all = await loadCatalog();
+    const slugSet = new Set(all.map((t) => t.slug.toLowerCase()));
+    const chosen = recognizeComposioToolkitSlugs(input.planToolSlugs, slugSet);
+    if (chosen.length === 0) return [];
+
+    const connected = await listConnections({ workspaceId: input.workspaceId, userId: input.userId });
+    const connectedSlugs = new Set(
+      connected.filter((c) => c.status === "ACTIVE").map((c) => c.toolkit.toLowerCase()),
+    );
+    const nameBySlug = new Map(all.map((t) => [t.slug.toLowerCase(), t.name]));
+    return chosen
+      .filter((slug) => !connectedSlugs.has(slug))
+      .map((slug) => ({ slug, name: nameBySlug.get(slug) ?? slug }));
+  } catch {
+    return [];
+  }
+}

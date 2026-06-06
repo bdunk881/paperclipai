@@ -49,7 +49,7 @@ import {
   type HiringPlanDraft,
 } from "./hiringPlanDraft";
 import { resolveHiringPlanLlm } from "./resolveHiringPlanLlm";
-import { loadGenerationToolCatalog } from "./toolCatalogProvider";
+import { computeToolkitsToConnect, loadGenerationToolCatalog } from "./toolCatalogProvider";
 import {
   generateTeamPlanChunked,
   isChunkedTeamAssemblyEnabled,
@@ -1125,11 +1125,20 @@ export function createMissionRoutes(
       model: assemblyModel,
     });
 
+    // HEL-763: which toolkits the plan picked that the workspace hasn't connected
+    // yet, so the dashboard can prompt the owner to connect them before running.
+    const toolkitsToConnect = await computeToolkitsToConnect({
+      workspaceId,
+      userId,
+      planToolSlugs: plan.provisioningPlan.agents.flatMap((a) => a.tools),
+    });
+
     res.json({
       hiringPlanId,
       missionId,
       schemaVersion: TEAM_ASSEMBLY_SCHEMA_VERSION,
       plan,
+      toolkitsToConnect,
       costCents: costResult.costCents,
       provider: resolved.config.provider,
       model: assemblyModel,

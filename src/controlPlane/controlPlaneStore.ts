@@ -2252,6 +2252,97 @@ export const controlPlaneStore = {
     return agent;
   },
 
+  // HEL-717: edit a team's ENFORCED budget caps post-creation (the fields
+  // buildTeamSpendSnapshot reads to fire budget_alerts). Mirrors
+  // updateTeamLifecycle: fetch → mutate → persist via upsertTeam (no repo
+  // change; the upsert already writes budget_monthly_usd / tool_budget_ceilings
+  // / alert_thresholds). Each field is optional — only provided ones change.
+  async updateTeamBudget(input: {
+    workspaceId: string;
+    teamId: string;
+    userId: string;
+    budgetMonthlyUsd?: number;
+    toolBudgetCeilings?: Record<string, number>;
+    alertThresholds?: number[];
+  }): Promise<ControlPlaneTeam> {
+    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+    // HEL-717 (Codex P2): resolve through WORKSPACE access, not the creator-only
+    // helper — any admin/operator in the workspace (already authorized by
+    // requireRole) manages caps, not just the team's original creator. The rest
+    // of the control-plane reads use workspace access as the boundary.
+    const team = await controlPlaneRepository.getTeam(
+      { workspaceId: input.workspaceId, userId: input.userId },
+      input.teamId,
+    );
+    if (!team) {
+      throw new Error("team_not_found");
+    }
+
+    const budgetCtx = await workspaceContextForTeam(team.id, input.userId);
+    if (!budgetCtx) {
+      throw new Error("team_budget_workspace_unresolved");
+    }
+    // HEL-717 (Codex P1): bind to the authorized workspace. getTeam does NOT
+    // hard-scope by workspace (in-memory falls back cross-workspace; prod's
+    // `WHERE id = $1` relies on RLS, which the app bypasses as the postgres
+    // owner), so this explicit check is the real tenancy boundary — reject when
+    // the team's true workspace differs from the authorized one (not-found, no
+    // existence leak).
+    if (budgetCtx.workspaceId !== input.workspaceId) {
+      throw new Error("team_not_found");
+    }
+
+    if (input.budgetMonthlyUsd !== undefined) {
+      team.budgetMonthlyUsd = input.budgetMonthlyUsd;
+    }
+    if (input.toolBudgetCeilings !== undefined) {
+      team.toolBudgetCeilings = { ...input.toolBudgetCeilings };
+    }
+    if (input.alertThresholds !== undefined) {
+      team.alertThresholds = [...input.alertThresholds].sort((left, right) => left - right);
+    }
+    team.updatedAt = nowIso();
+
+    await controlPlaneRepository.upsertTeam(budgetCtx, team, null);
+    return team;
+  },
+
+  // HEL-717: edit an agent's ENFORCED monthly budget post-creation. Mirrors
+  // updateAgentSkills: fetch → mutate → persist via upsertAgent.
+  async updateAgentBudget(input: {
+    workspaceId: string;
+    agentId: string;
+    userId: string;
+    budgetMonthlyUsd: number;
+  }): Promise<ControlPlaneAgent> {
+    await ensureWorkspaceHydrated(input.workspaceId, input.userId);
+    // HEL-717 (Codex P2): resolve through workspace access, not the creator-only
+    // helper (see updateTeamBudget).
+    const agent = await controlPlaneRepository.getAgent(
+      { workspaceId: input.workspaceId, userId: input.userId },
+      input.agentId,
+    );
+    if (!agent) {
+      throw new Error("agent_not_found");
+    }
+
+    const budgetCtx = await workspaceContextForTeam(agent.teamId, input.userId);
+    if (!budgetCtx) {
+      throw new Error("agent_budget_workspace_unresolved");
+    }
+    // HEL-717 (Codex P1): bind to the authorized workspace — this explicit check
+    // is the real tenancy boundary (getAgent doesn't hard-scope by workspace).
+    if (budgetCtx.workspaceId !== input.workspaceId) {
+      throw new Error("agent_not_found");
+    }
+
+    agent.budgetMonthlyUsd = input.budgetMonthlyUsd;
+    agent.updatedAt = nowIso();
+
+    await controlPlaneRepository.upsertAgent(budgetCtx, agent);
+    return agent;
+  },
+
   async createTask(input: {
     userId: string;
     teamId: string;

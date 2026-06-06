@@ -3123,3 +3123,161 @@ describe("Content-Type and error handling", () => {
     expect(res.headers["content-type"]).toMatch(/application\/json/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// HEL-717 — control-plane budget edit endpoints (the ENFORCED caps)
+// ---------------------------------------------------------------------------
+describe("control-plane budget edit endpoints (HEL-717)", () => {
+  async function seedTeam(): Promise<{
+    teamId: string;
+    agents: Array<{ id: string; roleKey: string }>;
+  }> {
+    const res = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-seed-budget")
+      .send({ templateId: "tpl-support-bot" });
+    return { teamId: res.body.team.id as string, agents: res.body.agents };
+  }
+
+  it("updates a team's monthly budget + tool ceilings (enforced fields)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-team-budget")
+      .send({ budgetMonthlyUsd: 500, toolBudgetCeilings: { web_search: 50 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(500);
+    expect(res.body.toolBudgetCeilings).toEqual({ web_search: 50 });
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "team_lifecycle",
+        action: "team_budget_updated",
+        target: { type: "team", id: teamId },
+      })
+    );
+  });
+
+  it("updates an agent's monthly budget", async () => {
+    const { agents } = await seedTeam();
+    const agentId = agents[0].id;
+    const res = await request(app)
+      .put(`/api/control-plane/agents/${agentId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-agent-budget")
+      .send({ budgetMonthlyUsd: 200 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(200);
+    expect(recordControlPlaneAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "agent_lifecycle",
+        action: "agent_budget_updated",
+        target: { type: "agent", id: agentId },
+      })
+    );
+  });
+
+  it("rejects a negative team budget with 400", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-neg-budget")
+      .send({ budgetMonthlyUsd: -5 });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty team budget update with 400", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-empty-budget")
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for an unknown team", async () => {
+    const res = await request(app)
+      .put("/api/control-plane/teams/00000000-0000-0000-0000-000000000000/budget")
+      .set(asAuth())
+      .set("X-Paperclip-Run-Id", "run-missing-team")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
+
+  it("requires the X-Paperclip-Run-Id header (400)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(400);
+  });
+
+  it("forbids viewers from editing a budget (403, role-gated at the mount)", async () => {
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-test-role", "viewer")
+      .set("X-Paperclip-Run-Id", "run-viewer-budget")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects a cross-workspace team budget edit with 404 (Codex P1 tenancy)", async () => {
+    // Team is seeded in the default workspace ("test-workspace-id"). Issue the
+    // edit while the active/authorized workspace is a DIFFERENT one: requireRole
+    // passes for that workspace, but the team isn't in it, so it must 404.
+    const { teamId } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", "another-workspace-id")
+      .set("X-Paperclip-Run-Id", "run-xws-team")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a cross-workspace agent budget edit with 404 (Codex P1 tenancy)", async () => {
+    const { agents } = await seedTeam();
+    const res = await request(app)
+      .put(`/api/control-plane/agents/${agents[0].id}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", "another-workspace-id")
+      .set("X-Paperclip-Run-Id", "run-xws-agent")
+      .send({ budgetMonthlyUsd: 100 });
+    expect(res.status).toBe(404);
+  });
+
+  it("lets a non-creator workspace admin edit a team budget (collaborative, Codex P2)", async () => {
+    // The in-memory harness keys workspace by user unless x-workspace-id is set,
+    // so pin BOTH requests to a shared workspace to model two members of one
+    // workspace. Team is created by "teammate-user"; edited by the default
+    // "test-user" — a different member with admin/operator.
+    const sharedWorkspace = "shared-ws-collab";
+    const seedRes = await request(app)
+      .post("/api/control-plane/deployments/workflow")
+      .set(asAuth("teammate-user"))
+      .set("x-workspace-id", sharedWorkspace)
+      .set("X-Paperclip-Run-Id", "run-seed-collab")
+      .send({ templateId: "tpl-support-bot" });
+    const teamId = seedRes.body.team.id as string;
+
+    // Editing as a non-creator member must succeed — workspace access, not
+    // creator ownership, is the boundary (would 404 under the old creator-only
+    // lookup).
+    const res = await request(app)
+      .put(`/api/control-plane/teams/${teamId}/budget`)
+      .set(asAuth())
+      .set("x-workspace-id", sharedWorkspace)
+      .set("X-Paperclip-Run-Id", "run-collab-budget")
+      .send({ budgetMonthlyUsd: 321 });
+    expect(res.status).toBe(200);
+    expect(res.body.budgetMonthlyUsd).toBe(321);
+  });
+});

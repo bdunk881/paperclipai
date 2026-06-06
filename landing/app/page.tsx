@@ -14,6 +14,7 @@ import { buildLandingApiUrl } from "@/lib/publicApi";
 import {
   getCreditPackOverlays,
   getFaqItems,
+  getFeatures,
   getHero,
   getPricingOverlays,
   getTestimonials,
@@ -102,6 +103,27 @@ const FAQ_FALLBACK: Array<{ question: string; answer: string }> = [
     question: "What if an agent tries something risky?",
     answer:
       "You set approval policies. Risky steps pause for your sign-off; everything else runs and logs to a live activity feed.",
+  },
+];
+
+// Hardcoded fallback for the 3-up "how it works" features. A Sanity `feature`
+// set (matched by `order`) overrides the title/description per card; the SVG art
+// and numbered eyebrow stay fixed (the illustration is intentionally not editable).
+const FEATURE_FALLBACK: Array<{ title: string; description: string }> = [
+  {
+    title: "Write a mission, get an org.",
+    description:
+      "Type the work that needs doing. AutoFlow drafts a PRD, picks the right roles, sets budgets, and proposes who reports to whom — in one shot.",
+  },
+  {
+    title: "Approve what matters. Skip the rest.",
+    description:
+      "Agents file tickets when a step crosses your policy line — spend, scope, risk. Stamp it from email, Slack, or your phone. Everything else just runs.",
+  },
+  {
+    title: "A paper trail your CFO will love.",
+    description:
+      "Every step, every dollar, every model call — recorded, attributable, exportable. Set per-agent caps so a runaway loop never becomes a runaway invoice.",
   },
 ];
 
@@ -245,10 +267,18 @@ type HeroContent = {
   secondaryCta: string | null;
 };
 
+type FeatureContent = {
+  title: string;
+  description: string;
+  icon: string | null;
+  order: number;
+};
+
 interface HomeLoaderData extends PricingLoaderData {
   testimonials: Testimonial[];
   faqItems: FaqItem[];
   hero: HeroContent | null;
+  features: FeatureContent[] | null;
 }
 
 // Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
@@ -410,7 +440,7 @@ export async function loader(): Promise<HomeLoaderData> {
     }
   })();
 
-  const [apiData, tierOverlays, packOverlays, testimonials, faqItems, hero] =
+  const [apiData, tierOverlays, packOverlays, testimonials, faqItems, hero, features] =
     await Promise.all([
       apiPromise,
       getPricingOverlays(),
@@ -418,6 +448,7 @@ export async function loader(): Promise<HomeLoaderData> {
       getTestimonials(),
       getFaqItems(),
       getHero(),
+      getFeatures(),
     ]);
 
   return {
@@ -430,6 +461,8 @@ export async function loader(): Promise<HomeLoaderData> {
       ({ question, answer }) => ({ question, answer }),
     ),
     hero,
+    // Sanity features (matched by `order`) override per-card copy; null → fallback.
+    features,
   };
 }
 
@@ -555,8 +588,14 @@ function PricingCta({ tier }: { tier: Tier }) {
 // Page
 
 export default function Home() {
-  const { tiers, packs, testimonials, faqItems, hero } =
+  const { tiers, packs, testimonials, faqItems, hero, features } =
     useLoaderData() as HomeLoaderData;
+
+  // 3-up features: a Sanity `feature` (matched by `order`) overrides the card's
+  // title/description; otherwise fall back to the hardcoded copy. The SVG art and
+  // the numbered eyebrow stay fixed.
+  const featAt = (order: number) =>
+    features?.find((f) => f.order === order) ?? FEATURE_FALLBACK[order - 1];
 
   return (
     <>
@@ -846,11 +885,8 @@ export default function Home() {
               </svg>
             </div>
             <span className="af2-eyebrow">01 · Mission</span>
-            <h3>Write a mission, get an org.</h3>
-            <p>
-              Type the work that needs doing. AutoFlow drafts a PRD, picks the right roles, sets
-              budgets, and proposes who reports to whom — in one shot.
-            </p>
+            <h3>{featAt(1).title}</h3>
+            <p>{featAt(1).description}</p>
           </div>
 
           {/* 2 */}
@@ -887,11 +923,8 @@ export default function Home() {
               </svg>
             </div>
             <span className="af2-eyebrow">02 · Tickets</span>
-            <h3>Approve what matters. Skip the rest.</h3>
-            <p>
-              Agents file tickets when a step crosses your policy line — spend, scope, risk. Stamp
-              it from email, Slack, or your phone. Everything else just runs.
-            </p>
+            <h3>{featAt(2).title}</h3>
+            <p>{featAt(2).description}</p>
           </div>
 
           {/* 3 */}
@@ -908,11 +941,8 @@ export default function Home() {
               </svg>
             </div>
             <span className="af2-eyebrow">03 · Receipts</span>
-            <h3>A paper trail your CFO will love.</h3>
-            <p>
-              Every step, every dollar, every model call — recorded, attributable, exportable. Set
-              per-agent caps so a runaway loop never becomes a runaway invoice.
-            </p>
+            <h3>{featAt(3).title}</h3>
+            <p>{featAt(3).description}</p>
           </div>
         </div>
       </section>

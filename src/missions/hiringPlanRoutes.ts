@@ -46,6 +46,7 @@ import {
   type HiringPlanDraft,
 } from "./hiringPlanDraft";
 import { resolveModelForTier } from "../engine/llmRouter";
+import { loadComposioToolkitSlugSet, recognizeComposioToolkitSlugs } from "./toolCatalogProvider";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
 import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../billing/entitlements";
@@ -241,6 +242,13 @@ interface AgentInsertParams {
   budgetMonthlyUsd: number;
   skills: string[];
   mandate: string;
+  /**
+   * HEL-762: the agent's chosen Composio toolkit slugs (recognized against the
+   * catalog). Persisted to agents.allowed_integration_slugs so the runtime
+   * per-agent tool gate (P3b) is enforced. null/undefined ⇒ column stays NULL =
+   * unrestricted (the prior behavior).
+   */
+  allowedIntegrationSlugs?: string[] | null;
 }
 
 export async function insertAgent(
@@ -264,11 +272,11 @@ export async function insertAgent(
     `INSERT INTO agents (
        id, workspace_id, user_id, team_id, company_id,
        name, role_key, model, instructions, budget_monthly_usd,
-       skills, schedule, status, metadata
+       skills, schedule, status, metadata, allowed_integration_slugs
      ) VALUES (
        $1, $2, $3, $4, $5,
        $6, $7, $8, $9, $10,
-       $11::jsonb, '{"type":"manual"}'::jsonb, 'active', $12::jsonb
+       $11::jsonb, '{"type":"manual"}'::jsonb, 'active', $12::jsonb, $13::jsonb
      )`,
     [
       id,
@@ -283,6 +291,11 @@ export async function insertAgent(
       params.budgetMonthlyUsd,
       JSON.stringify(params.skills),
       metadata,
+      // HEL-762: NULL = unrestricted (no toolkits recognized / Composio off) —
+      // the prior default; a non-empty array gates the agent to those toolkits.
+      params.allowedIntegrationSlugs && params.allowedIntegrationSlugs.length > 0
+        ? JSON.stringify(params.allowedIntegrationSlugs)
+        : null,
     ],
   );
   return { id, model };
@@ -784,10 +797,20 @@ export function createHiringPlanRoutes(
             // 1. Insert agents, build roleKey → agentId map.
             const agentRows: ProvisionedAgentRow[] = [];
             const roleKeyToAgentId = new Map<string, string>();
+            // HEL-762: recognize the plan's chosen tool slugs against the Composio
+            // toolkit catalog ONCE, so each agent's allowed_integration_slugs is
+            // seeded from the toolkits it actually picked — making the runtime
+            // per-agent tool gate (P3b) real. Empty set when Composio is off →
+            // agents stay unrestricted (the prior behavior).
+            const composioToolkitSlugs = await loadComposioToolkitSlugSet();
             // HEL-154: rows we seeded so the response can deep-link to them
             // and the post-commit scheduler register knows what to enqueue.
             const seededRoutines: SeededRoutineRow[] = [];
             for (const agent of provisionDraft.provisioningPlan.agents) {
+              const recognizedToolkits = recognizeComposioToolkitSlugs(
+                agent.tools,
+                composioToolkitSlugs,
+              );
               const { id, model } = await insertAgent(
                 client,
                 {
@@ -803,6 +826,8 @@ export function createHiringPlanRoutes(
                   budgetMonthlyUsd: agent.budgetMonthlyUsd ?? 0,
                   skills: agent.skills,
                   mandate: agent.mandate,
+                  allowedIntegrationSlugs:
+                    recognizedToolkits.length > 0 ? recognizedToolkits : null,
                 },
                 defaultProvider,
               );

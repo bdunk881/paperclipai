@@ -1,16 +1,27 @@
-import { loadGenerationToolCatalog } from "./toolCatalogProvider";
-import { queryToolkitCatalog, type ToolkitCatalogEntry, type ToolkitCatalogPage } from "../integrations/composio/broker/toolkitCatalog";
+import {
+  loadComposioToolkitSlugSet,
+  loadGenerationToolCatalog,
+  recognizeComposioToolkitSlugs,
+} from "./toolCatalogProvider";
+import {
+  loadCatalog,
+  queryToolkitCatalog,
+  type ToolkitCatalogEntry,
+  type ToolkitCatalogPage,
+} from "../integrations/composio/broker/toolkitCatalog";
 import { listConnections, type ConnectionView } from "../integrations/composio/broker/connectionService";
 import type { ComposioConnectionStatus } from "../integrations/composio/broker/connectedAccountStore";
 
 jest.mock("../integrations/composio/broker/toolkitCatalog", () => ({
   queryToolkitCatalog: jest.fn(),
+  loadCatalog: jest.fn(),
 }));
 jest.mock("../integrations/composio/broker/connectionService", () => ({
   listConnections: jest.fn(),
 }));
 
 const mockQuery = queryToolkitCatalog as jest.MockedFunction<typeof queryToolkitCatalog>;
+const mockLoadCatalog = loadCatalog as jest.MockedFunction<typeof loadCatalog>;
 const mockListConnections = listConnections as jest.MockedFunction<typeof listConnections>;
 
 function entry(slug: string, name: string, description: string | null = null): ToolkitCatalogEntry {
@@ -106,5 +117,45 @@ describe("loadGenerationToolCatalog (HEL-760 / P5a)", () => {
       catalog: [],
       available: false,
     });
+  });
+});
+
+describe("recognizeComposioToolkitSlugs (HEL-762)", () => {
+  it("keeps only real toolkit slugs, deduped + lowercased", () => {
+    const set = new Set(["github", "slack", "gmail"]);
+    expect(
+      recognizeComposioToolkitSlugs(["GitHub", "heygen", "slack", "slack", "buffer"], set),
+    ).toEqual(["github", "slack"]);
+  });
+
+  it("returns [] when nothing matches (free-text only)", () => {
+    expect(recognizeComposioToolkitSlugs(["heygen", "buffer"], new Set(["github"]))).toEqual([]);
+  });
+});
+
+describe("loadComposioToolkitSlugSet (HEL-762)", () => {
+  const ORIGINAL = { ...process.env };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...ORIGINAL, COMPOSIO_ENABLED: "true", COMPOSIO_API_KEY: "ck_test" };
+  });
+  afterEach(() => {
+    process.env = { ...ORIGINAL };
+  });
+
+  it("returns the lowercased catalog slugs when enabled", async () => {
+    mockLoadCatalog.mockResolvedValue([entry("github", "GitHub"), entry("slack", "Slack")]);
+    await expect(loadComposioToolkitSlugSet()).resolves.toEqual(new Set(["github", "slack"]));
+  });
+
+  it("returns an empty set when Composio is disabled", async () => {
+    delete process.env.COMPOSIO_API_KEY;
+    await expect(loadComposioToolkitSlugSet()).resolves.toEqual(new Set());
+    expect(mockLoadCatalog).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty set on a catalog error (best-effort)", async () => {
+    mockLoadCatalog.mockRejectedValue(new Error("broker down"));
+    await expect(loadComposioToolkitSlugSet()).resolves.toEqual(new Set());
   });
 });

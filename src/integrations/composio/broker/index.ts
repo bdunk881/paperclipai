@@ -1,0 +1,22 @@
+/**
+ * Composio backend broker (HEL-720 / HEL-721).
+ *
+ * One shared AutoFlow-owned Composio project; tenancy by `userId = workspaceId`.
+ * This is the replacement for the legacy per-user `src/integrations/composio`
+ * connector (removed in PR-B). Everything is gated behind `isComposioEnabled()`.
+ */
+export {
+  isComposioEnabled,
+  composioApiKeyOrThrow,
+  composioApiBaseUrl,
+  composioUserId,
+  workspaceIdFromComposioUserId,
+  warnIfComposioUnconfigured,
+  resetComposioConfigWarningForTests,
+} from "./config";
+
+export {
+  getComposioBroker,
+  resetComposioBrokerForTests,
+  type ComposioBrokerClient,
+} from "./client";

@@ -18,7 +18,7 @@
  */
 
 import { isComposioEnabled } from "../integrations/composio/broker/config";
-import { connectedAccountStore } from "../integrations/composio/broker/connectedAccountStore";
+import { listConnections } from "../integrations/composio/broker/connectionService";
 import { queryToolkitCatalog } from "../integrations/composio/broker/toolkitCatalog";
 
 export interface ConnectedToolkit {
@@ -64,7 +64,13 @@ export async function loadGenerationToolCatalog(
   }
 
   try {
-    const rows = await connectedAccountStore.listByWorkspace({
+    // Use listConnections (not the raw store) so out-of-band expiry/revocation is
+    // reconciled against Composio before we mark a toolkit "connected" — reading
+    // the store directly could expose a stale-ACTIVE row the workspace no longer
+    // has, so generation would plan around a phantom-connected toolkit and
+    // execution would fail later (HEL-760 review). listConnections is best-effort
+    // and falls back to the local rows when the broker call fails.
+    const rows = await listConnections({
       workspaceId: input.workspaceId,
       userId: input.userId,
     });

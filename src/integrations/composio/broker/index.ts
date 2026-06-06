@@ -45,9 +45,12 @@ export {
 export {
   beginConnect,
   completeConnect,
+  listConnections,
+  disconnectAccount,
   normalizeConnectionStatus,
   type BeginConnectResult,
   type CompleteConnectResult,
+  type ConnectionView,
 } from "./connectionService";
 
 export {

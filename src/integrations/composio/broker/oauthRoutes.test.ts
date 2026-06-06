@@ -5,15 +5,19 @@ jest.mock("./config", () => ({ isComposioEnabled: jest.fn() }));
 jest.mock("./connectionService", () => ({
   beginConnect: jest.fn(),
   completeConnect: jest.fn(),
+  listConnections: jest.fn(),
+  disconnectAccount: jest.fn(),
 }));
 
 import { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";
 import { isComposioEnabled } from "./config";
-import { beginConnect, completeConnect } from "./connectionService";
+import { beginConnect, completeConnect, listConnections, disconnectAccount } from "./connectionService";
 
 const enabled = isComposioEnabled as jest.MockedFunction<typeof isComposioEnabled>;
 const begin = beginConnect as jest.MockedFunction<typeof beginConnect>;
 const complete = completeConnect as jest.MockedFunction<typeof completeConnect>;
+const list = listConnections as jest.MockedFunction<typeof listConnections>;
+const disconnect = disconnectAccount as jest.MockedFunction<typeof disconnectAccount>;
 
 function authedApp() {
   const app = express();
@@ -108,5 +112,49 @@ describe("composio oauth routes (HEL-740)", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain("status=error");
     expect(res.headers.location).toContain("message=");
+  });
+
+  it("GET /connections returns 200 with the workspace's connections", async () => {
+    list.mockResolvedValue([
+      {
+        connectedAccountId: "ca_1",
+        toolkit: "github",
+        status: "ACTIVE",
+        authConfigId: "ac_1",
+        createdAt: "2026-06-06T00:00:00.000Z",
+        updatedAt: "2026-06-06T00:00:00.000Z",
+      },
+    ]);
+
+    const res = await request(authedApp()).get("/api/composio/connections");
+
+    expect(res.status).toBe(200);
+    expect(res.body.connections).toHaveLength(1);
+    expect(res.body.connections[0]).toMatchObject({ connectedAccountId: "ca_1", toolkit: "github" });
+    expect(list).toHaveBeenCalledWith({ workspaceId: "ws-A", userId: "user-A" });
+  });
+
+  it("GET /connections returns 401 without auth context", async () => {
+    const app = express();
+    app.use("/api/composio", composioConnectRouter); // no auth middleware
+    const res = await request(app).get("/api/composio/connections");
+    expect(res.status).toBe(401);
+  });
+
+  it("DELETE /connections/:caId returns 204", async () => {
+    disconnect.mockResolvedValue(true);
+
+    const res = await request(authedApp()).delete("/api/composio/connections/ca_1");
+
+    expect(res.status).toBe(204);
+    expect(disconnect).toHaveBeenCalledWith({ workspaceId: "ws-A", userId: "user-A" }, "ca_1");
+  });
+
+  it("DELETE /connections/:caId returns 404 when not found for the workspace", async () => {
+    disconnect.mockResolvedValue(false);
+
+    const res = await request(authedApp()).delete("/api/composio/connections/ca_unknown");
+
+    expect(res.status).toBe(404);
   });
 });

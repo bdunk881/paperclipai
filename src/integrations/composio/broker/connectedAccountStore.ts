@@ -17,7 +17,7 @@
 
 import { randomUUID } from "crypto";
 import { isPostgresConfigured, inMemoryAllowed, getPostgresPool } from "../../../db/postgres";
-import { withWorkspaceContext } from "../../../middleware/workspaceContext";
+import { withWorkspaceContext, withSystemAdminContext } from "../../../middleware/workspaceContext";
 
 export type ComposioConnectionStatus = "INITIATED" | "ACTIVE" | "INACTIVE" | "EXPIRED";
 
@@ -184,6 +184,33 @@ export const connectedAccountStore = {
       });
     }
     return memWorkspace(ctx.workspaceId).get(connectedAccountId) ?? null;
+  },
+
+  /**
+   * Cross-workspace lookup by Composio ca_ id with NO request context (for the
+   * inbound webhook, which has no session). Reads under withSystemAdminContext so
+   * the migration-108 admin_read (FOR SELECT USING app_is_platform_admin()) policy
+   * admits the SELECT; the ca_ id is globally unique, so at most one row.
+   */
+  async findByConnectedAccountId(
+    connectedAccountId: string,
+  ): Promise<ComposioConnectedAccountRow | null> {
+    if (backend() === "pg") {
+      const pool = getPostgresPool();
+      return withSystemAdminContext(pool, async (client) => {
+        const res = await client.query<ConnectedAccountDbRow>(
+          `SELECT * FROM composio_connected_accounts WHERE connected_account_id = $1`,
+          [connectedAccountId],
+        );
+        return res.rows[0] ? rowFromDb(res.rows[0]) : null;
+      });
+    }
+    // In-memory (dev/test): scan every workspace bucket (no RLS).
+    for (const bucket of memStore.values()) {
+      const row = bucket.get(connectedAccountId);
+      if (row) return row;
+    }
+    return null;
   },
 
   async listByWorkspace(ctx: ComposioWorkspaceContext): Promise<ComposioConnectedAccountRow[]> {

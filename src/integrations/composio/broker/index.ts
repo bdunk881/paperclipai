@@ -62,6 +62,13 @@ export {
 
 export { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";
 
+export { composioWebhookRouter } from "./webhookRoutes";
+export {
+  handleComposioWebhook,
+  type ComposioWebhookHeaders,
+  type ComposioWebhookOutcome,
+} from "./webhookService";
+
 export {
   loadCatalog,
   queryToolkitCatalog,

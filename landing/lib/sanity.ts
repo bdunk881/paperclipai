@@ -63,6 +63,72 @@ export async function getHero() {
   }>(`*[_type == "hero"][0]{ eyebrow, headline, subheadline, primaryCta, secondaryCta }`);
 }
 
+/** Navigation singleton. Returns null when unconfigured or unauthored — caller falls back to hardcoded labels. */
+export async function getNavigation() {
+  return sanityFetch<{
+    productLabel: string | null;
+    workforceLabel: string | null;
+    integrationsLabel: string | null;
+    pricingLabel: string | null;
+    blogLabel: string | null;
+    gitHubLabel: string | null;
+    gitHubUrl: string | null;
+    signInLabel: string | null;
+    startFreeLabel: string | null;
+  }>(
+    `*[_type == "navigation"][0]{ productLabel, workforceLabel, integrationsLabel, pricingLabel, blogLabel, gitHubLabel, gitHubUrl, signInLabel, startFreeLabel }`,
+  );
+}
+
+/** Pitch section (singleton). Returns null when unconfigured or unauthored — caller falls back to hardcoded copy. */
+export async function getPitch() {
+  return sanityFetch<{
+    line1: string | null;
+    line2: string | null;
+    line3Prefix: string | null;
+    line3Highlight: string | null;
+    line3Suffix: string | null;
+  }>(`*[_type == "pitch"][0]{ line1, line2, line3Prefix, line3Highlight, line3Suffix }`);
+}
+
+/**
+ * Section intros (eyebrow + optional H2 heading), one per `sectionKey`.
+ * Returns null when unconfigured — caller falls back to hardcoded copy per
+ * section. The testimonials section uses the eyebrow only (no heading).
+ */
+export async function getSectionIntros() {
+  return sanityFetch<
+    { sectionKey: string; eyebrow: string | null; heading: string | null }[]
+  >(`*[_type == "sectionIntro"]{ sectionKey, eyebrow, heading }`);
+}
+
+/** Final CTA section (singleton). Returns null when unconfigured or unauthored — caller falls back to hardcoded copy. */
+export async function getFinalCta() {
+  return sanityFetch<{
+    headline: string | null;
+    description: string | null;
+    primaryCtaLabel: string | null;
+    primaryCtaUrl: string | null;
+    secondaryCtaLabel: string | null;
+    secondaryCtaUrl: string | null;
+  }>(
+    `*[_type == "finalCta"][0]{ headline, description, primaryCtaLabel, primaryCtaUrl, secondaryCtaLabel, secondaryCtaUrl }`,
+  );
+}
+
+/** Homepage footer (singleton). Returns null when unconfigured or unauthored — caller falls back to hardcoded copy. */
+export async function getFooter() {
+  return sanityFetch<{
+    brandLine: string | null;
+    links: Array<{
+      label: string | null;
+      url: string | null;
+      isExternal?: boolean;
+    }> | null;
+    copyrightText: string | null;
+  }>(`*[_type == "footer"][0]{ brandLine, links[]{ label, url, isExternal }, copyrightText }`);
+}
+
 export async function getFaqItems() {
   return sanityFetch<
     { question: string; answer: string; order: number }[]

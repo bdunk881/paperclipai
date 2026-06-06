@@ -15,8 +15,13 @@ import {
   getCreditPackOverlays,
   getFaqItems,
   getFeatures,
+  getFinalCta,
+  getFooter,
   getHero,
+  getNavigation,
+  getPitch,
   getPricingOverlays,
+  getSectionIntros,
   getTestimonials,
   type CreditPackOverlay,
   type PricingTierOverlay,
@@ -274,11 +279,63 @@ type FeatureContent = {
   order: number;
 };
 
+type NavigationContent = {
+  productLabel: string | null;
+  workforceLabel: string | null;
+  integrationsLabel: string | null;
+  pricingLabel: string | null;
+  blogLabel: string | null;
+  gitHubLabel: string | null;
+  gitHubUrl: string | null;
+  signInLabel: string | null;
+  startFreeLabel: string | null;
+};
+
+type PitchContent = {
+  line1: string | null;
+  line2: string | null;
+  line3Prefix: string | null;
+  line3Highlight: string | null;
+  line3Suffix: string | null;
+};
+
+type SectionIntro = {
+  sectionKey: string;
+  eyebrow: string | null;
+  heading: string | null;
+};
+
+type FinalCtaContent = {
+  headline: string | null;
+  description: string | null;
+  primaryCtaLabel: string | null;
+  primaryCtaUrl: string | null;
+  secondaryCtaLabel: string | null;
+  secondaryCtaUrl: string | null;
+};
+
+type FooterLink = {
+  label: string | null;
+  url: string | null;
+  isExternal?: boolean;
+};
+
+type FooterContent = {
+  brandLine: string | null;
+  links: FooterLink[] | null;
+  copyrightText: string | null;
+};
+
 interface HomeLoaderData extends PricingLoaderData {
   testimonials: Testimonial[];
   faqItems: FaqItem[];
   hero: HeroContent | null;
   features: FeatureContent[] | null;
+  nav: NavigationContent | null;
+  pitch: PitchContent | null;
+  sectionIntros: Record<string, SectionIntro>;
+  finalCta: FinalCtaContent | null;
+  footer: FooterContent | null;
 }
 
 // Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
@@ -440,16 +497,39 @@ export async function loader(): Promise<HomeLoaderData> {
     }
   })();
 
-  const [apiData, tierOverlays, packOverlays, testimonials, faqItems, hero, features] =
-    await Promise.all([
-      apiPromise,
-      getPricingOverlays(),
-      getCreditPackOverlays(),
-      getTestimonials(),
-      getFaqItems(),
-      getHero(),
-      getFeatures(),
-    ]);
+  const [
+    apiData,
+    tierOverlays,
+    packOverlays,
+    testimonials,
+    faqItems,
+    hero,
+    features,
+    nav,
+    pitch,
+    sectionIntros,
+    finalCta,
+    footer,
+  ] = await Promise.all([
+    apiPromise,
+    getPricingOverlays(),
+    getCreditPackOverlays(),
+    getTestimonials(),
+    getFaqItems(),
+    getHero(),
+    getFeatures(),
+    getNavigation(),
+    getPitch(),
+    getSectionIntros(),
+    getFinalCta(),
+    getFooter(),
+  ]);
+
+  // Index section intros by key for O(1) per-section lookup in render. Missing
+  // keys fall through to the hardcoded eyebrow/heading in the JSX.
+  const sectionIntrosByKey: Record<string, SectionIntro> = sectionIntros
+    ? Object.fromEntries(sectionIntros.map((s) => [s.sectionKey, s]))
+    : {};
 
   return {
     tiers: mergeOverlays(apiData.tiers, tierOverlays),
@@ -463,6 +543,11 @@ export async function loader(): Promise<HomeLoaderData> {
     hero,
     // Sanity features (matched by `order`) override per-card copy; null → fallback.
     features,
+    nav,
+    pitch,
+    sectionIntros: sectionIntrosByKey,
+    finalCta,
+    footer,
   };
 }
 
@@ -588,7 +673,7 @@ function PricingCta({ tier }: { tier: Tier }) {
 // Page
 
 export default function Home() {
-  const { tiers, packs, testimonials, faqItems, hero, features } =
+  const { tiers, packs, testimonials, faqItems, hero, features, nav, pitch, sectionIntros, finalCta, footer } =
     useLoaderData() as HomeLoaderData;
 
   // 3-up features: a Sanity `feature` (matched by `order`) overrides the card's
@@ -624,20 +709,20 @@ export default function Home() {
               AutoFlow
             </span>
           </Link>
-          <a href="#product">Product</a>
-          <a href="#workforce">Workforce</a>
-          <a href="#integrations">Integrations</a>
-          <a href="#pricing">Pricing</a>
-          <Link to="/blog">Blog</Link>
-          <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
-            GitHub
+          <a href="#product">{nav?.productLabel ?? "Product"}</a>
+          <a href="#workforce">{nav?.workforceLabel ?? "Workforce"}</a>
+          <a href="#integrations">{nav?.integrationsLabel ?? "Integrations"}</a>
+          <a href="#pricing">{nav?.pricingLabel ?? "Pricing"}</a>
+          <Link to="/blog">{nav?.blogLabel ?? "Blog"}</Link>
+          <a href={nav?.gitHubUrl ?? GITHUB_URL} target="_blank" rel="noreferrer noopener">
+            {nav?.gitHubLabel ?? "GitHub"}
           </a>
           <span style={{ flex: 1 }} />
           <Link to="/signup" style={{ fontSize: 13.5 }}>
-            Sign in
+            {nav?.signInLabel ?? "Sign in"}
           </Link>
           <Link to="/signup" className="af2-btn af2-btn-primary af2-btn-sm">
-            Start free
+            {nav?.startFreeLabel ?? "Start free"}
           </Link>
         </div>
       </header>
@@ -835,21 +920,26 @@ export default function Home() {
       {/* PITCH */}
       <section className="lp-pitch">
         <p>
-          n8n gave you nodes.
+          {pitch?.line1 ?? "n8n gave you nodes."}
           <br />
-          Zapier gave you triggers.
+          {pitch?.line2 ?? "Zapier gave you triggers."}
           <br />
-          <span>AutoFlow gives you</span>{" "}
+          <span>{pitch?.line3Prefix ?? "AutoFlow gives you"}</span>{" "}
           <span className="lp-headline-underline" style={{ color: "var(--af2-ink)" }}>
-            people
+            {pitch?.line3Highlight ?? "people"}
           </span>{" "}
-          <span>— a team you can brief, budget, and trust with a paper trail.</span>
+          <span>
+            {pitch?.line3Suffix ??
+              "— a team you can brief, budget, and trust with a paper trail."}
+          </span>
         </p>
       </section>
 
       {/* 3-UP FEATURES */}
       <section className="lp-features" id="product">
-        <span className="af2-eyebrow">How it works</span>
+        <span className="af2-eyebrow">
+          {sectionIntros["how-it-works"]?.eyebrow ?? "How it works"}
+        </span>
         <h2
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
@@ -858,7 +948,8 @@ export default function Home() {
             maxWidth: 760,
           }}
         >
-          Three things, one workflow: brief a mission, let your team plan, ship with a stamp.
+          {sectionIntros["how-it-works"]?.heading ??
+            "Three things, one workflow: brief a mission, let your team plan, ship with a stamp."}
         </h2>
 
         <div className="lp-feature-grid">
@@ -949,7 +1040,9 @@ export default function Home() {
 
       {/* BIG MOCK */}
       <section className="lp-mock-section" id="workforce">
-        <span className="af2-eyebrow">The workplace, not the workflow</span>
+        <span className="af2-eyebrow">
+          {sectionIntros["workforce"]?.eyebrow ?? "The workplace, not the workflow"}
+        </span>
         <h2
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
@@ -958,7 +1051,8 @@ export default function Home() {
             maxWidth: 760,
           }}
         >
-          Workspaces for each company. Pods for each function. Receipts for each move.
+          {sectionIntros["workforce"]?.heading ??
+            "Workspaces for each company. Pods for each function. Receipts for each move."}
         </h2>
 
         <div className="lp-mock">
@@ -1138,7 +1232,9 @@ export default function Home() {
 
       {/* INTEGRATIONS */}
       <section className="lp-features" id="integrations">
-        <span className="af2-eyebrow">Connect everything · BYOK everywhere</span>
+        <span className="af2-eyebrow">
+          {sectionIntros["integrations"]?.eyebrow ?? "Connect everything · BYOK everywhere"}
+        </span>
         <h2
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
@@ -1147,7 +1243,8 @@ export default function Home() {
             maxWidth: 760,
           }}
         >
-          16 integrations live. Five model providers. One MCP-friendly contract for the rest.
+          {sectionIntros["integrations"]?.heading ??
+            "16 integrations live. Five model providers. One MCP-friendly contract for the rest."}
         </h2>
 
         <div
@@ -1175,7 +1272,7 @@ export default function Home() {
 
       {/* PRICING */}
       <section className="lp-pricing" id="pricing">
-        <span className="af2-eyebrow">Pricing</span>
+        <span className="af2-eyebrow">{sectionIntros["pricing"]?.eyebrow ?? "Pricing"}</span>
         <h2
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
@@ -1184,7 +1281,8 @@ export default function Home() {
             maxWidth: 760,
           }}
         >
-          Pay for outcomes, not seats. Bring your own model spend.
+          {sectionIntros["pricing"]?.heading ??
+            "Pay for outcomes, not seats. Bring your own model spend."}
         </h2>
         <p
           style={{
@@ -1225,7 +1323,9 @@ export default function Home() {
 
       {/* PAY-AS-YOU-GO CREDIT PACKS */}
       <section className="lp-credit-packs" id="credit-packs">
-        <span className="af2-eyebrow">Pay-as-you-go</span>
+        <span className="af2-eyebrow">
+          {sectionIntros["credit-packs"]?.eyebrow ?? "Pay-as-you-go"}
+        </span>
         <h2
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
@@ -1234,7 +1334,8 @@ export default function Home() {
             maxWidth: 820,
           }}
         >
-          Skip the vendor and api key setup. Buy credits and use our hosted models. Pay only when you run. Never expires.
+          {sectionIntros["credit-packs"]?.heading ??
+            "Skip the vendor and api key setup. Buy credits and use our hosted models. Pay only when you run. Never expires."}
         </h2>
         <p
           style={{
@@ -1320,7 +1421,9 @@ export default function Home() {
           style={{ padding: "60px 32px" }}
           aria-label="What early teams say"
         >
-          <span className="af2-eyebrow">From early teams</span>
+          <span className="af2-eyebrow">
+            {sectionIntros["testimonials"]?.eyebrow ?? "From early teams"}
+          </span>
           <div
             style={{
               display: "grid",
@@ -1370,7 +1473,7 @@ export default function Home() {
         id="faq"
         aria-label="Frequently asked questions"
       >
-        <span className="af2-eyebrow">Questions</span>
+        <span className="af2-eyebrow">{sectionIntros["faq"]?.eyebrow ?? "Questions"}</span>
         <h2
           style={{
             font: "400 36px/1.1 var(--af2-serif)",
@@ -1379,7 +1482,7 @@ export default function Home() {
             maxWidth: 700,
           }}
         >
-          The short version.
+          {sectionIntros["faq"]?.heading ?? "The short version."}
         </h2>
         <div style={{ maxWidth: 760 }}>
           {faqItems.map((f, i) => (
@@ -1417,9 +1520,13 @@ export default function Home() {
       {/* CTA */}
       <section className="lp-cta">
         <h2>
-          Hire your
-          <br />
-          first agent <em>today.</em>
+          {finalCta?.headline ?? (
+            <>
+              Hire your
+              <br />
+              first agent <em>today.</em>
+            </>
+          )}
         </h2>
         <p
           style={{
@@ -1429,33 +1536,72 @@ export default function Home() {
             margin: "24px auto 0",
           }}
         >
-          14 days free, no card. Cancel by deleting the workspace.
+          {finalCta?.description ??
+            "14 days free, no card. Cancel by deleting the workspace."}
         </p>
         <div style={{ marginTop: 30, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <Link to="/signup" className="af2-btn af2-btn-clay" style={{ padding: "14px 24px", fontSize: 14.5 }}>
-            Start free →
+          <Link
+            to={finalCta?.primaryCtaUrl ?? "/signup"}
+            className="af2-btn af2-btn-clay"
+            style={{ padding: "14px 24px", fontSize: 14.5 }}
+          >
+            {finalCta?.primaryCtaLabel ?? "Start free →"}
           </Link>
-          <Link to="/demo" className="af2-btn" style={{ padding: "14px 24px", fontSize: 14.5 }}>
-            Watch a 90s demo
+          <Link
+            to={finalCta?.secondaryCtaUrl ?? "/demo"}
+            className="af2-btn"
+            style={{ padding: "14px 24px", fontSize: 14.5 }}
+          >
+            {finalCta?.secondaryCtaLabel ?? "Watch a 90s demo"}
           </Link>
         </div>
       </section>
 
       {/* FOOTER */}
       <footer className="lp-foot">
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <AutoFlowMark size={20} />
-          <strong style={{ color: "var(--af2-ink)" }}>AutoFlow</strong> · workforce automation
-        </span>
+        {(() => {
+          // Brand line: "AutoFlow" is bold, the " · workforce automation" tail is
+          // plain. When Sanity provides a brandLine we split on the first " · "
+          // to preserve that exact bold/plain split.
+          const brandLine = footer?.brandLine ?? "AutoFlow · workforce automation";
+          const sepIndex = brandLine.indexOf(" · ");
+          const brandName = sepIndex >= 0 ? brandLine.slice(0, sepIndex) : brandLine;
+          const brandTail = sepIndex >= 0 ? brandLine.slice(sepIndex) : "";
+          return (
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <AutoFlowMark size={20} />
+              <strong style={{ color: "var(--af2-ink)" }}>{brandName}</strong>
+              {brandTail}
+            </span>
+          );
+        })()}
         <span style={{ flex: 1 }} />
-        <Link to="/blog">Blog</Link>
-        <a href="https://status.helloautoflow.com">Status</a>
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
-          GitHub
-        </a>
-        <Link to="/privacy">Privacy</Link>
-        <Link to="/terms">Terms</Link>
-        <span>© {new Date().getFullYear()}</span>
+        {footer?.links ? (
+          footer.links.map((link) => (
+            <span key={link.label ?? link.url}>
+              {link.isExternal ? (
+                <a href={link.url ?? "#"} target="_blank" rel="noreferrer noopener">
+                  {link.label}
+                </a>
+              ) : (
+                <Link to={link.url ?? "#"}>{link.label}</Link>
+              )}
+            </span>
+          ))
+        ) : (
+          <>
+            <Link to="/blog">Blog</Link>
+            <a href="https://status.helloautoflow.com">Status</a>
+            <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
+              GitHub
+            </a>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
+          </>
+        )}
+        <span>
+          {footer?.copyrightText ?? "©"} {new Date().getFullYear()}
+        </span>
       </footer>
     </>
   );

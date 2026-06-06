@@ -1,5 +1,10 @@
 import { heroSchema } from "./schemas/hero";
 import { featureSchema } from "./schemas/features";
+import { navigationSchema } from "./schemas/navigation";
+import { pitchSchema } from "./schemas/pitch";
+import { sectionIntroSchema } from "./schemas/sectionIntro";
+import { finalCtaSchema } from "./schemas/finalCta";
+import { footerSchema } from "./schemas/footer";
 import { pricingSchema } from "./schemas/pricing";
 import { creditPackSchema } from "./schemas/creditPack";
 import { testimonialSchema } from "./schemas/testimonials";
@@ -19,6 +24,11 @@ export const schemaTypes = [
   // documents
   heroSchema,
   featureSchema,
+  navigationSchema,
+  pitchSchema,
+  sectionIntroSchema,
+  finalCtaSchema,
+  footerSchema,
   pricingSchema,
   creditPackSchema,
   testimonialSchema,

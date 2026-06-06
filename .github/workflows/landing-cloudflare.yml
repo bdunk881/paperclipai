@@ -1,0 +1,190 @@
+name: Deploy Landing (Cloudflare Worker)
+
+# Builds landing/ (React Router v7 + Cloudflare Vite plugin) and deploys the
+# `autoflow-landing` **Worker** that serves https://helloautoflow.com.
+#
+# HEL-657: replaces the legacy `wrangler pages deploy build/client` step. Since
+# HEL-630 (#1356) the landing site is a Worker — SSR for /blog/:slug,
+# /sitemap.xml, /robots.txt plus Workers Assets for the prerendered/static
+# pages — and the helloautoflow.com custom domain was attached to that Worker in
+# the Cloudflare dashboard. The old Pages project is now orphaned (its
+# *.pages.dev deploys no longer serve the apex domain). This workflow deploys the
+# Worker instead:
+#   - push to `dev`            -> `wrangler deploy`          (PRODUCTION: the
+#                                                             landing prod branch
+#                                                             is `dev`)
+#   - PRs / other / dispatch   -> `wrangler versions upload` (preview version +
+#                                                             URL; no production
+#                                                             traffic shift)
+#
+# `wrangler` auto-discovers the redirected config the Cloudflare Vite plugin
+# emits at landing/.wrangler/deploy/config.json -> build/server/wrangler.json, so
+# we just run it from `landing/` after `npm run build` (no build/client path, no
+# --config). The custom domain is dashboard-managed and intentionally NOT
+# declared in wrangler.jsonc: `wrangler deploy` updates the Worker the domain
+# serves without needing DNS / custom-domain token scopes.
+
+on:
+  pull_request:
+    paths:
+      - "landing/**"
+      - ".github/workflows/landing-cloudflare.yml"
+  push:
+    paths:
+      - "landing/**"
+      - ".github/workflows/landing-cloudflare.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: landing-cloudflare-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy landing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Pull Cloudflare secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.9
+        with:
+          method: universal
+          client-id: ${{ secrets.INFISICAL_CLIENT_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: auto-flow-va-pt
+          env-slug: production
+
+      - name: Validate Cloudflare secrets
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required Infisical secret ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Inject NEXT_PUBLIC_API_URL for build (HEL-84)
+        # landing/lib/publicApi.ts reads NEXT_PUBLIC_API_URL.
+        #
+        # NB (HEL-657 audit): this value does NOT currently reach the
+        # pricing/checkout fetches. In the built *client* bundle Vite rewrites
+        # `process.env` -> `{}` (so `buildLandingApiUrl` sees `undefined`), and
+        # the Worker's runtime `vars` (wrangler.jsonc) don't include it either —
+        # so pricing SSR falls back to the bundled snapshot and checkout POSTs a
+        # relative path. Wiring it through (a Vite `define` for the client + a
+        # Worker `var` for SSR) is tracked as a separate follow-up; this step is
+        # kept intact so that fix is a one-line consumer change, not a CI change.
+        env:
+          TARGET_BRANCH: ${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET_BRANCH" == "dev" ]]; then
+            echo "NEXT_PUBLIC_API_URL=https://dev-api.helloautoflow.com" >> "$GITHUB_ENV"
+          elif [[ "$TARGET_BRANCH" == "staging" ]]; then
+            echo "NEXT_PUBLIC_API_URL=https://staging-api.helloautoflow.com" >> "$GITHUB_ENV"
+          else
+            echo "NEXT_PUBLIC_API_URL=https://api.helloautoflow.com" >> "$GITHUB_ENV"
+          fi
+
+      - name: Prepare landing build environment
+        run: |
+          set -euo pipefail
+          logo_key="${LOGO_DEV_PUBLISHABLE_KEY:-${VITE_LOGO_DEV_PUBLISHABLE_KEY:-}}"
+          if [[ -n "$logo_key" ]]; then
+            echo "LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+            echo "VITE_LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+            echo "NEXT_PUBLIC_LOGO_DEV_PUBLISHABLE_KEY=${logo_key}" >> "$GITHUB_ENV"
+          else
+            echo "::warning::LOGO_DEV_PUBLISHABLE_KEY is unset — CompanyLogo will fall back to initials"
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Build landing
+        working-directory: landing
+        run: npm run build
+
+      - name: Deploy Worker
+        id: deploy
+        working-directory: landing
+        # CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID come from the Infisical
+        # step above and are read by wrangler from the environment.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -uo pipefail
+
+          # Production landing deploys from `dev` (the historical Pages
+          # production branch, preserved for the Worker). A manual
+          # workflow_dispatch on `dev` also deploys production; everything else
+          # uploads a preview version that does NOT take production traffic.
+          is_prod="false"
+          if { [[ "$EVENT_NAME" == "push" ]] || [[ "$EVENT_NAME" == "workflow_dispatch" ]]; } \
+             && [[ "$REF_NAME" == "dev" ]]; then
+            is_prod="true"
+          fi
+
+          # NB: no `set -e` around wrangler — command-substitution under `set -e`
+          # discards the captured output on failure, which makes wrangler errors
+          # impossible to diagnose. Capture status explicitly instead.
+          set +e
+          if [[ "$is_prod" == "true" ]]; then
+            echo "::notice::Production deploy → wrangler deploy (serves https://helloautoflow.com)"
+            deploy_output="$(npx wrangler deploy 2>&1)"
+          else
+            echo "::notice::Preview deploy → wrangler versions upload (no production traffic)"
+            deploy_output="$(npx wrangler versions upload 2>&1)"
+          fi
+          deploy_status=$?
+          set -e
+
+          printf '%s\n' "$deploy_output"
+
+          if [[ $deploy_status -ne 0 ]]; then
+            echo "::error::wrangler exited with status ${deploy_status}"
+            exit "$deploy_status"
+          fi
+
+          {
+            echo "mode=$([[ "$is_prod" == "true" ]] && echo production || echo preview)"
+          } >> "$GITHUB_OUTPUT"
+
+          # Informational only — a successful deploy is exit 0, not the presence
+          # of a URL (the custom domain is dashboard-managed and may not be
+          # printed; preview URLs require workers.dev previews to be enabled).
+          deploy_url="$(printf '%s\n' "$deploy_output" \
+            | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev[^[:space:]]*' \
+            | tail -n 1 || true)"
+          if [[ -n "$deploy_url" ]]; then
+            echo "deployment-url=$deploy_url" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summarize deployment
+        if: always()
+        env:
+          DEPLOY_MODE: ${{ steps.deploy.outputs.mode }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
+        run: |
+          {
+            echo "## Landing Cloudflare Worker deploy"
+            echo
+            echo "- Mode: ${DEPLOY_MODE:-skipped/failed}"
+            if [[ "${DEPLOY_MODE:-}" == "production" ]]; then
+              echo "- Serves: https://helloautoflow.com"
+            fi
+            echo "- Preview / workers.dev URL: ${DEPLOYMENT_URL:-unavailable}"
+          } >> "$GITHUB_STEP_SUMMARY"

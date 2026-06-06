@@ -238,6 +238,13 @@ jobs:
           [[ -n "${STORAGE_S3_ENDPOINT:-}" ]] && args+=( "STORAGE_S3_ENDPOINT=${STORAGE_S3_ENDPOINT}" )
           [[ -n "${STORAGE_EXPORT_URL_TTL_SECONDS:-}" ]] && args+=( "STORAGE_EXPORT_URL_TTL_SECONDS=${STORAGE_EXPORT_URL_TTL_SECONDS}" )
           [[ -n "${OBSERVABILITY_EXPORT_MAX_ROWS:-}" ]] && args+=( "OBSERVABILITY_EXPORT_MAX_ROWS=${OBSERVABILITY_EXPORT_MAX_ROWS}" )
+          # HEL-743: Composio integration broker (HEL-720). Forward the shared
+          # project API key (+ optional base URL / webhook secret) from Infisical
+          # so isComposioEnabled() (flag from fly.api.dev.toml [env] AND this key)
+          # activates the broker on dev. Guarded so a not-yet-set var is omitted.
+          [[ -n "${COMPOSIO_API_KEY:-}" ]] && args+=( "COMPOSIO_API_KEY=${COMPOSIO_API_KEY}" )
+          [[ -n "${COMPOSIO_API_BASE_URL:-}" ]] && args+=( "COMPOSIO_API_BASE_URL=${COMPOSIO_API_BASE_URL}" )
+          [[ -n "${COMPOSIO_WEBHOOK_SECRET:-}" ]] && args+=( "COMPOSIO_WEBHOOK_SECRET=${COMPOSIO_WEBHOOK_SECRET}" )
 
           flyctl secrets set "${args[@]}" --app "${FLY_APP}" --stage
 

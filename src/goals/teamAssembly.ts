@@ -381,6 +381,20 @@ export const teamAssemblyRequestSchema = z.object({
   roleLibrary: z.array(roleLibraryEntrySchema).optional().default([]),
   /** Workspace integrations already connected (connector keys / tool slugs). */
   connectedToolSlugs: z.array(z.string().trim().min(1)).optional().default([]),
+  /**
+   * HEL-761: Composio catalog awareness. `connected` = toolkits the workspace has
+   * an ACTIVE connection for (prefer these); `catalog` = connectable toolkits it
+   * could add. When present, the prompt steers tools[] toward these real toolkit
+   * slugs (the legacy flat `connectedToolSlugs` block is the fallback).
+   */
+  composioToolkits: z
+    .object({
+      connected: z.array(z.object({ slug: z.string(), name: z.string() })).default([]),
+      catalog: z
+        .array(z.object({ slug: z.string(), name: z.string(), description: z.string().nullable() }))
+        .default([]),
+    })
+    .optional(),
 });
 
 export type TeamAssemblyRequest = z.infer<typeof teamAssemblyRequestSchema>;
@@ -390,23 +404,45 @@ export type TeamAssemblyResult = z.infer<typeof teamAssemblyResultSchema>;
 export type StaffingRecommendation = z.infer<typeof staffingRecommendationSchema>;
 
 /**
- * Team-assembly prompt. Field expectations must stay aligned with
- * `dashboard/src/pages/HiringPlanReview.tsx` (display contract).
+ * HEL-761: the TOOLING block shared by every generation prompt (legacy +
+ * chunked skeleton/fill). When the request carries Composio catalog awareness
+ * (`composioToolkits`), present the workspace's connected toolkits (prefer) + the
+ * connectable catalog (the user is prompted to connect any the model picks) and
+ * steer tools[] toward those real toolkit slugs. Falls back to the legacy flat
+ * `connectedToolSlugs` block when Composio is unavailable.
  */
-export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
-  const companyName = input.companyName?.trim() || "Unnamed Company";
-  const connected = input.connectedToolSlugs ?? [];
-  const connectedBlock =
-    connected.length > 0
+export function formatComposioToolkitBlock(input: TeamAssemblyRequest): string[] {
+  const cx = input.composioToolkits;
+  if (!cx || (cx.connected.length === 0 && cx.catalog.length === 0)) {
+    const connected = input.connectedToolSlugs ?? [];
+    return connected.length > 0
       ? [
           "",
           "Integrations already connected in this workspace (prefer these tool slugs when relevant):",
           connected.join(", "),
         ]
-      : [
-          "",
-          "Integrations already connected in this workspace: (none yet).",
-        ];
+      : ["", "Integrations already connected in this workspace: (none yet)."];
+  }
+  const lines = [
+    "",
+    "TOOLING — set each role's tools[] to toolkit slugs from the lists below; they map to real, executable integrations. Prefer already-connected toolkits; you may also choose connectable ones (the user is prompted to connect any you pick). Only invent a kebab-case slug if the goal names a platform that isn't listed.",
+    cx.connected.length > 0
+      ? `  Connected (ready now): ${cx.connected.map((t) => t.slug).join(", ")}`
+      : "  Connected: (none yet).",
+  ];
+  if (cx.catalog.length > 0) {
+    lines.push(`  Connectable: ${cx.catalog.map((t) => t.slug).join(", ")}`);
+  }
+  return lines;
+}
+
+/**
+ * Team-assembly prompt. Field expectations must stay aligned with
+ * `dashboard/src/pages/HiringPlanReview.tsx` (display contract).
+ */
+export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
+  const companyName = input.companyName?.trim() || "Unnamed Company";
+  const toolingBlock = formatComposioToolkitBlock(input);
 
   return [
     "You are the founding architect of an agentic AI team for a real company.",
@@ -430,7 +466,7 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     "  - justification: why this role is essential to THIS goal — be concrete.",
     "  - kpis: 2-6 quantifiable outcomes; avoid vanity metrics.",
     "  - skills: concrete capabilities, not buzzwords.",
-    "  - tools: kebab-case SaaS slugs the role actually uses; include every platform named in the goal; suggest extras only when essential.",
+    "  - tools: toolkit slugs from the TOOLING list below (prefer connected); include every platform named in the goal; suggest extras only when essential.",
     "  - modelTier: lite | standard | power based on reasoning load.",
     "  - provisioningInstructions: actionable day-one brief for the agent.",
     "",
@@ -478,7 +514,7 @@ export function buildTeamAssemblyPrompt(input: TeamAssemblyRequest): string {
     `Goal document:\n${JSON.stringify(input.normalizedGoalDocument, null, 2)}`,
     "",
     `PRD (optional, may be null):\n${JSON.stringify(input.prd ?? null, null, 2)}`,
-    ...connectedBlock,
+    ...toolingBlock,
   ].join("\n");
 }
 

@@ -208,6 +208,25 @@ describe("buildTeamAssemblyPrompt", () => {
     expect(prompt).not.toContain("Own strategy, resource allocation");
   });
 
+  it("renders the Composio TOOLING block (connected + connectable) when composioToolkits is present (HEL-761)", () => {
+    const prompt = buildTeamAssemblyPrompt({
+      ...baseInput,
+      roleLibrary: [],
+      connectedToolSlugs: [],
+      composioToolkits: {
+        connected: [{ slug: "github", name: "GitHub" }],
+        catalog: [
+          { slug: "notion", name: "Notion", description: "Docs" },
+          { slug: "linear", name: "Linear", description: null },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("TOOLING");
+    expect(prompt).toContain("Connected (ready now): github");
+    expect(prompt).toContain("Connectable: notion, linear");
+  });
+
   it("includes targetCustomer, successMetrics, budget, and importedContextSummary in the prompt", () => {
     const prompt = buildTeamAssemblyPrompt({
       ...baseInput,

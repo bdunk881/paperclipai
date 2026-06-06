@@ -62,7 +62,12 @@ export type TeamSkeletonRole = z.infer<typeof skeletonRoleSchema>;
  */
 export function buildTeamSkeletonPrompt(input: TeamAssemblyRequest): string {
   const companyName = input.companyName?.trim() || "Unnamed Company";
-  const connected = input.connectedToolSlugs ?? [];
+  // HEL-761: prefer the Composio connected set when present (else the legacy
+  // connectedToolSlugs). The skeleton defers tools[] to the fill stage, so this
+  // is "consider when shaping roles" only — the connectable catalog is surfaced
+  // at fill time (buildRoleDetailPrompt), not here.
+  const connected =
+    input.composioToolkits?.connected.map((t) => t.slug) ?? input.connectedToolSlugs ?? [];
   const connectedBlock =
     connected.length > 0
       ? ["", "Integrations already connected (consider when shaping roles): " + connected.join(", ")]

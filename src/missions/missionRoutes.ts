@@ -49,6 +49,7 @@ import {
   type HiringPlanDraft,
 } from "./hiringPlanDraft";
 import { resolveHiringPlanLlm } from "./resolveHiringPlanLlm";
+import { loadGenerationToolCatalog } from "./toolCatalogProvider";
 import {
   generateTeamPlanChunked,
   isChunkedTeamAssemblyEnabled,
@@ -881,17 +882,36 @@ export function createMissionRoutes(
 
     const { resolved, llmConfigId, assemblyModel } = llmChoice;
 
+    // HEL-761: feed generation the Composio catalog + connected set so it picks
+    // real toolkit slugs (preferring connected). Falls back to the legacy
+    // connector-health keys when the Composio broker is disabled.
     let connectedToolSlugs: string[] = [];
-    try {
-      const health = await listConnectorHealth(userId);
-      connectedToolSlugs = health
-        .filter((record) => record.state === "healthy")
-        .map((record) => record.connectorKey);
-    } catch {
-      connectedToolSlugs = [];
+    let composioToolkits:
+      | {
+          connected: { slug: string; name: string }[];
+          catalog: { slug: string; name: string; description: string | null }[];
+        }
+      | undefined;
+    const toolCatalog = await loadGenerationToolCatalog({ workspaceId, userId, catalogLimit: 200 });
+    if (toolCatalog.available) {
+      composioToolkits = {
+        connected: toolCatalog.connected.map((t) => ({ slug: t.slug, name: t.name })),
+        catalog: toolCatalog.catalog,
+      };
+      connectedToolSlugs = toolCatalog.connected.map((t) => t.slug);
+    } else {
+      try {
+        const health = await listConnectorHealth(userId);
+        connectedToolSlugs = health
+          .filter((record) => record.state === "healthy")
+          .map((record) => record.connectorKey);
+      } catch {
+        connectedToolSlugs = [];
+      }
     }
 
     const request = teamAssemblyRequestFromMission(mission, connectedToolSlugs);
+    if (composioToolkits) request.composioToolkits = composioToolkits;
     // HEL-74: wrap the LLM call so we can capture wall time + token usage
     // and emit a step_results row regardless of parse success/failure.
     //

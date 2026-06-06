@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 import { extractStructuredOutput } from "../engine/structuredOutput";
-import { modelTierSchema, type TeamAssemblyRequest } from "./teamAssembly";
+import { formatComposioToolkitBlock, modelTierSchema, type TeamAssemblyRequest } from "./teamAssembly";
 import type { TeamSkeleton } from "./teamSkeleton";
 
 const roleDetailSchema = z.object({
@@ -106,6 +106,7 @@ export function buildRoleDetailPrompt(
     roster,
     "",
     `Roles to detail in THIS response: ${batchList}`,
+    ...formatComposioToolkitBlock(input),
     "",
     "For each roleKey, return an object with ALL of these fields — never omit any:",
     "  {",
@@ -113,7 +114,7 @@ export function buildRoleDetailPrompt(
     '    "justification": string,            // why this role is essential to THIS goal',
     '    "kpis": [string, ...],              // 2-6 quantifiable outcomes (at least one)',
     '    "skills": [string, ...],            // concrete capabilities (at least one)',
-    '    "tools": [string, ...],             // kebab-case SaaS slugs (at least one); include platforms named in the goal',
+    '    "tools": [string, ...],             // toolkit slugs from the TOOLING list (prefer connected); at least one; include platforms named in the goal',
     '    "modelTier": "lite" | "standard" | "power",',
     '    "budgetMonthlyUsd": number | null,',
     '    "provisioningInstructions": string  // actionable day-one brief',

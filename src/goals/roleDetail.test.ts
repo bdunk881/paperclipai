@@ -118,5 +118,23 @@ describe("roleDetail (HEL-551 / chunked generation PR3)", () => {
       expect(prompt).toContain("op-1 (Operator 1, operator");
       expect(prompt).toMatch(/Return JSON only/i);
     });
+
+    it("includes the Composio TOOLING block so the fill stage picks real toolkit slugs (HEL-761)", () => {
+      const prompt = buildRoleDetailPrompt(
+        {
+          ...request,
+          composioToolkits: {
+            connected: [{ slug: "gmail", name: "Gmail" }],
+            catalog: [{ slug: "hubspot", name: "HubSpot", description: "CRM" }],
+          },
+        },
+        roster,
+        ["op-1"],
+      );
+
+      expect(prompt).toContain("TOOLING");
+      expect(prompt).toContain("Connected (ready now): gmail");
+      expect(prompt).toContain("Connectable: hubspot");
+    });
   });
 });

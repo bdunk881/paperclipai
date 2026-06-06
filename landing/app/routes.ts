@@ -9,6 +9,8 @@ export default [
   route("privacy", "privacy/page.tsx"),
   route("terms", "terms/page.tsx"),
   route("status", "status/page.tsx"),
+  // Embedded Sanity Studio (client-only SPA, splat for the Studio's own router).
+  route("studio/*", "studio/page.tsx"),
   route("robots.txt", "robots.ts"),
   route("sitemap.xml", "sitemap.ts"),
   // API endpoints (waitlist-signup, subscribe, beta-signup, checkout, stripe webhook)

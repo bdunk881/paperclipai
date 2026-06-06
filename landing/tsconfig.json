@@ -25,5 +25,5 @@
     "resolveJsonModule": true,
     "allowJs": true
   },
-  "exclude": ["node_modules", "sanity.config.ts", "sanity/"]
+  "exclude": ["node_modules", "sanity.config.ts", "sanity/", "build", ".wrangler"]
 }

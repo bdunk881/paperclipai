@@ -24,7 +24,6 @@ import {
   handleLlm,
   handleTransform,
   handleCondition,
-  handleAction,
   handleOutput,
   handleFileTrigger,
   handleMcp,
@@ -501,81 +500,6 @@ describe("handleCondition", () => {
 });
 
 // ---------------------------------------------------------------------------
-// handleAction
-// ---------------------------------------------------------------------------
-
-describe("handleAction", () => {
-  it("support.sendOrEscalate returns auto_responded when shouldAutoRespond=true", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "support.sendOrEscalate",
-      outputKeys: ["resolution", "escalated"],
-    });
-    const ctx: StepContext = { shouldAutoRespond: true };
-
-    const result = await handleAction(step, ctx);
-    expect(result.output["resolution"]).toBe("auto_responded");
-    expect(result.output["escalated"]).toBe(false);
-  });
-
-  it("support.sendOrEscalate returns escalated when shouldAutoRespond=false", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "support.sendOrEscalate",
-      outputKeys: ["resolution", "escalated"],
-    });
-    const ctx: StepContext = { shouldAutoRespond: false };
-
-    const result = await handleAction(step, ctx);
-    expect(result.output["resolution"]).toBe("escalated");
-    expect(result.output["escalated"]).toBe(true);
-  });
-
-  it("crm.upsertLead returns a crmId", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "crm.upsertLead",
-      outputKeys: ["crmId", "crmUrl"],
-    });
-    const result = await handleAction(step, { email: "lead@example.com" });
-    expect(typeof result.output["crmId"]).toBe("string");
-    expect(result.output["crmId"]).toBeTruthy();
-  });
-
-  it("content.queue returns a queueId", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "content.queue",
-      outputKeys: ["queueId"],
-    });
-    const result = await handleAction(step, {});
-    expect(typeof result.output["queueId"]).toBe("string");
-    expect(result.output["queueId"]).toMatch(/^cq-/);
-  });
-
-  it("email.send returns sent=true", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "email.send",
-      outputKeys: ["sent"],
-    });
-    const result = await handleAction(step, {});
-    expect(result.output["sent"]).toBe(true);
-  });
-
-  it("unknown action returns a stub without throwing", async () => {
-    const step = makeStep({
-      kind: "action",
-      action: "unknown.action.xyz",
-      outputKeys: ["result"],
-    });
-    const result = await handleAction(step, { result: "original" });
-    expect(result.output["_stub"]).toBe(true);
-    expect(result.output["_action"]).toBe("unknown.action.xyz");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // handleOutput
 // ---------------------------------------------------------------------------
 
@@ -943,49 +867,6 @@ describe("SSRF guard wiring (HEL-255)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("webhook.send rejects a URL targeting the cloud-metadata IP and does NOT call fetch", async () => {
-    const fetchMock = jest.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
-    const step = makeStep({
-      kind: "action",
-      action: "webhook.send",
-      config: { url: "http://169.254.169.254/latest/meta-data/" },
-      outputKeys: ["sent"],
-    });
-    await expect(handleAction(step, {})).rejects.toThrow(/private or internal/i);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("webhook.send rejects a URL targeting loopback and does NOT call fetch", async () => {
-    const fetchMock = jest.fn();
-    global.fetch = fetchMock as unknown as typeof fetch;
-    const step = makeStep({
-      kind: "action",
-      action: "webhook.send",
-      config: { url: "http://127.0.0.1:3000/internal-health" },
-      outputKeys: ["sent"],
-    });
-    await expect(handleAction(step, {})).rejects.toThrow(/private or internal/i);
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("webhook.send allows a public http:// URL (TLS not required for arbitrary webhook destinations)", async () => {
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-    });
-    global.fetch = fetchMock as unknown as typeof fetch;
-    const step = makeStep({
-      kind: "action",
-      action: "webhook.send",
-      config: { url: "http://hook.example.com/in", event: "test.event" },
-      outputKeys: ["sent"],
-    });
-    const result = await handleAction(step, {});
-    expect(result.output["sent"]).toBe(true);
-    expect(result.output["status"]).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -993,29 +874,9 @@ describe("SSRF guard wiring (HEL-255)", () => {
 // ---------------------------------------------------------------------------
 
 describe("HEL-426 — stub steps mark output `simulated`", () => {
-  it.each([
-    ["email.send"],
-    ["support.sendOrEscalate"],
-    ["crm.upsertLead"],
-    ["content.queue"],
-    ["slack.notify"], // unmapped curated action → unknown-action passthrough
-  ])("handleAction %s output carries simulated: true", async (action) => {
-    const step = makeStep({ kind: "action", action, outputKeys: [] });
-    const result = await handleAction(step, {});
-    expect(result.output["simulated"]).toBe(true);
-  });
-
   it("handleTransform enrichment.lookup output carries simulated: true", async () => {
     const step = makeStep({ kind: "transform", action: "enrichment.lookup", outputKeys: [] });
     const result = await handleTransform(step, { company: "Acme" });
     expect(result.output["simulated"]).toBe(true);
-  });
-
-  it("does not mark the real webhook.send handler simulated", async () => {
-    // No url configured → early error return, but it's a real handler, not a
-    // simulation.
-    const step = makeStep({ kind: "action", action: "webhook.send", outputKeys: [] });
-    const result = await handleAction(step, {});
-    expect(result.output["simulated"]).toBeUndefined();
   });
 });

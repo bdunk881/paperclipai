@@ -52,6 +52,17 @@ export async function getFeatures() {
   >(`*[_type == "feature"] | order(order asc) { title, description, icon, order }`);
 }
 
+/** Homepage hero (singleton). Returns null when unconfigured or unauthored — caller falls back to hardcoded copy. */
+export async function getHero() {
+  return sanityFetch<{
+    eyebrow: string | null;
+    headline: string | null;
+    subheadline: string | null;
+    primaryCta: string | null;
+    secondaryCta: string | null;
+  }>(`*[_type == "hero"][0]{ eyebrow, headline, subheadline, primaryCta, secondaryCta }`);
+}
+
 export async function getFaqItems() {
   return sanityFetch<
     { question: string; answer: string; order: number }[]

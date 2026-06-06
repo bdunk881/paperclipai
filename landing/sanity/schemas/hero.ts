@@ -6,6 +6,13 @@ export const heroSchema = defineType({
   type: "document",
   fields: [
     defineField({
+      name: "eyebrow",
+      title: "Eyebrow",
+      type: "string",
+      description:
+        "Small label above the headline (e.g. 'Workforce automation, by the role · not by the node.')",
+    }),
+    defineField({
       name: "headline",
       title: "Headline",
       type: "string",

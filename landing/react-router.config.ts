@@ -7,6 +7,9 @@ export default {
     v8_viteEnvironmentApi: true,
   },
   // Static marketing pages stay prerendered; dynamic routes (/blog/:slug,
-  // /sitemap.xml, /robots.txt) render at runtime in the Worker.
-  prerender: ["/", "/blog", "/demo", "/signup", "/privacy", "/terms"],
+  // /studio, /sitemap.xml, /robots.txt) render at runtime in the Worker.
+  // NOTE: "/" is intentionally NOT prerendered — the homepage is Sanity-driven
+  // (hero etc.), so it SSRs at runtime + edge-caches (see app/page.tsx headers)
+  // so CMS edits go live without a rebuild.
+  prerender: ["/blog", "/demo", "/signup", "/privacy", "/terms"],
 } satisfies Config;

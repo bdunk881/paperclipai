@@ -14,6 +14,7 @@ import { buildLandingApiUrl } from "@/lib/publicApi";
 import {
   getCreditPackOverlays,
   getFaqItems,
+  getHero,
   getPricingOverlays,
   getTestimonials,
   type CreditPackOverlay,
@@ -53,6 +54,15 @@ export function meta() {
     },
     { name: "twitter:image", content: "https://helloautoflow.com/og.svg" },
   ];
+}
+
+// The homepage SSRs at runtime (Sanity-driven) rather than prerendering, so
+// Studio edits go live. Edge-cache briefly to stay fast; edits propagate within
+// ~a minute (or instantly where the edge cache is bypassed).
+export function headers() {
+  return {
+    "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+  };
 }
 
 const GITHUB_URL = "https://github.com/bdunk881/paperclipai";
@@ -227,9 +237,18 @@ type Testimonial = {
 };
 type FaqItem = { question: string; answer: string };
 
+type HeroContent = {
+  eyebrow: string | null;
+  headline: string | null;
+  subheadline: string | null;
+  primaryCta: string | null;
+  secondaryCta: string | null;
+};
+
 interface HomeLoaderData extends PricingLoaderData {
   testimonials: Testimonial[];
   faqItems: FaqItem[];
+  hero: HeroContent | null;
 }
 
 // Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
@@ -391,13 +410,14 @@ export async function loader(): Promise<HomeLoaderData> {
     }
   })();
 
-  const [apiData, tierOverlays, packOverlays, testimonials, faqItems] =
+  const [apiData, tierOverlays, packOverlays, testimonials, faqItems, hero] =
     await Promise.all([
       apiPromise,
       getPricingOverlays(),
       getCreditPackOverlays(),
       getTestimonials(),
       getFaqItems(),
+      getHero(),
     ]);
 
   return {
@@ -409,6 +429,7 @@ export async function loader(): Promise<HomeLoaderData> {
     faqItems: (faqItems && faqItems.length > 0 ? faqItems : FAQ_FALLBACK).map(
       ({ question, answer }) => ({ question, answer }),
     ),
+    hero,
   };
 }
 
@@ -455,10 +476,10 @@ function Avatar({
 // the Express waitlist-signup endpoint as a top-of-funnel intent log
 // (anonymous click; backend tolerates empty/missing email).
 
-function HireAgentCta() {
+function HireAgentCta({ label = "Hire your first agent →" }: { label?: string }) {
   return (
     <Link to="/signup" className="af2-btn af2-btn-clay" style={{ padding: "14px 22px", fontSize: 14.5 }}>
-      Hire your first agent →
+      {label}
     </Link>
   );
 }
@@ -534,7 +555,7 @@ function PricingCta({ tier }: { tier: Tier }) {
 // Page
 
 export default function Home() {
-  const { tiers, packs, testimonials, faqItems } =
+  const { tiers, packs, testimonials, faqItems, hero } =
     useLoaderData() as HomeLoaderData;
 
   return (
@@ -593,7 +614,9 @@ export default function Home() {
           }}
         >
           <div>
-            <span className="af2-eyebrow">Workforce automation, by the role · not by the node.</span>
+            <span className="af2-eyebrow">
+              {hero?.eyebrow ?? "Workforce automation, by the role · not by the node."}
+            </span>
             {PRODUCT_HUNT_URL ? (
               <a
                 href={PRODUCT_HUNT_URL}
@@ -611,20 +634,24 @@ export default function Home() {
               </a>
             ) : null}
             <h1 style={{ marginTop: 18 }}>
-              Hire a team
-              <br />
-              of agents that
-              <br />
-              <em>actually ship.</em>
+              {hero?.headline ?? (
+                <>
+                  Hire a team
+                  <br />
+                  of agents that
+                  <br />
+                  <em>actually ship.</em>
+                </>
+              )}
             </h1>
             <p className="lp-hero-sub">
-              Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of
-              work. Approve what matters. Watch the rest run.
+              {hero?.subheadline ??
+                "Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run."}
             </p>
             <div className="lp-hero-cta">
-              <HireAgentCta />
+              <HireAgentCta label={hero?.primaryCta ?? undefined} />
               <a href="#product" className="af2-btn" style={{ padding: "14px 22px", fontSize: 14.5 }}>
-                See how it works
+                {hero?.secondaryCta ?? "See how it works"}
               </a>
             </div>
             <div className="lp-hero-meta">

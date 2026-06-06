@@ -36,6 +36,7 @@ import {
   filterToolsByPermissions,
   loadAgentIntegrationPermissions,
 } from "./agentToolPermissions";
+import { loadComposioAgentTools } from "./composioTools";
 import { pickBackend, withAgentConversation } from "./runtime/runAgent";
 import { readRuntimeNumber } from "./runtime/runtimeConfig";
 import { loadAgentMcpServers } from "./runtime/mcpClient";
@@ -182,6 +183,16 @@ export async function runAgentTurn(
   });
   if (delegateTool) candidateTools.push(delegateTool);
   if (input.extraTools) candidateTools.push(...input.extraTools);
+
+  // HEL-755: native Composio tools for the workspace's connected toolkits, named
+  // integration:<toolkit>:<slug> so the permission filter below gates them by the
+  // agent's allowed_integration_slugs. Flag-gated + best-effort → empty when
+  // Composio is off or nothing is connected, so this is a no-op by default.
+  const composioTools = await loadComposioAgentTools({
+    workspaceId: input.workspaceId,
+    userId: input.userId,
+  });
+  if (composioTools.length > 0) candidateTools.push(...composioTools);
 
   const permissions = await loadAgentIntegrationPermissions({
     pool: input.pool,

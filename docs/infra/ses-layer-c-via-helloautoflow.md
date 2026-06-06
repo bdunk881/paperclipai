@@ -87,8 +87,25 @@ per-tenant reputation dashboard + automatic failover is HEL-617.
    workspace ledgers `status:'suppressed'` (reason `managed_email_opt_out`); a
    suppressed recipient ledgers `status:'suppressed'`.
 
+## 6. DMARC enforcement escalation (HEL-729)
+
+`via.helloautoflow.com` starts at `p=quarantine` (§1.3). Escalate enforcement as
+the per-tier reputation proves out — never jump straight to `reject` on a cold
+domain (a misconfigured DKIM/SPF would then silently drop real mail).
+
+| Stage | DMARC `p=` | Enter when |
+|---|---|---|
+| 1. Monitor | `none` (+ `rua`/`ruf` aggregate+forensic reports) | First 1–2 warming weeks; read the reports, confirm SPF+DKIM align on ~100% of legitimate mail |
+| 2. Quarantine | `quarantine` (start `pct=25`, ramp to `100`) | Alignment is clean and complaint rate < 0.1% for a full warming week |
+| 3. Reject | `reject` | ≥ 2 weeks at `quarantine; pct=100` with no legitimate mail quarantined and bounce < 5% / complaint < 0.1% |
+
+Roll back a stage immediately if legitimate mail starts failing DMARC (watch the
+`rua` reports + the per-tenant reputation dashboard, HEL-728). Apply the same
+ladder to Layer A/B `mail.helloautoflow.com` independently. Update the `_dmarc`
+TXT record (§1.3) at each stage.
+
 ## Related
 
 - Layer A/B system mail: `src/mailer/sesMailer.ts` (HEL-360..366) — keep isolated.
 - Opt-out → BYOC routing + BYOC from-identity: **HEL-716**.
-- Failover + per-tenant reputation dashboard + DMARC escalation: **HEL-617**.
+- Failover (**HEL-617**, shipped) · provider health probe + DMARC escalation (**HEL-729**) · per-tenant reputation dashboard (**HEL-728**).

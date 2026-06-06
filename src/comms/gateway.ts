@@ -17,6 +17,7 @@
 import { commsSendStore } from "./commsSendStore";
 import { commsSpendStore } from "./commsSpendStore";
 import { estimateCommsCostUsd } from "./pricing";
+import * as providerHealth from "./providerHealth";
 import {
   CommsChannel,
   CommsKind,
@@ -83,10 +84,14 @@ export class CommsGateway {
    * tries them in order, failing over on a retryable failure (HEL-617).
    */
   private resolveTransports(kind: CommsKind, channel: CommsChannel): CommsTransport[] {
-    return [
+    const all = [
       ...(this.transports.get(exactKey(kind, channel)) ?? []),
       ...(this.transports.get(defaultKey(channel)) ?? []),
     ];
+    // HEL-729: skip providers whose health circuit is open (proactive failover),
+    // but never refuse to send — if every provider is degraded, try them all.
+    const healthy = all.filter((t) => providerHealth.isHealthy(t.id));
+    return healthy.length > 0 ? healthy : all;
   }
 
   async send(input: CommsSendInput): Promise<CommsSendResult> {
@@ -206,6 +211,7 @@ export class CommsGateway {
       const transport = transports[i];
       try {
         const result = await transport.send(message);
+        providerHealth.recordSuccess(transport.id);
         if (result.suppressed) {
           await this.store.markSuppressed(
             params.workspaceId,
@@ -237,6 +243,9 @@ export class CommsGateway {
       } catch (err) {
         lastError = err;
         const retryable = err instanceof TransportError ? err.retryable : true;
+        if (retryable) {
+          providerHealth.recordFailure(transport.id);
+        }
         const isLast = i === transports.length - 1;
         if (!retryable || isLast) {
           throw err instanceof Error ? err : new TransportError(String(err), {});

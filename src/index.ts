@@ -115,6 +115,11 @@ async function startServer() {
   if (commsTransports.length > 0) {
     console.log(`[comms] registered transports: ${commsTransports.join(", ")}`);
   }
+
+  // HEL-729: surface degraded comms providers (the failover circuit breaker
+  // snapshot) on a periodic tick. No-op output unless a provider is open.
+  const { startCommsProviderHealthJob } = await import("./comms/providerHealthJob");
+  startCommsProviderHealthJob();
 }
 
 void startServer();

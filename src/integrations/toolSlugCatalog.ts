@@ -12,7 +12,6 @@ export const TOOL_SLUG_TO_CONNECTOR_KEY: Record<string, string> = {
   teams: "teams",
   "microsoft-teams": "teams",
   apollo: "apollo",
-  composio: "composio",
   attio: "apollo",
   github: "linear",
   notion: "linear",

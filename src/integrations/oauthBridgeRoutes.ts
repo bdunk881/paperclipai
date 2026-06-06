@@ -12,7 +12,6 @@ import { teamsConnectorService } from "./teams/service";
 import { posthogConnectorService } from "./posthog/service";
 import { intercomConnectorService } from "./intercom/service";
 import { stripeConnectorService } from "./stripe/service";
-import { composioConnectorService } from "./composio/service";
 import { slackCredentialStore } from "./slack/credentialStore";
 import { linearCredentialStore } from "./linear/credentialStore";
 import { apolloCredentialStore } from "./apollo/credentialStore";
@@ -25,7 +24,6 @@ import { teamsCredentialStore } from "./teams/credentialStore";
 import { posthogCredentialStore } from "./posthog/credentialStore";
 import { intercomCredentialStore } from "./intercom/credentialStore";
 import { stripeCredentialStore } from "./stripe/credentialStore";
-import { composioCredentialStore } from "./composio/credentialStore";
 import { asyncHandler } from "../middleware/asyncHandler";
 
 type UnifiedProvider =
@@ -40,8 +38,7 @@ type UnifiedProvider =
   | "teams"
   | "posthog"
   | "intercom"
-  | "stripe"
-  | "composio";
+  | "stripe";
 
 type ProviderStatus = {
   connected: boolean;
@@ -62,7 +59,6 @@ const PROVIDERS: Set<UnifiedProvider> = new Set([
   "posthog",
   "intercom",
   "stripe",
-  "composio",
 ]);
 
 const STATUS_PROVIDERS: UnifiedProvider[] = [
@@ -78,7 +74,6 @@ const STATUS_PROVIDERS: UnifiedProvider[] = [
   "posthog",
   "intercom",
   "stripe",
-  "composio",
 ];
 
 function isConnected(connectedAt: string | undefined, scopes?: string[]) {
@@ -174,13 +169,6 @@ router.post("/:provider/connect", requireAuth, (req: AuthenticatedRequest, res) 
     return;
   }
 
-  if (provider === "composio") {
-    res.status(400).json({
-      error: "Composio uses API-key connection. Call /api/integrations/composio/connect-api-key.",
-    });
-    return;
-  }
-
   try {
     const flow = (() => {
       switch (provider) {
@@ -254,7 +242,6 @@ router.get("/status", requireAuth, asyncHandler<AuthenticatedRequest>(async (req
     const posthogCredential = posthogCredentialStore.getActiveByUser(userId);
     const intercomCredential = await intercomCredentialStore.getActiveByUserAsync(userId);
     const stripeCredential = stripeCredentialStore.getActiveByUser(userId);
-    const composioCredential = composioCredentialStore.getActiveByUser(userId);
 
     const providers: Record<UnifiedProvider, ProviderStatus> = {
       slack: connectionStatusForCredential(slackCredential),
@@ -269,7 +256,6 @@ router.get("/status", requireAuth, asyncHandler<AuthenticatedRequest>(async (req
       posthog: connectionStatusForCredential(posthogCredential),
       intercom: connectionStatusForCredential(intercomCredential),
       stripe: connectionStatusForCredential(stripeCredential),
-      composio: connectionStatusForCredential(composioCredential),
     };
 
     for (const provider of STATUS_PROVIDERS) {
@@ -477,13 +463,6 @@ router.delete("/:provider/disconnect", requireAuth, asyncHandler<AuthenticatedRe
       const current = stripeCredentialStore.getActiveByUser(userId);
       if (current) {
         stripeConnectorService.disconnect(userId, current.id);
-      }
-      break;
-    }
-    case "composio": {
-      const current = composioCredentialStore.getActiveByUser(userId);
-      if (current) {
-        await composioConnectorService.disconnect(userId, current.id);
       }
       break;
     }

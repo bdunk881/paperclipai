@@ -122,7 +122,6 @@ import {
   normalizeSesEvent,
   type CommsInboundIngest,
 } from "./comms/webhooks";
-import { composioRoutes, composioWebhookRouter } from "./integrations/composio";
 import agentCatalogRoutes from "./integrations/agent-catalog/routes";
 import oauthBridgeRoutes from "./integrations/oauthBridgeRoutes";
 import integrationRoutes, {
@@ -600,8 +599,6 @@ app.use("/api/webhooks/gmail", gmailWebhookRouter);
 app.use("/api/webhooks/teams", teamsWebhookRouter);
 // HubSpot webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/hubspot", hubSpotWebhookRouter);
-// Composio webhook — mounted before express.json() for signature verification
-app.use("/api/webhooks/composio", composioWebhookRouter);
 // Stripe connector webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/stripe/connect", stripeConnectorWebhookRouter);
 // PostHog webhook — mounted before express.json() for signature verification
@@ -631,7 +628,7 @@ if (commsInboundIngest) {
 }
 // Intercom webhook — mounted before express.json() for signature verification
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
-// Composio webhook — mounted before express.json() because the route verifies the raw payload
+// Ticket-sync webhook — mounted before express.json() because the route verifies the raw payload
 app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
@@ -935,7 +932,6 @@ app.use("/api/integrations/hubspot", hubSpotRoutes);
 app.use("/api/integrations/teams", teamsRoutes);
 app.use("/api/integrations/gmail", gmailRoutes);
 app.use("/api/integrations/stripe", stripeRoutes);
-app.use("/api/integrations/composio", composioRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);

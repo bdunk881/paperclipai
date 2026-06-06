@@ -1,5 +1,4 @@
 import { apolloConnectorService } from "../integrations/apollo/service";
-import { composioConnectorService } from "../integrations/composio/service";
 import { docuSignConnectorService } from "../integrations/docusign/service";
 import { gmailConnectorService } from "../integrations/gmail/service";
 import { hubSpotConnectorService } from "../integrations/hubspot/service";
@@ -51,7 +50,6 @@ const CONNECTOR_HEALTH_PROBES: ConnectorHealthProbe[] = [
   { key: "linear", name: "Linear", probe: (userId) => linearConnectorService.health(userId) },
   { key: "teams", name: "Teams", probe: (userId) => teamsConnectorService.health(userId) },
   { key: "apollo", name: "Apollo", probe: (userId) => apolloConnectorService.health(userId) },
-  { key: "composio", name: "Composio", probe: (userId) => composioConnectorService.health(userId) },
   { key: "posthog", name: "PostHog", probe: (userId) => posthogConnectorService.health(userId) },
   { key: "intercom", name: "Intercom", probe: (userId) => intercomConnectorService.health(userId) },
   { key: "docusign", name: "DocuSign", probe: (userId) => docuSignConnectorService.health(userId) },

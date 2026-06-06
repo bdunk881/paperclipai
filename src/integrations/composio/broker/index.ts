@@ -88,3 +88,23 @@ export {
   type ExecuteComposioToolInput,
   type ComposioToolResult,
 } from "./toolExecution";
+
+export {
+  triggerInstanceStore,
+  type TriggerInstanceStore,
+  type ComposioTriggerInstanceRow,
+  type ComposioTriggerStatus,
+  type CreateTriggerInstanceInput,
+} from "./triggerInstanceStore";
+
+export {
+  enableTrigger,
+  disableTrigger,
+  enableExistingTrigger,
+  deleteTrigger,
+  getTriggerType,
+  listTriggerTypes,
+  type EnableTriggerInput,
+  type ComposioTriggerTypeInfo,
+  type ComposioTriggerTypeSummary,
+} from "./triggerSubscriptionService";

@@ -39,21 +39,29 @@ async function slackNotify(
   return { sent: true, channel: result.channel, ts: result.ts };
 }
 
-registerConnectorAction({
-  connectorKey: "slack",
-  actionId: "slack.notify",
-  label: "Send a Slack notification",
-  description: "Post a message to a Slack channel via your connected Slack workspace.",
-  isWrite: true,
-  invoke: slackNotify,
-});
+/**
+ * HEL-757: registration is invoked by the connectorActions barrel, gated on
+ * `legacyConnectorActionsEnabled()`, rather than running at module load — so the
+ * legacy hand-rolled Slack actions can be retired in favor of the Composio path
+ * (`composio.execute`) by setting `AUTOFLOW_LEGACY_CONNECTOR_ACTIONS=false`.
+ */
+export function registerSlackConnectorActions(): void {
+  registerConnectorAction({
+    connectorKey: "slack",
+    actionId: "slack.notify",
+    label: "Send a Slack notification",
+    description: "Post a message to a Slack channel via your connected Slack workspace.",
+    isWrite: true,
+    invoke: slackNotify,
+  });
 
-// Curated templates use this alias (src/templates/additional-templates.ts).
-registerConnectorAction({
-  connectorKey: "slack",
-  actionId: "slack.dispatchNotification",
-  label: "Send a Slack notification",
-  description: "Post a message to a Slack channel via your connected Slack workspace.",
-  isWrite: true,
-  invoke: slackNotify,
-});
+  // Curated templates use this alias (src/templates/additional-templates.ts).
+  registerConnectorAction({
+    connectorKey: "slack",
+    actionId: "slack.dispatchNotification",
+    label: "Send a Slack notification",
+    description: "Post a message to a Slack channel via your connected Slack workspace.",
+    isWrite: true,
+    invoke: slackNotify,
+  });
+}

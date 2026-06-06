@@ -84,6 +84,37 @@ const ACTION_TYPE_BY_ACTION_NAME: Record<string, ApprovalTierActionType> = {
   "github.deployProduction": "code_merges_to_prod",
 };
 
+/** The engine action id for a Composio tool execution (connectorActions/composioActions, HEL-753). */
+export const COMPOSIO_EXECUTE_ACTION = "composio.execute";
+
+/**
+ * Best-effort governance tier for a Composio tool, derived from its slug (HEL-754).
+ *
+ * Composio exposes 1000s of tools, so we can't enumerate them like the curated
+ * native `ACTION_TYPE_BY_ACTION_NAME` map. Instead we map the unambiguous
+ * HIGH-RISK action verbs in a slug to a tier — a conservative SAFETY NET so a
+ * Composio write that pays / signs / merges / publishes / messages doesn't
+ * execute ungoverned. Reads/lookups are never gated. An explicit
+ * `step.config.governance.actionType` always overrides this (set by mission/team
+ * generation, P5). Anything unmatched stays ungoverned, exactly like an unmapped
+ * native action — this nets the obvious dangerous writes; it is not a complete
+ * per-tool policy (full toolkit curation is future work).
+ */
+export function composioTierFromSlug(slug: string): ApprovalTierActionType | undefined {
+  const s = slug.toUpperCase();
+  // Reads / lookups never need approval (checked first so e.g. LIST_INVOICES,
+  // GET_PAYMENT don't trip the spend net below).
+  if (/(^|_)(GET|FETCH|LIST|SEARCH|RETRIEVE|READ|FIND|DOWNLOAD|EXPORT)(_|$)/.test(s)) {
+    return undefined;
+  }
+  if (/PAYMENT|PAYOUT|REFUND|TRANSFER|WIRE|CHARGE|INVOICE/.test(s)) return "spend_above_threshold";
+  if (/ENVELOPE|SIGNATURE|CONTRACT/.test(s)) return "contracts";
+  if (/MERGE|DEPLOY|RELEASE/.test(s)) return "code_merges_to_prod";
+  if (/TWEET|PUBLISH|CREATE_POST|SHARE_POST/.test(s)) return "public_posts";
+  if (/SEND|REPLY|MESSAGE|EMAIL|SMS/.test(s)) return "customer_facing_comms";
+  return undefined;
+}
+
 function getGovernanceConfig(step: WorkflowStep): Record<string, unknown> {
   const raw = step.config?.["governance"];
   return raw && typeof raw === "object" && !Array.isArray(raw)
@@ -101,6 +132,19 @@ export function resolveApprovalTierActionType(
 
   if (!step.action) {
     return undefined;
+  }
+
+  // Composio executions share a single action id (composio.execute); the real
+  // operation lives in step.config.slug, so derive the tier from the slug.
+  if (step.action === COMPOSIO_EXECUTE_ACTION) {
+    const cfg = step.config ?? {};
+    const slug =
+      typeof cfg["slug"] === "string"
+        ? (cfg["slug"] as string)
+        : typeof cfg["tool"] === "string"
+          ? (cfg["tool"] as string)
+          : undefined;
+    return slug ? composioTierFromSlug(slug) : undefined;
   }
 
   return ACTION_TYPE_BY_ACTION_NAME[step.action];

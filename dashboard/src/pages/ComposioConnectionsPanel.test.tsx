@@ -18,13 +18,13 @@ vi.mock("../api/composioApi", () => api);
 
 import ComposioConnectionsPanel from "./ComposioConnectionsPanel";
 
-function toolkit(slug: string, name: string) {
+function toolkit(slug: string, name: string, catSlug = "developer-tools", catName = "Developer Tools") {
   return {
     slug,
     name,
     logo: null,
     description: `${name} description`,
-    categories: [],
+    categories: [{ slug: catSlug, name: catName }],
     toolsCount: 10,
     triggersCount: 1,
     authSchemes: ["OAUTH2"],
@@ -38,7 +38,10 @@ describe("ComposioConnectionsPanel", () => {
     vi.clearAllMocks();
     getAccessTokenMock.mockResolvedValue("tok");
     api.fetchComposioToolkits.mockResolvedValue({
-      toolkits: [toolkit("github", "GitHub"), toolkit("slack", "Slack")],
+      toolkits: [
+        toolkit("github", "GitHub", "developer-tools", "Developer Tools"),
+        toolkit("slack", "Slack", "communication", "Communication"),
+      ],
       total: 2,
       nextCursor: null,
     });
@@ -97,5 +100,30 @@ describe("ComposioConnectionsPanel", () => {
     render(<ComposioConnectionsPanel />);
     expect(await screen.findByText("boom")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("groups toolkits by category in the All view", async () => {
+    render(<ComposioConnectionsPanel />);
+    await screen.findByText("GitHub");
+    // category section headers (the .int-cat group headings — the names also
+    // appear as <option>s in the filter <select>, so scope to the header).
+    expect(screen.getByText("Developer Tools", { selector: ".int-cat" })).toBeTruthy();
+    expect(screen.getByText("Communication", { selector: ".int-cat" })).toBeTruthy();
+  });
+
+  it("filters by category via the dropdown (server-side re-fetch)", async () => {
+    render(<ComposioConnectionsPanel />);
+    await screen.findByText("GitHub");
+
+    fireEvent.change(screen.getByLabelText("Filter by category"), {
+      target: { value: "communication" },
+    });
+
+    await waitFor(() =>
+      expect(api.fetchComposioToolkits).toHaveBeenLastCalledWith(
+        "tok",
+        expect.objectContaining({ category: "communication" }),
+      ),
+    );
   });
 });

@@ -69,3 +69,15 @@ export function getConnectorAction(actionId: string): ConnectorActionDef | undef
 export function listConnectorActions(): ConnectorActionDef[] {
   return Array.from(registry.values());
 }
+
+/**
+ * HEL-757: whether the legacy hand-rolled connector actions (e.g. slackActions,
+ * which call a bespoke per-provider connector service) are registered. Default
+ * ON to preserve current behavior; set `AUTOFLOW_LEGACY_CONNECTOR_ACTIONS=false`
+ * to retire them so the Composio path (composioActions) is the only connector
+ * surface. Flip to "false" only once the toolkit is reachable via Composio —
+ * otherwise those `action`s fall through to the honest unknown-action null-stub.
+ */
+export function legacyConnectorActionsEnabled(): boolean {
+  return process.env.AUTOFLOW_LEGACY_CONNECTOR_ACTIONS !== "false";
+}

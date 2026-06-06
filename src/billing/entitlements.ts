@@ -127,6 +127,23 @@ export function getEntitlementLimits(plan: SubscriptionTier): EntitlementLimits 
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.explore;
 }
 
+/**
+ * HEL-615: customer reputation segment for the managed Layer-C email pool.
+ * Larger plans get the dedicated/isolated IP pool (SME); smaller plans share
+ * the starter pool (SMB). Drives SES configuration-set selection.
+ */
+export function customerSegmentForPlan(plan: SubscriptionTier): "smb" | "sme" {
+  return plan === "automate" || plan === "scale" ? "sme" : "smb";
+}
+
+/**
+ * HEL-615: default managed-email opt-in by plan (plan decision #2: SMB opt-in,
+ * SME opt-out). Overridable per-workspace via `workspaces.managed_email_opt_in`.
+ */
+export function defaultManagedEmailOptIn(plan: SubscriptionTier): boolean {
+  return customerSegmentForPlan(plan) === "smb";
+}
+
 export function buildEntitlements(workspaceId: string, plan: SubscriptionTier): WorkspaceEntitlements {
   return {
     workspaceId,

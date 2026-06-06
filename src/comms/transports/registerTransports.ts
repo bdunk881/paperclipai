@@ -21,6 +21,7 @@
 
 import { CommsGateway } from "../gateway";
 import { TelnyxSmsTransport, isTelnyxConfigured } from "./telnyxSms";
+import { SesEmailTransport, isSesCustomerEmailConfigured } from "./sesEmail";
 
 /** Register all env-configured transports on `gateway`. Returns the ids registered. */
 export function registerCommsTransports(gateway: CommsGateway): string[] {
@@ -29,6 +30,13 @@ export function registerCommsTransports(gateway: CommsGateway): string[] {
   if (isTelnyxConfigured()) {
     gateway.registerTransport("sms", new TelnyxSmsTransport());
     registered.push("telnyx");
+  }
+
+  // HEL-615: managed Layer-C customer email via SES (via.helloautoflow.com),
+  // bound to kind:'customer' so it doesn't touch Layer A/B system mail.
+  if (isSesCustomerEmailConfigured()) {
+    gateway.registerTransport("email", new SesEmailTransport(), "customer");
+    registered.push("ses-email");
   }
 
   return registered;

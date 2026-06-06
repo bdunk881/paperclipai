@@ -1,6 +1,8 @@
 import {
   beginConnect,
   completeConnect,
+  listConnections,
+  disconnectAccount,
   normalizeConnectionStatus,
 } from "./connectionService";
 import { getComposioBroker } from "./client";
@@ -22,6 +24,8 @@ describe("connectionService (HEL-740)", () => {
   const listMock = jest.fn();
   const createMock = jest.fn();
   const linkMock = jest.fn();
+  const caListMock = jest.fn();
+  const caDeleteMock = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,9 +40,11 @@ describe("connectionService (HEL-740)", () => {
       redirectUrl: "https://backend.composio.dev/redirect/abc",
       status: "INITIALIZING",
     });
+    caListMock.mockResolvedValue({ items: [] });
+    caDeleteMock.mockResolvedValue(undefined);
     getBroker.mockResolvedValue({
       authConfigs: { list: listMock, create: createMock },
-      connectedAccounts: { link: linkMock },
+      connectedAccounts: { link: linkMock, list: caListMock, delete: caDeleteMock },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
   });
@@ -131,5 +137,96 @@ describe("connectionService (HEL-740)", () => {
     expect(normalizeConnectionStatus("REVOKED")).toBe("INACTIVE");
     expect(normalizeConnectionStatus("INITIALIZING")).toBe("INITIATED");
     expect(normalizeConnectionStatus(undefined)).toBe("INITIATED");
+  });
+
+  describe("listConnections", () => {
+    it("returns the workspace's connections as views (no drift)", async () => {
+      await connectedAccountStore.upsert(ctx, {
+        toolkit: "github",
+        connectedAccountId: "ca_1",
+        authConfigId: "ac_1",
+        status: "INITIATED",
+      });
+
+      const views = await listConnections(ctx);
+      expect(views).toHaveLength(1);
+      expect(views[0]).toMatchObject({
+        connectedAccountId: "ca_1",
+        toolkit: "github",
+        status: "INITIATED",
+      });
+    });
+
+    it("reconciles drifted status from Composio and persists it", async () => {
+      await connectedAccountStore.upsert(ctx, {
+        toolkit: "github",
+        connectedAccountId: "ca_1",
+        authConfigId: "ac_1",
+        status: "INITIATED",
+      });
+      caListMock.mockResolvedValue({
+        items: [{ id: "ca_1", status: "ACTIVE", toolkit: { slug: "github" } }],
+      });
+
+      const views = await listConnections(ctx);
+      expect(views[0].status).toBe("ACTIVE");
+      expect(caListMock).toHaveBeenCalledWith({ userIds: ["ws_ws-A"] });
+
+      const row = await connectedAccountStore.getByConnectedAccountId(ctx, "ca_1");
+      expect(row?.status).toBe("ACTIVE");
+    });
+
+    it("falls back to local rows when the Composio list throws", async () => {
+      await connectedAccountStore.upsert(ctx, {
+        toolkit: "github",
+        connectedAccountId: "ca_1",
+        authConfigId: "ac_1",
+        status: "INITIATED",
+      });
+      caListMock.mockRejectedValue(new Error("boom"));
+
+      const views = await listConnections(ctx);
+      expect(views).toHaveLength(1);
+      expect(views[0].status).toBe("INITIATED");
+    });
+
+    it("short-circuits (no broker call) for an empty workspace", async () => {
+      const views = await listConnections(ctx);
+      expect(views).toEqual([]);
+      expect(caListMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("disconnectAccount", () => {
+    it("revokes at Composio and removes the local row", async () => {
+      await connectedAccountStore.upsert(ctx, {
+        toolkit: "github",
+        connectedAccountId: "ca_1",
+        authConfigId: "ac_1",
+        status: "ACTIVE",
+      });
+
+      await expect(disconnectAccount(ctx, "ca_1")).resolves.toBe(true);
+      expect(caDeleteMock).toHaveBeenCalledWith("ca_1");
+      await expect(connectedAccountStore.getByConnectedAccountId(ctx, "ca_1")).resolves.toBeNull();
+    });
+
+    it("returns false for a ca_ not owned by the workspace", async () => {
+      await expect(disconnectAccount(ctx, "ca_unknown")).resolves.toBe(false);
+      expect(caDeleteMock).not.toHaveBeenCalled();
+    });
+
+    it("still removes the local row when the remote revoke fails (best-effort)", async () => {
+      await connectedAccountStore.upsert(ctx, {
+        toolkit: "github",
+        connectedAccountId: "ca_1",
+        authConfigId: "ac_1",
+        status: "ACTIVE",
+      });
+      caDeleteMock.mockRejectedValue(new Error("revoke failed"));
+
+      await expect(disconnectAccount(ctx, "ca_1")).resolves.toBe(true);
+      await expect(connectedAccountStore.getByConnectedAccountId(ctx, "ca_1")).resolves.toBeNull();
+    });
   });
 });

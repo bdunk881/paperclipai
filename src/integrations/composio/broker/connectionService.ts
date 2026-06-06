@@ -20,6 +20,7 @@ import { createConnectState, consumeConnectState } from "./connectStateStore";
 import {
   connectedAccountStore,
   type ComposioConnectionStatus,
+  type ComposioConnectedAccountRow,
   type ComposioWorkspaceContext,
 } from "./connectedAccountStore";
 
@@ -145,4 +146,89 @@ export async function completeConnect(
   }
 
   return { status: "success", toolkit: entry.toolkit };
+}
+
+export interface ConnectionView {
+  connectedAccountId: string;
+  toolkit: string;
+  status: ComposioConnectionStatus;
+  authConfigId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function toView(row: ComposioConnectedAccountRow): ConnectionView {
+  return {
+    connectedAccountId: row.connectedAccountId,
+    toolkit: row.toolkit,
+    status: row.status,
+    authConfigId: row.authConfigId,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/**
+ * List a workspace's connections. Best-effort reconciles live status from
+ * Composio (`connectedAccounts.list`) so drift (completed OAuth, expiry,
+ * out-of-band revocation) is reflected; falls back to local rows when the
+ * broker is disabled or the call fails.
+ */
+export async function listConnections(ctx: ComposioWorkspaceContext): Promise<ConnectionView[]> {
+  const local = await connectedAccountStore.listByWorkspace(ctx);
+  if (!isComposioEnabled() || local.length === 0) {
+    return local.map(toView);
+  }
+
+  try {
+    const composio = await getComposioBroker();
+    const live = await composio.connectedAccounts.list({ userIds: [composioUserId(ctx.workspaceId)] });
+    const liveStatusById = new Map<string, string>();
+    for (const item of live?.items ?? []) {
+      if (item?.id) liveStatusById.set(item.id, item.status);
+    }
+    for (const row of local) {
+      const liveStatus = liveStatusById.get(row.connectedAccountId);
+      if (!liveStatus) continue;
+      const normalized = normalizeConnectionStatus(liveStatus);
+      if (normalized !== row.status) {
+        await connectedAccountStore.markStatus(ctx, row.connectedAccountId, normalized);
+        row.status = normalized;
+      }
+    }
+  } catch {
+    // Best-effort reconciliation — return the local view on any failure.
+  }
+
+  return local.map(toView);
+}
+
+/**
+ * Disconnect a connected account: best-effort revoke at Composio, then remove the
+ * local record. Returns false if the ca_ isn't owned by this workspace (→ 404).
+ *
+ * Revoke is best-effort: removing our row disconnects the toolkit from this
+ * workspace regardless, and a lingering Composio account is unusable without the
+ * local row (it can be GC'd). We do not block the disconnect on a remote failure.
+ */
+export async function disconnectAccount(
+  ctx: ComposioWorkspaceContext,
+  connectedAccountId: string,
+): Promise<boolean> {
+  const row = await connectedAccountStore.getByConnectedAccountId(ctx, connectedAccountId);
+  if (!row) {
+    return false;
+  }
+
+  if (isComposioEnabled()) {
+    try {
+      const composio = await getComposioBroker();
+      await composio.connectedAccounts.delete(connectedAccountId);
+    } catch {
+      // Best-effort revoke — see the doc comment above.
+    }
+  }
+
+  await connectedAccountStore.deleteByConnectedAccountId(ctx, connectedAccountId);
+  return true;
 }

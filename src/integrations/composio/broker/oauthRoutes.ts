@@ -13,7 +13,7 @@ import { Router, type Request } from "express";
 import { asyncHandler } from "../../../middleware/asyncHandler";
 import type { WorkspaceAwareRequest } from "../../../middleware/workspaceResolver";
 import { isComposioEnabled } from "./config";
-import { beginConnect, completeConnect } from "./connectionService";
+import { beginConnect, completeConnect, listConnections, disconnectAccount } from "./connectionService";
 
 /** Build the dashboard redirect target (mirrors oauthBridgeRoutes.dashboardRedirect). */
 function dashboardRedirect(params: { status: "success" | "error"; message?: string }): string {
@@ -78,6 +78,45 @@ composioConnectRouter.post(
       connectedAccountId: result.connectedAccountId,
       toolkit: result.toolkit,
     });
+  }),
+);
+
+// GET /api/composio/connections — list the workspace's connections (status reconciled).
+composioConnectRouter.get(
+  "/connections",
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = req.workspaceId;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authentication and workspace context are required." });
+      return;
+    }
+    const connections = await listConnections({ workspaceId, userId });
+    res.json({ connections });
+  }),
+);
+
+// DELETE /api/composio/connections/:caId — disconnect (best-effort revoke + remove local).
+composioConnectRouter.delete(
+  "/connections/:caId",
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = req.workspaceId;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authentication and workspace context are required." });
+      return;
+    }
+    const caId = req.params.caId?.trim();
+    if (!caId) {
+      res.status(400).json({ error: "A connected account id is required." });
+      return;
+    }
+    const removed = await disconnectAccount({ workspaceId, userId }, caId);
+    if (!removed) {
+      res.status(404).json({ error: "Connection not found." });
+      return;
+    }
+    res.status(204).end();
   }),
 );
 

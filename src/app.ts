@@ -130,7 +130,11 @@ import integrationRoutes, {
   webhookRelayRouter,
 } from "./integrations/integrationRoutes";
 // HEL-740: Composio broker connect/callback routers (P1b).
-import { composioConnectRouter, composioCallbackRouter } from "./integrations/composio/broker";
+import {
+  composioConnectRouter,
+  composioCallbackRouter,
+  composioWebhookRouter,
+} from "./integrations/composio/broker";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
@@ -632,6 +636,9 @@ if (commsInboundIngest) {
 app.use("/api/webhooks/intercom", intercomWebhookRouter);
 // Ticket-sync webhook — mounted before express.json() because the route verifies the raw payload
 app.use("/api/webhooks/ticket-sync", ticketSyncWebhookRoutes);
+// HEL-749: Composio inbound webhook — before express.json() (the SDK verifies the
+// raw body); unauthenticated, the HMAC signature is the auth boundary.
+app.use("/api/webhooks/composio", composioWebhookRouter);
 app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json({ verify: captureRawJsonBody }));

@@ -115,4 +115,22 @@ describe("connectedAccountStore (in-memory backend)", () => {
     await expect(connectedAccountStore.deleteByConnectedAccountId(ctxA, "ca_1")).resolves.toBe(true);
     await expect(connectedAccountStore.getByConnectedAccountId(ctxA, "ca_1")).resolves.toBeNull();
   });
+
+  it("findByConnectedAccountId looks up across workspaces without a context", async () => {
+    await connectedAccountStore.upsert(ctxA, {
+      toolkit: "github",
+      connectedAccountId: "ca_a",
+      authConfigId: "ac_a",
+    });
+    await connectedAccountStore.upsert(ctxB, {
+      toolkit: "slack",
+      connectedAccountId: "ca_b",
+      authConfigId: "ac_b",
+    });
+
+    const found = await connectedAccountStore.findByConnectedAccountId("ca_b");
+    expect(found?.connectedAccountId).toBe("ca_b");
+    expect(found?.workspaceId).toBe("ws-B");
+    await expect(connectedAccountStore.findByConnectedAccountId("ca_missing")).resolves.toBeNull();
+  });
 });

@@ -58,6 +58,11 @@ primary_region = "ord"
   # staging stay on the legacy single call until this is validated on dev.
   # Unset (default) = legacy single-call path.
   TEAM_ASSEMBLY_CHUNKED = "true"
+  # HEL-743 (Composio integration broker, HEL-720): flag-on for dev so the
+  # broker activates once COMPOSIO_API_KEY is forwarded from Infisical (the key
+  # is the secret; this flag is non-secret config). isComposioEnabled() needs
+  # BOTH. Staging/prod stay default-off until validated here.
+  COMPOSIO_ENABLED = "true"
   # HEL-654 (Composable agent-runtime middleware pipeline): enable the
   # flag-gated agent middlewares on dev for validation before staging/prod.
   # Compaction (HEL-624) rewrites in-flight history; model-fallback (HEL-627)

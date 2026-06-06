@@ -117,13 +117,13 @@ actionRegistry.set("events.emit", async (inputs) => {
   };
 });
 
-actionRegistry.set("crm.upsertLead", async (inputs) => {
-  return { crmId: `CRM-${randomUUID().slice(0, 8).toUpperCase()}`, upserted: true, lead: inputs };
-});
-
-actionRegistry.set("content.publish", async (inputs) => {
-  return { published: true, contentId: `CONT-${randomUUID().slice(0, 8).toUpperCase()}`, content: inputs["draft"] };
-});
+// HEL-753: the fabricated `crm.upsertLead` and `content.publish` stubs were
+// removed here — they returned fake `CRM-…` / `CONT-…` ids and a synthetic
+// success without any external side effect. Real tool execution now goes
+// through the Composio connector action (`composio.execute`, step.config
+// toolkit+slug) on the dynamic library. With these gone, a step that still
+// references those action names falls through to the honest unknown-action stub
+// (output keys → null) instead of fabricating a result.
 
 // HEL-650 / HEL-647: real outbound webhook — first genuinely side-effecting
 // action on the live registry path (replaces the silent unknown-action
@@ -318,11 +318,23 @@ async function executeAction(
     inputs[key] = context[key] ?? config[key];
   }
 
+  // HEL-650 / HEL-753: thread run identity + the step so handlers can read
+  // step.config and resolve the workspace/user's connected integrations. The
+  // workspace is needed by BOTH the connector-action library (Composio is
+  // workspace-scoped) and the legacy ActionContext, so resolve it before the
+  // dispatch branches.
+  const workspaceId =
+    typeof context["workspaceId"] === "string"
+      ? (context["workspaceId"] as string)
+      : typeof config["workspaceId"] === "string"
+        ? (config["workspaceId"] as string)
+        : undefined;
+
   // HEL-656: the dynamic connector-action library takes precedence over the
   // legacy in-process actionRegistry. A registered connector action resolves
   // its credential by the run owner's userId (+ optional connectionId from
-  // step.config), so a run with no user can't perform it — fail honestly
-  // rather than fabricate success.
+  // step.config) and, for workspace-scoped brokers, the workspaceId — so a run
+  // with no user can't perform it — fail honestly rather than fabricate success.
   const connectorAction = getConnectorAction(actionName);
   if (connectorAction) {
     if (!userId) {
@@ -334,17 +346,8 @@ async function executeAction(
       typeof step.config?.["connectionId"] === "string"
         ? (step.config["connectionId"] as string)
         : undefined;
-    return connectorAction.invoke({ userId, connectionId, inputs, config, step });
+    return connectorAction.invoke({ userId, workspaceId, connectionId, inputs, config, step });
   }
-
-  // HEL-650: thread run identity + the step so legacy handlers can read
-  // step.config and look up the workspace/user's connected integrations.
-  const workspaceId =
-    typeof context["workspaceId"] === "string"
-      ? (context["workspaceId"] as string)
-      : typeof config["workspaceId"] === "string"
-        ? (config["workspaceId"] as string)
-        : undefined;
 
   const handler = actionRegistry.get(actionName);
   if (!handler) {

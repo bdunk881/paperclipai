@@ -19,6 +19,12 @@ jest.mock("../integrations/slack/service", () => ({
   slackConnectorService: { sendMessage: jest.fn() },
 }));
 
+// The composio seed lazily imports this inside invoke(); mock the execution so
+// the dispatch is exercised without the SDK / connected-account store.
+jest.mock("../integrations/composio/broker/toolExecution", () => ({
+  executeComposioTool: jest.fn(),
+}));
+
 import {
   WorkflowEngine,
   setLlmProvider,
@@ -29,6 +35,7 @@ import {
   registerConnectorAction,
 } from "./connectorActions";
 import { slackConnectorService } from "../integrations/slack/service";
+import { executeComposioTool } from "../integrations/composio/broker/toolExecution";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
 import { approvalPolicyStore } from "../approvals/policyStore";
@@ -38,6 +45,7 @@ import { WorkflowRun, WorkflowTemplate } from "../types/workflow";
 const mockSend = slackConnectorService.sendMessage as jest.MockedFunction<
   typeof slackConnectorService.sendMessage
 >;
+const mockExecute = executeComposioTool as jest.MockedFunction<typeof executeComposioTool>;
 
 async function waitForCompletion(runId: string, timeoutMs = 3000): Promise<WorkflowRun> {
   const deadline = Date.now() + timeoutMs;
@@ -134,16 +142,110 @@ describe("connector-action registry (HEL-656)", () => {
   });
 
   it("an action not in the library falls through to the legacy registry", async () => {
-    expect(getConnectorAction("crm.upsertLead")).toBeUndefined();
+    // events.emit is a legacy in-process built-in (not a connector action, and
+    // not approval-gated) — it must fall through to the actionRegistry.
+    expect(getConnectorAction("events.emit")).toBeUndefined();
     const run = await engine.startRun(
-      oneActionStep("crm.upsertLead", { inputKeys: ["email"], outputKeys: ["crmId", "upserted"] }),
-      { email: "lead@example.com", workspaceId: "ws-1" },
+      oneActionStep("events.emit", {
+        inputKeys: ["ticketId", "intent"],
+        outputKeys: ["event"],
+      }),
+      { ticketId: "T-1", intent: "lead", workspaceId: "ws-1" },
       undefined,
       "user-1",
     );
     const done = await waitForCompletion(run.id);
     expect(done.status).toBe("completed");
-    expect(done.stepResults[0].output).toMatchObject({ upserted: true });
+    expect(done.stepResults[0].output).toMatchObject({
+      event: expect.objectContaining({ type: "lead.resolved", id: "T-1" }),
+    });
+  });
+});
+
+describe("composio.execute via the dynamic library (HEL-753)", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    process.env.COMPOSIO_ENABLED = "true";
+    process.env.COMPOSIO_API_KEY = "ck_test";
+    mockExecute.mockReset();
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it("is registered as a connector action", () => {
+    expect(getConnectorAction("composio.execute")).toBeDefined();
+  });
+
+  it("executes a Composio tool with the workspace + step inputs as arguments", async () => {
+    mockExecute.mockResolvedValue({
+      successful: true,
+      data: { issueId: "I-1" },
+      error: null,
+      connectedAccountId: "ca_1",
+    });
+
+    const run = await engine.startRun(
+      oneActionStep("composio.execute", {
+        inputKeys: ["title"],
+        outputKeys: ["issueId"],
+        config: { toolkit: "github", slug: "GITHUB_CREATE_ISSUE" },
+      }),
+      { title: "Bug", workspaceId: "ws-1" },
+      undefined,
+      "user-1",
+    );
+    const done = await waitForCompletion(run.id);
+
+    expect(done.status).toBe("completed");
+    expect(mockExecute).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      userId: "user-1",
+      toolkit: "github",
+      slug: "GITHUB_CREATE_ISSUE",
+      arguments: { title: "Bug" },
+      connectionId: undefined,
+    });
+    expect(done.stepResults[0].output).toMatchObject({ issueId: "I-1" });
+  });
+
+  it("fails the step when the tool reports an unsuccessful result", async () => {
+    mockExecute.mockResolvedValue({
+      successful: false,
+      data: null,
+      error: "rate limited",
+      connectedAccountId: "ca_1",
+    });
+
+    const run = await engine.startRun(
+      oneActionStep("composio.execute", {
+        outputKeys: ["x"],
+        config: { toolkit: "github", slug: "GITHUB_CREATE_ISSUE" },
+      }),
+      { workspaceId: "ws-1" },
+      undefined,
+      "user-1",
+    );
+    const done = await waitForCompletion(run.id);
+
+    expect(done.status).toBe("failed");
+    expect(done.stepResults[0].error).toMatch(/rate limited/);
+  });
+
+  it("fails honestly (no execution) when toolkit/slug are missing", async () => {
+    const run = await engine.startRun(
+      oneActionStep("composio.execute", { outputKeys: ["x"], config: {} }),
+      { workspaceId: "ws-1" },
+      undefined,
+      "user-1",
+    );
+    const done = await waitForCompletion(run.id);
+
+    expect(done.status).toBe("failed");
+    expect(done.stepResults[0].error).toMatch(/required/i);
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 });
 

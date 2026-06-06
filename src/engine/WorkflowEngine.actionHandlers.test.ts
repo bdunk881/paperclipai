@@ -115,16 +115,19 @@ describe("WorkflowEngine action handlers — identity threading (HEL-650)", () =
   });
 
   it("does not change behavior for existing fewer-param built-in handlers", async () => {
+    // events.emit is a 1-arg (inputs-only) built-in — it must still run
+    // unchanged under the 3-arg ActionContext threading.
     const run = await engine.startRun(
-      oneActionStep("crm.upsertLead", { inputKeys: ["email"], outputKeys: ["crmId", "upserted"] }),
-      { email: "lead@example.com", workspaceId: "ws-1" },
+      oneActionStep("events.emit", { inputKeys: ["ticketId", "intent"], outputKeys: ["event"] }),
+      { ticketId: "T-9", intent: "ticket", workspaceId: "ws-1" },
       undefined,
       "user-1",
     );
     const done = await waitForCompletion(run.id);
     expect(done.status).toBe("completed");
-    expect(done.stepResults[0].output).toMatchObject({ upserted: true });
-    expect(String((done.stepResults[0].output as { crmId: unknown }).crmId)).toMatch(/^CRM-/);
+    expect(done.stepResults[0].output).toMatchObject({
+      event: expect.objectContaining({ type: "ticket.resolved", id: "T-9" }),
+    });
   });
 });
 

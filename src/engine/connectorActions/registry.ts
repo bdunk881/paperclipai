@@ -17,6 +17,12 @@ import type { WorkflowStep } from "../../types/workflow";
 export interface ConnectorActionInvocation {
   /** Run owner — connector credential lookups key on this. */
   userId: string;
+  /**
+   * Active workspace — the tenancy scope for workspace-keyed brokers (Composio
+   * resolves the connected account + derives its userId from this). May be
+   * undefined for runs without workspace context; workspace-scoped actions throw.
+   */
+  workspaceId?: string;
   /** Optional specific connection (the user may hold several per provider). */
   connectionId?: string;
   /** Resolved declared inputs for the step (step.inputKeys ← context/config). */

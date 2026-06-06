@@ -49,8 +49,7 @@ const PERMISSIVE_SCHEMA: Record<string, unknown> = {
   additionalProperties: true,
 };
 
-// allowlist: process-local TTL cache of Composio raw tool DEFS per toolkit — these
-// are global tool schemas (not tenant data); AgentTools are rebuilt per-workspace.
+// allowlist: process-local TTL cache of Composio raw tool defs per toolkit — global tool schemas, not tenant data (AgentTools are rebuilt per-workspace from these).
 const rawToolCache = new Map<string, { raw: unknown[]; fetchedAt: number }>();
 
 export interface LoadComposioAgentToolsInput {

@@ -4,6 +4,7 @@ import { getStripe, resolveStripePriceId } from "../billing/stripeClient";
 import { getTierById, listEnabledTiers } from "../billing/tiersRepository";
 import { listEnabledPacks } from "../billing/credits/packCatalog";
 import { asyncHandler } from "../middleware/asyncHandler";
+import { requireAuth, type AuthenticatedRequest } from "../auth/authMiddleware";
 
 const router = Router();
 
@@ -50,9 +51,10 @@ async function createCheckoutSession(
     firstName?: string;
     companyName?: string;
     userId?: string;
+    workspaceId?: string;
   }
 ): Promise<string> {
-  const { tier, email, firstName, companyName, userId } = input;
+  const { tier, email, firstName, companyName, userId, workspaceId } = input;
 
   if (!tier) {
     throw new Error("invalid_tier");
@@ -84,6 +86,10 @@ async function createCheckoutSession(
     allow_promotion_codes: true,
     metadata: {
       tier,
+      // HEL-486: workspaceId MUST be in the session metadata — the Stripe
+      // webhook's syncSubscriptionEntitlements early-returns without it, so an
+      // omitted workspaceId leaves the customer charged but unprovisioned.
+      ...(workspaceId ? { workspaceId } : {}),
       ...(email ? { email } : {}),
       ...(firstName ? { firstName } : {}),
       ...(companyName ? { companyName } : {}),
@@ -147,14 +153,32 @@ router.get("/pricing", asyncHandler<Request>(async (_req, res: Response) => {
   }
 }));
 
-router.post("/checkout", asyncHandler<Request>(async (req, res: Response) => {
+// HEL-486: checkout now requires authentication. An unauthenticated session
+// can't carry a workspaceId, so the Stripe webhook's syncSubscriptionEntitlements
+// early-returns and the customer is charged but left unprovisioned (lost on
+// restart / invisible on the other Fly machine). requireAuth supplies the
+// verified workspaceId from the JWT; unauthenticated callers get a 401 and the
+// client routes them through login (/login?redirect=/pricing) before checkout.
+router.post("/checkout", requireAuth, asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+  const workspaceId = req.auth?.workspaceId?.trim();
+  if (!workspaceId) {
+    res.status(400).json({
+      error: "workspace_required",
+      message: "Select or create a workspace before subscribing.",
+    });
+    return;
+  }
   try {
-    const url = await createCheckoutSession(req, req.body as {
+    const body = req.body as {
       tier?: string;
       email?: string;
       firstName?: string;
       companyName?: string;
-      userId?: string;
+    };
+    const url = await createCheckoutSession(req, {
+      ...body,
+      workspaceId,
+      userId: req.auth?.sub,
     });
     res.json({ url });
   } catch (error) {

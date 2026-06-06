@@ -442,6 +442,12 @@ export interface HiringPlan {
   };
 }
 
+/** HEL-763: a toolkit a generated plan picked that the workspace hasn't connected yet. */
+export interface ToolkitToConnect {
+  slug: string;
+  name: string;
+}
+
 export interface GeneratedPlanResponse {
   hiringPlanId: string;
   missionId: string;
@@ -453,6 +459,8 @@ export interface GeneratedPlanResponse {
   llmConfigId?: string | null;
   promptTokens?: number;
   completionTokens?: number;
+  /** HEL-763: toolkits the plan needs that aren't connected yet. */
+  toolkitsToConnect?: ToolkitToConnect[];
 }
 
 /**
@@ -481,6 +489,8 @@ export interface HiringPlanResponse {
    * compat with older API responses.
    */
   starterJobDescriptions?: StarterJobDescription[];
+  /** HEL-763: toolkits the plan needs that aren't connected yet. */
+  toolkitsToConnect?: ToolkitToConnect[];
   acceptedAt: string | null;
   acceptedByUserId: string | null;
   createdAt: string;

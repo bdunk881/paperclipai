@@ -588,6 +588,41 @@ export default function HiringPlanReview() {
         </div>
       ) : null}
 
+      {plan?.toolkitsToConnect && plan.toolkitsToConnect.length > 0 ? (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: "var(--af2-radius)",
+            border: "1px solid var(--af2-line)",
+            background: "var(--af2-paper-2)",
+            fontSize: 13,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            This plan uses{" "}
+            <strong>
+              {plan.toolkitsToConnect.length} tool{plan.toolkitsToConnect.length === 1 ? "" : "s"}
+            </strong>{" "}
+            your workspace hasn't connected yet:{" "}
+            {plan.toolkitsToConnect.map((t) => t.name).join(", ")}. Connect them so the agents can
+            use them.
+          </span>
+          <Link
+            to="/connections?tab=integrations"
+            className="af2-btn af2-btn-sm"
+            style={{ textDecoration: "none", flexShrink: 0 }}
+          >
+            Connect integrations →
+          </Link>
+        </div>
+      ) : null}
+
       {pageState === "loading" ? (
         <div className="af2-card" style={{ padding: 40, textAlign: "center" }}>
           <Loader2 className="animate-spin" style={{ margin: "0 auto 12px", opacity: 0.5 }} />

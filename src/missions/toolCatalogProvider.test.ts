@@ -1,4 +1,5 @@
 import {
+  computeToolkitsToConnect,
   loadComposioToolkitSlugSet,
   loadGenerationToolCatalog,
   recognizeComposioToolkitSlugs,
@@ -157,5 +158,50 @@ describe("loadComposioToolkitSlugSet (HEL-762)", () => {
   it("returns an empty set on a catalog error (best-effort)", async () => {
     mockLoadCatalog.mockRejectedValue(new Error("broker down"));
     await expect(loadComposioToolkitSlugSet()).resolves.toEqual(new Set());
+  });
+});
+
+describe("computeToolkitsToConnect (HEL-763)", () => {
+  const ORIGINAL = { ...process.env };
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...ORIGINAL, COMPOSIO_ENABLED: "true", COMPOSIO_API_KEY: "ck_test" };
+  });
+  afterEach(() => {
+    process.env = { ...ORIGINAL };
+  });
+
+  it("returns recognized chosen toolkits that aren't ACTIVE-connected (with names)", async () => {
+    mockLoadCatalog.mockResolvedValue([entry("github", "GitHub"), entry("slack", "Slack"), entry("notion", "Notion")]);
+    // github ACTIVE (connected → excluded); slack EXPIRED (not active → needs (re)connect).
+    mockListConnections.mockResolvedValue([conn("github", "ACTIVE"), conn("slack", "EXPIRED")]);
+
+    const res = await computeToolkitsToConnect({
+      workspaceId: "ws-A",
+      userId: "user-A",
+      // notion = not connected; heygen = not a real toolkit (dropped).
+      planToolSlugs: ["github", "slack", "notion", "heygen"],
+    });
+
+    expect(res).toEqual([
+      { slug: "slack", name: "Slack" },
+      { slug: "notion", name: "Notion" },
+    ]);
+  });
+
+  it("returns [] when every chosen toolkit is already connected", async () => {
+    mockLoadCatalog.mockResolvedValue([entry("github", "GitHub")]);
+    mockListConnections.mockResolvedValue([conn("github", "ACTIVE")]);
+    await expect(
+      computeToolkitsToConnect({ workspaceId: "ws-A", userId: "user-A", planToolSlugs: ["github"] }),
+    ).resolves.toEqual([]);
+  });
+
+  it("returns [] when Composio is disabled", async () => {
+    delete process.env.COMPOSIO_API_KEY;
+    await expect(
+      computeToolkitsToConnect({ workspaceId: "ws-A", userId: "user-A", planToolSlugs: ["github"] }),
+    ).resolves.toEqual([]);
+    expect(mockLoadCatalog).not.toHaveBeenCalled();
   });
 });

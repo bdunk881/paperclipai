@@ -46,7 +46,11 @@ import {
   type HiringPlanDraft,
 } from "./hiringPlanDraft";
 import { resolveModelForTier } from "../engine/llmRouter";
-import { loadComposioToolkitSlugSet, recognizeComposioToolkitSlugs } from "./toolCatalogProvider";
+import {
+  computeToolkitsToConnect,
+  loadComposioToolkitSlugSet,
+  recognizeComposioToolkitSlugs,
+} from "./toolCatalogProvider";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { ensureUserProfileExists } from "../user/profileStore";
 import { buildEntitlements, entitlementStore, getEntitlementLimits } from "../billing/entitlements";
@@ -625,12 +629,21 @@ export function createHiringPlanRoutes(
           }),
         })) ?? [];
 
+      // HEL-763: toolkits this plan needs that aren't connected yet (drives the
+      // review page's "connect these to run this plan" prompt).
+      const toolkitsToConnect = await computeToolkitsToConnect({
+        workspaceId,
+        userId,
+        planToolSlugs: (draft?.provisioningPlan?.agents ?? []).flatMap((a) => a.tools),
+      });
+
       res.json({
         id: row.id,
         missionId: row.mission_id,
         missionStatement: row.mission_statement,
         plan: row.draft,
         starterJobDescriptions,
+        toolkitsToConnect,
         acceptedAt:
           row.accepted_at instanceof Date
             ? row.accepted_at.toISOString()

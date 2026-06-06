@@ -5,6 +5,7 @@ import { pitchSchema } from "./schemas/pitch";
 import { sectionIntroSchema } from "./schemas/sectionIntro";
 import { finalCtaSchema } from "./schemas/finalCta";
 import { footerSchema } from "./schemas/footer";
+import { landingMetaSchema } from "./schemas/landingMeta";
 import { pricingSchema } from "./schemas/pricing";
 import { creditPackSchema } from "./schemas/creditPack";
 import { testimonialSchema } from "./schemas/testimonials";
@@ -29,6 +30,7 @@ export const schemaTypes = [
   sectionIntroSchema,
   finalCtaSchema,
   footerSchema,
+  landingMetaSchema,
   pricingSchema,
   creditPackSchema,
   testimonialSchema,

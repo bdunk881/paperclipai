@@ -7,6 +7,7 @@
  * (see `landing/lib/publicApi.ts`).
  */
 
+import type { MetaDescriptor, MetaFunction } from "react-router";
 import { Link, useLoaderData } from "react-router";
 import { useState } from "react";
 import { CompanyLogo } from "@autoflow/logo-dev";
@@ -18,49 +19,73 @@ import {
   getFinalCta,
   getFooter,
   getHero,
+  getLandingMeta,
   getNavigation,
   getPitch,
   getPricingOverlays,
   getSectionIntros,
   getTestimonials,
+  urlFor,
   type CreditPackOverlay,
   type PricingTierOverlay,
 } from "@/lib/sanity";
 
-export function meta() {
-  return [
-    { title: "AutoFlow — Hire your first team of agents" },
-    {
-      name: "description",
-      content:
-        "Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run.",
-    },
-    { property: "og:title", content: "AutoFlow — Hire your first team of agents" },
-    {
-      property: "og:description",
-      content:
-        "Workforce automation, by the role — not by the node. Bring your own keys, ship on day one.",
-    },
+// Homepage meta is editor-owned via a Sanity `landingMeta` singleton (HEL-736).
+// Fallback-first: with no doc authored (or Sanity unconfigured), the loader
+// returns `landingMeta: null` and these hardcoded values render verbatim —
+// identical to the pre-Sanity meta tags.
+const META_FALLBACK = {
+  pageTitle: "AutoFlow — Hire your first team of agents",
+  metaDescription:
+    "Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run.",
+  ogTitle: "AutoFlow — Hire your first team of agents",
+  ogDescription:
+    "Workforce automation, by the role — not by the node. Bring your own keys, ship on day one.",
+  ogUrl: "https://helloautoflow.com/",
+  siteName: "AutoFlow",
+  ogImageUrl: "https://helloautoflow.com/og.svg",
+  ogImageAlt: "AutoFlow — hire a team of agents that actually ship",
+};
+
+export const meta: MetaFunction<typeof loader> = ({ data }) => {
+  const m = data?.landingMeta;
+
+  const pageTitle = m?.pageTitle ?? META_FALLBACK.pageTitle;
+  const metaDescription = m?.metaDescription ?? META_FALLBACK.metaDescription;
+  const ogTitle = m?.ogTitle ?? META_FALLBACK.ogTitle;
+  const ogDescription = m?.ogDescription ?? META_FALLBACK.ogDescription;
+  const ogUrl = m?.ogUrl ?? META_FALLBACK.ogUrl;
+  const siteName = m?.siteName ?? META_FALLBACK.siteName;
+  // Build the OG/Twitter image from the uploaded asset (fixed 1200×630), or
+  // fall through to the static og.svg until an editor uploads one.
+  const ogImageUrl = m?.ogImage
+    ? urlFor(m.ogImage).width(1200).height(630).url()
+    : META_FALLBACK.ogImageUrl;
+  const ogImageAlt = m?.ogImage?.alt ?? META_FALLBACK.ogImageAlt;
+  // Twitter title/description fall back to the OG values when unset.
+  const twitterTitle = m?.twitterTitle ?? ogTitle;
+  const twitterDescription = m?.twitterDescription ?? ogDescription;
+
+  const tags: MetaDescriptor[] = [
+    { title: pageTitle },
+    { name: "description", content: metaDescription },
+    { property: "og:title", content: ogTitle },
+    { property: "og:description", content: ogDescription },
     { property: "og:type", content: "website" },
-    { property: "og:url", content: "https://helloautoflow.com/" },
-    { property: "og:site_name", content: "AutoFlow" },
-    { property: "og:image", content: "https://helloautoflow.com/og.svg" },
+    { property: "og:url", content: ogUrl },
+    { property: "og:site_name", content: siteName },
+    { property: "og:image", content: ogImageUrl },
     { property: "og:image:width", content: "1200" },
     { property: "og:image:height", content: "630" },
-    {
-      property: "og:image:alt",
-      content: "AutoFlow — hire a team of agents that actually ship",
-    },
+    { property: "og:image:alt", content: ogImageAlt },
     { name: "twitter:card", content: "summary_large_image" },
-    { name: "twitter:title", content: "AutoFlow — Hire your first team of agents" },
-    {
-      name: "twitter:description",
-      content:
-        "Workforce automation, by the role — not by the node. Bring your own keys, ship on day one.",
-    },
-    { name: "twitter:image", content: "https://helloautoflow.com/og.svg" },
+    { name: "twitter:title", content: twitterTitle },
+    { name: "twitter:description", content: twitterDescription },
+    { name: "twitter:image", content: ogImageUrl },
   ];
-}
+
+  return tags;
+};
 
 // The homepage SSRs at runtime (Sanity-driven) rather than prerendering, so
 // Studio edits go live. Edge-cache briefly to stay fast; edits propagate within
@@ -326,6 +351,21 @@ type FooterContent = {
   copyrightText: string | null;
 };
 
+type LandingMeta = {
+  pageTitle: string | null;
+  metaDescription: string | null;
+  ogTitle: string | null;
+  ogDescription: string | null;
+  // Sanity image asset (mirrors lib/sanity's internal `SanityImageSource = any`,
+  // which is not exported). `urlFor()` consumes it in meta(); `.alt` is read off it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ogImage: any | null;
+  twitterTitle: string | null;
+  twitterDescription: string | null;
+  ogUrl: string | null;
+  siteName: string | null;
+};
+
 interface HomeLoaderData extends PricingLoaderData {
   testimonials: Testimonial[];
   faqItems: FaqItem[];
@@ -336,6 +376,7 @@ interface HomeLoaderData extends PricingLoaderData {
   sectionIntros: Record<string, SectionIntro>;
   finalCta: FinalCtaContent | null;
   footer: FooterContent | null;
+  landingMeta: LandingMeta | null;
 }
 
 // Eyebrow taglines aren't in the DB (yet — HEL-278 will move them to Sanity).
@@ -510,6 +551,7 @@ export async function loader(): Promise<HomeLoaderData> {
     sectionIntros,
     finalCta,
     footer,
+    landingMeta,
   ] = await Promise.all([
     apiPromise,
     getPricingOverlays(),
@@ -523,6 +565,7 @@ export async function loader(): Promise<HomeLoaderData> {
     getSectionIntros(),
     getFinalCta(),
     getFooter(),
+    getLandingMeta(),
   ]);
 
   // Index section intros by key for O(1) per-section lookup in render. Missing
@@ -548,6 +591,8 @@ export async function loader(): Promise<HomeLoaderData> {
     sectionIntros: sectionIntrosByKey,
     finalCta,
     footer,
+    // Homepage meta tags (title/OG/Twitter); null → meta() uses META_FALLBACK.
+    landingMeta,
   };
 }
 

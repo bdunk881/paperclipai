@@ -129,6 +129,33 @@ export async function getFooter() {
   }>(`*[_type == "footer"][0]{ brandLine, links[]{ label, url, isExternal }, copyrightText }`);
 }
 
+/** Homepage meta tags (singleton). Includes social image URL; returns null when unconfigured. */
+export async function getLandingMeta() {
+  return sanityFetch<{
+    pageTitle: string | null;
+    metaDescription: string | null;
+    ogTitle: string | null;
+    ogDescription: string | null;
+    ogImage: SanityImageSource | null;
+    twitterTitle: string | null;
+    twitterDescription: string | null;
+    ogUrl: string | null;
+    siteName: string | null;
+  }>(
+    `*[_type == "landingMeta"][0]{
+      pageTitle,
+      metaDescription,
+      ogTitle,
+      ogDescription,
+      ogImage,
+      twitterTitle,
+      twitterDescription,
+      ogUrl,
+      siteName
+    }`,
+  );
+}
+
 export async function getFaqItems() {
   return sanityFetch<
     { question: string; answer: string; order: number }[]

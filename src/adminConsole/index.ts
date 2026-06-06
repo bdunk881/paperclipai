@@ -38,6 +38,7 @@ import {
   createSystemNoticesRoutes,
   createSystemNoticeUnsubscribeRoute,
 } from "./systemNotices/routes";
+import { createCommsReputationRoutes } from "./commsReputationRoutes";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { verifyImpersonationToken } from "./impersonationStore";
 
@@ -75,6 +76,7 @@ export function createAdminConsoleRoutes(pool: Pool): Router {
   router.use("/agent-webhooks", createAgentWebhookRoutes(pool));
   router.use("/platform-admins", createPlatformAdminsRoutes(pool));
   router.use("/system-notices", createSystemNoticesRoutes(pool));
+  router.use("/comms-reputation", createCommsReputationRoutes(pool));
 
   return router;
 }

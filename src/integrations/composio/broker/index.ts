@@ -41,3 +41,20 @@ export {
   normalizeToolkitSlug,
   resetAuthConfigProvisioningForTests,
 } from "./authConfigProvisioning";
+
+export {
+  beginConnect,
+  completeConnect,
+  normalizeConnectionStatus,
+  type BeginConnectResult,
+  type CompleteConnectResult,
+} from "./connectionService";
+
+export {
+  createConnectState,
+  consumeConnectState,
+  clearConnectStateForTests,
+  type ComposioConnectStateEntry,
+} from "./connectStateStore";
+
+export { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";

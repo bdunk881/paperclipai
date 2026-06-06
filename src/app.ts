@@ -129,6 +129,8 @@ import integrationRoutes, {
   oauthCallbackRouter as integrationOAuthCallbackRoutes,
   webhookRelayRouter,
 } from "./integrations/integrationRoutes";
+// HEL-740: Composio broker connect/callback routers (P1b).
+import { composioConnectRouter, composioCallbackRouter } from "./integrations/composio/broker";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
 import notificationRoutes from "./notifications/routes";
@@ -935,6 +937,13 @@ app.use("/api/integrations/stripe", stripeRoutes);
 app.use("/api/integrations/posthog", posthogRoutes);
 app.use("/api/integrations/intercom", intercomRoutes);
 app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
+
+// HEL-740: Composio broker connect/callback (P1b). The callback is UNAUTHENTICATED
+// (Composio's redirect carries no session; tenancy is recovered from the single-use
+// connect-state token). Connect is authed + role-gated like the other integration writes.
+app.use("/api/composio/callback", composioCallbackRouter);
+app.use("/api/composio", requireAuth, workspaceResolver, requireRole("admin", "developer"), composioConnectRouter);
+
 app.use(
   "/api/connectors/google-workspace",
   requireAuth,

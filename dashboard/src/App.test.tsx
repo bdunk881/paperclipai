@@ -64,7 +64,6 @@ vi.mock("./pages/TicketDetail", () => ({ default: () => <div>Ticket Detail Page<
 vi.mock("./pages/TicketTeamView", () => ({ default: () => <div>Ticket Team View Page</div> }));
 vi.mock("./pages/TicketActorView", () => ({ default: () => <div>Ticket Actor View Page</div> }));
 vi.mock("./pages/Memory", () => ({ default: () => <div>Memory Page</div> }));
-vi.mock("./pages/MCPIntegrations", () => ({ default: () => <div>MCP Integrations Page</div> }));
 vi.mock("./pages/McpServers", () => ({ default: () => <div>MCP Servers Page</div> }));
 vi.mock("./pages/CheckoutSuccess", () => ({ default: () => <div>Checkout Success Page</div> }));
 vi.mock("./pages/AuthCallback", () => ({ default: () => <div>Auth Callback Page</div> }));

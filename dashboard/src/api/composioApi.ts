@@ -8,9 +8,9 @@ import { trackedFetch } from "./trackedFetch";
  * toolkits`) joined with the workspace's connected accounts (P1c `GET
  * /api/composio/connections`), plus connect (P1b) and disconnect (P1c).
  *
- * Mirrors `integrationCatalogApi.ts` conventions (getApiBasePath + trackedFetch
+ * Uses the standard dashboard client conventions (getApiBasePath + trackedFetch
  * + Bearer token). Includes a `VITE_USE_MOCK` path so the catalog renders
- * offline — the legacy catalog client has none, so mock-mode shows an empty tab.
+ * offline.
  */
 
 const BASE = getApiBasePath();

@@ -174,7 +174,7 @@ export default function ConnectorHealth() {
         </div>
         <div className="af2-page-actions">
           <Link
-            to="/integrations/mcp"
+            to="/connections?tab=integrations"
             className="af2-btn af2-btn-ghost af2-btn-sm"
             style={{ textDecoration: "none" }}
           >
@@ -236,7 +236,7 @@ export default function ConnectorHealth() {
         <div className="af2-card" style={{ padding: 24, textAlign: "center" }}>
           <p style={{ fontSize: 14, color: "var(--af2-ink-2)" }}>
             No connectors registered yet.{" "}
-            <Link to="/integrations/mcp" style={{ color: "var(--af2-clay)" }}>
+            <Link to="/connections?tab=integrations" style={{ color: "var(--af2-clay)" }}>
               Add one →
             </Link>
           </p>
@@ -314,7 +314,7 @@ function ConnectorRow({ connector }: { connector: ConnectorHealthRecord }) {
       </div>
       {showReconnect ? (
         <Link
-          to={`/integrations/mcp?reconnect=${encodeURIComponent(connector.connectorKey)}`}
+          to="/connections?tab=integrations"
           className="af2-btn af2-btn-sm af2-btn-clay"
           style={{ textDecoration: "none", flexShrink: 0 }}
         >

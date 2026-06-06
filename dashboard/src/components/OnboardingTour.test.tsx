@@ -13,7 +13,7 @@ describe("OnboardingTour (DASH-17)", () => {
       <nav>
         <a href="/hire">Hire</a>
         <a href="/mission-assignments">Assignments</a>
-        <a href="/integrations/mcp">Integrations</a>
+        <a href="/connections">Integrations</a>
         <a href="/settings/llm-providers">Models</a>
       </nav>
     `;

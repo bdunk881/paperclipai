@@ -8,8 +8,7 @@
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
-import { signOutboundBody } from "../webhooks/verifySignature";
-import { assertSafeMcpUrl, assertSafeOutboundUrl } from "../mcp/mcpUrlSecurity";
+import { assertSafeMcpUrl } from "../mcp/mcpUrlSecurity";
 import { safeEvalCondition } from "./safeConditionEval";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import {
@@ -516,85 +515,6 @@ export async function handleCondition(
   if (step.outputKeys[0]) output[step.outputKeys[0]] = result;
 
   return { output, skip: !result };
-}
-
-// ---------------------------------------------------------------------------
-// Action
-// ---------------------------------------------------------------------------
-
-export async function handleAction(
-  step: WorkflowStep,
-  ctx: StepContext
-): Promise<StepHandlerResult> {
-  const action = step.action ?? "";
-
-  // HEL-426: these App-action branches are stubs that fabricate success — no
-  // email is sent, no CRM record written, etc. Mark each output `simulated:
-  // true` (alongside the legacy `_stub`) so the trace/UI surfaces it as
-  // "simulated" instead of a real side effect. Real handlers wired to the
-  // workspace's connected integrations are tracked as follow-up feature work.
-  if (action === "email.send") {
-    const output: Record<string, unknown> = { sent: true, _stub: true, simulated: true };
-    return { output };
-  }
-
-  if (action === "support.sendOrEscalate") {
-    const shouldAutoRespond = Boolean(ctx["shouldAutoRespond"]);
-    const output: Record<string, unknown> = {
-      resolution: shouldAutoRespond ? "auto_responded" : "escalated",
-      escalated: !shouldAutoRespond,
-      _stub: true,
-      simulated: true,
-    };
-    return { output };
-  }
-
-  if (action === "crm.upsertLead") {
-    const output: Record<string, unknown> = {
-      crmId: `lead_${Math.floor(Math.random() * 10000)}`,
-      crmUrl: "https://crm.example.com/leads/stub",
-      _stub: true,
-      simulated: true,
-    };
-    return { output };
-  }
-
-  if (action === "content.queue") {
-    const output: Record<string, unknown> = {
-      queueId: `cq-${String(Math.floor(Math.random() * 99999)).padStart(5, "0")}`,
-      _stub: true,
-      simulated: true,
-    };
-    return { output };
-  }
-
-  if (action === "webhook.send") {
-    const url = typeof step.config?.["url"] === "string" ? step.config["url"] : "";
-    const secret = typeof ctx["outboundWebhookSecret"] === "string" ? ctx["outboundWebhookSecret"] : "";
-    if (!url) {
-      return { output: { sent: false, error: "url not configured", _stub: true } };
-    }
-    const bodyPayload = JSON.stringify({ event: step.config?.["event"] ?? "workflow.action", data: ctx });
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (secret) {
-      headers["X-AutoFlow-Signature"] = signOutboundBody(secret, bodyPayload);
-    }
-    // HEL-255 — SSRF guard. Reject URLs targeting loopback / RFC-1918 /
-    // link-local / cloud-metadata before issuing the outbound request.
-    await assertSafeOutboundUrl(url);
-    const response = await fetch(url, { method: "POST", headers, body: bodyPayload });
-    return { output: { sent: true, status: response.status } };
-  }
-
-  // HEL-426: unknown/unmapped action — e.g. the builder's curated
-  // slack.notify / hubspot.upsert / support.reply.draft, which have no handler
-  // branch. Previously this passed through as a silent fake success; mark it
-  // `simulated: true` so it isn't presented as a real side effect.
-  const output: Record<string, unknown> = { _stub: true, simulated: true, _action: action };
-  for (const key of step.outputKeys) {
-    if (key in ctx) output[key] = ctx[key];
-  }
-  return { output };
 }
 
 // ---------------------------------------------------------------------------

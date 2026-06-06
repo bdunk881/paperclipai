@@ -20,3 +20,24 @@ export {
   resetComposioBrokerForTests,
   type ComposioBrokerClient,
 } from "./client";
+
+export {
+  connectedAccountStore,
+  type ConnectedAccountStore,
+  type ComposioConnectedAccountRow,
+  type ComposioConnectionStatus,
+  type ComposioWorkspaceContext,
+  type UpsertConnectedAccountInput,
+} from "./connectedAccountStore";
+
+export {
+  authConfigCacheStore,
+  type AuthConfigCacheStore,
+  type ComposioAuthConfigCacheRow,
+} from "./authConfigCacheStore";
+
+export {
+  provisionManagedAuthConfig,
+  normalizeToolkitSlug,
+  resetAuthConfigProvisioningForTests,
+} from "./authConfigProvisioning";

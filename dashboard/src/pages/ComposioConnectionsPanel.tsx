@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
 import {
@@ -12,16 +12,21 @@ import {
 
 /**
  * ComposioConnectionsPanel — the Integrations tab, powered by the Composio
- * broker (HEL-747 / P2b-2). Replaces the bespoke ~15-connector grid with a
- * search over Composio's full connectable-app catalog (P2a) joined with this
- * workspace's connected accounts (P1c). Connect (P1b) / disconnect (P1c) wire
- * straight to the broker.
+ * broker (HEL-747). Replaces the bespoke ~15-connector grid with a search over
+ * Composio's full connectable-app catalog (P2a) joined with this workspace's
+ * connected accounts (P1c). Connect (P1b) / disconnect (P1c) wire straight to
+ * the broker.
  *
- * UX (Brad's calls): search + load-more (the catalog cursor), and only
- * connectable-via-managed-auth toolkits (the endpoint filters via connectable).
+ * HEL-748: category filter + grouping. A category <select> (server-side
+ * `?category=`); in the "All" view the loaded toolkits are grouped by their
+ * primary category. Category options accumulate across loaded pages.
  */
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 60;
+
+function primaryCategory(toolkit: ComposioToolkit): { slug: string; name: string } {
+  return toolkit.categories[0] ?? { slug: "other", name: "Other" };
+}
 
 export default function ComposioConnectionsPanel() {
   const { getAccessToken } = useAuth();
@@ -29,7 +34,9 @@ export default function ComposioConnectionsPanel() {
 
   const [toolkits, setToolkits] = useState<ComposioToolkit[]>([]);
   const [connectionBySlug, setConnectionBySlug] = useState<Record<string, ComposioConnection>>({});
+  const [seenCategories, setSeenCategories] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
   const [cursor, setCursor] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -38,8 +45,7 @@ export default function ComposioConnectionsPanel() {
   const [busySlug, setBusySlug] = useState<string | null>(null);
 
   // OAuth round-trip result: the backend callback redirects back here with
-  // ?status=success|error&provider=composio&message=…; toast + scrub. Provider-
-  // agnostic, mirroring the old panel.
+  // ?status=success|error&provider=composio&message=…; toast + scrub.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -60,7 +66,7 @@ export default function ComposioConnectionsPanel() {
   }, []);
 
   const load = useCallback(
-    async (opts: { search: string; cursor?: string | null }) => {
+    async (opts: { search: string; category: string; cursor?: string | null }) => {
       const append = Boolean(opts.cursor);
       if (append) setLoadingMore(true);
       else setLoading(true);
@@ -71,6 +77,7 @@ export default function ComposioConnectionsPanel() {
         const [page, connections] = await Promise.all([
           fetchComposioToolkits(token, {
             search: opts.search || undefined,
+            category: opts.category || undefined,
             connectableOnly: true,
             limit: PAGE_SIZE,
             cursor: opts.cursor ?? undefined,
@@ -80,10 +87,16 @@ export default function ComposioConnectionsPanel() {
         setToolkits((prev) => (append ? [...prev, ...page.toolkits] : page.toolkits));
         setCursor(page.nextCursor);
         setTotal(page.total);
+        // Accumulate the category options so the filter stays complete even after
+        // narrowing to one category (the loaded set shrinks, the options don't).
+        setSeenCategories((prev) => {
+          const next = { ...prev };
+          for (const t of page.toolkits) for (const c of t.categories) next[c.slug] = c.name;
+          return next;
+        });
         if (connections) {
           const map: Record<string, ComposioConnection> = {};
           for (const c of connections) {
-            // prefer an ACTIVE connection when a toolkit has more than one.
             if (!map[c.toolkit] || c.status === "ACTIVE") map[c.toolkit] = c;
           }
           setConnectionBySlug(map);
@@ -98,11 +111,11 @@ export default function ComposioConnectionsPanel() {
     [getAccessToken],
   );
 
-  // Initial load + debounced search.
+  // Initial load + reload on search (debounced) or category change.
   useEffect(() => {
-    const handle = setTimeout(() => void load({ search }), search ? 250 : 0);
+    const handle = setTimeout(() => void load({ search, category }), search ? 250 : 0);
     return () => clearTimeout(handle);
-  }, [search, load]);
+  }, [search, category, load]);
 
   const onConnect = useCallback(
     async (slug: string) => {
@@ -116,14 +129,14 @@ export default function ComposioConnectionsPanel() {
           return;
         }
         toast.info("Connection started.");
-        await load({ search });
+        await load({ search, category });
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Couldn't start the connection");
       } finally {
         setBusySlug(null);
       }
     },
-    [getAccessToken, toast, load, search],
+    [getAccessToken, toast, load, search, category],
   );
 
   const onDisconnect = useCallback(
@@ -148,6 +161,87 @@ export default function ComposioConnectionsPanel() {
     [getAccessToken, toast],
   );
 
+  const categoryOptions = useMemo(
+    () =>
+      Object.entries(seenCategories)
+        .map(([slug, name]) => ({ slug, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [seenCategories],
+  );
+
+  // Group the loaded toolkits by primary category for the "All" view. When a
+  // category is selected the list is already server-filtered, so render flat.
+  const groups = useMemo(() => {
+    if (category) return null;
+    const map = new Map<string, { name: string; items: ComposioToolkit[] }>();
+    for (const toolkit of toolkits) {
+      const cat = primaryCategory(toolkit);
+      const group = map.get(cat.slug) ?? { name: cat.name, items: [] };
+      group.items.push(toolkit);
+      map.set(cat.slug, group);
+    }
+    return [...map.entries()]
+      .sort((a, b) => a[1].name.localeCompare(b[1].name))
+      .map(([slug, group]) => ({ slug, name: group.name, items: group.items }));
+  }, [toolkits, category]);
+
+  function renderRow(toolkit: ComposioToolkit) {
+    const connection = connectionBySlug[toolkit.slug];
+    const connected = connection?.status === "ACTIVE";
+    const expired = connection?.status === "EXPIRED";
+    const busy = busySlug === toolkit.slug;
+    const cat = primaryCategory(toolkit);
+    return (
+      <div className="int-row" key={toolkit.slug}>
+        <div className="int-logo">
+          {toolkit.logo ? (
+            <img
+              src={toolkit.logo}
+              alt=""
+              width={28}
+              height={28}
+              loading="lazy"
+              style={{ borderRadius: 6 }}
+            />
+          ) : (
+            toolkit.name.slice(0, 1)
+          )}
+        </div>
+        <div>
+          <div className="int-name">{toolkit.name}</div>
+          <div className="int-desc">
+            {toolkit.description ?? `${toolkit.toolsCount ?? 0} tools`}
+            {cat.name ? <span style={{ opacity: 0.55 }}> · {cat.name}</span> : null}
+          </div>
+        </div>
+        {connected ? (
+          <span className="pill dot sage">Connected</span>
+        ) : expired ? (
+          <span className="pill dot mustard">Expired</span>
+        ) : (
+          <span />
+        )}
+        {connected ? (
+          <button
+            className="btn ghost sm"
+            disabled={busy}
+            onClick={() => void onDisconnect(toolkit.slug, connection!.connectedAccountId)}
+          >
+            {busy ? "…" : "Disconnect"}
+          </button>
+        ) : (
+          <button
+            className="btn primary sm"
+            disabled={busy}
+            onClick={() => void onConnect(toolkit.slug)}
+          >
+            {busy ? "…" : expired ? "Reconnect" : "Connect"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="filterbar">
@@ -159,12 +253,24 @@ export default function ComposioConnectionsPanel() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <select
+          aria-label="Filter by category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+        >
+          <option value="">All categories</option>
+          {categoryOptions.map((c) => (
+            <option key={c.slug} value={c.slug}>
+              {c.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {error ? (
         <div className="card">
           <p className="desc">{error}</p>
-          <button className="btn sm" onClick={() => void load({ search })}>
+          <button className="btn sm" onClick={() => void load({ search, category })}>
             Retry
           </button>
         </div>
@@ -172,71 +278,26 @@ export default function ComposioConnectionsPanel() {
         <p className="desc">Loading integrations…</p>
       ) : toolkits.length === 0 ? (
         <p className="desc">No apps found{search ? ` for “${search}”` : ""}.</p>
-      ) : (
+      ) : groups ? (
         <div>
-          {toolkits.map((toolkit) => {
-            const connection = connectionBySlug[toolkit.slug];
-            const connected = connection?.status === "ACTIVE";
-            const expired = connection?.status === "EXPIRED";
-            const busy = busySlug === toolkit.slug;
-            return (
-              <div className="int-row" key={toolkit.slug}>
-                <div className="int-logo">
-                  {toolkit.logo ? (
-                    <img
-                      src={toolkit.logo}
-                      alt=""
-                      width={28}
-                      height={28}
-                      loading="lazy"
-                      style={{ borderRadius: 6 }}
-                    />
-                  ) : (
-                    toolkit.name.slice(0, 1)
-                  )}
-                </div>
-                <div>
-                  <div className="int-name">{toolkit.name}</div>
-                  <div className="int-desc">
-                    {toolkit.description ??
-                      `${toolkit.toolsCount ?? 0} tools${
-                        toolkit.triggersCount ? ` · ${toolkit.triggersCount} triggers` : ""
-                      }`}
-                  </div>
-                </div>
-                {connected ? (
-                  <span className="pill dot sage">Connected</span>
-                ) : expired ? (
-                  <span className="pill dot mustard">Expired</span>
-                ) : (
-                  <span />
-                )}
-                {connected ? (
-                  <button
-                    className="btn ghost sm"
-                    disabled={busy}
-                    onClick={() => void onDisconnect(toolkit.slug, connection!.connectedAccountId)}
-                  >
-                    {busy ? "…" : "Disconnect"}
-                  </button>
-                ) : (
-                  <button
-                    className="btn primary sm"
-                    disabled={busy}
-                    onClick={() => void onConnect(toolkit.slug)}
-                  >
-                    {busy ? "…" : expired ? "Reconnect" : "Connect"}
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {groups.map((group) => (
+            <div key={group.slug}>
+              <div className="int-cat">{group.name}</div>
+              {group.items.map(renderRow)}
+            </div>
+          ))}
         </div>
+      ) : (
+        <div>{toolkits.map(renderRow)}</div>
       )}
 
       {cursor && !loading ? (
         <div style={{ marginTop: 16, textAlign: "center" }}>
-          <button className="btn ghost" disabled={loadingMore} onClick={() => void load({ search, cursor })}>
+          <button
+            className="btn ghost"
+            disabled={loadingMore}
+            onClick={() => void load({ search, category, cursor })}
+          >
             {loadingMore ? "Loading…" : `Load more (${toolkits.length} of ${total})`}
           </button>
         </div>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../components/ToastProvider";
+import { useTheme } from "../context/ThemeContext";
+import { CompanyLogo } from "@autoflow/logo-dev";
 import {
   fetchComposioToolkits,
   listComposioConnections,
@@ -31,6 +33,7 @@ function primaryCategory(toolkit: ComposioToolkit): { slug: string; name: string
 export default function ComposioConnectionsPanel() {
   const { getAccessToken } = useAuth();
   const toast = useToast();
+  const { resolvedTheme } = useTheme();
 
   const [toolkits, setToolkits] = useState<ComposioToolkit[]>([]);
   const [connectionBySlug, setConnectionBySlug] = useState<Record<string, ComposioConnection>>({});
@@ -204,7 +207,14 @@ export default function ComposioConnectionsPanel() {
               style={{ borderRadius: 6 }}
             />
           ) : (
-            toolkit.name.slice(0, 1)
+            // HEL-758: no Composio meta.logo → resolve a brand mark via logo.dev
+            // (CompanyLogo) keyed on the toolkit slug, with an initials fallback.
+            <CompanyLogo
+              integrationId={toolkit.slug}
+              name={toolkit.name}
+              size={28}
+              theme={resolvedTheme}
+            />
           )}
         </div>
         <div>

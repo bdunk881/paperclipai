@@ -19,6 +19,8 @@ export const ADMIN_ACTIONS = [
   "lookup_user",
   "list_workspaces",
   "view_user",
+  // comms reputation (HEL-728)
+  "view_comms_reputation",
   "generate_password_reset_link",
   "request_mfa_reset",
   "execute_mfa_reset",

@@ -119,6 +119,13 @@ describe("toolkitCatalog (HEL-745)", () => {
     expect(page.total).toBe(2);
   });
 
+  it("hides toolkits that aren't connectable via managed auth", async () => {
+    // gmail has no composioManagedAuthSchemes and noAuth is undefined → not connectable.
+    const page = await queryToolkitCatalog({ connectableOnly: true });
+    expect(page.toolkits.map((t) => t.slug)).toEqual(["github", "slack"]);
+    expect(page.total).toBe(2);
+  });
+
   it("paginates with limit + cursor", async () => {
     const first = await queryToolkitCatalog({ limit: 2 });
     expect(first.toolkits.map((t) => t.slug)).toEqual(["github", "slack"]);

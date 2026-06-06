@@ -96,6 +96,7 @@ composioConnectRouter.get(
       category: firstString(req.query.category),
       cursor: firstString(req.query.cursor),
       limit: limitRaw ? Number(limitRaw) : undefined,
+      connectableOnly: firstString(req.query.connectable) === "true",
     });
     res.json(page);
   }),

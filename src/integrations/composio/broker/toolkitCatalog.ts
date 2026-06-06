@@ -38,6 +38,8 @@ export interface ToolkitCatalogQuery {
   category?: string;
   cursor?: string;
   limit?: number;
+  /** When true, only toolkits connectable via Composio-managed auth today. */
+  connectableOnly?: boolean;
 }
 
 export interface ToolkitCatalogPage {
@@ -92,6 +94,15 @@ function normalizeToolkitItem(item: RawToolkitItem): ToolkitCatalogEntry {
 }
 
 /**
+ * A toolkit is connectable via managed auth today if Composio manages an auth
+ * scheme for it, or it needs no auth. Toolkits requiring our own OAuth app are
+ * not connectable until P6, so the UI hides them by passing connectableOnly.
+ */
+export function isConnectableViaManagedAuth(entry: ToolkitCatalogEntry): boolean {
+  return entry.composioManagedAuthSchemes.length > 0 || entry.noAuth;
+}
+
+/**
  * Load (and cache) the full toolkit catalog. One Composio call — the response is
  * a bare array (no cursor), so a single fetch returns the catalog for the filter.
  */
@@ -129,6 +140,9 @@ export async function queryToolkitCatalog(query: ToolkitCatalogQuery): Promise<T
   const category = query.category?.trim().toLowerCase();
 
   let filtered = all;
+  if (query.connectableOnly) {
+    filtered = filtered.filter(isConnectableViaManagedAuth);
+  }
   if (category) {
     filtered = filtered.filter((t) =>
       t.categories.some(

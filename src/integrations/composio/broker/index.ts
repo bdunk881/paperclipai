@@ -65,6 +65,7 @@ export { composioConnectRouter, composioCallbackRouter } from "./oauthRoutes";
 export {
   loadCatalog,
   queryToolkitCatalog,
+  isConnectableViaManagedAuth,
   isToolkitCatalogAvailable,
   resetToolkitCatalogForTests,
   type ToolkitCatalogEntry,

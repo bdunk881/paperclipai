@@ -48,12 +48,13 @@ import { useAuth } from "../context/AuthContext";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import McpServers from "./McpServers";
 import ComposioConnectionsPanel from "./ComposioConnectionsPanel";
+import ComposioTriggersPanel from "./ComposioTriggersPanel";
 
 // ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = "integrations" | "models" | "mcp" | "health" | "env-vars";
+type TabId = "integrations" | "triggers" | "models" | "mcp" | "health" | "env-vars";
 
 interface TabDef {
   id: TabId;
@@ -63,6 +64,7 @@ interface TabDef {
 
 const TABS: readonly TabDef[] = [
   { id: "integrations", label: "Integrations" },
+  { id: "triggers", label: "Triggers" },
   { id: "models", label: "Models" },
   { id: "mcp", label: "MCP Servers", pro: true },
   { id: "health", label: "Health", pro: true },
@@ -1590,6 +1592,9 @@ export default function Connections() {
 
         <div hidden={active !== "integrations"}>
           <ComposioConnectionsPanel />
+        </div>
+        <div hidden={active !== "triggers"}>
+          <ComposioTriggersPanel />
         </div>
         <div hidden={active !== "models"}>
           <ModelsPanel />

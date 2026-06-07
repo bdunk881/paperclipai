@@ -108,3 +108,10 @@ export {
   type ComposioTriggerTypeInfo,
   type ComposioTriggerTypeSummary,
 } from "./triggerSubscriptionService";
+
+export {
+  createComposioTriggerIngest,
+  type ComposioTriggerIngest,
+  type NormalizedComposioTriggerEvent,
+  type ComposioTriggerIngestResult,
+} from "./composioTriggerIngest";

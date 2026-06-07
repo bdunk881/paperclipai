@@ -16,6 +16,7 @@ import { withWorkspaceContext } from "../middleware/workspaceContext";
 export type WakeSource =
   | "scheduled"
   | "webhook"
+  | "composio_trigger"
   | "mention"
   | "approval_resolved"
   | "user_message"

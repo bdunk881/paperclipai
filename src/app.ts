@@ -134,6 +134,7 @@ import {
   composioConnectRouter,
   composioCallbackRouter,
   composioWebhookRouter,
+  composioTriggerRouter,
 } from "./integrations/composio/broker";
 import googleWorkspaceConnectorRoutes from "./connectors/google-workspace/routes";
 import googleWorkspaceWebhookRoutes from "./connectors/google-workspace/webhookRoutes";
@@ -949,7 +950,14 @@ app.use("/api/integrations/agent-catalog", agentCatalogRoutes);
 // (Composio's redirect carries no session; tenancy is recovered from the single-use
 // connect-state token). Connect is authed + role-gated like the other integration writes.
 app.use("/api/composio/callback", composioCallbackRouter);
-app.use("/api/composio", requireAuth, workspaceResolver, requireRole("admin", "developer"), composioConnectRouter);
+app.use(
+  "/api/composio",
+  requireAuth,
+  workspaceResolver,
+  requireRole("admin", "developer"),
+  composioConnectRouter,
+  composioTriggerRouter,
+);
 
 app.use(
   "/api/connectors/google-workspace",

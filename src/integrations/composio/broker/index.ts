@@ -116,3 +116,5 @@ export {
   type NormalizedComposioTriggerEvent,
   type ComposioTriggerIngestResult,
 } from "./composioTriggerIngest";
+
+export { reconcileWorkspaceTriggers, type ReconcileResult } from "./triggerReconcile";

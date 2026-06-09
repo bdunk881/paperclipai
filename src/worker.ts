@@ -38,6 +38,7 @@ import type { StorageDeletionPayload } from "./queue/storageQueue";
 import { getStorageAdapter, parseStorageKey } from "./storage";
 import { syncRepeatableJobs } from "./queue/scheduler";
 import { runStore } from "./engine/runStore";
+import { dispatchScheduledWorkflowRun } from "./engine/scheduledWorkflowRun";
 import { getPostgresPool, isPostgresConfigured, isPostgresPersistenceEnabled } from "./db/postgres";
 import { executeAgentPrompt } from "./agents/agentPromptExecution";
 import { setActedRunId } from "./agents/wakeEventStore";
@@ -61,10 +62,12 @@ const connection = redisConnection;
  * idempotency key is `scheduler:<routineId>` and the rest of the
  * payload is empty. Look up the routine — if it's prompt-backed,
  * enqueue it onto the agent-prompt queue with the resolved fields.
- * Workflow-backed routines fall through to the existing stub for
- * HEL-107+ to wire.
+ * HEL-665: workflow-backed routines resolve their DAG and enqueue a
+ * queued run back onto the "runs" queue (via dispatchScheduledWorkflowRun)
+ * so executeQueuedRun runs it — the same path POST /api/runs uses.
+ * `jobId` is the BullMQ job id, used as the run-id idempotency seed.
  */
-async function handleRunsJob(data: RunJobPayload): Promise<void> {
+async function handleRunsJob(data: RunJobPayload, jobId?: string): Promise<void> {
   const isCronFire =
     data.idempotencyKey?.startsWith("scheduler:") && !data.runId && !data.templateId;
   if (!isCronFire) {
@@ -190,8 +193,43 @@ async function handleRunsJob(data: RunJobPayload): Promise<void> {
     }
     return;
   }
-  console.log(
-    `[worker] cron fire for workflow-backed routine ${routineId} — DAG dispatch stub (HEL-107+)`,
+  if (routine.workflow_id) {
+    // HEL-665: workflow-backed routine. Resolve its DAG, create a queued run,
+    // and enqueue it onto the "runs" queue so executeQueuedRun runs it — the
+    // same path POST /api/runs uses. (Was a console.log stub: only agent-prompt
+    // routines fired on cron, so scheduled workflows silently never ran.)
+    const runQueueRef = getRunQueue();
+    if (!runQueueRef) {
+      console.warn(
+        `[worker] cron fire for workflow routine ${routineId} skipped — run queue unavailable`,
+      );
+      return;
+    }
+    const result = await dispatchScheduledWorkflowRun({
+      pool,
+      runQueue: runQueueRef,
+      routine: {
+        id: routine.id,
+        workspace_id: routine.workspace_id,
+        workflow_id: routine.workflow_id,
+        agent_id: routine.agent_id,
+      },
+      jobId,
+    });
+    if (result.status === "skipped") {
+      console.warn(
+        `[worker] scheduled workflow routine ${routineId} not fired: ${result.reason}`,
+      );
+    } else {
+      console.log(
+        `[worker] scheduled workflow routine ${routineId} → run ${result.runId} enqueued`,
+      );
+    }
+    return;
+  }
+
+  console.warn(
+    `[worker] cron fire ignored — routine ${routineId} is neither prompt+agent nor workflow-backed`,
   );
 }
 
@@ -204,7 +242,7 @@ if (!runQueue) {
 const runsWorker = new Worker<RunJobPayload>(
   "runs",
   async (job: Job<RunJobPayload>) => {
-    await handleRunsJob(job.data);
+    await handleRunsJob(job.data, job.id);
   },
   {
     connection,

@@ -304,6 +304,22 @@ async function executeTransform(
   return out;
 }
 
+async function executeMerge(
+  step: WorkflowStep,
+  context: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  // HEL-667: a Merge step rejoins branches. On the linear / shared-context engine
+  // each incoming branch has already merged its outputs into `context`, so the
+  // merge node is a structural join — it surfaces the declared input keys present
+  // in context as its output. (No fork-join wait: a single execution pointer
+  // reaches the merge once, in array order.)
+  const out: Record<string, unknown> = {};
+  for (const key of step.inputKeys) {
+    if (key in context) out[key] = context[key];
+  }
+  return out;
+}
+
 async function executeCondition(
   step: WorkflowStep,
   context: Record<string, unknown>
@@ -1264,6 +1280,9 @@ export class WorkflowEngine {
           }
           case "transform":
             stepOutput = await executeTransform(step, context);
+            break;
+          case "merge":
+            stepOutput = await executeMerge(step, context);
             break;
           case "condition":
             stepOutput = await executeCondition(step, context);

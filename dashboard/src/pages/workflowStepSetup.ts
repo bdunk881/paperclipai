@@ -81,6 +81,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Pick what to change — not just a description. Downstream steps only see the fields you pass through.",
     tone: "clay",
   },
+  merge: {
+    displayLabel: "Merge paths",
+    subtitle: "Rejoin two or more branches back into a single path",
+    learnText:
+      "Lets branches that split earlier (e.g. from a Condition) flow back together. Both branches' data is already available to steps after the merge.",
+    tone: "sage",
+  },
   action: {
     displayLabel: "App action",
     subtitle: "Do something in Slack, email, CRM, or another connected app",

@@ -63,6 +63,22 @@ describe("workflowGraph", () => {
     ).toBe(false);
   });
 
+  it("allows multiple incoming edges into a Merge step but not other kinds (HEL-667)", () => {
+    // A non-merge step still rejects a second incoming edge.
+    const baseSteps = [makeStep("t", "trigger"), makeStep("x", "action"), makeStep("a", "action")];
+    const oneIncoming = [{ id: "t-->a", source: "t", target: "a" }];
+    expect(
+      validateEdgeCandidate({ sourceId: "x", targetId: "a", steps: baseSteps, edges: oneIncoming }).valid,
+    ).toBe(false);
+
+    // A Merge step accepts the second incoming edge — branches can rejoin.
+    const mergeSteps = [makeStep("t", "trigger"), makeStep("x", "action"), makeStep("m", "merge")];
+    const intoMerge = [{ id: "t-->m", source: "t", target: "m" }];
+    expect(
+      validateEdgeCandidate({ sourceId: "x", targetId: "m", steps: mergeSteps, edges: intoMerge }).valid,
+    ).toBe(true);
+  });
+
   it("rejects cycle-producing edge candidates", () => {
     const steps = [makeStep("a", "trigger"), makeStep("b", "action"), makeStep("c", "action")];
     const edges = [

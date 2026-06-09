@@ -88,6 +88,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Lets branches that split earlier (e.g. from a Condition) flow back together. Both branches' data is already available to steps after the merge.",
     tone: "sage",
   },
+  loop: {
+    displayLabel: "Loop / repeat",
+    subtitle: "Repeat earlier steps a bounded number of times",
+    learnText:
+      "Jumps back to an earlier step and re-runs up to a max-iterations cap (or until a break condition). The cap guarantees it always stops.",
+    tone: "mustard",
+  },
   action: {
     displayLabel: "App action",
     subtitle: "Do something in Slack, email, CRM, or another connected app",

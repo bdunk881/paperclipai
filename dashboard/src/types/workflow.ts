@@ -11,6 +11,7 @@ export type StepKind =
   | "knowledge"
   | "transform"
   | "merge"
+  | "loop"
   | "condition"
   | "action"
   | "output"

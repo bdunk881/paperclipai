@@ -36,6 +36,7 @@ import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge }
 import { safeEvalCondition } from "./safeConditionEval";
 import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
 import { resolveLoopJump } from "./loopStep";
+import { resolveSwitchJump } from "./switchStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1294,6 +1295,18 @@ export class WorkflowEngine {
             stepOutput = loop.output;
             if (loop.jumpToStepIndex !== undefined) {
               jumpToStepIndex = loop.jumpToStepIndex;
+            }
+            break;
+          }
+          case "switch": {
+            // HEL-669: N-way route. resolveSwitchJump evaluates the ordered rules
+            // and returns a FORWARD jump to the first matching route's target (or
+            // the fallback), skipping the non-matching branches. Forward-only, so
+            // a Switch can never create a cycle.
+            const sw = resolveSwitchJump(step, template, context, currentStepIndex);
+            stepOutput = sw.output;
+            if (sw.jumpToStepIndex !== undefined) {
+              jumpToStepIndex = sw.jumpToStepIndex;
             }
             break;
           }

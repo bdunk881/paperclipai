@@ -37,6 +37,7 @@ import { safeEvalCondition } from "./safeConditionEval";
 import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
 import { resolveLoopJump } from "./loopStep";
 import { resolveSwitchJump } from "./switchStep";
+import { applyItemFilter } from "./filterStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -320,6 +321,21 @@ async function executeMerge(
     if (key in context) out[key] = context[key];
   }
   return out;
+}
+
+async function executeFilter(
+  step: WorkflowStep,
+  context: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  // HEL-670: keep only the array items that pass the predicate; emit the filtered
+  // array under the step's first output key, plus kept/dropped counts.
+  const result = applyItemFilter(step, context);
+  const outputKey = step.outputKeys[0] ?? "filtered";
+  return {
+    [outputKey]: result.kept,
+    filteredIn: result.filteredIn,
+    filteredOut: result.filteredOut,
+  };
 }
 
 async function executeCondition(
@@ -1310,6 +1326,9 @@ export class WorkflowEngine {
             }
             break;
           }
+          case "filter":
+            stepOutput = await executeFilter(step, context);
+            break;
           case "condition":
             stepOutput = await executeCondition(step, context);
             break;

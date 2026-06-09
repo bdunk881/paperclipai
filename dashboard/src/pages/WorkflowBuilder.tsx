@@ -14,6 +14,7 @@ import {
   GitMerge,
   Repeat,
   Split,
+  Filter,
   Wrench,
   ArrowRight,
   Flag,
@@ -227,6 +228,15 @@ const KIND_META: Record<
     categoryTint: "rgba(184,134,44,0.12)",
     darkCategoryTint: "rgba(184,134,44,0.18)",
     categoryBorder: "#b8862c",
+  },
+  filter: {
+    label: "Filter",
+    icon: <Filter size={14} />,
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30",
+    categoryTint: "rgba(194,80,43,0.12)",
+    darkCategoryTint: "rgba(194,80,43,0.18)",
+    categoryBorder: "#c2502b",
   },
   action: {
     label: "Action",

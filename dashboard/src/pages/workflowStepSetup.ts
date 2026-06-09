@@ -102,6 +102,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Evaluates rules in order and routes to the first match (or a fallback). Like Condition, but with more than two branches.",
     tone: "mustard",
   },
+  filter: {
+    displayLabel: "Filter items",
+    subtitle: "Keep only the list items that match a rule",
+    learnText:
+      "Drops the items in a list that fail the rule and passes the rest on. The rule is evaluated per item with the item's fields in scope.",
+    tone: "clay",
+  },
   action: {
     displayLabel: "App action",
     subtitle: "Do something in Slack, email, CRM, or another connected app",

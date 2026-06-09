@@ -35,6 +35,7 @@ import {
 import {
   Background,
   BackgroundVariant,
+  applyEdgeChanges,
   type Connection,
   Controls,
   Handle,
@@ -42,7 +43,9 @@ import {
   Position,
   ReactFlow,
   type Edge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type NodeProps,
   type NodeTypes,
   type ReactFlowInstance,
@@ -1178,6 +1181,10 @@ export default function WorkflowBuilder() {
       position: readStepPosition(step, idx),
       draggable: true,
       selectable: true,
+      // HEL-666: reflect our selection into React Flow's controlled store so a
+      // node can actually be selected there — without this RF's internal
+      // selection is always empty and keyboard-delete has no target (no-op).
+      selected: selectedStepId === step.id,
       data: {
         step,
         onSelect: setSelectedStepId,
@@ -1903,10 +1910,39 @@ export default function WorkflowBuilder() {
                 onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
                 onPaneClick={() => setSelectedStepId(null)}
                 onConnect={handleConnect}
-                onEdgesDelete={(deletedEdges: Edge[]) => {
-                  if (deletedEdges.length === 0) return;
-                  const deletedIds = new Set(deletedEdges.map((edge) => edge.id));
-                  persistEdges(flowEdges.filter((edge) => !deletedIds.has(edge.id)));
+                // HEL-666: wire the node change pipeline. The flow is controlled
+                // and Yjs-synced — `template.steps` is authoritative and flowNodes
+                // is derived from it, so there is no separate RF node state to
+                // applyNodeChanges into. Instead we translate RF's changes into our
+                // selection state, which (via the `selected` prop on flowNodes) is
+                // what lets a node be selected in RF's store so keyboard-delete has
+                // a target. Removal is owned by onNodesDelete (RF fires both a
+                // 'remove' change here AND onNodesDelete for the same delete;
+                // handling it once avoids a double removeStep). Position changes
+                // stay owned by onNodeDrag/onNodeDragStop.
+                onNodesChange={(changes: NodeChange<WorkflowFlowNode>[]) => {
+                  for (const change of changes) {
+                    if (change.type === "select") {
+                      setSelectedStepId((prev) =>
+                        change.selected ? change.id : prev === change.id ? null : prev,
+                      );
+                    }
+                  }
+                }}
+                onNodesDelete={(deleted: WorkflowFlowNode[]) => {
+                  if (deleted.length === 0) return;
+                  // removeStep also prunes the deleted node's edges, so the edge
+                  // 'remove' changes RF emits alongside this converge idempotently.
+                  deleted.forEach((node) => removeStep(node.id));
+                  setGraphError(null);
+                }}
+                onEdgesChange={(changes: EdgeChange<Edge>[]) => {
+                  // Only structural removals touch the Yjs model; selection and
+                  // other RF-internal changes must not rewrite the persisted graph.
+                  // applyEdgeChanges computes the next edge set, which persistEdges
+                  // serializes back to step adjacency.
+                  if (!changes.some((change) => change.type === "remove")) return;
+                  persistEdges(applyEdgeChanges(changes, flowEdges));
                   setGraphError(null);
                 }}
                 onNodeDrag={(_: unknown, node: WorkflowFlowNode) => {

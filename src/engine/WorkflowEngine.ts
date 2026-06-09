@@ -35,6 +35,7 @@ import {
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { safeEvalCondition } from "./safeConditionEval";
 import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
+import { resolveLoopJump } from "./loopStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1284,6 +1285,18 @@ export class WorkflowEngine {
           case "merge":
             stepOutput = await executeMerge(step, context);
             break;
+          case "loop": {
+            // HEL-668: bounded loop. resolveLoopJump increments the iteration
+            // counter and returns a backward jump (to the body start) while
+            // iterations remain + the break condition is false; otherwise it
+            // exits. A hard cap guarantees termination.
+            const loop = resolveLoopJump(step, template, context, currentStepIndex);
+            stepOutput = loop.output;
+            if (loop.jumpToStepIndex !== undefined) {
+              jumpToStepIndex = loop.jumpToStepIndex;
+            }
+            break;
+          }
           case "condition":
             stepOutput = await executeCondition(step, context);
             break;

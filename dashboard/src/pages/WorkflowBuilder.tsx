@@ -12,6 +12,7 @@ import {
   Brain,
   GitBranch,
   GitMerge,
+  Repeat,
   Wrench,
   ArrowRight,
   Flag,
@@ -207,6 +208,15 @@ const KIND_META: Record<
     categoryTint: "rgba(74,107,74,0.12)",
     darkCategoryTint: "rgba(74,107,74,0.18)",
     categoryBorder: "#4a6b4a",
+  },
+  loop: {
+    label: "Loop",
+    icon: <Repeat size={14} />,
+    chipColor: "text-af2-mustard",
+    chipBg: "bg-af2-mustard/10 border-af2-mustard/30",
+    categoryTint: "rgba(184,134,44,0.12)",
+    darkCategoryTint: "rgba(184,134,44,0.18)",
+    categoryBorder: "#b8862c",
   },
   action: {
     label: "Action",

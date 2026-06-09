@@ -11,6 +11,7 @@ export const PORTABLE_WORKFLOW_SUPPORTED_STEP_KINDS = [
   "knowledge",
   "transform",
   "merge",
+  "loop",
   "condition",
   "action",
   "output",

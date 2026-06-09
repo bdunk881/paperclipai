@@ -224,3 +224,28 @@ export function safeEvalCondition(
   const scope: Record<string, unknown> = { ...context };
   return Boolean(evalNode(ast, scope, 0));
 }
+
+/**
+ * HEL-671: value-returning sibling of {@link safeEvalCondition}. Same hardened
+ * jsep AST + allowlist walker (call/member/assignment rejected, identifiers must
+ * be own-keys of the scope, length + depth bounded) — the ONLY difference is it
+ * returns the evaluated value (number / string / boolean / null / array) instead
+ * of casting to boolean, so the Set-Fields transform step can compute typed
+ * field values from expressions like `price * qty` or `a ? b : c`.
+ */
+export function safeEvalExpression(
+  expression: string,
+  context: Record<string, unknown>,
+): unknown {
+  if (typeof expression !== "string") {
+    throw new Error("expression must be a string");
+  }
+  if (expression.length > MAX_EXPRESSION_LENGTH) {
+    throw new Error(
+      `expression too long (${expression.length} > ${MAX_EXPRESSION_LENGTH})`,
+    );
+  }
+  const ast = jsep(expression) as AstNode;
+  const scope: Record<string, unknown> = { ...context };
+  return evalNode(ast, scope, 0);
+}

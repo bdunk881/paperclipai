@@ -95,6 +95,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Jumps back to an earlier step and re-runs up to a max-iterations cap (or until a break condition). The cap guarantees it always stops.",
     tone: "mustard",
   },
+  switch: {
+    displayLabel: "Switch / route",
+    subtitle: "Send the run down one of several paths by rule",
+    learnText:
+      "Evaluates rules in order and routes to the first match (or a fallback). Like Condition, but with more than two branches.",
+    tone: "mustard",
+  },
   action: {
     displayLabel: "App action",
     subtitle: "Do something in Slack, email, CRM, or another connected app",

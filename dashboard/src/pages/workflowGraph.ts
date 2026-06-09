@@ -168,7 +168,10 @@ export function validateEdgeCandidate({
 
   const outgoingCount = edges.filter((edge) => edge.source === sourceId).length;
   const incomingCount = edges.filter((edge) => edge.target === targetId).length;
-  const maxOutgoing = source.kind === "condition" ? 2 : 1;
+  // HEL-669: Switch steps fan out to many routes; condition stays 2-way; every
+  // other kind is single-out (the simple linear/branch model).
+  const maxOutgoing =
+    source.kind === "condition" ? 2 : source.kind === "switch" ? 10 : 1;
 
   if (outgoingCount >= maxOutgoing) {
     return {
@@ -176,7 +179,9 @@ export function validateEdgeCandidate({
       reason:
         source.kind === "condition"
           ? "Condition steps support at most two outgoing edges."
-          : "This step already has an outgoing edge.",
+          : source.kind === "switch"
+            ? "Switch steps support at most 10 routes."
+            : "This step already has an outgoing edge.",
     };
   }
 

@@ -78,6 +78,12 @@ export async function dispatchScheduledWorkflowRun(params: {
   routine: ScheduledWorkflowRoutine;
   /** The BullMQ scheduler job id for this fire (idempotency seed). */
   jobId?: string;
+  /**
+   * Extra run input merged over the default `{ workspaceId }`. Cron fires pass
+   * nothing; an event-triggered fire (HEL-675) passes the triggering event so the
+   * DAG can read it (e.g. `{ event, eventSource }`).
+   */
+  input?: Record<string, unknown>;
 }): Promise<DispatchScheduledWorkflowResult> {
   const { pool, runQueue, routine, jobId } = params;
 
@@ -136,7 +142,10 @@ export async function dispatchScheduledWorkflowRun(params: {
   for (const field of template.configFields ?? []) {
     if (field.defaultValue !== undefined) defaultConfig[field.key] = field.defaultValue;
   }
-  const input: Record<string, unknown> = { workspaceId: routine.workspace_id };
+  const input: Record<string, unknown> = {
+    workspaceId: routine.workspace_id,
+    ...(params.input ?? {}),
+  };
   const runConfig: Record<string, unknown> = {
     ...defaultConfig,
     workspaceId: routine.workspace_id,

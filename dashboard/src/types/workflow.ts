@@ -10,6 +10,7 @@ export type StepKind =
   | "llm"
   | "knowledge"
   | "transform"
+  | "merge"
   | "condition"
   | "action"
   | "output"

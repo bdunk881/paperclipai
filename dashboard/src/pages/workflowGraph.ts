@@ -180,8 +180,14 @@ export function validateEdgeCandidate({
     };
   }
 
-  if (incomingCount >= 1) {
-    return { valid: false, reason: "Each step can only have one incoming edge." };
+  // HEL-667: Merge steps are the join point — they may take multiple incoming
+  // edges so branches can rejoin. Every other kind stays single-incoming, which
+  // keeps the rest of the graph a simple linear/branch model.
+  if (incomingCount >= 1 && target.kind !== "merge") {
+    return {
+      valid: false,
+      reason: "Each step can only have one incoming edge — use a Merge step to join branches.",
+    };
   }
 
   if (createsCycle(sourceId, targetId, edges)) {

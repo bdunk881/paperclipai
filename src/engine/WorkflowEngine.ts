@@ -34,6 +34,7 @@ import {
 } from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
 import { safeEvalCondition } from "./safeConditionEval";
+import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -286,8 +287,16 @@ async function executeTransform(
   step: WorkflowStep,
   context: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  // Pass through input keys as output keys (identity transform for MVP).
-  // Extend with a transform expression field to do field mapping, math, etc.
+  // HEL-671: real Set-Fields transform. When the step declares field
+  // assignments (config.assignments), compute each field from the run context —
+  // a literal, a {{template}}, a safe expression, or a copy/rename — and merge
+  // the result into context for downstream steps. Falls back to the legacy
+  // identity passthrough (copy declared outputKeys) when no assignments exist,
+  // so pre-HEL-671 transform steps keep working unchanged.
+  const assignments = parseTransformAssignments(step.config);
+  if (assignments) {
+    return applyFieldAssignments(assignments, context);
+  }
   const out: Record<string, unknown> = {};
   for (const key of step.outputKeys) {
     if (key in context) out[key] = context[key];

@@ -17,6 +17,7 @@ import type { Pool } from "pg";
 import { buildBullMqJobId } from "../queue/bullMqJobId";
 import { getAgentPromptQueue, type AgentPromptJobPayload } from "../queue/queues";
 import type { WakeEvent } from "./wakeEventStore";
+import { dispatchEventRoutines } from "./eventRoutineDispatch";
 
 export interface WakeActDispatcherDeps {
   pool: Pool;
@@ -27,6 +28,12 @@ export interface WakeActDispatcherDeps {
    * Returns true when enqueued, false when no queue is available.
    */
   enqueue?: (payload: AgentPromptJobPayload, jobId: string) => Promise<boolean>;
+  /**
+   * HEL-675: fire the workspace's `event`-kind routines for this event.
+   * Default: {@link dispatchEventRoutines}. Injectable so tests assert the
+   * candidate-agent dispatch and the event-routine fan-out independently.
+   */
+  dispatchEventRoutines?: (event: WakeEvent) => Promise<void>;
 }
 
 /** Turn a triaged wake event into the natural-language prompt the agent runs on. */
@@ -72,30 +79,42 @@ export function createWakeActDispatcher(
   const resolveOwner =
     deps.resolveAgentOwnerUserId ?? ((agentId) => defaultResolveOwner(deps.pool, agentId));
   const enqueue = deps.enqueue ?? defaultEnqueue;
+  const fireEventRoutines =
+    deps.dispatchEventRoutines ??
+    ((event: WakeEvent) => dispatchEventRoutines({ pool: deps.pool }, event).then(() => undefined));
 
   return async (event: WakeEvent): Promise<void> => {
-    if (!event.agentId) {
-      return;
-    }
-    const userId = await resolveOwner(event.agentId);
-    if (!userId) {
-      return;
+    // 1. The triaged wake's own candidate-agent run (no-op when the event has no
+    //    candidate agent or that agent has no owning user).
+    if (event.agentId) {
+      const userId = await resolveOwner(event.agentId);
+      if (userId) {
+        const payload: AgentPromptJobPayload = {
+          workspaceId: event.workspaceId,
+          userId,
+          agentId: event.agentId,
+          prompt: buildWakePrompt(event),
+          triggerKind: "wake",
+          idempotencyKey: `wake:${event.id}`,
+          wakeEventId: event.id,
+        };
+        const enqueued = await enqueue(payload, buildBullMqJobId("wake", event.id));
+        if (!enqueued) {
+          console.warn(
+            `[wakeDispatch] agent-prompt queue unavailable; wake ${event.id} ACTed but not dispatched`,
+          );
+        }
+      }
     }
 
-    const payload: AgentPromptJobPayload = {
-      workspaceId: event.workspaceId,
-      userId,
-      agentId: event.agentId,
-      prompt: buildWakePrompt(event),
-      triggerKind: "wake",
-      idempotencyKey: `wake:${event.id}`,
-      wakeEventId: event.id,
-    };
-
-    const enqueued = await enqueue(payload, buildBullMqJobId("wake", event.id));
-    if (!enqueued) {
-      console.warn(
-        `[wakeDispatch] agent-prompt queue unavailable; wake ${event.id} ACTed but not dispatched`,
+    // 2. HEL-675: fire the workspace's standing `event`-kind routines for this
+    //    event — independent of the candidate agent (they carry their own
+    //    agents/workflows). Best-effort: a failure here must not mask the wake.
+    try {
+      await fireEventRoutines(event);
+    } catch (err) {
+      console.error(
+        `[wakeDispatch] event-routine dispatch failed for wake ${event.id}: ${(err as Error).message}`,
       );
     }
   };

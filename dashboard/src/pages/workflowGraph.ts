@@ -158,8 +158,11 @@ export function validateEdgeCandidate({
     return { valid: false, reason: "Edge references an unknown step." };
   }
 
-  if (source.kind === "output") {
-    return { valid: false, reason: "Output steps cannot connect to another step." };
+  if (source.kind === "output" || source.kind === "stop_error") {
+    return {
+      valid: false,
+      reason: "Output and Stop & Error steps cannot connect to another step.",
+    };
   }
 
   if (isTriggerKind(target.kind)) {

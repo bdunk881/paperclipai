@@ -14,6 +14,7 @@ export type StepKind =
   | "loop"
   | "switch"
   | "filter"
+  | "stop_error"
   | "condition"
   | "action"
   | "output"

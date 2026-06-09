@@ -38,6 +38,7 @@ import { parseTransformAssignments, applyFieldAssignments } from "./transformSte
 import { resolveLoopJump } from "./loopStep";
 import { resolveSwitchJump } from "./switchStep";
 import { applyItemFilter } from "./filterStep";
+import { resolveStopError } from "./stopErrorStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1329,6 +1330,20 @@ export class WorkflowEngine {
           case "filter":
             stepOutput = await executeFilter(step, context);
             break;
+          case "stop_error": {
+            // HEL-674: deliberate hard stop. Resolve the author's message +
+            // optional type, then fail the step. `stop_error` is exempt from
+            // continueOnFail (below), so this failure always aborts the run.
+            const stop = resolveStopError(step, context);
+            stepStatus = "failure";
+            stepError = stop.message;
+            stepOutput = {
+              stopped: true,
+              error: stop.message,
+              ...(stop.errorType ? { errorType: stop.errorType } : {}),
+            };
+            break;
+          }
           case "condition":
             stepOutput = await executeCondition(step, context);
             break;
@@ -1474,17 +1489,36 @@ export class WorkflowEngine {
       // Update run with latest step results so callers can see incremental progress
       await runStore.update(runId, { stepResults: [...stepResults] });
 
-      // If a step fails, abort the run
+      // If a step fails, abort the run — unless the step opted into
+      // continueOnFail (HEL-674): then the failure is recorded on the step
+      // result + stashed into context for downstream branching, and the run
+      // proceeds to the next step. Stop-And-Error (`stop_error`) is exempt — it
+      // is a deliberate hard stop, so it always aborts regardless of the flag.
       if (stepStatus === "failure") {
-        await runStore.update(runId, {
-          status: "failed",
-          completedAt: new Date().toISOString(),
-          error: stepError,
-          stepResults,
-          runtimeState: makeRuntimeState(config, context, currentStepIndex),
-        });
-        void this._publishRunLifecycle(runId, "failed", { error: stepError });
-        return;
+        const stepConfig = (step.config ?? {}) as Record<string, unknown>;
+        const continueOnFail =
+          step.kind !== "stop_error" && stepConfig["continueOnFail"] === true;
+
+        if (continueOnFail) {
+          // Record the failure into context so downstream steps can branch on
+          // it; the mutated context is persisted by the next iteration's
+          // runtimeState write (or the final completion write).
+          context["__lastError"] = stepError ?? null;
+          const priorErrors: unknown[] = Array.isArray(context["__errors"])
+            ? (context["__errors"] as unknown[])
+            : [];
+          context["__errors"] = [...priorErrors, { stepId: step.id, error: stepError ?? null }];
+        } else {
+          await runStore.update(runId, {
+            status: "failed",
+            completedAt: new Date().toISOString(),
+            error: stepError,
+            stepResults,
+            runtimeState: makeRuntimeState(config, context, currentStepIndex),
+          });
+          void this._publishRunLifecycle(runId, "failed", { error: stepError });
+          return;
+        }
       }
 
       if (jumpToStepIndex !== undefined) {

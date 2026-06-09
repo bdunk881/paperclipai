@@ -109,6 +109,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Drops the items in a list that fail the rule and passes the rest on. The rule is evaluated per item with the item's fields in scope.",
     tone: "clay",
   },
+  stop_error: {
+    displayLabel: "Stop & Error",
+    subtitle: "Halt the run with an error message you choose",
+    learnText:
+      "Deliberately fails the run with your message — use it to reject a bad branch or assert a precondition. The opposite of Continue-on-fail: it always stops, even when upstream steps allow continue-on-fail.",
+    tone: "clay",
+  },
   action: {
     displayLabel: "App action",
     subtitle: "Do something in Slack, email, CRM, or another connected app",

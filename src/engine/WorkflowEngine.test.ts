@@ -235,6 +235,151 @@ describe("WorkflowEngine — error handling", () => {
 });
 
 // ---------------------------------------------------------------------------
+// HEL-674: continueOnFail + Stop-And-Error
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — HEL-674 continueOnFail + Stop-And-Error", () => {
+  function template(steps: WorkflowStep[]): WorkflowTemplate {
+    return {
+      id: "tpl-hel674",
+      name: "HEL-674",
+      description: "error handling",
+      category: "custom",
+      version: "1",
+      configFields: [],
+      steps,
+      sampleInput: {},
+      expectedOutput: {},
+    };
+  }
+
+  const trigger: WorkflowStep = {
+    id: "t",
+    name: "Trigger",
+    kind: "trigger",
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+  };
+
+  it("continueOnFail: a failed step records the error but the run proceeds", async () => {
+    registerAction("hel674.boom", async () => {
+      throw new Error("kaboom");
+    });
+    registerAction("hel674.after", async () => ({ ran: true }));
+
+    const run = await engine.startRun(
+      template([
+        trigger,
+        {
+          id: "boom",
+          name: "Boom",
+          kind: "action",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          action: "hel674.boom",
+          config: { continueOnFail: true },
+        },
+        {
+          id: "after",
+          name: "After",
+          kind: "action",
+          description: "",
+          inputKeys: [],
+          outputKeys: ["ran"],
+          action: "hel674.after",
+        },
+      ]),
+      {},
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("completed");
+    const boom = completed.stepResults.find((s) => s.stepId === "boom");
+    const after = completed.stepResults.find((s) => s.stepId === "after");
+    expect(boom?.status).toBe("failure");
+    expect(boom?.error).toContain("kaboom");
+    expect(after?.status).toBe("success");
+  });
+
+  it("without continueOnFail, the same failure aborts the run", async () => {
+    registerAction("hel674.boom2", async () => {
+      throw new Error("nope");
+    });
+
+    const run = await engine.startRun(
+      template([
+        trigger,
+        {
+          id: "boom",
+          name: "Boom",
+          kind: "action",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          action: "hel674.boom2",
+        },
+        { id: "after", name: "After", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+      ]),
+      {},
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+    expect(completed.stepResults.find((s) => s.stepId === "after")).toBeUndefined();
+  });
+
+  it("stop_error deliberately fails the run with the configured (interpolated) message", async () => {
+    const run = await engine.startRun(
+      template([
+        trigger,
+        {
+          id: "stop",
+          name: "Stop",
+          kind: "stop_error",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          config: { message: "halt: {{reason}}" },
+        },
+        { id: "after", name: "After", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+      ]),
+      { reason: "bad-input" },
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+    expect(completed.error).toBe("halt: bad-input");
+    expect(completed.stepResults.find((s) => s.stepId === "after")).toBeUndefined();
+  });
+
+  it("stop_error is exempt from continueOnFail (always aborts)", async () => {
+    const run = await engine.startRun(
+      template([
+        trigger,
+        {
+          id: "stop",
+          name: "Stop",
+          kind: "stop_error",
+          description: "",
+          inputKeys: [],
+          outputKeys: [],
+          config: { message: "hard stop", continueOnFail: true },
+        },
+        { id: "after", name: "After", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+      ]),
+      {},
+    );
+
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+    expect(completed.error).toBe("hard stop");
+    expect(completed.stepResults.find((s) => s.stepId === "after")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Custom action registration
 // ---------------------------------------------------------------------------
 

@@ -238,6 +238,15 @@ const KIND_META: Record<
     darkCategoryTint: "rgba(194,80,43,0.18)",
     categoryBorder: "#c2502b",
   },
+  stop_error: {
+    label: "Stop & Error",
+    icon: <AlertCircle size={14} />,
+    chipColor: "text-af2-clay",
+    chipBg: "bg-af2-clay-soft/30 border-af2-clay/30",
+    categoryTint: "rgba(194,80,43,0.12)",
+    darkCategoryTint: "rgba(194,80,43,0.18)",
+    categoryBorder: "#c2502b",
+  },
   action: {
     label: "Action",
     icon: <ArrowRight size={14} />,

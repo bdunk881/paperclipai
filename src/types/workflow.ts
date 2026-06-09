@@ -19,6 +19,7 @@ export type StepKind =
   | "action"
   | "output"
   | "agent"
+  | "sub_workflow"
   | "approval"
   | "mcp"
   | "file_trigger";

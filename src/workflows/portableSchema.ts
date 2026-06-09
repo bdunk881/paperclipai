@@ -19,6 +19,7 @@ export const PORTABLE_WORKFLOW_SUPPORTED_STEP_KINDS = [
   "action",
   "output",
   "agent",
+  "sub_workflow",
   "approval",
   "mcp",
   "file_trigger",

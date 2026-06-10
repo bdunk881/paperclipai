@@ -12,6 +12,7 @@
 
 import { Router } from "express";
 import type { Pool } from "pg";
+import { asyncHandler } from "../middleware/asyncHandler";
 import { parseJsonColumn } from "../db/json";
 import type { WorkflowTemplate } from "../types/workflow";
 import { workflowEngine } from "../engine/WorkflowEngine";
@@ -47,8 +48,9 @@ export function createFormRoutes(pool: Pool): Router {
   }
 
   // GET — public form definition for rendering.
-  router.get("/:workflowId", async (req, res) => {
-    try {
+  router.get(
+    "/:workflowId",
+    asyncHandler(async (req, res) => {
       const loaded = await loadForm(req.params.workflowId);
       const formStep = loaded ? findFormTriggerStep(loaded.template) : null;
       if (!loaded || !formStep) {
@@ -60,17 +62,17 @@ export function createFormRoutes(pool: Pool): Router {
         workflowId: req.params.workflowId,
         title:
           typeof config["formTitle"] === "string" ? config["formTitle"] : loaded.template.name,
-        description: typeof config["formDescription"] === "string" ? config["formDescription"] : "",
+        description:
+          typeof config["formDescription"] === "string" ? config["formDescription"] : "",
         fields: parseFormFields(formStep),
       });
-    } catch (err) {
-      res.status(500).json({ error: "form_load_failed", detail: (err as Error).message });
-    }
-  });
+    }),
+  );
 
   // POST — public submission → validate → start a run carrying the form values.
-  router.post("/:workflowId", async (req, res) => {
-    try {
+  router.post(
+    "/:workflowId",
+    asyncHandler(async (req, res) => {
       const loaded = await loadForm(req.params.workflowId);
       const formStep = loaded ? findFormTriggerStep(loaded.template) : null;
       if (!loaded || !formStep) {
@@ -93,10 +95,8 @@ export function createFormRoutes(pool: Pool): Router {
         { workspaceId: loaded.workspaceId },
       );
       res.status(202).json({ runId: run.id });
-    } catch (err) {
-      res.status(500).json({ error: "form_submit_failed", detail: (err as Error).message });
-    }
-  });
+    }),
+  );
 
   return router;
 }

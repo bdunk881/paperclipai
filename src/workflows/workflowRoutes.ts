@@ -42,6 +42,9 @@ import {
   type PresenceState,
   type PresenceStore,
 } from "./presenceStore";
+import { parseJsonColumn } from "../db/json";
+import type { WorkflowTemplate } from "../types/workflow";
+import { parseFileDrop } from "./fileDrop";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_NAME_LENGTH = 200;
@@ -360,6 +363,63 @@ export function createWorkflowRoutes(
       console.error(`[workflows] get failed: ${(err as Error).message}`);
       res.status(500).json({ error: "Failed to load workflow" });
     }
+  }));
+
+  // ---------------------------------------------------------------------
+  // POST /api/workflows/:workflowId/file — file-drop start (HEL-680).
+  // Upload a file to start a run of a file_trigger workflow; the content
+  // lands in context.file for the file_trigger head to surface.
+  // ---------------------------------------------------------------------
+  router.post("/:workflowId/file", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+    const workflowId = req.params.workflowId;
+    if (!workflowId || !UUID_RE.test(workflowId)) {
+      res.status(400).json({ error: "Invalid workflow ID format" });
+      return;
+    }
+    const parsed = parseFileDrop(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const result = await withWorkspaceContext(pool, { workspaceId, userId }, async (client) =>
+      client.query<{ dag: unknown }>(
+        `SELECT v.dag
+           FROM workflows w
+           JOIN workflow_versions v ON v.id = w.latest_version_id
+          WHERE w.id = $1
+          LIMIT 1`,
+        [workflowId],
+      ),
+    );
+    const row = result.rows[0];
+    const template = row ? parseJsonColumn<WorkflowTemplate | null>(row.dag, null) : null;
+    if (!template || !Array.isArray(template.steps) || template.steps.length === 0) {
+      res.status(404).json({ error: "Workflow not found or has no runnable version" });
+      return;
+    }
+    if (!template.steps.some((step) => step.kind === "file_trigger")) {
+      res.status(400).json({ error: "Workflow has no file_trigger step to receive the file" });
+      return;
+    }
+
+    // Lazy-import the engine so this route module doesn't pull the engine's
+    // ESM-only transitive deps (@mistralai) at load time — keeps
+    // workflowRoutes.test.ts loadable without mocking ./llmProviders.
+    const { workflowEngine } = await import("../engine/WorkflowEngine");
+    const run = await workflowEngine.startRun(
+      template,
+      { workspaceId, file: parsed.file },
+      { workspaceId },
+      userId,
+    );
+    res.status(202).json({ runId: run.id });
   }));
 
   // ---------------------------------------------------------------------

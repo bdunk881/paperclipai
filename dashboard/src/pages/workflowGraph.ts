@@ -23,6 +23,7 @@ const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
   "form_trigger",
   "error_trigger",
   "chat_trigger",
+  "sub_workflow_trigger",
 ]);
 
 function getSerializedTargets(step: WorkflowStep): string[] | null {

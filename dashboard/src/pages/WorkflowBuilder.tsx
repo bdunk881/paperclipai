@@ -170,6 +170,15 @@ const KIND_META: Record<
     darkCategoryTint: "rgba(74,107,74,0.18)",
     categoryBorder: "#4a6b4a",
   },
+  sub_workflow_trigger: {
+    label: "Sub-workflow Trigger",
+    icon: <Workflow size={14} />,
+    chipColor: "text-af2-plum",
+    chipBg: "bg-af2-plum/10 border-af2-plum/30",
+    categoryTint: "rgba(93,58,94,0.12)",
+    darkCategoryTint: "rgba(93,58,94,0.18)",
+    categoryBorder: "#5d3a5e",
+  },
   form_trigger: {
     label: "Form Trigger",
     icon: <ClipboardList size={14} />,

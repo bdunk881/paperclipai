@@ -46,6 +46,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Make this the head of an error-handler workflow. Point another workflow's \"on error\" at this one; it runs on each failure with the failure details (failedRunId, failedStepId, errorMessage) in context.",
     tone: "clay",
   },
+  chat_trigger: {
+    displayLabel: "On chat message",
+    subtitle: "Starts the workflow when a chat message arrives",
+    learnText:
+      "Make this the head of a chatbot workflow. A chat surface starts a run with the message; downstream Ask AI / agent steps answer it. The message, session, and user are in context as {{chatMessage}} / {{chatSessionId}} / {{chatUserId}}.",
+    tone: "sage",
+  },
   cron_trigger: {
     displayLabel: "Scheduled start",
     subtitle: "Runs on a calendar schedule (Mon 9am, daily, etc.)",

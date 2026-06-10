@@ -44,7 +44,6 @@ import {
 } from "./presenceStore";
 import { parseJsonColumn } from "../db/json";
 import type { WorkflowTemplate } from "../types/workflow";
-import { workflowEngine } from "../engine/WorkflowEngine";
 import { parseFileDrop } from "./fileDrop";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -410,6 +409,10 @@ export function createWorkflowRoutes(
       return;
     }
 
+    // Lazy-import the engine so this route module doesn't pull the engine's
+    // ESM-only transitive deps (@mistralai) at load time — keeps
+    // workflowRoutes.test.ts loadable without mocking ./llmProviders.
+    const { workflowEngine } = await import("../engine/WorkflowEngine");
     const run = await workflowEngine.startRun(
       template,
       { workspaceId, file: parsed.file },

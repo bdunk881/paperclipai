@@ -48,6 +48,7 @@ import {
 import { planErrorWorkflowDispatch, ERROR_WORKFLOW_MARKER } from "./errorWorkflowHook";
 import { handleErrorTrigger } from "./errorTriggerStep";
 import { handleChatTrigger } from "./chatTriggerStep";
+import { handleSubWorkflowTrigger } from "./subWorkflowTriggerStep";
 import { handleFormTrigger } from "./formTriggerStep";
 import { resolveWaitMs, WAIT_MAX_INLINE_MS } from "./waitStep";
 import { getRunQueue } from "../queue/queues";
@@ -1505,6 +1506,9 @@ export class WorkflowEngine {
             break;
           case "chat_trigger":
             stepOutput = handleChatTrigger(context);
+            break;
+          case "sub_workflow_trigger":
+            stepOutput = handleSubWorkflowTrigger(step, context);
             break;
           case "form_trigger":
             stepOutput = handleFormTrigger(context);

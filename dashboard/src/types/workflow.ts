@@ -26,7 +26,8 @@ export type StepKind =
   | "file_trigger"
   | "form_trigger"
   | "error_trigger"
-  | "chat_trigger";
+  | "chat_trigger"
+  | "sub_workflow_trigger";
 
 export type FieldType =
   | "string"

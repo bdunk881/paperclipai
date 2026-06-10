@@ -53,6 +53,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Make this the head of a chatbot workflow. A chat surface starts a run with the message; downstream Ask AI / agent steps answer it. The message, session, and user are in context as {{chatMessage}} / {{chatSessionId}} / {{chatUserId}}.",
     tone: "sage",
   },
+  sub_workflow_trigger: {
+    displayLabel: "Called as sub-workflow",
+    subtitle: "Entry point when another workflow runs this one",
+    learnText:
+      "Make this the head of a reusable workflow that others call via a Run-a-sub-workflow step. Declare the inputs it expects (with optional defaults); the caller's values arrive in context as {{key}}.",
+    tone: "plum",
+  },
   form_trigger: {
     displayLabel: "On form submission",
     subtitle: "Starts the workflow when someone submits a hosted form",

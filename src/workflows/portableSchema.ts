@@ -27,6 +27,7 @@ export const PORTABLE_WORKFLOW_SUPPORTED_STEP_KINDS = [
   "form_trigger",
   "error_trigger",
   "chat_trigger",
+  "sub_workflow_trigger",
 ] as const;
 export const PORTABLE_WORKFLOW_SUPPORTED_CATEGORIES = [
   "support",

@@ -689,6 +689,49 @@ describe("WorkflowEngine — HEL-672 durable wait", () => {
     expect(done?.stepResults.find((s) => s.stepId === "o")).toBeDefined();
   });
 
+  it("webhook wait pauses indefinitely behind a one-time token, then resumes (HEL-774)", async () => {
+    const template = tpl("wait-webhook-tpl", "WaitWebhook", [
+      trig,
+      {
+        id: "w",
+        name: "W",
+        kind: "wait",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { mode: "webhook" },
+      },
+      out,
+    ]);
+
+    const run = await engine.startRun(template, { workspaceId: "ws1" });
+
+    // Pause: queued, the wait step succeeded with a resume token, the token is
+    // persisted in runtimeState, the downstream step has not run, and no
+    // delayed job was enqueued (indefinite wait — external resume only).
+    const paused = await waitForStatus(run.id, "queued");
+    expect(paused?.status).toBe("queued");
+    const waitResult = paused?.stepResults.find((s) => s.stepId === "w");
+    expect(waitResult?.status).toBe("success");
+    expect(waitResult?.output.mode).toBe("webhook");
+    const token = waitResult?.output.resumeToken as string;
+    expect(token).toMatch(/[0-9a-f-]{36}/i);
+    expect(paused?.runtimeState?.waitingResumeToken).toBe(token);
+    expect(paused?.runtimeState?.currentStepIndex).toBe(2);
+    expect(paused?.stepResults.find((s) => s.stepId === "o")).toBeUndefined();
+
+    // The store can find the paused run by its token (the route's lookup).
+    const byToken = await runStore.getByResumeToken(token);
+    expect(byToken?.id).toBe(run.id);
+
+    // Resume from the persisted step index → completes; token gone.
+    await engine.executeQueuedRun(run.id, 2);
+    const done = await runStore.get(run.id);
+    expect(done?.status).toBe("completed");
+    expect(done?.stepResults.find((s) => s.stepId === "o")).toBeDefined();
+    expect(done?.runtimeState?.waitingResumeToken).toBeUndefined();
+  });
+
   it("does not pause when the wait resolves to 0 (until-time already passed)", async () => {
     const template = tpl("wait-tpl2", "Wait2", [
       trig,

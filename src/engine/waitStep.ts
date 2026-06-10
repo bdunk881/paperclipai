@@ -7,8 +7,11 @@
  * long wait releases the worker slot instead of blocking it. This module only
  * computes *how long* to wait — pure + unit-tested.
  *
- * Webhook-resume (resume on an external token) is a separate mechanism and is
- * deferred to a follow-up; this covers the timed modes (duration / until).
+ * HEL-774 adds the webhook mode: `config.mode === "webhook"` pauses the run
+ * indefinitely (no timer) behind a one-time resume token; an external
+ * `POST /api/runs/resume/:token` wakes it with a payload that merges into the
+ * run context. The pure helpers here decide the mode and merge the payload;
+ * the engine + `src/workflows/resumeRoutes.ts` do the pause/resume.
  */
 
 import type { WorkflowStep } from "../types/workflow";
@@ -46,6 +49,36 @@ function resolveUntilMs(config: Record<string, unknown>, nowMs: number): number 
     typeof until === "number" ? until : typeof until === "string" ? Date.parse(until) : NaN;
   if (!Number.isFinite(untilMs)) return 0;
   return untilMs - nowMs;
+}
+
+/** HEL-774: is this Wait an externally-resumed webhook wait (no timer)? */
+export function isWebhookWait(step: WorkflowStep): boolean {
+  const config = (step.config ?? {}) as Record<string, unknown>;
+  return config["mode"] === "webhook";
+}
+
+/**
+ * HEL-774: merge a webhook-resume payload into the paused run's context.
+ * Object-body keys are hoisted to top-level context so downstream steps can
+ * reference `{{key}}` — EXCEPT tenancy/engine-internal keys (`workspaceId`,
+ * `memory`, `__*`), which an external caller must never override. The full
+ * payload is also kept under `resumePayload`.
+ */
+export function mergeResumePayload(
+  context: Record<string, unknown>,
+  body: unknown,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : {};
+  const merged: Record<string, unknown> = { ...context };
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "workspaceId" || key === "memory" || key.startsWith("__")) continue;
+    merged[key] = value;
+  }
+  merged["resumePayload"] = payload;
+  return merged;
 }
 
 /**

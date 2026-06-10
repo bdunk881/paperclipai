@@ -36,6 +36,7 @@ function cloneRun(run: WorkflowRun): WorkflowRun {
           context: { ...run.runtimeState.context },
           currentStepIndex: run.runtimeState.currentStepIndex,
           waitingApprovalId: run.runtimeState.waitingApprovalId,
+          waitingResumeToken: run.runtimeState.waitingResumeToken,
         }
       : undefined,
   };
@@ -467,6 +468,7 @@ export const runStore = {
             context: { ...patch.runtimeState.context },
             currentStepIndex: patch.runtimeState.currentStepIndex,
             waitingApprovalId: patch.runtimeState.waitingApprovalId,
+            waitingResumeToken: patch.runtimeState.waitingResumeToken,
           }
         : existing.runtimeState,
     };
@@ -753,6 +755,45 @@ export const runStore = {
     } catch (err) {
       console.error("[runStore] countByWorkspaceCurrentMonth postgres failed, using in-memory:", (err as Error).message);
       return memoryCount();
+    }
+  },
+
+  /**
+   * HEL-774: look up the run paused behind a webhook-resume token. The token is
+   * an unguessable one-time bearer stored in `runtime_state_json`; it matches at
+   * most one run (cleared on resume).
+   */
+  async getByResumeToken(token: string): Promise<WorkflowRun | undefined> {
+    if (!token) {
+      return undefined;
+    }
+
+    for (const run of memoryStore.values()) {
+      if (run.runtimeState?.waitingResumeToken === token) {
+        return cloneRun(run);
+      }
+    }
+
+    if (!postgresPersistenceAvailable()) {
+      return undefined;
+    }
+
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query<{ id: string }>(
+        `SELECT id FROM runs
+          WHERE runtime_state_json->>'waitingResumeToken' = $1
+          LIMIT 1`,
+        [token],
+      );
+      const id = result.rows[0]?.id;
+      return id ? this.get(String(id)) : undefined;
+    } catch (err) {
+      console.error(
+        "[runStore] getByResumeToken Postgres read failed:",
+        (err as Error).message,
+      );
+      return undefined;
     }
   },
 

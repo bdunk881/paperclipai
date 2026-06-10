@@ -191,6 +191,11 @@ export interface WorkflowRun {
     context: Record<string, unknown>;
     currentStepIndex: number;
     waitingApprovalId?: string;
+    /**
+     * HEL-774: one-time bearer token for a webhook-resume Wait. Set while the
+     * run is paused on a `wait` step in `mode: "webhook"`; cleared on resume.
+     */
+    waitingResumeToken?: string;
   };
   error?: string;
   failureReason?: string;

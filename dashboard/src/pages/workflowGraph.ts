@@ -20,6 +20,7 @@ const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
   "cron_trigger",
   "interval_trigger",
   "file_trigger",
+  "form_trigger",
   "error_trigger",
   "chat_trigger",
 ]);

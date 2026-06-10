@@ -27,6 +27,7 @@ import {
   UserCheck,
   Plug,
   FileInput,
+  ClipboardList,
   CalendarClock,
   Timer,
   Sparkles,
@@ -163,6 +164,15 @@ const KIND_META: Record<
   chat_trigger: {
     label: "Chat Trigger",
     icon: <MessageSquare size={14} />,
+    chipColor: "text-af2-sage",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30",
+    categoryTint: "rgba(74,107,74,0.12)",
+    darkCategoryTint: "rgba(74,107,74,0.18)",
+    categoryBorder: "#4a6b4a",
+  },
+  form_trigger: {
+    label: "Form Trigger",
+    icon: <ClipboardList size={14} />,
     chipColor: "text-af2-sage",
     chipBg: "bg-af2-sage/10 border-af2-sage/30",
     categoryTint: "rgba(74,107,74,0.12)",

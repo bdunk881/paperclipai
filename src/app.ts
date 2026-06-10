@@ -170,6 +170,7 @@ import { invalidateWorkspaceCache } from "./cache/readCache";
 import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
+import { createFormRoutes } from "./forms/formRoutes";
 import { createFileRoutes } from "./storage/fileRoutes";
 import { getStorageAdapter } from "./storage";
 import { fileObjectStore } from "./storage/fileObjectStore";
@@ -644,6 +645,14 @@ app.use("/api/connectors/google-workspace", googleWorkspaceWebhookRoutes);
 
 app.use(express.json({ verify: captureRawJsonBody }));
 app.use(passport.initialize());
+
+// HEL-676: public form ingress — a form_trigger workflow's hosted form. No auth
+// (the workflow UUID is the bearer secret; only form_trigger workflows resolve).
+// Mounted after express.json() so submissions parse, before the auth-gated routes.
+const formRoutes = isPostgresPersistenceEnabled()
+  ? createFormRoutes(getPostgresPool())
+  : express.Router();
+app.use("/api/forms", formRoutes);
 
 // Track HTTP request duration, counts, and errors as Sentry custom metrics.
 app.use((req, res, next) => {

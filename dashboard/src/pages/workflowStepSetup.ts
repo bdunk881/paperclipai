@@ -39,6 +39,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Use this when a person or another system kicks off the routine on demand. The description is for your team — it does not change runtime behavior.",
     tone: "mustard",
   },
+  error_trigger: {
+    displayLabel: "On workflow error",
+    subtitle: "Starts this workflow when another workflow fails",
+    learnText:
+      "Make this the head of an error-handler workflow. Point another workflow's \"on error\" at this one; it runs on each failure with the failure details (failedRunId, failedStepId, errorMessage) in context.",
+    tone: "clay",
+  },
   cron_trigger: {
     displayLabel: "Scheduled start",
     subtitle: "Runs on a calendar schedule (Mon 9am, daily, etc.)",

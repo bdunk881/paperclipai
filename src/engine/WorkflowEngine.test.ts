@@ -496,6 +496,103 @@ describe("WorkflowEngine — HEL-673 sub-workflows", () => {
 });
 
 // ---------------------------------------------------------------------------
+// HEL-772: error-workflow hook
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — HEL-772 error-workflow hook", () => {
+  function tpl(
+    id: string,
+    name: string,
+    steps: WorkflowStep[],
+    extra: Partial<WorkflowTemplate> = {},
+  ): WorkflowTemplate {
+    return {
+      id,
+      name,
+      description: "error-hook test",
+      category: "custom",
+      version: "1",
+      configFields: [],
+      steps,
+      sampleInput: {},
+      expectedOutput: {},
+      ...extra,
+    };
+  }
+
+  /** Poll for the *spawned* error run — distinguished by its errorTrigger input. */
+  async function waitForErrorRun(timeoutMs = 2000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const runs = await runStore.list();
+      const errRun = runs.find((r) => (r.input as Record<string, unknown>)?.["errorTrigger"]);
+      if (errRun) return errRun;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return undefined;
+  }
+
+  const stopAt = (message: string): WorkflowStep => ({
+    id: "stop",
+    name: "Stop",
+    kind: "stop_error",
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+    config: { message },
+  });
+  const trig: WorkflowStep = {
+    id: "mt",
+    name: "T",
+    kind: "trigger",
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+  };
+
+  it("fires the designated error workflow with the failure context on run failure", async () => {
+    const errorWf = tpl("err-tpl", "Error WF", [
+      { id: "et", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: [] },
+      { id: "eo", name: "O", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+    ]);
+    mockLoadSubWorkflow.mockResolvedValue(errorWf);
+
+    const main = tpl("main-tpl", "Main", [trig, stopAt("kaboom")], {
+      onErrorWorkflowId: "err-wf-id",
+    });
+
+    const run = await engine.startRun(main, { workspaceId: "ws1" });
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+
+    const errRun = await waitForErrorRun();
+    expect(errRun).toBeDefined();
+    expect(errRun!.input.errorTrigger).toMatchObject({
+      failedRunId: run.id,
+      failedStepId: "stop",
+      error: "kaboom",
+    });
+    expect(mockLoadSubWorkflow).toHaveBeenCalledWith({ workspaceId: "ws1", workflowId: "err-wf-id" });
+  });
+
+  it("does not fire when no error workflow is designated", async () => {
+    const main = tpl("main-tpl2", "Main2", [trig, stopAt("x")]);
+    const run = await engine.startRun(main, { workspaceId: "ws1" });
+    await waitForCompletion(run.id);
+    expect(await waitForErrorRun(300)).toBeUndefined();
+  });
+
+  it("does not fire again when the failing run is itself an error workflow (loop guard)", async () => {
+    const errSelf = tpl("err-self", "ErrSelf", [trig, stopAt("x")], {
+      onErrorWorkflowId: "err-wf-id",
+    });
+    const run = await engine.startRun(errSelf, { workspaceId: "ws1", __isErrorWorkflow: true });
+    await waitForCompletion(run.id);
+    expect(await waitForErrorRun(300)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Custom action registration
 // ---------------------------------------------------------------------------
 

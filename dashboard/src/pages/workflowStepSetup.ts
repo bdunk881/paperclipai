@@ -53,6 +53,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Make this the head of a chatbot workflow. A chat surface starts a run with the message; downstream Ask AI / agent steps answer it. The message, session, and user are in context as {{chatMessage}} / {{chatSessionId}} / {{chatUserId}}.",
     tone: "sage",
   },
+  form_trigger: {
+    displayLabel: "On form submission",
+    subtitle: "Starts the workflow when someone submits a hosted form",
+    learnText:
+      "Define the form fields here; a public form at /api/forms/<workflow-id> renders them. A submission starts a run with the values in context (e.g. {{name}}, {{email}}) and as a nested `form` object.",
+    tone: "sage",
+  },
   cron_trigger: {
     displayLabel: "Scheduled start",
     subtitle: "Runs on a calendar schedule (Mon 9am, daily, etc.)",

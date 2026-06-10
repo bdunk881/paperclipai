@@ -48,6 +48,7 @@ import {
 import { planErrorWorkflowDispatch, ERROR_WORKFLOW_MARKER } from "./errorWorkflowHook";
 import { handleErrorTrigger } from "./errorTriggerStep";
 import { handleChatTrigger } from "./chatTriggerStep";
+import { handleFormTrigger } from "./formTriggerStep";
 import { resolveWaitMs, WAIT_MAX_INLINE_MS } from "./waitStep";
 import { getRunQueue } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
@@ -1504,6 +1505,9 @@ export class WorkflowEngine {
             break;
           case "chat_trigger":
             stepOutput = handleChatTrigger(context);
+            break;
+          case "form_trigger":
+            stepOutput = handleFormTrigger(context);
             break;
           case "llm": {
             const llmResult = await executeLlm(step, context, userId);

@@ -17,6 +17,13 @@ jest.mock("./workflowTemplateLoader", () => ({
   loadLatestWorkflowTemplate: jest.fn(),
 }));
 
+// HEL-672: keep the real queue module but make getRunQueue controllable, so the
+// durable-wait pause path can be exercised without Redis (default: no queue).
+jest.mock("../queue/queues", () => {
+  const actual = jest.requireActual("../queue/queues");
+  return { ...actual, getRunQueue: jest.fn(() => null) };
+});
+
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
@@ -25,6 +32,7 @@ import { memoryStore } from "./memoryStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
 import { loadLatestWorkflowTemplate } from "./workflowTemplateLoader";
+import { getRunQueue } from "../queue/queues";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
@@ -32,6 +40,7 @@ import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
 
 const mockGetProvider = getProvider as jest.Mock;
 const mockLoadSubWorkflow = loadLatestWorkflowTemplate as jest.Mock;
+const mockGetRunQueue = getRunQueue as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -589,6 +598,116 @@ describe("WorkflowEngine — HEL-772 error-workflow hook", () => {
     const run = await engine.startRun(errSelf, { workspaceId: "ws1", __isErrorWorkflow: true });
     await waitForCompletion(run.id);
     expect(await waitForErrorRun(300)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HEL-672: durable Wait
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — HEL-672 durable wait", () => {
+  afterEach(() => {
+    mockGetRunQueue.mockReturnValue(null);
+  });
+
+  function tpl(id: string, name: string, steps: WorkflowStep[]): WorkflowTemplate {
+    return {
+      id,
+      name,
+      description: "wait test",
+      category: "custom",
+      version: "1",
+      configFields: [],
+      steps,
+      sampleInput: {},
+      expectedOutput: {},
+    };
+  }
+
+  async function waitForStatus(runId: string, status: string, timeoutMs = 2000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const run = await runStore.get(runId);
+      if (run?.status === status) return run;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return runStore.get(runId);
+  }
+
+  const trig: WorkflowStep = {
+    id: "t",
+    name: "T",
+    kind: "trigger",
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+  };
+  const out: WorkflowStep = {
+    id: "o",
+    name: "O",
+    kind: "output",
+    description: "",
+    inputKeys: [],
+    outputKeys: [],
+  };
+
+  it("pauses on a Wait step (re-enqueues a delayed resume) and resumes to completion", async () => {
+    const fakeAdd = jest.fn().mockResolvedValue(undefined);
+    mockGetRunQueue.mockReturnValue({ add: fakeAdd } as unknown as ReturnType<typeof getRunQueue>);
+
+    const template = tpl("wait-tpl", "Wait", [
+      trig,
+      {
+        id: "w",
+        name: "W",
+        kind: "wait",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { mode: "duration", amount: 1, unit: "hours" },
+      },
+      out,
+    ]);
+
+    const run = await engine.startRun(template, { workspaceId: "ws1" });
+
+    // Pause: the run is re-queued, the downstream output step has not run, and a
+    // delayed resume job was enqueued at the next step with the right delay.
+    const paused = await waitForStatus(run.id, "queued");
+    expect(paused?.status).toBe("queued");
+    expect(paused?.stepResults.find((s) => s.stepId === "w")?.status).toBe("success");
+    expect(paused?.stepResults.find((s) => s.stepId === "o")).toBeUndefined();
+    expect(fakeAdd).toHaveBeenCalledTimes(1);
+    const [, payload, opts] = fakeAdd.mock.calls[0];
+    expect(payload).toMatchObject({ runId: run.id, stepIndex: 2 });
+    expect(opts).toMatchObject({ delay: 3_600_000 });
+
+    // Resume: the delayed job re-enters via executeQueuedRun at the next step.
+    await engine.executeQueuedRun(run.id, 2);
+    const done = await runStore.get(run.id);
+    expect(done?.status).toBe("completed");
+    expect(done?.stepResults.find((s) => s.stepId === "o")).toBeDefined();
+  });
+
+  it("does not pause when the wait resolves to 0 (until-time already passed)", async () => {
+    const template = tpl("wait-tpl2", "Wait2", [
+      trig,
+      {
+        id: "w",
+        name: "W",
+        kind: "wait",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { mode: "until", until: 1000 },
+      },
+      out,
+    ]);
+
+    const run = await engine.startRun(template, { workspaceId: "ws1" });
+    const done = await waitForCompletion(run.id);
+    expect(done.status).toBe("completed");
+    expect(done.stepResults.find((s) => s.stepId === "o")).toBeDefined();
   });
 });
 

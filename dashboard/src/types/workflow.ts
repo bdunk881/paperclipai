@@ -15,6 +15,7 @@ export type StepKind =
   | "switch"
   | "filter"
   | "stop_error"
+  | "wait"
   | "condition"
   | "action"
   | "output"

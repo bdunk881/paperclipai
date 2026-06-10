@@ -11,6 +11,12 @@ jest.mock("./llmProviders", () => ({
   getProvider: jest.fn(),
 }));
 
+// HEL-673: the sub-workflow loader is pool-backed; mock it so the engine's
+// sub-workflow logic is exercised without a database.
+jest.mock("./workflowTemplateLoader", () => ({
+  loadLatestWorkflowTemplate: jest.fn(),
+}));
+
 import { WorkflowEngine, setLlmProvider, registerAction } from "./WorkflowEngine";
 import { runStore } from "./runStore";
 import { approvalStore } from "./approvalStore";
@@ -18,12 +24,14 @@ import { approvalPolicyStore } from "../approvals/policyStore";
 import { memoryStore } from "./memoryStore";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { getProvider } from "./llmProviders";
+import { loadLatestWorkflowTemplate } from "./workflowTemplateLoader";
 import { customerSupportBot } from "../templates/customer-support-bot";
 import { leadEnrichment } from "../templates/lead-enrichment";
 import { contentGenerator } from "../templates/content-generator";
 import { WorkflowTemplate, WorkflowStep } from "../types/workflow";
 
 const mockGetProvider = getProvider as jest.Mock;
+const mockLoadSubWorkflow = loadLatestWorkflowTemplate as jest.Mock;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -376,6 +384,114 @@ describe("WorkflowEngine — HEL-674 continueOnFail + Stop-And-Error", () => {
     expect(completed.status).toBe("failed");
     expect(completed.error).toBe("hard stop");
     expect(completed.stepResults.find((s) => s.stepId === "after")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HEL-673: sub-workflows
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — HEL-673 sub-workflows", () => {
+  function tpl(id: string, name: string, steps: WorkflowStep[]): WorkflowTemplate {
+    return {
+      id,
+      name,
+      description: "sub-workflow test",
+      category: "custom",
+      version: "1",
+      configFields: [],
+      steps,
+      sampleInput: {},
+      expectedOutput: {},
+    };
+  }
+
+  it("runs a saved child workflow and merges its output into the parent", async () => {
+    const child = tpl("child-tpl", "Child", [
+      { id: "ct", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: ["seed"] },
+      { id: "co", name: "Out", kind: "output", description: "", inputKeys: ["seed"], outputKeys: ["seed"] },
+    ]);
+    mockLoadSubWorkflow.mockResolvedValue(child);
+
+    const parent = tpl("parent-tpl", "Parent", [
+      { id: "pt", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: [] },
+      {
+        id: "sw",
+        name: "Sub",
+        kind: "sub_workflow",
+        description: "",
+        inputKeys: [],
+        outputKeys: ["seed"],
+        config: { workflowId: "child-wf-id", input: { seed: "{{seedValue}}" } },
+      },
+      { id: "po", name: "Out", kind: "output", description: "", inputKeys: ["seed"], outputKeys: ["seed"] },
+    ]);
+
+    const run = await engine.startRun(parent, { workspaceId: "ws1", seedValue: "hello" });
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    const sw = completed.stepResults.find((s) => s.stepId === "sw");
+    expect(sw?.status).toBe("success");
+    expect(sw?.output.subWorkflowStatus).toBe("completed");
+    expect(sw?.output.seed).toBe("hello");
+    expect(mockLoadSubWorkflow).toHaveBeenCalledWith({ workspaceId: "ws1", workflowId: "child-wf-id" });
+  });
+
+  it("fails the parent step when the child has no runnable version", async () => {
+    mockLoadSubWorkflow.mockResolvedValue(null);
+    const parent = tpl("parent-tpl2", "Parent2", [
+      { id: "pt", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: [] },
+      {
+        id: "sw",
+        name: "Sub",
+        kind: "sub_workflow",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { workflowId: "missing-wf" },
+      },
+      { id: "po", name: "Out", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+    ]);
+    const run = await engine.startRun(parent, { workspaceId: "ws1" });
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+    expect(completed.error).toMatch(/no runnable latest version/i);
+  });
+
+  it("rejects a self-referential sub-workflow (cycle guard)", async () => {
+    const selfRef = tpl("loop-tpl", "Loop", [
+      { id: "lt", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: [] },
+      {
+        id: "recurse",
+        name: "Recurse",
+        kind: "sub_workflow",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { workflowId: "loop-wf" },
+      },
+      { id: "lo", name: "Out", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+    ]);
+    mockLoadSubWorkflow.mockResolvedValue(selfRef);
+
+    const parent = tpl("parent-tpl3", "Parent3", [
+      { id: "pt", name: "T", kind: "trigger", description: "", inputKeys: [], outputKeys: [] },
+      {
+        id: "sw",
+        name: "Sub",
+        kind: "sub_workflow",
+        description: "",
+        inputKeys: [],
+        outputKeys: [],
+        config: { workflowId: "loop-wf" },
+      },
+      { id: "po", name: "Out", kind: "output", description: "", inputKeys: [], outputKeys: [] },
+    ]);
+    const run = await engine.startRun(parent, { workspaceId: "ws1" });
+    const completed = await waitForCompletion(run.id);
+    expect(completed.status).toBe("failed");
+    expect(completed.error).toMatch(/cycle/i);
   });
 });
 

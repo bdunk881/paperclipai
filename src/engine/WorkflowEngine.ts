@@ -39,6 +39,12 @@ import { resolveLoopJump } from "./loopStep";
 import { resolveSwitchJump } from "./switchStep";
 import { applyItemFilter } from "./filterStep";
 import { resolveStopError } from "./stopErrorStep";
+import { loadLatestWorkflowTemplate } from "./workflowTemplateLoader";
+import {
+  resolveSubWorkflowInput,
+  nextSubWorkflowChain,
+  SUB_WORKFLOW_CHAIN_KEY,
+} from "./subWorkflowStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -825,6 +831,91 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * HEL-673: run a *saved* workflow as a child of the current run and return its
+   * output for the parent context. Loads the child's latest DAG (pool-backed
+   * loader), guards nesting (depth cap + ancestor-cycle), creates a child run,
+   * drives it through {@link _runSteps}, then returns its output. A child that
+   * does not complete throws — so the parent `sub_workflow` step fails (and
+   * composes with HEL-674 continueOnFail).
+   */
+  private async _runSubWorkflow(
+    step: WorkflowStep,
+    parentContext: Record<string, unknown>,
+    userId?: string,
+  ): Promise<Record<string, unknown>> {
+    const config = (step.config ?? {}) as Record<string, unknown>;
+    const workflowId =
+      typeof config["workflowId"] === "string" ? config["workflowId"].trim() : "";
+    if (!workflowId) {
+      throw new Error("Sub-workflow step is missing config.workflowId");
+    }
+
+    const workspaceId = this._resolveWorkspaceId(parentContext, config);
+    if (!workspaceId) {
+      throw new Error("Sub-workflow step requires a workspaceId in the run context");
+    }
+
+    // Depth cap + ancestor-cycle guard (throws → this step fails).
+    const childChain = nextSubWorkflowChain(parentContext, workflowId);
+
+    const childTemplate = await loadLatestWorkflowTemplate({ workspaceId, workflowId });
+    if (!childTemplate) {
+      throw new Error(
+        `Sub-workflow ${workflowId} has no runnable latest version in workspace ${workspaceId}`,
+      );
+    }
+
+    const childInput = resolveSubWorkflowInput(config, parentContext, workspaceId);
+    const childConfig: Record<string, unknown> = {
+      ...this._buildDefaultConfig(childTemplate),
+      workspaceId,
+      [SUB_WORKFLOW_CHAIN_KEY]: childChain,
+    };
+    const childRunId = randomUUID();
+
+    await runStore.create({
+      id: childRunId,
+      templateId: childTemplate.id,
+      templateName: childTemplate.name,
+      workspaceId,
+      status: "running",
+      startedAt: new Date().toISOString(),
+      input: childInput,
+      workflowDag: childTemplate,
+      stepResults: [],
+      runtimeState: {
+        config: { ...childConfig },
+        context: { ...childConfig, ...childInput },
+        currentStepIndex: 0,
+      },
+      ...(userId !== undefined ? { userId } : {}),
+    });
+
+    const childContext: Record<string, unknown> = {
+      ...childConfig,
+      ...childInput,
+      memory: await this._buildMemoryContext(childTemplate, userId),
+    };
+
+    await this._runSteps(childRunId, childTemplate, childConfig, childContext, [], 0, userId);
+
+    const childRun = await runStore.get(childRunId);
+    if (!childRun || childRun.status !== "completed") {
+      throw new Error(
+        `Sub-workflow ${workflowId} (run ${childRunId}) ${childRun?.status ?? "missing"}` +
+          (childRun?.error ? `: ${childRun.error}` : ""),
+      );
+    }
+
+    return {
+      subWorkflowRunId: childRunId,
+      subWorkflowId: workflowId,
+      subWorkflowStatus: childRun.status,
+      ...(childRun.output ?? {}),
+    };
+  }
+
   private _resolveRequestChangesTarget(
     template: WorkflowTemplate,
     step: WorkflowStep,
@@ -1399,6 +1490,9 @@ export class WorkflowEngine {
             stepOutput = ftResult.output;
             break;
           }
+          case "sub_workflow":
+            stepOutput = await this._runSubWorkflow(step, context, userId);
+            break;
           case "agent": {
             const agentResult = await handleAgent(step, context, runId, userId ?? "");
             stepOutput = agentResult.output;

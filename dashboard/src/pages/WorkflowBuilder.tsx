@@ -17,6 +17,7 @@ import {
   Filter,
   Wrench,
   ArrowRight,
+  Workflow,
   Flag,
   Save,
   X,
@@ -255,6 +256,15 @@ const KIND_META: Record<
     categoryTint: "rgba(194,80,43,0.12)",
     darkCategoryTint: "rgba(194,80,43,0.18)",
     categoryBorder: "#c2502b",
+  },
+  sub_workflow: {
+    label: "Sub-workflow",
+    icon: <Workflow size={14} />,
+    chipColor: "text-af2-plum",
+    chipBg: "bg-af2-plum/10 border-af2-plum/30",
+    categoryTint: "rgba(93,58,94,0.12)",
+    darkCategoryTint: "rgba(93,58,94,0.18)",
+    categoryBorder: "#5d3a5e",
   },
   output: {
     label: "Output",

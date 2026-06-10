@@ -137,6 +137,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Pick an existing agent or create one. They run autonomously, respect budgets, and show up in Assignments + Activity.",
     tone: "clay",
   },
+  sub_workflow: {
+    displayLabel: "Run a sub-workflow",
+    subtitle: "Call another saved workflow, then continue with its result",
+    learnText:
+      "Runs a saved workflow as one step — its output merges back into this run. Reuse a workflow across many parents and edit it once. Nesting is depth-capped and cycle-guarded.",
+    tone: "plum",
+  },
   condition: {
     displayLabel: "If / then",
     subtitle: "Send the routine down different paths based on a rule",

@@ -46,6 +46,7 @@ import {
   SUB_WORKFLOW_CHAIN_KEY,
 } from "./subWorkflowStep";
 import { planErrorWorkflowDispatch, ERROR_WORKFLOW_MARKER } from "./errorWorkflowHook";
+import { handleErrorTrigger } from "./errorTriggerStep";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1427,6 +1428,9 @@ export class WorkflowEngine {
         switch (step.kind) {
           case "trigger":
             stepOutput = await executeTrigger(step, context);
+            break;
+          case "error_trigger":
+            stepOutput = handleErrorTrigger(context);
             break;
           case "llm": {
             const llmResult = await executeLlm(step, context, userId);

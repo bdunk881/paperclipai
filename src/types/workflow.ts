@@ -22,7 +22,8 @@ export type StepKind =
   | "sub_workflow"
   | "approval"
   | "mcp"
-  | "file_trigger";
+  | "file_trigger"
+  | "error_trigger";
 
 export type FieldType =
   | "string"

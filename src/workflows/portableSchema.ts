@@ -23,6 +23,7 @@ export const PORTABLE_WORKFLOW_SUPPORTED_STEP_KINDS = [
   "approval",
   "mcp",
   "file_trigger",
+  "error_trigger",
 ] as const;
 export const PORTABLE_WORKFLOW_SUPPORTED_CATEGORIES = [
   "support",

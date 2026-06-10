@@ -2,7 +2,7 @@
  * HEL-672: Wait step — pure duration-resolution unit tests.
  */
 
-import { resolveWaitMs, WAIT_MAX_MS } from "./waitStep";
+import { resolveWaitMs, isWebhookWait, mergeResumePayload, WAIT_MAX_MS } from "./waitStep";
 import type { WorkflowStep } from "../types/workflow";
 
 function makeStep(config: Record<string, unknown>): WorkflowStep {
@@ -38,5 +38,39 @@ describe("resolveWaitMs (HEL-672)", () => {
 
   it("caps at WAIT_MAX_MS", () => {
     expect(resolveWaitMs(makeStep({ amount: 9999, unit: "days" }), 0)).toBe(WAIT_MAX_MS);
+  });
+});
+
+describe("isWebhookWait (HEL-774)", () => {
+  it("is true only for mode: webhook", () => {
+    expect(isWebhookWait(makeStep({ mode: "webhook" }))).toBe(true);
+    expect(isWebhookWait(makeStep({ mode: "duration", amount: 1, unit: "hours" }))).toBe(false);
+    expect(isWebhookWait(makeStep({}))).toBe(false);
+  });
+});
+
+describe("mergeResumePayload (HEL-774)", () => {
+  it("hoists payload keys over the context and keeps the full payload", () => {
+    const merged = mergeResumePayload({ a: 1, b: "old" }, { b: "new", c: true });
+    expect(merged).toMatchObject({ a: 1, b: "new", c: true });
+    expect(merged.resumePayload).toEqual({ b: "new", c: true });
+  });
+
+  it("never lets the caller override tenancy / engine-internal keys", () => {
+    const merged = mergeResumePayload(
+      { workspaceId: "ws-real", __subWorkflowChain: ["x"] },
+      { workspaceId: "ws-evil", __subWorkflowChain: ["evil"], memory: "evil", ok: 1 },
+    );
+    expect(merged.workspaceId).toBe("ws-real");
+    expect(merged.__subWorkflowChain).toEqual(["x"]);
+    expect(merged).not.toHaveProperty("memory");
+    expect(merged.ok).toBe(1);
+    // The raw payload is still visible (nested), just not hoisted.
+    expect((merged.resumePayload as Record<string, unknown>).workspaceId).toBe("ws-evil");
+  });
+
+  it("treats a non-object body as an empty payload", () => {
+    expect(mergeResumePayload({ a: 1 }, "nope")).toEqual({ a: 1, resumePayload: {} });
+    expect(mergeResumePayload({ a: 1 }, [1, 2])).toEqual({ a: 1, resumePayload: {} });
   });
 });

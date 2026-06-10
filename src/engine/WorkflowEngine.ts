@@ -50,7 +50,7 @@ import { handleErrorTrigger } from "./errorTriggerStep";
 import { handleChatTrigger } from "./chatTriggerStep";
 import { handleSubWorkflowTrigger } from "./subWorkflowTriggerStep";
 import { handleFormTrigger } from "./formTriggerStep";
-import { resolveWaitMs, WAIT_MAX_INLINE_MS } from "./waitStep";
+import { resolveWaitMs, isWebhookWait, WAIT_MAX_INLINE_MS } from "./waitStep";
 import { getRunQueue } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { extractStructuredOutput } from "./structuredOutput";
@@ -229,7 +229,8 @@ function makeRuntimeState(
   config: Record<string, unknown>,
   context: Record<string, unknown>,
   currentStepIndex: number,
-  waitingApprovalId?: string
+  waitingApprovalId?: string,
+  waitingResumeToken?: string
 ): NonNullable<WorkflowRun["runtimeState"]> {
   const serializableContext = JSON.parse(
     JSON.stringify(context, (key, value) => {
@@ -248,6 +249,7 @@ function makeRuntimeState(
     context: serializableContext,
     currentStepIndex,
     waitingApprovalId,
+    waitingResumeToken,
   };
 }
 
@@ -983,6 +985,28 @@ export class WorkflowEngine {
    * hold a worker slot. Returns false when there is no queue (local/test without
    * Redis); the caller then falls back to a bounded inline delay.
    */
+  /**
+   * HEL-774: pause a run indefinitely at a webhook-mode Wait. Persists the run
+   * as `queued`-to-resume at `resumeStepIndex` with the one-time
+   * `waitingResumeToken` in runtimeState; no job is enqueued — the public
+   * resume endpoint (`POST /api/runs/resume/:token`) merges the caller's
+   * payload, clears the token, and re-enters via {@link executeQueuedRun}.
+   */
+  private async _pauseForWebhookResume(
+    runId: string,
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+    stepResults: StepResult[],
+    resumeStepIndex: number,
+    resumeToken: string,
+  ): Promise<void> {
+    await runStore.update(runId, {
+      status: "queued",
+      stepResults: [...stepResults],
+      runtimeState: makeRuntimeState(config, context, resumeStepIndex, undefined, resumeToken),
+    });
+  }
+
   private async _scheduleWaitResume(
     runId: string,
     template: WorkflowTemplate,
@@ -1485,6 +1509,7 @@ export class WorkflowEngine {
       let stepCostLog: LlmCostLog | undefined;
       let jumpToStepIndex: number | undefined;
       let pauseForWaitMs: number | undefined;
+      let pauseForWebhookToken: string | undefined;
 
       try {
         switch (step.kind) {
@@ -1492,6 +1517,19 @@ export class WorkflowEngine {
             stepOutput = await executeTrigger(step, context);
             break;
           case "wait": {
+            // HEL-774: webhook mode — pause indefinitely behind a one-time
+            // resume token; POST /api/runs/resume/:token wakes the run.
+            if (isWebhookWait(step)) {
+              const resumeToken = randomUUID();
+              stepOutput = {
+                waited: true,
+                mode: "webhook",
+                resumeToken,
+                resumeUrl: `/api/runs/resume/${resumeToken}`,
+              };
+              pauseForWebhookToken = resumeToken;
+              break;
+            }
             // HEL-672: pause for a duration / until a set time. A positive wait
             // pauses below (durable re-enqueue); 0 means "no wait", just continue.
             const waitMs = resolveWaitMs(step, Date.now());
@@ -1750,6 +1788,22 @@ export class WorkflowEngine {
           void this._fireErrorWorkflow(template, config, context, runId, step.id, stepError, userId);
           return;
         }
+      }
+
+      // HEL-774: a webhook Wait pauses here indefinitely — persist the run as
+      // resumable at the next step behind the one-time token and return. No
+      // job is enqueued; POST /api/runs/resume/:token re-enters via
+      // executeQueuedRun. Works identically with or without Redis.
+      if (pauseForWebhookToken !== undefined) {
+        await this._pauseForWebhookResume(
+          runId,
+          config,
+          context,
+          stepResults,
+          currentStepIndex + 1,
+          pauseForWebhookToken,
+        );
+        return;
       }
 
       // HEL-672: a Wait step pauses here. Persist + re-enqueue a delayed resume

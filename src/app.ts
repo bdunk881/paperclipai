@@ -171,6 +171,7 @@ import { createGlobalSearchRoutes } from "./search/globalSearchRoutes";
 import { createWorkflowRoutes } from "./workflows/workflowRoutes";
 import { createRoutineRoutes } from "./routines/routineRoutes";
 import { createFormRoutes } from "./forms/formRoutes";
+import { createResumeRoutes } from "./workflows/resumeRoutes";
 import { createFileRoutes } from "./storage/fileRoutes";
 import { getStorageAdapter } from "./storage";
 import { fileObjectStore } from "./storage/fileObjectStore";
@@ -653,6 +654,12 @@ const formRoutes = isPostgresPersistenceEnabled()
   ? createFormRoutes(getPostgresPool())
   : express.Router();
 app.use("/api/forms", formRoutes);
+
+// HEL-774: webhook-resume for paused Wait steps. Public (the token is a
+// one-time unguessable bearer minted by the engine; resume always runs in the
+// run's own persisted workspace). Mounted before the auth-gated /api/runs
+// routes so /api/runs/resume/:token never falls through to /api/runs/:id.
+app.use("/api/runs/resume", createResumeRoutes());
 
 // Track HTTP request duration, counts, and errors as Sentry custom metrics.
 app.use((req, res, next) => {

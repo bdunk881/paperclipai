@@ -45,6 +45,7 @@ import {
   nextSubWorkflowChain,
   SUB_WORKFLOW_CHAIN_KEY,
 } from "./subWorkflowStep";
+import { planErrorWorkflowDispatch, ERROR_WORKFLOW_MARKER } from "./errorWorkflowHook";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -916,6 +917,56 @@ export class WorkflowEngine {
     };
   }
 
+  /**
+   * HEL-772: best-effort — on run failure, fire the workflow's designated error
+   * workflow (`template.onErrorWorkflowId`) with the failure context. Reuses the
+   * pool-backed loader (HEL-673) and runs the error workflow inline via
+   * {@link startRun} (no queue). A failed dispatch is swallowed so it can never
+   * mask the original failure; the `__isErrorWorkflow` marker stops a failing
+   * error workflow from looping.
+   */
+  private async _fireErrorWorkflow(
+    template: WorkflowTemplate,
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+    failedRunId: string,
+    failedStepId: string,
+    error: string | undefined,
+    userId?: string,
+  ): Promise<void> {
+    try {
+      const plan = planErrorWorkflowDispatch({
+        onErrorWorkflowId:
+          typeof template.onErrorWorkflowId === "string" ? template.onErrorWorkflowId : undefined,
+        workspaceId: this._resolveWorkspaceId(context, config),
+        isErrorWorkflowRun:
+          Boolean(context[ERROR_WORKFLOW_MARKER]) || Boolean(config[ERROR_WORKFLOW_MARKER]),
+        failedRunId,
+        failedStepId,
+        templateId: template.id,
+        templateName: template.name,
+        error,
+      });
+      if (!plan) {
+        return;
+      }
+
+      const errorTemplate = await loadLatestWorkflowTemplate({
+        workspaceId: plan.input["workspaceId"] as string,
+        workflowId: plan.workflowId,
+      });
+      if (!errorTemplate) {
+        return;
+      }
+
+      await this.startRun(errorTemplate, plan.input, { [ERROR_WORKFLOW_MARKER]: true }, userId);
+    } catch (err) {
+      console.warn(
+        `[WorkflowEngine] error-workflow dispatch failed for run=${failedRunId}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   private _resolveRequestChangesTarget(
     template: WorkflowTemplate,
     step: WorkflowStep,
@@ -1611,6 +1662,7 @@ export class WorkflowEngine {
             runtimeState: makeRuntimeState(config, context, currentStepIndex),
           });
           void this._publishRunLifecycle(runId, "failed", { error: stepError });
+          void this._fireErrorWorkflow(template, config, context, runId, step.id, stepError, userId);
           return;
         }
       }

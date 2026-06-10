@@ -154,6 +154,11 @@ export interface WorkflowTemplate {
   expectedOutput: Record<string, unknown>;
   /** Optional policy that constrains how trigger steps may be started */
   triggerPolicy?: TriggerPolicy;
+  /**
+   * HEL-772: designate an error workflow (a saved `workflows.id`) to run with
+   * the failure context when a run of this workflow fails.
+   */
+  onErrorWorkflowId?: string;
 }
 
 /** A runtime workflow instance (one execution of a template) */

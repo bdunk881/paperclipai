@@ -120,6 +120,7 @@ const workflowTemplateSchema = z.object({
   _finally: z.array(workflowStepSchema).optional(),
   sampleInput: z.record(z.string(), z.unknown()),
   expectedOutput: z.record(z.string(), z.unknown()),
+  onErrorWorkflowId: z.string().optional(),
 });
 
 export const portableWorkflowBundleSchema = z.object({

@@ -47,6 +47,9 @@ import {
 } from "./subWorkflowStep";
 import { planErrorWorkflowDispatch, ERROR_WORKFLOW_MARKER } from "./errorWorkflowHook";
 import { handleErrorTrigger } from "./errorTriggerStep";
+import { resolveWaitMs, WAIT_MAX_INLINE_MS } from "./waitStep";
+import { getRunQueue } from "../queue/queues";
+import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -968,6 +971,61 @@ export class WorkflowEngine {
     }
   }
 
+  /**
+   * HEL-672: durably pause a run at a Wait step. Persists the run as
+   * `queued`-to-resume at `resumeStepIndex` (with the current context +
+   * stepResults so the replay-from-step path picks up cleanly), then enqueues a
+   * BullMQ job delayed by `waitMs`. The worker re-consumes it via
+   * {@link executeQueuedRun}, resuming at the next step — so the wait does not
+   * hold a worker slot. Returns false when there is no queue (local/test without
+   * Redis); the caller then falls back to a bounded inline delay.
+   */
+  private async _scheduleWaitResume(
+    runId: string,
+    template: WorkflowTemplate,
+    config: Record<string, unknown>,
+    context: Record<string, unknown>,
+    stepResults: StepResult[],
+    resumeStepIndex: number,
+    waitMs: number,
+  ): Promise<boolean> {
+    const runQueue = getRunQueue();
+    if (!runQueue) {
+      return false;
+    }
+
+    const run = await runStore.get(runId);
+    const workspaceId = this._resolveWorkspaceId(context, config) ?? run?.workspaceId ?? "";
+
+    await runStore.update(runId, {
+      status: "queued",
+      stepResults: [...stepResults],
+      runtimeState: makeRuntimeState(config, context, resumeStepIndex),
+    });
+
+    const idempotencyKey = `${runId}:${resumeStepIndex}:wait`;
+    try {
+      await runQueue.add(
+        "run",
+        {
+          runId,
+          templateId: template.id,
+          ...(run?.workflowVersionId ? { workflowVersionId: run.workflowVersionId } : {}),
+          workspaceId,
+          stepIndex: resumeStepIndex,
+          idempotencyKey,
+        },
+        { jobId: `${runId}:wait:${resumeStepIndex}`, delay: waitMs, removeOnComplete: 100 },
+      );
+    } catch (err) {
+      if (!isJobIdAlreadyExists(err)) {
+        throw err;
+      }
+    }
+
+    return true;
+  }
+
   private _resolveRequestChangesTarget(
     template: WorkflowTemplate,
     step: WorkflowStep,
@@ -1423,12 +1481,23 @@ export class WorkflowEngine {
       let agentSlotResults: AgentSlotResult[] | undefined;
       let stepCostLog: LlmCostLog | undefined;
       let jumpToStepIndex: number | undefined;
+      let pauseForWaitMs: number | undefined;
 
       try {
         switch (step.kind) {
           case "trigger":
             stepOutput = await executeTrigger(step, context);
             break;
+          case "wait": {
+            // HEL-672: pause for a duration / until a set time. A positive wait
+            // pauses below (durable re-enqueue); 0 means "no wait", just continue.
+            const waitMs = resolveWaitMs(step, Date.now());
+            stepOutput = { waited: waitMs > 0, waitMs };
+            if (waitMs > 0) {
+              pauseForWaitMs = waitMs;
+            }
+            break;
+          }
           case "error_trigger":
             stepOutput = handleErrorTrigger(context);
             break;
@@ -1669,6 +1738,28 @@ export class WorkflowEngine {
           void this._fireErrorWorkflow(template, config, context, runId, step.id, stepError, userId);
           return;
         }
+      }
+
+      // HEL-672: a Wait step pauses here. Persist + re-enqueue a delayed resume
+      // job (slot-releasing) and return; the delayed job re-enters via
+      // executeQueuedRun at the next step. No queue (local/test) → bounded inline.
+      if (pauseForWaitMs !== undefined) {
+        const resumeStepIndex = currentStepIndex + 1;
+        const paused = await this._scheduleWaitResume(
+          runId,
+          template,
+          config,
+          context,
+          stepResults,
+          resumeStepIndex,
+          pauseForWaitMs,
+        );
+        if (paused) {
+          return;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(pauseForWaitMs, WAIT_MAX_INLINE_MS)),
+        );
       }
 
       if (jumpToStepIndex !== undefined) {

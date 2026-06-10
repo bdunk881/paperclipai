@@ -18,6 +18,7 @@ import {
   Wrench,
   ArrowRight,
   Workflow,
+  Clock,
   Flag,
   Save,
   X,
@@ -229,6 +230,15 @@ const KIND_META: Record<
     categoryTint: "rgba(184,134,44,0.12)",
     darkCategoryTint: "rgba(184,134,44,0.18)",
     categoryBorder: "#b8862c",
+  },
+  wait: {
+    label: "Wait",
+    icon: <Clock size={14} />,
+    chipColor: "text-af2-sage",
+    chipBg: "bg-af2-sage/10 border-af2-sage/30",
+    categoryTint: "rgba(74,107,74,0.12)",
+    darkCategoryTint: "rgba(74,107,74,0.18)",
+    categoryBorder: "#4a6b4a",
   },
   switch: {
     label: "Switch",

@@ -102,6 +102,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Jumps back to an earlier step and re-runs up to a max-iterations cap (or until a break condition). The cap guarantees it always stops.",
     tone: "mustard",
   },
+  wait: {
+    displayLabel: "Wait / delay",
+    subtitle: "Pause the run for a duration or until a set time",
+    learnText:
+      "Pauses here, then resumes the rest of the workflow — durably (the run is re-queued with a delay), so a long wait does not hold a worker. Set a duration (amount + unit) or an until-time.",
+    tone: "sage",
+  },
   switch: {
     displayLabel: "Switch / route",
     subtitle: "Send the run down one of several paths by rule",

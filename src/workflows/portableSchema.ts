@@ -15,6 +15,7 @@ export const PORTABLE_WORKFLOW_SUPPORTED_STEP_KINDS = [
   "switch",
   "filter",
   "stop_error",
+  "wait",
   "condition",
   "action",
   "output",

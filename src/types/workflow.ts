@@ -24,7 +24,8 @@ export type StepKind =
   | "approval"
   | "mcp"
   | "file_trigger"
-  | "error_trigger";
+  | "error_trigger"
+  | "chat_trigger";
 
 export type FieldType =
   | "string"

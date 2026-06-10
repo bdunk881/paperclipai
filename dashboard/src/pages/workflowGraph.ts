@@ -21,6 +21,7 @@ const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
   "interval_trigger",
   "file_trigger",
   "error_trigger",
+  "chat_trigger",
 ]);
 
 function getSerializedTargets(step: WorkflowStep): string[] | null {

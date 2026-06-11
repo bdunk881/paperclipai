@@ -33,6 +33,10 @@ type Props = {
   llmConfigs: LLMConfig[];
   llmConfigsLoading?: boolean;
   llmConfigsError?: string | null;
+  /** HEL-773: saved workflows offered by the sub_workflow picker. */
+  availableWorkflows?: Array<{ id: string; name: string }>;
+  availableWorkflowsLoading?: boolean;
+  availableWorkflowsError?: string | null;
   timezoneOptions?: string[];
   cronValidationError?: string | null;
   cronPreview?: string | null;
@@ -99,6 +103,9 @@ export function StepSetupCoach({
   llmConfigs,
   llmConfigsLoading,
   llmConfigsError,
+  availableWorkflows = [],
+  availableWorkflowsLoading,
+  availableWorkflowsError,
   timezoneOptions = ["UTC"],
   cronValidationError = null,
   cronPreview = null,
@@ -361,6 +368,56 @@ export function StepSetupCoach({
             </Link>
           </SetupCoachCard>
         );
+
+      case "sub_workflow": {
+        // HEL-773: the engine runs the saved workflow in config.workflowId —
+        // write into step.config (merged, so __uiPosition etc. survive), NOT a
+        // flat step prop.
+        const selectedWorkflowId =
+          typeof step.config?.["workflowId"] === "string"
+            ? (step.config["workflowId"] as string)
+            : "";
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Which workflow should run here?"
+            hint="Its output merges back into this run for the next steps."
+          >
+            {availableWorkflowsLoading ? (
+              <p className="text-xs text-af2-ink-4">Loading workflows…</p>
+            ) : availableWorkflowsError ? (
+              <p className="text-xs text-af2-clay">{availableWorkflowsError}</p>
+            ) : availableWorkflows.length === 0 ? (
+              <p className="text-xs text-af2-mustard leading-relaxed">
+                No other saved workflows yet — save another workflow first, then pick it here.
+              </p>
+            ) : (
+              <select
+                data-field="subWorkflowId"
+                className="w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm bg-af2-card"
+                value={selectedWorkflowId}
+                disabled={readonly}
+                onChange={(e) =>
+                  onUpdateStep({
+                    config: {
+                      ...(step.config ?? {}),
+                      workflowId: e.target.value || undefined,
+                    },
+                  })
+                }
+              >
+                <option value="">Choose a workflow…</option>
+                {availableWorkflows.map((wf) => (
+                  <option key={wf.id} value={wf.id}>
+                    {wf.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </SetupCoachCard>
+        );
+      }
 
       case "trigger":
       case "file_trigger":

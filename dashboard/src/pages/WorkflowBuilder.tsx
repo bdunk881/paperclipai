@@ -91,6 +91,7 @@ import {
   getCanonicalWorkflowVersion,
   listCanonicalWorkflowVersions,
   listCanonicalWorkflows,
+  type CanonicalWorkflow,
   type CanonicalWorkflowVersionDetail,
   type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
@@ -610,6 +611,10 @@ export default function WorkflowBuilder() {
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([]);
   const [llmConfigsLoading, setLlmConfigsLoading] = useState(false);
   const [llmConfigsError, setLlmConfigsError] = useState<string | null>(null);
+  // HEL-773: saved workflows for the sub_workflow step's picker.
+  const [availableWorkflows, setAvailableWorkflows] = useState<CanonicalWorkflow[]>([]);
+  const [availableWorkflowsLoading, setAvailableWorkflowsLoading] = useState(false);
+  const [availableWorkflowsError, setAvailableWorkflowsError] = useState<string | null>(null);
   const [showNLModal, setShowNLModal] = useState(false);
   const [showFileUploadModal, setShowFileUploadModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -862,6 +867,7 @@ export default function WorkflowBuilder() {
       : null;
 
   const isLlmStep = selectedStep?.kind === "llm";
+  const isSubWorkflowStep = selectedStep?.kind === "sub_workflow";
   const deploymentAgentByStepId = useMemo(() => {
     const mapping = new Map<string, ControlPlaneAgent>();
     if (!latestDeployment) return mapping;
@@ -1063,6 +1069,34 @@ export default function WorkflowBuilder() {
       cancelled = true;
     };
   }, [isLlmStep, requireAccessToken]);
+
+  // HEL-773: load the workspace's saved workflows when a sub_workflow step is
+  // selected, so the picker can offer them (mirrors the LLM-config loader).
+  useEffect(() => {
+    if (!isSubWorkflowStep) return;
+    let cancelled = false;
+    async function loadWorkflows() {
+      setAvailableWorkflowsLoading(true);
+      setAvailableWorkflowsError(null);
+      try {
+        const accessToken = await requireAccessToken();
+        const workflows = await listCanonicalWorkflows(accessToken);
+        if (!cancelled) setAvailableWorkflows(workflows);
+      } catch (e) {
+        if (!cancelled) {
+          setAvailableWorkflowsError(
+            e instanceof Error ? e.message : "Failed to load workflows",
+          );
+        }
+      } finally {
+        if (!cancelled) setAvailableWorkflowsLoading(false);
+      }
+    }
+    void loadWorkflows();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSubWorkflowStep, requireAccessToken]);
 
   const handleCopilotSubmit = useCallback(async (rawPrompt?: string) => {
     const prompt = (rawPrompt ?? copilotInput).trim();
@@ -2246,6 +2280,11 @@ export default function WorkflowBuilder() {
                     llmConfigs={llmConfigs}
                     llmConfigsLoading={llmConfigsLoading}
                     llmConfigsError={llmConfigsError}
+                    availableWorkflows={availableWorkflows.filter(
+                      (w) => w.id !== canonicalWorkflowId,
+                    )}
+                    availableWorkflowsLoading={availableWorkflowsLoading}
+                    availableWorkflowsError={availableWorkflowsError}
                     timezoneOptions={timezoneOptions}
                     cronValidationError={cronValidationError}
                     cronPreview={cronPreview}

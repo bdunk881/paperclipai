@@ -471,6 +471,18 @@ export function evaluateStepReadiness(
       });
       break;
     }
+    case "sub_workflow": {
+      // HEL-773: the engine requires config.workflowId (the saved workflow to run).
+      items.push({
+        id: "subWorkflow",
+        label: "A workflow is selected to run",
+        passed: typeof step.config?.["workflowId"] === "string" && step.config["workflowId"] !== "",
+        fixLabel: "Pick",
+        fixAction: "focus",
+        focusField: "subWorkflowId",
+      });
+      break;
+    }
     case "llm": {
       items.push({
         id: "prompt",

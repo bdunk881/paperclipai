@@ -26,14 +26,33 @@ export function meta() {
 }
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  // `typeof` guard: this also runs in the browser (hydration / error-boundary
+  // re-renders), where bare `process` is a ReferenceError in dev. Prod client
+  // bundles define `process.env` as `{}`, so the fallback chain still works.
   const plausibleDomain =
-    process.env.PLAUSIBLE_DOMAIN ?? process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ?? "";
+    typeof process !== "undefined"
+      ? (process.env.PLAUSIBLE_DOMAIN ?? process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN ?? "")
+      : "";
 
   return (
-    <html lang="en" className="h-full antialiased">
+    // suppressHydrationWarning: the motion-gate script below adds `js` to the
+    // html classList before React hydrates; React must not "repair" it.
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Motion gate (HEL-777): scroll-reveal hidden states in v2.css are
+            scoped to html.js, so a no-JS visitor gets a complete static page.
+            `?motion=force` (sticky via localStorage; `?motion=auto` clears)
+            adds html.force-motion, a preview override for machines whose OS
+            sets prefers-reduced-motion — motion stays off for those users by
+            default. Inline + first in head so it lands before first paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              'var d=document.documentElement;d.classList.add("js");try{var q=new URLSearchParams(location.search).get("motion");if(q)localStorage.setItem("af-motion",q);if(localStorage.getItem("af-motion")==="force")d.classList.add("force-motion")}catch(e){}',
+          }}
+        />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

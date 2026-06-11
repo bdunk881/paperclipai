@@ -8,9 +8,16 @@
  */
 
 import { Link, useLoaderData } from "react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CompanyLogo } from "@autoflow/logo-dev";
 import { buildLandingApiUrl } from "@/lib/publicApi";
+import {
+  CountUp,
+  InView,
+  Marquee,
+  ScrollProgressBar,
+  TypeIn,
+} from "@/app/components/motion";
 import {
   getCreditPackOverlays,
   getFaqItems,
@@ -467,6 +474,42 @@ export async function loader(): Promise<HomeLoaderData> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Motion choreography (HEL-777)
+//
+// The hero card plays the product story on load: the mission types in with a
+// blinking clay caret (the v2 prototype's unshipped `.lp-prompt` motif), the
+// roster stamps in row by row, the monthly estimate counts up, and the
+// "Drafted in 14 seconds" ribbon rubber-stamps last (CSS `.lp-stamp`, 3.3s).
+// Everything else on the page reveals in-place on scroll via `InView` + the
+// `v2.css` motion layer. Timings below are one deterministic timeline.
+
+const HERO_MISSION_TITLE = "Launch the R-7 to N. America";
+const HERO_TYPE_DELAY_MS = 550;
+const HERO_TYPE_SPEED_MS = 34;
+/** Roster rows start after the mission finishes typing (~550 + 28×34 ms). */
+const HERO_ROWS_START_S = 1.6;
+const HERO_ROW_STAGGER_S = 0.12;
+/** Cost counts up once the last roster row has landed. */
+const HERO_COST_DELAY_MS = 2300;
+
+/**
+ * Splits a trailing "→" off a CTA label so the arrow can nudge on hover
+ * (`.lp-arrow`). Labels without an arrow pass through untouched.
+ */
+function withArrow(label: string) {
+  const match = label.match(/^(.*?)\s*(→|->)$/);
+  if (!match) return label;
+  return (
+    <>
+      {match[1]}{" "}
+      <span className="lp-arrow" aria-hidden="true">
+        →
+      </span>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Small visual primitives
 
 function AutoFlowMark({ size = 26 }: { size?: number }) {
@@ -512,7 +555,7 @@ function Avatar({
 function HireAgentCta({ label = "Hire your first agent →" }: { label?: string }) {
   return (
     <Link to="/signup" className="af2-btn af2-btn-clay" style={{ padding: "14px 22px", fontSize: 14.5 }}>
-      {label}
+      {withArrow(label)}
     </Link>
   );
 }
@@ -600,47 +643,7 @@ export default function Home() {
   return (
     <>
       {/* NAV */}
-      <header className="lp-nav" id="top">
-        <div className="lp-nav-inner">
-          <Link
-            to="/"
-            style={{
-              textDecoration: "none",
-              color: "inherit",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}
-          >
-            <AutoFlowMark />
-            <span
-              style={{
-                fontFamily: "var(--af2-serif)",
-                fontSize: 19,
-                fontWeight: 500,
-                letterSpacing: "-0.02em",
-              }}
-            >
-              AutoFlow
-            </span>
-          </Link>
-          <a href="#product">Product</a>
-          <a href="#workforce">Workforce</a>
-          <a href="#integrations">Integrations</a>
-          <a href="#pricing">Pricing</a>
-          <Link to="/blog">Blog</Link>
-          <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
-            GitHub
-          </a>
-          <span style={{ flex: 1 }} />
-          <Link to="/signup" style={{ fontSize: 13.5 }}>
-            Sign in
-          </Link>
-          <Link to="/signup" className="af2-btn af2-btn-primary af2-btn-sm">
-            Start free
-          </Link>
-        </div>
-      </header>
+      <LandingNav />
 
       {/* HERO */}
       <section className="lp-hero">
@@ -653,7 +656,7 @@ export default function Home() {
           }}
         >
           <div>
-            <span className="af2-eyebrow">
+            <span className="af2-eyebrow lp-rise">
               {hero?.eyebrow ?? "Workforce automation, by the role · not by the node."}
             </span>
             {PRODUCT_HUNT_URL ? (
@@ -661,39 +664,43 @@ export default function Home() {
                 href={PRODUCT_HUNT_URL}
                 target="_blank"
                 rel="noreferrer noopener"
+                className="lp-rise"
                 style={{
                   display: "inline-block",
                   marginTop: 12,
                   fontSize: 12,
                   fontWeight: 600,
                   color: "var(--af2-clay)",
+                  animationDelay: ".05s",
                 }}
               >
                 ▲ Live on Product Hunt
               </a>
             ) : null}
-            <h1 style={{ marginTop: 18 }}>
+            <h1 className="lp-rise" style={{ marginTop: 18, animationDelay: ".08s" }}>
               {hero?.headline ?? (
                 <>
                   Hire a team
                   <br />
                   of agents that
                   <br />
-                  <em>actually ship.</em>
+                  <em>
+                    <span className="lp-underline-load">actually ship.</span>
+                  </em>
                 </>
               )}
             </h1>
-            <p className="lp-hero-sub">
+            <p className="lp-hero-sub lp-rise" style={{ animationDelay: ".18s" }}>
               {hero?.subheadline ??
                 "Write a mission. AutoFlow drafts a hiring plan, an org, a budget, and the first week of work. Approve what matters. Watch the rest run."}
             </p>
-            <div className="lp-hero-cta">
+            <div className="lp-hero-cta lp-rise" style={{ animationDelay: ".28s" }}>
               <HireAgentCta label={hero?.primaryCta ?? undefined} />
               <a href="#product" className="af2-btn" style={{ padding: "14px 22px", fontSize: 14.5 }}>
                 {hero?.secondaryCta ?? "See how it works"}
               </a>
             </div>
-            <div className="lp-hero-meta">
+            <div className="lp-hero-meta lp-rise" style={{ animationDelay: ".38s" }}>
               <span>
                 <strong>14-day free</strong> · no card
               </span>
@@ -712,8 +719,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Hero illustration: a "team roster" card */}
-          <div style={{ position: "relative" }}>
+          {/* Hero illustration: a "team roster" card. On load it plays the
+              product story: mission types in → roster stamps in → estimate
+              counts up → ribbon stamps → the card settles into a slow float. */}
+          <div className="lp-hero-card-wrap" style={{ position: "relative" }}>
             <div
               className="af2-card"
               style={{
@@ -731,14 +740,27 @@ export default function Home() {
                     fontSize: 24,
                     letterSpacing: "-0.015em",
                     marginTop: 4,
+                    // Reserve one full line so the card doesn't shift while
+                    // the mission title types in (inherited line-height 1.5).
+                    minHeight: "1.5em",
                   }}
                 >
-                  Launch the R-7 to N. America
+                  <TypeIn
+                    text={HERO_MISSION_TITLE}
+                    speed={HERO_TYPE_SPEED_MS}
+                    delay={HERO_TYPE_DELAY_MS}
+                  />
                 </div>
               </div>
               <div style={{ padding: "8px 0 12px" }}>
-                {ROSTER.map((r) => (
-                  <div key={r.name} className={`lp-roster-row${r.indent ? " indent" : ""}`}>
+                {ROSTER.map((r, i) => (
+                  <div
+                    key={r.name}
+                    className={`lp-roster-row${r.indent ? " indent" : ""} lp-rise`}
+                    style={{
+                      animationDelay: `${HERO_ROWS_START_S + i * HERO_ROW_STAGGER_S}s`,
+                    }}
+                  >
                     <Avatar
                       initials={r.name
                         .split(" ")
@@ -757,6 +779,7 @@ export default function Home() {
                 ))}
               </div>
               <div
+                className="lp-rise"
                 style={{
                   padding: "14px 20px",
                   background: "var(--af2-paper-2)",
@@ -764,11 +787,14 @@ export default function Home() {
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
+                  animationDelay: "2.1s",
                 }}
               >
                 <span style={{ fontSize: 12 }}>3 leads · 5 reports</span>
                 <span style={{ fontFamily: "var(--af2-mono)", fontSize: 12, color: "var(--af2-ink-3)" }}>
-                  est. $1,580/mo
+                  est. $
+                  <CountUp value={1580} trigger="mount" delay={HERO_COST_DELAY_MS} />
+                  /mo
                 </span>
                 <span style={{ flex: 1 }} />
                 <Link to="/signup" className="af2-btn af2-btn-sm af2-btn-clay">
@@ -776,8 +802,10 @@ export default function Home() {
                 </Link>
               </div>
             </div>
-            {/* Ribbon */}
+            {/* Ribbon — rubber-stamps in last (CSS .lp-stamp). The inline
+                rotate stays so reduced-motion (animation: none) keeps it. */}
             <div
+              className="lp-stamp"
               style={{
                 position: "absolute",
                 top: -14,
@@ -799,20 +827,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* LOGO STRIP */}
+      {/* LOGO STRIP — a slow marquee; pauses on hover, static under
+          reduced motion / no-JS-equivalent fallback handled in CSS. */}
       <section className="lp-logos">
         <div className="lp-logos-inner">
           <span className="lp-logos-label">Connects to</span>
-          <span
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 32,
-              flex: 1,
-              flexWrap: "wrap",
-              opacity: 0.85,
-            }}
-          >
+          <Marquee>
             {LOGO_STRIP.map((n) => (
               <span
                 key={n}
@@ -822,66 +842,77 @@ export default function Home() {
                   gap: 6,
                   fontSize: 13,
                   color: "var(--af2-ink-2)",
+                  opacity: 0.85,
                 }}
               >
                 <CompanyLogo name={n} integrationId={n.toLowerCase()} size={20} />
                 <span>{n}</span>
               </span>
             ))}
-          </span>
+          </Marquee>
         </div>
       </section>
 
-      {/* PITCH */}
+      {/* PITCH — the three lines land in sequence; the highlighter sweeps
+          under "people" once its line settles. */}
       <section className="lp-pitch">
-        <p>
-          n8n gave you nodes.
-          <br />
-          Zapier gave you triggers.
-          <br />
-          <span>AutoFlow gives you</span>{" "}
-          <span className="lp-headline-underline" style={{ color: "var(--af2-ink)" }}>
-            people
-          </span>{" "}
-          <span>— a team you can brief, budget, and trust with a paper trail.</span>
-        </p>
+        <InView as="p">
+          <span className="lp-pitch-line lp-reveal">n8n gave you nodes.</span>
+          <span className="lp-pitch-line lp-reveal" style={{ transitionDelay: ".12s" }}>
+            Zapier gave you triggers.
+          </span>
+          <span className="lp-pitch-line lp-reveal" style={{ transitionDelay: ".24s" }}>
+            <span className="lp-dim">AutoFlow gives you</span>{" "}
+            <span className="lp-headline-underline" style={{ color: "var(--af2-ink)" }}>
+              people
+            </span>{" "}
+            <span className="lp-dim">
+              — a team you can brief, budget, and trust with a paper trail.
+            </span>
+          </span>
+        </InView>
       </section>
 
-      {/* 3-UP FEATURES */}
-      <section className="lp-features" id="product">
-        <span className="af2-eyebrow">How it works</span>
+      {/* 3-UP FEATURES — cards rise in; each card's SVG art plays once the
+          grid enters view (lines write in, team pops in, ✓ stamps, bars grow). */}
+      <InView as="section" className="lp-features" id="product">
+        <span className="af2-eyebrow lp-reveal">How it works</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 0",
             maxWidth: 760,
+            transitionDelay: ".06s",
           }}
         >
           Three things, one workflow: brief a mission, let your team plan, ship with a stamp.
         </h2>
 
-        <div className="lp-feature-grid">
+        <InView as="div" className="lp-feature-grid">
           {/* 1 */}
-          <div className="lp-feature">
+          <div className="lp-feature lp-reveal">
             <div className="lp-feature-art">
               <svg width="160" height="100" viewBox="0 0 160 100" aria-hidden="true">
                 <rect x="6" y="14" width="80" height="72" rx="6" fill="var(--af2-paper-2)" stroke="var(--af2-line)" />
-                <line x1="14" y1="28" x2="74" y2="28" stroke="var(--af2-ink-3)" strokeWidth="1.4" />
-                <line x1="14" y1="38" x2="62" y2="38" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
-                <line x1="14" y1="48" x2="70" y2="48" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
-                <line x1="14" y1="58" x2="46" y2="58" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".15s" }} x1="14" y1="28" x2="74" y2="28" stroke="var(--af2-ink-3)" strokeWidth="1.4" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".27s" }} x1="14" y1="38" x2="62" y2="38" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".39s" }} x1="14" y1="48" x2="70" y2="48" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".51s" }} x1="14" y1="58" x2="46" y2="58" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
+                {/* The mission→team connector quietly marches forever. */}
                 <path
+                  className="lp-march"
                   d="M86 50 Q100 50 110 38"
                   fill="none"
                   stroke="var(--af2-clay)"
                   strokeWidth="1.6"
                   strokeDasharray="3 3"
                 />
-                <circle cx="116" cy="35" r="14" fill="var(--af2-clay)" />
-                <circle cx="138" cy="55" r="11" fill="var(--af2-sage)" />
-                <circle cx="118" cy="75" r="9" fill="var(--af2-mustard)" />
-                <circle cx="143" cy="32" r="6" fill="var(--af2-plum)" />
+                <circle className="lp-art-pop" style={{ transitionDelay: ".55s" }} cx="116" cy="35" r="14" fill="var(--af2-clay)" />
+                <circle className="lp-art-pop" style={{ transitionDelay: ".65s" }} cx="138" cy="55" r="11" fill="var(--af2-sage)" />
+                <circle className="lp-art-pop" style={{ transitionDelay: ".75s" }} cx="118" cy="75" r="9" fill="var(--af2-mustard)" />
+                <circle className="lp-art-pop" style={{ transitionDelay: ".85s" }} cx="143" cy="32" r="6" fill="var(--af2-plum)" />
               </svg>
             </div>
             <span className="af2-eyebrow">01 · Mission</span>
@@ -890,36 +921,41 @@ export default function Home() {
           </div>
 
           {/* 2 */}
-          <div className="lp-feature">
+          <div className="lp-feature lp-reveal" style={{ transitionDelay: ".08s" }}>
             <div className="lp-feature-art">
               <svg width="200" height="100" viewBox="0 0 200 100" aria-hidden="true">
                 <rect x="10" y="22" width="180" height="56" rx="8" fill="var(--af2-paper-2)" stroke="var(--af2-line)" />
-                <circle cx="34" cy="50" r="14" fill="var(--af2-clay)" />
-                <text
-                  x="34"
-                  y="54"
-                  textAnchor="middle"
-                  fill="white"
-                  fontSize="11"
-                  fontWeight="600"
-                  fontFamily="Geist,sans-serif"
-                >
-                  MC
-                </text>
-                <line x1="56" y1="44" x2="140" y2="44" stroke="var(--af2-ink-3)" strokeWidth="1.4" />
-                <line x1="56" y1="54" x2="120" y2="54" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
-                <rect x="148" y="36" width="38" height="28" rx="4" fill="var(--af2-ink)" />
-                <text
-                  x="167"
-                  y="55"
-                  textAnchor="middle"
-                  fill="var(--af2-paper)"
-                  fontSize="11"
-                  fontWeight="600"
-                  fontFamily="Geist,sans-serif"
-                >
-                  ✓
-                </text>
+                <g className="lp-art-pop" style={{ transitionDelay: ".3s" }}>
+                  <circle cx="34" cy="50" r="14" fill="var(--af2-clay)" />
+                  <text
+                    x="34"
+                    y="54"
+                    textAnchor="middle"
+                    fill="white"
+                    fontSize="11"
+                    fontWeight="600"
+                    fontFamily="Geist,sans-serif"
+                  >
+                    MC
+                  </text>
+                </g>
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".42s" }} x1="56" y1="44" x2="140" y2="44" stroke="var(--af2-ink-3)" strokeWidth="1.4" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".54s" }} x1="56" y1="54" x2="120" y2="54" stroke="var(--af2-ink-4)" strokeWidth="1.2" />
+                {/* Approval stamps in last — the point of the card. */}
+                <g className="lp-art-stamp" style={{ transitionDelay: ".75s" }}>
+                  <rect x="148" y="36" width="38" height="28" rx="4" fill="var(--af2-ink)" />
+                  <text
+                    x="167"
+                    y="55"
+                    textAnchor="middle"
+                    fill="var(--af2-paper)"
+                    fontSize="11"
+                    fontWeight="600"
+                    fontFamily="Geist,sans-serif"
+                  >
+                    ✓
+                  </text>
+                </g>
               </svg>
             </div>
             <span className="af2-eyebrow">02 · Tickets</span>
@@ -928,40 +964,43 @@ export default function Home() {
           </div>
 
           {/* 3 */}
-          <div className="lp-feature">
+          <div className="lp-feature lp-reveal" style={{ transitionDelay: ".16s" }}>
             <div className="lp-feature-art">
               <svg width="220" height="100" viewBox="0 0 220 100" aria-hidden="true">
                 <rect x="6" y="20" width="208" height="60" rx="6" fill="var(--af2-paper-2)" stroke="var(--af2-line)" />
-                <line x1="14" y1="34" x2="206" y2="34" stroke="var(--af2-line-2)" />
-                <rect x="14" y="42" width="40" height="22" rx="3" fill="var(--af2-sage)" opacity="0.85" />
-                <rect x="58" y="42" width="64" height="22" rx="3" fill="var(--af2-clay)" opacity="0.85" />
-                <rect x="126" y="42" width="22" height="22" rx="3" fill="var(--af2-mustard)" opacity="0.85" />
-                <rect x="152" y="42" width="50" height="22" rx="3" fill="var(--af2-plum)" opacity="0.85" />
-                <line x1="14" y1="68" x2="206" y2="68" stroke="var(--af2-line-2)" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".2s" }} x1="14" y1="34" x2="206" y2="34" stroke="var(--af2-line-2)" />
+                <rect className="lp-art-grow" style={{ transitionDelay: ".35s" }} x="14" y="42" width="40" height="22" rx="3" fill="var(--af2-sage)" opacity="0.85" />
+                <rect className="lp-art-grow" style={{ transitionDelay: ".47s" }} x="58" y="42" width="64" height="22" rx="3" fill="var(--af2-clay)" opacity="0.85" />
+                <rect className="lp-art-grow" style={{ transitionDelay: ".59s" }} x="126" y="42" width="22" height="22" rx="3" fill="var(--af2-mustard)" opacity="0.85" />
+                <rect className="lp-art-grow" style={{ transitionDelay: ".71s" }} x="152" y="42" width="50" height="22" rx="3" fill="var(--af2-plum)" opacity="0.85" />
+                <line className="lp-art-line" pathLength={1} style={{ transitionDelay: ".2s" }} x1="14" y1="68" x2="206" y2="68" stroke="var(--af2-line-2)" />
               </svg>
             </div>
             <span className="af2-eyebrow">03 · Receipts</span>
             <h3>{featAt(3).title}</h3>
             <p>{featAt(3).description}</p>
           </div>
-        </div>
-      </section>
+        </InView>
+      </InView>
 
-      {/* BIG MOCK */}
-      <section className="lp-mock-section" id="workforce">
-        <span className="af2-eyebrow">The workplace, not the workflow</span>
+      {/* BIG MOCK — the workplace mock runs when it enters view: stats count
+          up, mission bars fill, the live pills keep pulsing. */}
+      <InView as="section" className="lp-mock-section" id="workforce">
+        <span className="af2-eyebrow lp-reveal">The workplace, not the workflow</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 36px",
             maxWidth: 760,
+            transitionDelay: ".06s",
           }}
         >
           Workspaces for each company. Pods for each function. Receipts for each move.
         </h2>
 
-        <div className="lp-mock">
+        <div className="lp-mock lp-reveal" style={{ transitionDelay: ".14s" }}>
           <div className="lp-mock-inner">
             {/* Sidebar mock */}
             <div className="lp-mock-side">
@@ -1041,7 +1080,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Stats strip */}
+              {/* Stats strip — counts up in view (tabular figures, no shift). */}
               <div
                 style={{
                   display: "grid",
@@ -1053,27 +1092,57 @@ export default function Home() {
                   overflow: "hidden",
                 }}
               >
-                {[
-                  ["Missions", "6"],
-                  ["Hours saved · 7d", "142"],
-                  ["Spend · month", "$1,207"],
-                  ["Approval p50", "3m 12s"],
-                ].map(([label, value], i, arr) => (
+                {(
+                  [
+                    {
+                      label: "Missions",
+                      value: 6,
+                      format: (v: number) => String(Math.round(v)),
+                    },
+                    {
+                      label: "Hours saved · 7d",
+                      value: 142,
+                      format: (v: number) => String(Math.round(v)),
+                    },
+                    {
+                      label: "Spend · month",
+                      value: 1207,
+                      format: (v: number) => `$${Math.round(v).toLocaleString("en-US")}`,
+                    },
+                    {
+                      label: "Approval p50",
+                      value: 192, // seconds → "3m 12s"
+                      format: (v: number) => {
+                        const total = Math.round(v);
+                        return `${Math.floor(total / 60)}m ${String(total % 60).padStart(2, "0")}s`;
+                      },
+                    },
+                  ] as const
+                ).map((stat, i, arr) => (
                   <div
-                    key={label}
+                    key={stat.label}
                     style={{
                       padding: "14px 16px",
                       borderRight: i < arr.length - 1 ? "1px solid var(--af2-line)" : "none",
                     }}
                   >
-                    <div className="af2-eyebrow">{label}</div>
-                    <div style={{ font: "400 28px/1 var(--af2-serif)", marginTop: 4 }}>{value}</div>
+                    <div className="af2-eyebrow">{stat.label}</div>
+                    <div style={{ font: "400 28px/1 var(--af2-serif)", marginTop: 4 }}>
+                      <CountUp
+                        value={stat.value}
+                        format={stat.format}
+                        duration={900}
+                        delay={150 + i * 120}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* Missions list */}
-              <div
+              {/* Missions list — progress bars fill (scaleX) once in view. */}
+              <InView
+                as="div"
+                className="lp-missions"
                 style={{
                   marginTop: 18,
                   background: "var(--af2-card)",
@@ -1106,6 +1175,7 @@ export default function Home() {
                               width: `${m.progress * 100}%`,
                               background:
                                 m.state === "blocked" ? "var(--af2-clay)" : "var(--af2-sage)",
+                              transitionDelay: `${0.25 + i * 0.15}s`,
                             }}
                           />
                         </div>
@@ -1130,27 +1200,30 @@ export default function Home() {
                     </div>
                   );
                 })}
-              </div>
+              </InView>
             </div>
           </div>
         </div>
-      </section>
+      </InView>
 
-      {/* INTEGRATIONS */}
-      <section className="lp-features" id="integrations">
-        <span className="af2-eyebrow">Connect everything · BYOK everywhere</span>
+      {/* INTEGRATIONS — the wall of tiles cascades in a quick wave. */}
+      <InView as="section" className="lp-features" id="integrations">
+        <span className="af2-eyebrow lp-reveal">Connect everything · BYOK everywhere</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 0",
             maxWidth: 760,
+            transitionDelay: ".06s",
           }}
         >
           16 integrations live. Five model providers. One MCP-friendly contract for the rest.
         </h2>
 
-        <div
+        <InView
+          as="div"
           id="lp-integrations"
           style={{
             display: "grid",
@@ -1159,8 +1232,12 @@ export default function Home() {
             marginTop: 32,
           }}
         >
-          {INTEGRATIONS.map((it) => (
-            <div key={it.name} className="af2-card" style={{ padding: 14, textAlign: "center" }}>
+          {INTEGRATIONS.map((it, i) => (
+            <div
+              key={it.name}
+              className="af2-card lp-reveal"
+              style={{ padding: 14, textAlign: "center", transitionDelay: `${i * 0.03}s` }}
+            >
               <div style={{ height: 36, display: "grid", placeItems: "center" }}>
                 <CompanyLogo name={it.name} integrationId={it.name.toLowerCase()} size={28} />
               </div>
@@ -1170,37 +1247,46 @@ export default function Home() {
               </div>
             </div>
           ))}
-        </div>
-      </section>
+        </InView>
+      </InView>
 
-      {/* PRICING */}
-      <section className="lp-pricing" id="pricing">
-        <span className="af2-eyebrow">Pricing</span>
+      {/* PRICING — cards rise in; bullets land with their card (reading
+          content stays instant per the research). */}
+      <InView as="section" className="lp-pricing" id="pricing">
+        <span className="af2-eyebrow lp-reveal">Pricing</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 0",
             maxWidth: 760,
+            transitionDelay: ".06s",
           }}
         >
           Pay for outcomes, not seats. Bring your own model spend.
         </h2>
         <p
+          className="lp-reveal"
           style={{
             fontSize: 15,
             color: "var(--af2-ink-2)",
             marginTop: 14,
             maxWidth: 680,
+            transitionDelay: ".12s",
           }}
         >
           Plans cover the platform — workspaces, agents, governance, audit. Model usage is billed
           to your provider keys at cost.
         </p>
 
-        <div className="lp-tiers">
-          {tiers.map((t) => (
-            <div key={t.id} className={`lp-tier${t.isPopular ? " featured" : ""}`}>
+        <InView as="div" className="lp-tiers">
+          {tiers.map((t, i) => (
+            <div
+              key={t.id}
+              className={`lp-tier${t.isPopular ? " featured" : ""} lp-reveal`}
+              style={{ transitionDelay: `${i * 0.07}s` }}
+            >
               <span
                 className="af2-eyebrow"
                 style={{ color: t.isPopular ? "var(--af2-clay-2)" : undefined }}
@@ -1220,34 +1306,38 @@ export default function Home() {
               <PricingCta tier={t} />
             </div>
           ))}
-        </div>
-      </section>
+        </InView>
+      </InView>
 
       {/* PAY-AS-YOU-GO CREDIT PACKS */}
-      <section className="lp-credit-packs" id="credit-packs">
-        <span className="af2-eyebrow">Pay-as-you-go</span>
+      <InView as="section" className="lp-credit-packs" id="credit-packs">
+        <span className="af2-eyebrow lp-reveal">Pay-as-you-go</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 44px/1.05 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 0",
             maxWidth: 820,
+            transitionDelay: ".06s",
           }}
         >
           Skip the vendor and api key setup. Buy credits and use our hosted models. Pay only when you run. Never expires.
         </h2>
         <p
+          className="lp-reveal"
           style={{
             fontSize: 15,
             color: "var(--af2-ink-2)",
             marginTop: 14,
             maxWidth: 680,
+            transitionDelay: ".12s",
           }}
         >
           Top up with credit packs and route through any of our hosted models — Sonnet, Opus, Haiku — at the tier you choose. Credits never auto-renew, and you only ever pay for what you actually use. Bigger packs include bonus credits to stretch your budget further.
         </p>
 
-        <div className="lp-packs">
+        <InView as="div" className="lp-packs">
           {(() => {
             // Auto "Most popular" target = pack with the highest bonusPercent.
             // Overlay can override this per-pack (tri-state: true / false /
@@ -1256,13 +1346,17 @@ export default function Home() {
             const autoFeaturedId = packs.find(
               (x) => x.bonusPercent === maxBonus && maxBonus > 0,
             )?.id;
-            return packs.map((p) => {
+            return packs.map((p, i) => {
               const featured =
                 p.isFeaturedOverride ?? p.id === autoFeaturedId;
               const ctaLabel = p.ctaLabel ?? `Buy ${p.displayName}`;
               const featuredLabel = p.featuredLabel ?? "Most popular";
               return (
-                <div key={p.id} className={`lp-pack${featured ? " featured" : ""}`}>
+                <div
+                  key={p.id}
+                  className={`lp-pack${featured ? " featured" : ""} lp-reveal`}
+                  style={{ transitionDelay: `${i * 0.06}s` }}
+                >
                   {featured ? <span className="lp-pack-popular">{featuredLabel}</span> : null}
                   <h3>{p.displayName}</h3>
                   {p.tagline ? (
@@ -1298,7 +1392,7 @@ export default function Home() {
               );
             });
           })()}
-        </div>
+        </InView>
 
         <p
           style={{
@@ -1310,7 +1404,7 @@ export default function Home() {
         >
           Already on a subscription? Credit packs stack on top of your plan&apos;s included credits.
         </p>
-      </section>
+      </InView>
 
       {/* TESTIMONIALS — Sanity-driven; the whole section is omitted when there
           are none (no fabricated quotes on a pre-customer landing). */}
@@ -1321,7 +1415,8 @@ export default function Home() {
           aria-label="What early teams say"
         >
           <span className="af2-eyebrow">From early teams</span>
-          <div
+          <InView
+            as="div"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
@@ -1332,8 +1427,14 @@ export default function Home() {
             {testimonials.map((t, i) => (
               <figure
                 key={i}
-                className="af2-card"
-                style={{ margin: 0, display: "flex", flexDirection: "column", gap: 14 }}
+                className="af2-card lp-reveal"
+                style={{
+                  margin: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                  transitionDelay: `${i * 0.08}s`,
+                }}
               >
                 <blockquote
                   style={{ margin: 0, fontSize: 15.5, lineHeight: 1.5, color: "var(--af2-ink)" }}
@@ -1359,24 +1460,29 @@ export default function Home() {
                 </figcaption>
               </figure>
             ))}
-          </div>
+          </InView>
         </section>
       ) : null}
 
-      {/* FAQ — Sanity-driven with a factual hardcoded fallback. */}
-      <section
+      {/* FAQ — Sanity-driven with a factual hardcoded fallback. Reading
+          content: the accordion is quick (280ms) and the list never
+          scroll-reveals — only the heading does. */}
+      <InView
+        as="section"
         className="lp-section"
         style={{ padding: "60px 32px" }}
         id="faq"
         aria-label="Frequently asked questions"
       >
-        <span className="af2-eyebrow">Questions</span>
+        <span className="af2-eyebrow lp-reveal">Questions</span>
         <h2
+          className="lp-reveal"
           style={{
             font: "400 36px/1.1 var(--af2-serif)",
             letterSpacing: "-0.02em",
             margin: "8px 0 26px",
             maxWidth: 700,
+            transitionDelay: ".06s",
           }}
         >
           The short version.
@@ -1386,6 +1492,7 @@ export default function Home() {
             <details
               key={i}
               open={i === 0}
+              className="lp-faq"
               style={{ borderTop: "1px solid var(--af2-line)", padding: "16px 0" }}
             >
               <summary
@@ -1412,34 +1519,49 @@ export default function Home() {
             </details>
           ))}
         </div>
-      </section>
+      </InView>
 
-      {/* CTA */}
-      <section className="lp-cta">
-        <h2>
+      {/* CTA — the closing headline rises and "today." underlines itself. */}
+      <InView as="section" className="lp-cta">
+        <h2 className="lp-reveal">
           Hire your
           <br />
-          first agent <em>today.</em>
+          first agent{" "}
+          <em>
+            <span className="lp-underline-view">today.</span>
+          </em>
         </h2>
         <p
+          className="lp-reveal"
           style={{
             fontSize: 18,
             color: "var(--af2-ink-2)",
             maxWidth: 600,
             margin: "24px auto 0",
+            transitionDelay: ".08s",
           }}
         >
           14 days free, no card. Cancel by deleting the workspace.
         </p>
-        <div style={{ marginTop: 30, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        <div
+          className="lp-reveal"
+          style={{
+            marginTop: 30,
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            flexWrap: "wrap",
+            transitionDelay: ".16s",
+          }}
+        >
           <Link to="/signup" className="af2-btn af2-btn-clay" style={{ padding: "14px 24px", fontSize: 14.5 }}>
-            Start free →
+            {withArrow("Start free →")}
           </Link>
           <Link to="/demo" className="af2-btn" style={{ padding: "14px 24px", fontSize: 14.5 }}>
             Watch a 90s demo
           </Link>
         </div>
-      </section>
+      </InView>
 
       {/* FOOTER */}
       <footer className="lp-foot">
@@ -1458,6 +1580,66 @@ export default function Home() {
         <span>© {new Date().getFullYear()}</span>
       </footer>
     </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sticky nav: gains elevation once the page scrolls, and carries the 2px clay
+// reading-progress hairline (HEL-777).
+
+function LandingNav() {
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  return (
+    <header className={`lp-nav${scrolled ? " scrolled" : ""}`} id="top">
+      <div className="lp-nav-inner">
+        <Link
+          to="/"
+          style={{
+            textDecoration: "none",
+            color: "inherit",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <AutoFlowMark />
+          <span
+            style={{
+              fontFamily: "var(--af2-serif)",
+              fontSize: 19,
+              fontWeight: 500,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            AutoFlow
+          </span>
+        </Link>
+        <a href="#product">Product</a>
+        <a href="#workforce">Workforce</a>
+        <a href="#integrations">Integrations</a>
+        <a href="#pricing">Pricing</a>
+        <Link to="/blog">Blog</Link>
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer noopener">
+          GitHub
+        </a>
+        <span style={{ flex: 1 }} />
+        <Link to="/signup" style={{ fontSize: 13.5 }}>
+          Sign in
+        </Link>
+        <Link to="/signup" className="af2-btn af2-btn-primary af2-btn-sm">
+          Start free
+        </Link>
+      </div>
+      <ScrollProgressBar />
+    </header>
   );
 }
 

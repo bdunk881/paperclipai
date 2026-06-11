@@ -419,6 +419,231 @@ export function StepSetupCoach({
         );
       }
 
+      case "filter": {
+        // HEL-779: keep only the array items that pass the predicate. The engine
+        // reads config.itemsKey (the array) + config.condition (falls back to
+        // step.condition); both live in step.config.
+        const itemsKey =
+          typeof step.config?.["itemsKey"] === "string" ? (step.config["itemsKey"] as string) : "";
+        const condition =
+          typeof step.config?.["condition"] === "string"
+            ? (step.config["condition"] as string)
+            : typeof step.condition === "string"
+              ? step.condition
+              : "";
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="What should this filter?"
+            hint="Keeps only the items that pass your rule; drops the rest."
+          >
+            <label className="block text-xs text-af2-ink-3">
+              Array field to filter
+              <input
+                data-field="itemsKey"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                placeholder="e.g. tickets"
+                value={itemsKey}
+                disabled={readonly}
+                onChange={(e) =>
+                  onUpdateStep({
+                    config: { ...(step.config ?? {}), itemsKey: e.target.value || undefined },
+                  })
+                }
+              />
+            </label>
+            <label className="block text-xs text-af2-ink-3">
+              Keep items where…
+              <input
+                data-field="condition"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                placeholder="e.g. score > 50"
+                value={condition}
+                disabled={readonly}
+                onChange={(e) =>
+                  onUpdateStep({
+                    config: { ...(step.config ?? {}), condition: e.target.value || undefined },
+                  })
+                }
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-af2-ink-4">
+              The rule runs once per item. Each field of the item is in scope, plus the whole row
+              as <code>item</code>. No rule means every item passes through.
+            </p>
+          </SetupCoachCard>
+        );
+      }
+
+      case "wait": {
+        // HEL-779: duration / until / webhook. Engine (waitStep.ts) reads
+        // config.mode + (amount+unit | until); webhook pauses with no timer.
+        const mode =
+          typeof step.config?.["mode"] === "string" ? (step.config["mode"] as string) : "duration";
+        const amountRaw = step.config?.["amount"];
+        const amount =
+          typeof amountRaw === "number"
+            ? String(amountRaw)
+            : typeof amountRaw === "string"
+              ? amountRaw
+              : "";
+        const unit =
+          typeof step.config?.["unit"] === "string" ? (step.config["unit"] as string) : "seconds";
+        const until =
+          typeof step.config?.["until"] === "string" ? (step.config["until"] as string) : "";
+        const patchWait = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="How long should this wait?"
+            hint="Pause the run here, then resume automatically."
+          >
+            <label className="block text-xs text-af2-ink-3">
+              Wait mode
+              <select
+                data-field="waitMode"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                value={mode}
+                disabled={readonly}
+                onChange={(e) => patchWait({ mode: e.target.value })}
+              >
+                <option value="duration">For a set amount of time</option>
+                <option value="until">Until a specific time</option>
+                <option value="webhook">Until an external event (webhook)</option>
+              </select>
+            </label>
+            {mode === "duration" && (
+              <div className="flex gap-2">
+                <input
+                  data-field="waitAmount"
+                  type="number"
+                  min={1}
+                  className="w-24 rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                  placeholder="30"
+                  value={amount}
+                  disabled={readonly}
+                  onChange={(e) =>
+                    patchWait({
+                      amount: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                />
+                <select
+                  data-field="waitUnit"
+                  className="flex-1 rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                  value={unit}
+                  disabled={readonly}
+                  onChange={(e) => patchWait({ unit: e.target.value })}
+                >
+                  <option value="seconds">seconds</option>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="days">days</option>
+                </select>
+              </div>
+            )}
+            {mode === "until" && (
+              <label className="block text-xs text-af2-ink-3">
+                Resume at
+                <input
+                  data-field="waitUntil"
+                  type="datetime-local"
+                  className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                  value={until}
+                  disabled={readonly}
+                  onChange={(e) => patchWait({ until: e.target.value || undefined })}
+                />
+              </label>
+            )}
+            {mode === "webhook" && (
+              <p className="rounded-lg border border-af2-line bg-af2-paper-3 px-3 py-2.5 text-[11px] leading-relaxed text-af2-ink-2">
+                The run pauses here with no timer until an external call wakes it:{" "}
+                <code>POST /api/runs/resume/:token</code>. The one-time resume token is issued when
+                the run reaches this step.
+              </p>
+            )}
+          </SetupCoachCard>
+        );
+      }
+
+      case "stop_error": {
+        // HEL-779: deliberately fail the run. Engine (stopErrorStep.ts) reads
+        // config.message (alias errorMessage) + optional config.errorType; a blank
+        // message falls back to a default, so the message is not required.
+        const message =
+          typeof step.config?.["message"] === "string"
+            ? (step.config["message"] as string)
+            : typeof step.config?.["errorMessage"] === "string"
+              ? (step.config["errorMessage"] as string)
+              : "";
+        const errorType =
+          typeof step.config?.["errorType"] === "string"
+            ? (step.config["errorType"] as string)
+            : "";
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Stop the run with an error"
+            hint="Reject a bad branch, or assert that something must be true."
+          >
+            <label className="block text-xs text-af2-ink-3">
+              Failure message
+              <textarea
+                data-field="stopMessage"
+                className="mt-1 w-full resize-none rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                rows={2}
+                placeholder="e.g. No matching record for {{customerId}}"
+                value={message}
+                disabled={readonly}
+                onChange={(e) =>
+                  onUpdateStep({
+                    config: { ...(step.config ?? {}), message: e.target.value || undefined },
+                  })
+                }
+              />
+            </label>
+            <label className="block text-xs text-af2-ink-3">
+              Error type <span className="text-af2-ink-4">(optional)</span>
+              <input
+                data-field="stopErrorType"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                placeholder="e.g. not_found"
+                value={errorType}
+                disabled={readonly}
+                onChange={(e) =>
+                  onUpdateStep({
+                    config: { ...(step.config ?? {}), errorType: e.target.value || undefined },
+                  })
+                }
+              />
+            </label>
+            <p className="text-[11px] leading-relaxed text-af2-ink-4">
+              <code>{"{{key}}"}</code> placeholders fill from the run context. A blank message uses a
+              default. This always stops the run — it ignores continue-on-fail.
+            </p>
+          </SetupCoachCard>
+        );
+      }
+
+      case "merge":
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Merge branches"
+            hint="Rejoins parallel branches before the next step."
+          >
+            <p className="text-xs leading-relaxed text-af2-ink-3">
+              This step passes through the inputs that reached it — connect the branches you want to
+              rejoin into it. Nothing to configure here; the merged data flows on to the next step.
+            </p>
+          </SetupCoachCard>
+        );
+
       case "trigger":
       case "file_trigger":
         return (

@@ -213,15 +213,39 @@ export const STEP_PALETTE_SECTIONS: Array<{
 }> = [
   {
     title: "When to start",
-    kinds: ["trigger", "cron_trigger", "interval_trigger", "file_trigger"],
+    // HEL-780: surface every trigger kind. chat/form/error/sub_workflow are the
+    // entrypoints shipped this cycle — they already have KIND_META + STEP_KIND_COPY
+    // but were missing from the side-rail palette.
+    kinds: [
+      "trigger",
+      "cron_trigger",
+      "interval_trigger",
+      "file_trigger",
+      "chat_trigger",
+      "form_trigger",
+      "error_trigger",
+      "sub_workflow_trigger",
+    ],
   },
   {
     title: "What to do",
-    kinds: ["llm", "transform", "action", "mcp", "agent"],
+    kinds: ["llm", "knowledge", "transform", "action", "mcp", "agent", "sub_workflow"],
   },
   {
     title: "Control flow",
-    kinds: ["condition", "approval", "output"],
+    // HEL-780: the flow-logic kinds (switch/filter/loop/merge/wait/stop_error)
+    // now have inspector cards (HEL-779/HEL-781), so make them addable here too.
+    kinds: [
+      "condition",
+      "switch",
+      "filter",
+      "loop",
+      "merge",
+      "wait",
+      "approval",
+      "stop_error",
+      "output",
+    ],
   },
 ];
 

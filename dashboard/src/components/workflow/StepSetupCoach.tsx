@@ -644,6 +644,205 @@ export function StepSetupCoach({
           </SetupCoachCard>
         );
 
+      case "loop": {
+        // HEL-781: bounded loop. The engine (loopStep.ts) jumps BACK to
+        // config.loopStartStepId (an EARLIER step) up to config.maxIterations
+        // times, exiting early when config.breakCondition is truthy. Targets
+        // resolve by template.steps index === setupContext.steps index.
+        const cfg = step.config ?? {};
+        const loopStartStepId =
+          typeof cfg["loopStartStepId"] === "string" ? (cfg["loopStartStepId"] as string) : "";
+        const maxIterationsRaw = cfg["maxIterations"];
+        const maxIterations =
+          typeof maxIterationsRaw === "number"
+            ? String(maxIterationsRaw)
+            : typeof maxIterationsRaw === "string"
+              ? maxIterationsRaw
+              : "";
+        const breakCondition =
+          typeof cfg["breakCondition"] === "string" ? (cfg["breakCondition"] as string) : "";
+        const currentIndex = setupContext.steps.findIndex((s) => s.id === step.id);
+        const earlierSteps =
+          currentIndex > 0 ? setupContext.steps.filter((_, i) => i < currentIndex) : [];
+        const patchLoop = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="What should repeat?"
+            hint="Re-runs an earlier stretch of steps until it is done."
+          >
+            {earlierSteps.length === 0 ? (
+              <p className="text-xs leading-relaxed text-af2-mustard">
+                Add an earlier step first — a loop jumps back to a step above it to repeat.
+              </p>
+            ) : (
+              <>
+                <label className="block text-xs text-af2-ink-3">
+                  Jump back to
+                  <select
+                    data-field="loopStartStepId"
+                    className="mt-1 w-full rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                    value={loopStartStepId}
+                    disabled={readonly}
+                    onChange={(e) => patchLoop({ loopStartStepId: e.target.value || undefined })}
+                  >
+                    <option value="">Choose the step to repeat from…</option>
+                    {earlierSteps.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name || s.kind}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs text-af2-ink-3">
+                  Max times to repeat
+                  <input
+                    data-field="loopMaxIterations"
+                    type="number"
+                    min={1}
+                    className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                    placeholder="e.g. 10"
+                    value={maxIterations}
+                    disabled={readonly}
+                    onChange={(e) =>
+                      patchLoop({
+                        maxIterations: e.target.value === "" ? undefined : Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label className="block text-xs text-af2-ink-3">
+                  Stop early when <span className="text-af2-ink-4">(optional)</span>
+                  <input
+                    data-field="loopBreakCondition"
+                    className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                    placeholder="e.g. done === true"
+                    value={breakCondition}
+                    disabled={readonly}
+                    onChange={(e) => patchLoop({ breakCondition: e.target.value || undefined })}
+                  />
+                </label>
+                <p className="text-[11px] leading-relaxed text-af2-ink-4">
+                  Runs at most this many times — a hard cap also guards against runaway loops. Leave
+                  the stop rule blank to always run the full count.
+                </p>
+              </>
+            )}
+          </SetupCoachCard>
+        );
+      }
+
+      case "switch": {
+        // HEL-781: N-way route. The engine (switchStep.ts) takes the first route
+        // whose condition is true and jumps FORWARD to its targetStepId, else the
+        // fallbackStepId. Targets must be downstream (index > this step's index).
+        const cfg = step.config ?? {};
+        const routes = Array.isArray(cfg["routes"])
+          ? (cfg["routes"] as Array<{ condition?: string; targetStepId?: string }>)
+          : [];
+        const fallbackStepId =
+          typeof cfg["fallbackStepId"] === "string" ? (cfg["fallbackStepId"] as string) : "";
+        const currentIndex = setupContext.steps.findIndex((s) => s.id === step.id);
+        const forwardSteps =
+          currentIndex >= 0 ? setupContext.steps.filter((_, i) => i > currentIndex) : [];
+        const patchSwitch = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        const updateRoute = (idx: number, field: "condition" | "targetStepId", value: string) => {
+          const next = routes.map((r, i) => (i === idx ? { ...r, [field]: value } : r));
+          patchSwitch({ routes: next });
+        };
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Where should each case go?"
+            hint="The first matching rule wins; each route jumps forward to a later step."
+          >
+            {forwardSteps.length === 0 ? (
+              <p className="text-xs leading-relaxed text-af2-mustard">
+                Add a later step first — a switch routes forward to downstream steps.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  {routes.map((route, idx) => (
+                    <div key={idx} className="space-y-1.5 rounded-lg border border-af2-line-2 p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-af2-ink-4">
+                          Route {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={readonly}
+                          className="text-[10px] font-semibold uppercase tracking-wide text-af2-clay"
+                          onClick={() =>
+                            patchSwitch({ routes: routes.filter((_, i) => i !== idx) })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <input
+                        data-field={`switchRouteCondition-${idx}`}
+                        className="w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                        placeholder={'e.g. urgency === "high"'}
+                        value={route.condition ?? ""}
+                        disabled={readonly}
+                        onChange={(e) => updateRoute(idx, "condition", e.target.value)}
+                      />
+                      <select
+                        data-field={`switchRouteTarget-${idx}`}
+                        className="w-full rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                        value={route.targetStepId ?? ""}
+                        disabled={readonly}
+                        onChange={(e) => updateRoute(idx, "targetStepId", e.target.value)}
+                      >
+                        <option value="">Go to…</option>
+                        {forwardSteps.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name || s.kind}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  data-field="switchAddRoute"
+                  disabled={readonly}
+                  className="rounded-lg border border-dashed border-af2-line-2 px-3 py-1.5 text-xs font-medium text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay"
+                  onClick={() =>
+                    patchSwitch({ routes: [...routes, { condition: "", targetStepId: "" }] })
+                  }
+                >
+                  + Add route
+                </button>
+                <label className="block text-xs text-af2-ink-3">
+                  Otherwise <span className="text-af2-ink-4">(fallback)</span>
+                  <select
+                    data-field="switchFallback"
+                    className="mt-1 w-full rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                    value={fallbackStepId}
+                    disabled={readonly}
+                    onChange={(e) => patchSwitch({ fallbackStepId: e.target.value || undefined })}
+                  >
+                    <option value="">Continue to the next step</option>
+                    {forwardSteps.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name || s.kind}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            )}
+          </SetupCoachCard>
+        );
+      }
+
       case "trigger":
       case "file_trigger":
         return (

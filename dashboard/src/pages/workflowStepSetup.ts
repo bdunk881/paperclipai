@@ -589,6 +589,47 @@ export function evaluateStepReadiness(
       });
       break;
     }
+    case "loop": {
+      // HEL-781: a Loop needs the earlier step it jumps back to. maxIterations
+      // is optional (defaults to 1 = run once) so only the target gates.
+      const startId = step.config?.["loopStartStepId"];
+      items.push({
+        id: "loopStart",
+        label: "A step to repeat from is set",
+        passed: typeof startId === "string" && startId !== "",
+        fixLabel: "Set",
+        fixAction: "focus",
+        focusField: "loopStartStepId",
+      });
+      break;
+    }
+    case "switch": {
+      // HEL-781: a Switch needs at least one complete route (condition + target)
+      // or a fallback — otherwise it just falls through to the next step.
+      const cfg = (step.config ?? {}) as Record<string, unknown>;
+      const routes = Array.isArray(cfg["routes"])
+        ? (cfg["routes"] as Array<{ condition?: unknown; targetStepId?: unknown }>)
+        : [];
+      const hasRoute = routes.some(
+        (r) =>
+          r &&
+          typeof r.condition === "string" &&
+          r.condition !== "" &&
+          typeof r.targetStepId === "string" &&
+          r.targetStepId !== "",
+      );
+      const hasFallback =
+        typeof cfg["fallbackStepId"] === "string" && cfg["fallbackStepId"] !== "";
+      items.push({
+        id: "switchRoutes",
+        label: "At least one route or a fallback is set",
+        passed: hasRoute || hasFallback,
+        fixLabel: "Add",
+        fixAction: "focus",
+        focusField: "switchAddRoute",
+      });
+      break;
+    }
     case "trigger":
     case "file_trigger":
       items.push({

@@ -8,6 +8,13 @@ const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set([
   "cron_trigger",
   "interval_trigger",
   "file_trigger",
+  // HEL-782: the Phase-1 trigger kinds. Without these, isTriggerKind() was false
+  // for them, so a form/chat/error/sub-workflow trigger used as a start node
+  // wrongly got the "Receives data from a previous step" readiness item.
+  "form_trigger",
+  "chat_trigger",
+  "error_trigger",
+  "sub_workflow_trigger",
 ]);
 
 /**
@@ -651,6 +658,24 @@ export function evaluateStepReadiness(
         fixLabel: "Add",
         fixAction: "focus",
         focusField: "switchAddRoute",
+      });
+      break;
+    }
+    case "form_trigger": {
+      // HEL-782: a form needs at least one field with a key to render anything.
+      const formFields = Array.isArray(step.config?.["formFields"])
+        ? (step.config["formFields"] as Array<{ key?: unknown }>)
+        : [];
+      const hasField = formFields.some(
+        (f) => f && typeof f.key === "string" && f.key.trim() !== "",
+      );
+      items.push({
+        id: "formFields",
+        label: "At least one form field is defined",
+        passed: hasField,
+        fixLabel: "Add",
+        fixAction: "focus",
+        focusField: "formAddField",
       });
       break;
     }

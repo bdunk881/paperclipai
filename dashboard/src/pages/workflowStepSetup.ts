@@ -544,6 +544,51 @@ export function evaluateStepReadiness(
       });
       break;
     }
+    case "filter": {
+      // HEL-779: a Filter needs the array field it runs over. The predicate is
+      // optional — no predicate is a safe passthrough — so only itemsKey gates.
+      const itemsKey = step.config?.["itemsKey"];
+      items.push({
+        id: "filterItems",
+        label: "An array field is set to filter",
+        passed: typeof itemsKey === "string" && itemsKey !== "",
+        fixLabel: "Set",
+        fixAction: "focus",
+        focusField: "itemsKey",
+      });
+      break;
+    }
+    case "wait": {
+      // HEL-779: a Wait needs a resolvable time — a positive duration, an "until"
+      // target, or webhook mode (which pauses with no timer).
+      const cfg = (step.config ?? {}) as Record<string, unknown>;
+      const mode = typeof cfg["mode"] === "string" ? cfg["mode"] : "duration";
+      let hasTime: boolean;
+      if (mode === "webhook") {
+        hasTime = true;
+      } else if (mode === "until") {
+        hasTime = typeof cfg["until"] === "string" && cfg["until"] !== "";
+      } else {
+        const amountRaw = cfg["amount"];
+        const amount =
+          typeof amountRaw === "number"
+            ? amountRaw
+            : typeof amountRaw === "string"
+              ? Number(amountRaw)
+              : NaN;
+        const durationMs = typeof cfg["durationMs"] === "number" ? cfg["durationMs"] : 0;
+        hasTime = (Number.isFinite(amount) && amount > 0) || durationMs > 0;
+      }
+      items.push({
+        id: "waitTime",
+        label: "A wait time is set",
+        passed: hasTime,
+        fixLabel: "Set",
+        fixAction: "focus",
+        focusField: "waitMode",
+      });
+      break;
+    }
     case "trigger":
     case "file_trigger":
       items.push({

@@ -27,6 +27,8 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore } from "./engine/runStore";
 import { batchStore } from "./engine/batchStore";
 import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
+import { evalStore } from "./engine/evalStore";
+import { buildEvalRows, summarizeEval, type ScorableRun } from "./engine/evalScorer";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
@@ -1862,6 +1864,186 @@ app.get(
         error: r.error,
         completedAt: r.completedAt,
       })),
+    });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Evals (HEL-776) — run a workflow over a dataset and measure output vs expected.
+//
+// An eval is ALWAYS a dry run (HEL-786): fanning a workflow over a dataset must
+// never fire real webhooks / writes / emails. It builds on batch triggering
+// (HEL-702): the dataset's inputs fan out as one dry-run batch, and the eval row
+// stores the per-row expected outputs parallel to the batch's run ids. Scoring
+// is computed on read by the pure scorer (src/engine/evalScorer.ts).
+// ---------------------------------------------------------------------------
+
+/**
+ * Start an eval over a dataset.
+ * Body: { templateId, dataset: [{ input, expected? }], name?, config? }
+ * Fans the dataset out as a dry-run batch and returns { evalId, batchId, total,
+ * runIds } (202). A row's `expected` defaults to the template's expectedOutput.
+ */
+app.post(
+  "/api/evals",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  llmEndpointRateLimiter,
+  requireEntitlement("runsPerMonth", {
+    getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
+  }),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const { templateId, dataset, name, config } = req.body as {
+      templateId?: string;
+      dataset?: Array<{ input?: unknown; expected?: unknown }>;
+      name?: string;
+      config?: Record<string, unknown>;
+    };
+
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+    if (!templateId) {
+      res.status(400).json({ error: "templateId is required" });
+      return;
+    }
+    if (!Array.isArray(dataset) || dataset.length === 0) {
+      res.status(400).json({ error: "dataset must be a non-empty array of { input, expected } rows" });
+      return;
+    }
+    if (dataset.length > MAX_BATCH_INPUTS) {
+      res.status(400).json({ error: `dataset exceeds the per-eval cap of ${MAX_BATCH_INPUTS}` });
+      return;
+    }
+
+    let template: WorkflowTemplate;
+    try {
+      template = await getTemplate(templateId, workspaceId);
+    } catch {
+      res.status(404).json({ error: `Template not found: ${templateId}` });
+      return;
+    }
+
+    const inputs = dataset.map((row) =>
+      row && typeof row.input === "object" && row.input !== null ? row.input : {},
+    );
+    // A row's expected defaults to the template's expectedOutput when omitted.
+    const expected = dataset.map((row) =>
+      row && typeof row.expected === "object" && row.expected !== null
+        ? row.expected
+        : template.expectedOutput,
+    );
+
+    // An eval is ALWAYS a dry run — the safety contract from HEL-776.
+    const result = await triggerBatch({
+      template,
+      inputs,
+      runQueue: getRunQueue(),
+      workspaceId,
+      dryRun: true,
+      ...(req.auth?.sub !== undefined ? { userId: req.auth.sub } : {}),
+      ...(config !== undefined ? { config } : {}),
+    });
+
+    if (!result.ok) {
+      res.status(400).json({ error: result.reason });
+      return;
+    }
+
+    const evalId = randomUUID();
+    await evalStore.create({
+      id: evalId,
+      workspaceId,
+      batchId: result.batchId,
+      externalTemplateId: template.id,
+      name: typeof name === "string" && name.trim() ? name.trim() : `Eval: ${template.name}`,
+      expected,
+      ...(req.auth?.sub !== undefined ? { createdByUserId: req.auth.sub } : {}),
+      createdAt: new Date().toISOString(),
+    });
+
+    res.status(202).json({
+      evalId,
+      batchId: result.batchId,
+      total: result.total,
+      runIds: result.runIds,
+    });
+  }),
+);
+
+/** List evals in the active workspace, newest first. */
+app.get(
+  "/api/evals",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.json({ evals: [], total: 0 });
+      return;
+    }
+    const evals = await evalStore.list(workspaceId);
+    res.json({
+      evals: evals.map((e) => ({
+        id: e.id,
+        name: e.name,
+        templateId: e.externalTemplateId,
+        batchId: e.batchId,
+        total: e.expected.length,
+        createdAt: e.createdAt,
+      })),
+      total: evals.length,
+    });
+  }),
+);
+
+/**
+ * Eval results: per-row pass/fail vs expected + an aggregate score. `done` is
+ * true once every run is terminal — poll until then, the scores firm up as runs
+ * complete.
+ */
+app.get(
+  "/api/evals/:evalId",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const workspaceId = req.workspace?.id;
+    const evalRun = await evalStore.get(req.params.evalId, workspaceId);
+    if (!evalRun) {
+      res.status(404).json({ error: `Eval not found: ${req.params.evalId}` });
+      return;
+    }
+    const batch = await batchStore.get(evalRun.batchId, workspaceId);
+    const runIds = batch?.runIds ?? [];
+    const runs = await runStore.listByIds(runIds, workspaceId);
+    const runsById = new Map<string, ScorableRun>(
+      runs.map((r) => [
+        r.id,
+        {
+          status: r.status,
+          ...(r.output !== undefined ? { output: r.output } : {}),
+          ...(r.error !== undefined ? { error: r.error } : {}),
+        },
+      ]),
+    );
+    const rows = buildEvalRows(runIds, evalRun.expected, runsById);
+    const summary = summarizeEval(rows);
+    const TERMINAL = new Set(["completed", "failed", "escalated", "canceled"]);
+    const done = runs.length === runIds.length && runs.every((r) => TERMINAL.has(r.status));
+    res.json({
+      id: evalRun.id,
+      name: evalRun.name,
+      templateId: evalRun.externalTemplateId,
+      batchId: evalRun.batchId,
+      dryRun: true,
+      total: runIds.length,
+      done,
+      summary,
+      rows,
+      createdAt: evalRun.createdAt,
     });
   }),
 );

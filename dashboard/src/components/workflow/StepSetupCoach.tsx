@@ -37,6 +37,8 @@ type Props = {
   availableWorkflows?: Array<{ id: string; name: string }>;
   availableWorkflowsLoading?: boolean;
   availableWorkflowsError?: string | null;
+  /** HEL-775: saved workflow id, so the form_trigger card can show the public form URL. */
+  canonicalWorkflowId?: string | null;
   timezoneOptions?: string[];
   cronValidationError?: string | null;
   cronPreview?: string | null;
@@ -106,6 +108,7 @@ export function StepSetupCoach({
   availableWorkflows = [],
   availableWorkflowsLoading,
   availableWorkflowsError,
+  canonicalWorkflowId = null,
   timezoneOptions = ["UTC"],
   cronValidationError = null,
   cronPreview = null,
@@ -999,6 +1002,40 @@ export function StepSetupCoach({
             >
               + Add field
             </button>
+            {canonicalWorkflowId ? (
+              <div className="mt-1 rounded-lg border border-af2-line bg-af2-paper-3 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-af2-ink-4">
+                  Public form link
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input
+                    data-field="formPublicUrl"
+                    readOnly
+                    className="flex-1 rounded-md border border-af2-line-2 bg-af2-card px-2.5 py-1.5 text-xs font-mono text-af2-ink-2"
+                    value={`${window.location.origin}/forms/${canonicalWorkflowId}`}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md border border-af2-line-2 px-2.5 py-1.5 text-[11px] font-semibold text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(
+                        `${window.location.origin}/forms/${canonicalWorkflowId}`,
+                      );
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-af2-ink-4">
+                  Share this link — anyone who opens it can submit the form and start a run.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-1 text-[11px] leading-relaxed text-af2-mustard">
+                Save this workflow to get a shareable form link.
+              </p>
+            )}
           </SetupCoachCard>
         );
       }

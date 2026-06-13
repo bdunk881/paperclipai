@@ -2285,6 +2285,7 @@ export default function WorkflowBuilder() {
                     )}
                     availableWorkflowsLoading={availableWorkflowsLoading}
                     availableWorkflowsError={availableWorkflowsError}
+                    canonicalWorkflowId={canonicalWorkflowId}
                     timezoneOptions={timezoneOptions}
                     cronValidationError={cronValidationError}
                     cronPreview={cronPreview}

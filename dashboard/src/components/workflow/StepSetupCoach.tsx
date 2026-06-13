@@ -1040,6 +1040,136 @@ export function StepSetupCoach({
         );
       }
 
+      case "sub_workflow_trigger": {
+        // HEL-785: declare the inputs this callable workflow expects. The engine
+        // (subWorkflowTriggerStep.ts) reads config.inputs [{key,label,defaultValue?}]
+        // and applies defaults for any the caller omits.
+        const cfg = step.config ?? {};
+        const inputs = Array.isArray(cfg["inputs"])
+          ? (cfg["inputs"] as Array<{ key?: string; label?: string; defaultValue?: unknown }>)
+          : [];
+        const patchTrigger = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        const updateInput = (idx: number, field: "key" | "label" | "defaultValue", value: string) =>
+          patchTrigger({
+            inputs: inputs.map((it, i) =>
+              i === idx
+                ? { ...it, [field]: field === "defaultValue" ? value || undefined : value }
+                : it,
+            ),
+          });
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Inputs this sub-workflow expects"
+            hint="A parent seeds these when it calls this workflow. Optional — declare the ones you depend on."
+          >
+            {inputs.length > 0 && (
+              <div className="space-y-2">
+                {inputs.map((inp, idx) => {
+                  const defaultStr =
+                    typeof inp.defaultValue === "string"
+                      ? inp.defaultValue
+                      : inp.defaultValue !== undefined
+                        ? String(inp.defaultValue)
+                        : "";
+                  return (
+                    <div key={idx} className="space-y-1.5 rounded-lg border border-af2-line-2 p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-af2-ink-4">
+                          Input {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={readonly}
+                          className="text-[10px] font-semibold uppercase tracking-wide text-af2-clay"
+                          onClick={() =>
+                            patchTrigger({ inputs: inputs.filter((_, i) => i !== idx) })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          data-field={`subWfInputKey-${idx}`}
+                          className="w-1/2 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs font-mono"
+                          placeholder="key (e.g. customerId)"
+                          value={inp.key ?? ""}
+                          disabled={readonly}
+                          onChange={(e) => updateInput(idx, "key", e.target.value)}
+                        />
+                        <input
+                          data-field={`subWfInputLabel-${idx}`}
+                          className="w-1/2 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs"
+                          placeholder="Label"
+                          value={inp.label ?? ""}
+                          disabled={readonly}
+                          onChange={(e) => updateInput(idx, "label", e.target.value)}
+                        />
+                      </div>
+                      <input
+                        data-field={`subWfInputDefault-${idx}`}
+                        className="w-full rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs"
+                        placeholder="Default if the caller omits it (optional)"
+                        value={defaultStr}
+                        disabled={readonly}
+                        onChange={(e) => updateInput(idx, "defaultValue", e.target.value)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              type="button"
+              data-field="subWfAddInput"
+              disabled={readonly}
+              className="rounded-lg border border-dashed border-af2-line-2 px-3 py-1.5 text-xs font-medium text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay"
+              onClick={() => patchTrigger({ inputs: [...inputs, { key: "", label: "" }] })}
+            >
+              + Add input
+            </button>
+            <p className="text-[11px] leading-relaxed text-af2-ink-4">
+              With no declared inputs, the whole parent context is still passed through.
+            </p>
+          </SetupCoachCard>
+        );
+      }
+
+      case "chat_trigger":
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Starts on a chat message"
+            hint="Use this as the head of a chatbot workflow."
+          >
+            <p className="text-xs leading-relaxed text-af2-ink-3">
+              A chat surface starts a run when a message arrives. The message and session are in
+              context for later steps as <code>chatMessage</code>, <code>chatSessionId</code>, and{" "}
+              <code>chatUserId</code>.
+            </p>
+          </SetupCoachCard>
+        );
+
+      case "error_trigger":
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Runs when another workflow fails"
+            hint="Use this as the head of an error-handler workflow."
+          >
+            <p className="text-xs leading-relaxed text-af2-ink-3">
+              Point another workflow at this one as its error handler. It runs on each failure with
+              the details in context: <code>failedRunId</code>, <code>failedStepId</code>,{" "}
+              <code>failedTemplateName</code>, and the full <code>errorTrigger</code> object.
+            </p>
+          </SetupCoachCard>
+        );
+
       case "trigger":
       case "file_trigger":
         return (

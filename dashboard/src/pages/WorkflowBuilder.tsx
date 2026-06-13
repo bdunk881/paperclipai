@@ -602,7 +602,18 @@ export default function WorkflowBuilder() {
   const [allTemplates, setAllTemplates] = useState<TemplateSummary[]>([]);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  // HEL-783: multi-node selection is the source of truth (canvas multi-select —
+  // the foundation for HEL-778 convert-to-sub-workflow). The single
+  // `selectedStepId` that the inspector, copilot, and focus logic read is
+  // DERIVED from it (exactly one selected → that id; zero or many → null), so
+  // every existing reader keeps working unchanged. `selectStep` is the
+  // imperative single-select helper used by add/duplicate/focus.
+  const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
+  const selectedStepId = selectedStepIds.length === 1 ? selectedStepIds[0] : null;
+  const selectStep = useCallback(
+    (id: string | null) => setSelectedStepIds(id ? [id] : []),
+    [],
+  );
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1021,18 +1032,21 @@ export default function WorkflowBuilder() {
           const restored = applyDagToTemplate(current, detail.dag);
           return restored;
         });
-        setSelectedStepId((currentSelectedId) => {
-          if (!currentSelectedId) return currentSelectedId;
+        setSelectedStepIds((current) => {
+          if (current.length === 0) return current;
           const stepsAny = (detail.dag as { steps?: unknown }).steps;
-          const stillExists =
-            Array.isArray(stepsAny) &&
-            stepsAny.some(
-              (s) =>
-                typeof s === "object" &&
-                s !== null &&
-                (s as { id?: unknown }).id === currentSelectedId,
-            );
-          return stillExists ? currentSelectedId : null;
+          const existing = Array.isArray(stepsAny)
+            ? new Set(
+                stepsAny
+                  .map((s) =>
+                    typeof s === "object" && s !== null
+                      ? (s as { id?: unknown }).id
+                      : null,
+                  )
+                  .filter((id): id is string => typeof id === "string"),
+              )
+            : new Set<string>();
+          return current.filter((id) => existing.has(id));
         });
         await refreshVersions();
       } catch (err) {
@@ -1229,7 +1243,7 @@ export default function WorkflowBuilder() {
 
       return { ...t, steps: serializeEdgesToSteps(nextSteps, nextEdges) };
     });
-    setSelectedStepId(newStepId);
+    setSelectedStepIds([newStepId]);
     setGraphError(autoLinkError);
   }
 
@@ -1248,7 +1262,7 @@ export default function WorkflowBuilder() {
       );
       return { ...t, steps: serializeEdgesToSteps(nextSteps, nextEdges) };
     });
-    if (selectedStepId === id) setSelectedStepId(null);
+    setSelectedStepIds((prev) => prev.filter((x) => x !== id));
     setGraphError(null);
   }
 
@@ -1275,7 +1289,7 @@ export default function WorkflowBuilder() {
       },
     };
     setTemplate((t) => ({ ...t, steps: [...t.steps, clone] }));
-    setSelectedStepId(newStepId);
+    setSelectedStepIds([newStepId]);
     setGraphError(null);
   }
 
@@ -1325,10 +1339,10 @@ export default function WorkflowBuilder() {
       // HEL-666: reflect our selection into React Flow's controlled store so a
       // node can actually be selected there — without this RF's internal
       // selection is always empty and keyboard-delete has no target (no-op).
-      selected: selectedStepId === step.id,
+      selected: selectedStepIds.includes(step.id),
       data: {
         step,
-        onSelect: setSelectedStepId,
+        onSelect: selectStep,
         onMoveUp: (stepId: string) => moveStep(stepId, -1),
         onMoveDown: (stepId: string) => moveStep(stepId, 1),
         onRemove: removeStep,
@@ -1384,9 +1398,9 @@ export default function WorkflowBuilder() {
     const stepId = new URLSearchParams(location.search).get("step");
     if (!stepId) return;
     if (template.steps.some((s) => s.id === stepId)) {
-      setSelectedStepId(stepId);
+      selectStep(stepId);
     }
-  }, [location.search, template.steps]);
+  }, [location.search, template.steps, selectStep]);
 
   const nodeTypes = useMemo(
     () =>
@@ -1398,7 +1412,7 @@ export default function WorkflowBuilder() {
 
   function focusCoachField(field: string) {
     if (field === "canvas") {
-      setSelectedStepId(null);
+      selectStep(null);
       return;
     }
     requestAnimationFrame(() => {
@@ -2044,12 +2058,22 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
+                // HEL-783: additive multi-select on Shift/Cmd/Ctrl-click (so RF
+                // adds to the selection instead of replacing it); box-select via
+                // Shift+drag uses the default selectionKeyCode. Both feed
+                // onNodesChange's select deltas → selectedStepIds.
+                multiSelectionKeyCode={["Shift", "Meta", "Control"]}
                 onInit={(instance) =>
                   (reactFlowInstanceRef.current =
                     instance as ReactFlowInstance<WorkflowFlowNode, Edge>)
                 }
-                onNodeClick={(_: unknown, node: WorkflowFlowNode) => setSelectedStepId(node.id)}
-                onPaneClick={() => setSelectedStepId(null)}
+                onNodeClick={(e: React.MouseEvent, node: WorkflowFlowNode) => {
+                  // HEL-783: plain click = single select. Shift/Cmd/Ctrl-click is
+                  // additive multi-select, captured by onNodesChange's select deltas.
+                  if (e.shiftKey || e.metaKey || e.ctrlKey) return;
+                  selectStep(node.id);
+                }}
+                onPaneClick={() => setSelectedStepIds([])}
                 onConnect={handleConnect}
                 // HEL-666: wire the node change pipeline. The flow is controlled
                 // and Yjs-synced — `template.steps` is authoritative and flowNodes
@@ -2062,13 +2086,21 @@ export default function WorkflowBuilder() {
                 // handling it once avoids a double removeStep). Position changes
                 // stay owned by onNodeDrag/onNodeDragStop.
                 onNodesChange={(changes: NodeChange<WorkflowFlowNode>[]) => {
-                  for (const change of changes) {
-                    if (change.type === "select") {
-                      setSelectedStepId((prev) =>
-                        change.selected ? change.id : prev === change.id ? null : prev,
-                      );
+                  // HEL-783: accumulate React Flow's select deltas into the
+                  // multi-selection set — this captures plain-click, shift-click,
+                  // and Shift+drag box-select uniformly. (Removal stays owned by
+                  // onNodesDelete; positions by onNodeDrag.)
+                  if (!changes.some((c) => c.type === "select")) return;
+                  setSelectedStepIds((prev) => {
+                    const set = new Set(prev);
+                    for (const change of changes) {
+                      if (change.type === "select") {
+                        if (change.selected) set.add(change.id);
+                        else set.delete(change.id);
+                      }
                     }
-                  }
+                    return Array.from(set);
+                  });
                 }}
                 onNodesDelete={(deleted: WorkflowFlowNode[]) => {
                   if (deleted.length === 0) return;
@@ -2141,6 +2173,22 @@ export default function WorkflowBuilder() {
                     pan + zoom for free. */}
                 <WorkflowCursors peers={presencePeers} />
               </ReactFlow>
+              {/* HEL-783: multi-selection indicator. The home for HEL-778's
+                  "Extract to sub-workflow" action once it lands. */}
+              {selectedStepIds.length > 1 && (
+                <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2">
+                  <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1.5 text-xs font-medium text-af2-ink shadow-af2 backdrop-blur">
+                    <span>{selectedStepIds.length} steps selected</span>
+                    <button
+                      type="button"
+                      className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-af2-clay transition hover:bg-af2-clay/10"
+                      onClick={() => setSelectedStepIds([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="pointer-events-none absolute bottom-6 left-1/2 z-10 -translate-x-1/2">
                 <div className="pointer-events-auto rounded-full border border-af2-line bg-af2-card/95 px-2 py-1.5 shadow-af2 backdrop-blur">
                   <AddStepMenu onAdd={addStep} />
@@ -2186,7 +2234,7 @@ export default function WorkflowBuilder() {
                     Step setup{proMode ? " · Pro" : ""}
                   </div>
                   <button
-                    onClick={() => setSelectedStepId(null)}
+                    onClick={() => selectStep(null)}
                     aria-label="Close step setup"
                     className="shrink-0 rounded p-1 text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink"
                   >

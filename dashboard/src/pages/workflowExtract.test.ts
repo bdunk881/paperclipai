@@ -93,6 +93,33 @@ describe("extractSelection", () => {
     expect(res.child.steps.map((s) => s.id)).toEqual(["ct-1", "b", "c"]);
   });
 
+  it("handles a template with implicit linear edges (no explicit adjacency)", () => {
+    // No step carries STEP_NEXT_IDS_KEY → buildEdgesFromSteps falls back to
+    // linear order (t → a → b → c). extractSelection must normalize first.
+    const bare = (id: string, kind: StepKind): WorkflowStep => ({
+      id,
+      name: id,
+      kind,
+      description: "",
+      inputKeys: [],
+      outputKeys: [],
+      config: {},
+    });
+    const t = template([
+      bare("t", "trigger"),
+      bare("a", "llm"),
+      bare("b", "action"),
+      bare("c", "output"),
+    ]);
+    const res = extractSelection({ template: t, selectedIds: ["a", "b"], ...opts });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.parent.steps.map((s) => s.id)).toEqual(["t", "sub-1", "c"]);
+    expect(nextOf(res.parent, "t")).toEqual(["sub-1"]);
+    expect(nextOf(res.parent, "sub-1")).toEqual(["c"]);
+    expect(res.child.steps.map((s) => s.id)).toEqual(["ct-1", "a", "b"]);
+  });
+
   it("rejects an empty selection", () => {
     const res = extractSelection({ template: linear(), selectedIds: [], ...opts });
     expect(res.ok).toBe(false);

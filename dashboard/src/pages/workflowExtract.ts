@@ -19,7 +19,12 @@
  * out-edge. Triggers can't be extracted. Anything else is rejected with a
  * human-readable reason (no partial mutation).
  */
-import { STEP_NEXT_IDS_KEY, STEP_POSITION_KEY } from "./workflowGraph";
+import {
+  buildEdgesFromSteps,
+  serializeEdgesToSteps,
+  STEP_NEXT_IDS_KEY,
+  STEP_POSITION_KEY,
+} from "./workflowGraph";
 import type { StepKind, WorkflowStep, WorkflowTemplate } from "../types/workflow";
 
 const TRIGGER_KINDS: ReadonlySet<StepKind> = new Set<StepKind>([
@@ -59,8 +64,16 @@ export type ExtractSelectionResult =
   | { ok: false; reason: string };
 
 export function extractSelection(input: ExtractSelectionInput): ExtractSelectionResult {
-  const { template, selectedIds, childWorkflowId, childName, subWorkflowStepId, childTriggerId } =
-    input;
+  const { selectedIds, childWorkflowId, childName, subWorkflowStepId, childTriggerId } = input;
+
+  // Normalize the edge model to explicit per-step adjacency first. A freshly
+  // loaded or imported template may carry NO `config[STEP_NEXT_IDS_KEY]` and rely
+  // on implicit linear order (buildEdgesFromSteps' fallback); serializing the
+  // built edges back makes the adjacency explicit so the surgery below is exact.
+  const template: WorkflowTemplate = {
+    ...input.template,
+    steps: serializeEdgesToSteps(input.template.steps, buildEdgesFromSteps(input.template.steps)),
+  };
 
   const sel = new Set(selectedIds);
   if (sel.size === 0) return { ok: false, reason: "Select at least one step to extract." };

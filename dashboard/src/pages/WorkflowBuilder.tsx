@@ -106,6 +106,7 @@ import {
   validateEdgeCandidate,
   validateGraphTopology,
 } from "./workflowGraph";
+import { extractSelection } from "./workflowExtract";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
 import { StepSetupCoach, buildStepSetupContext } from "../components/workflow/StepSetupCoach";
@@ -614,6 +615,8 @@ export default function WorkflowBuilder() {
     (id: string | null) => setSelectedStepIds(id ? [id] : []),
     [],
   );
+  // HEL-778: busy flag while the "Extract to sub-workflow" surgery runs.
+  const [extractBusy, setExtractBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1245,6 +1248,54 @@ export default function WorkflowBuilder() {
     });
     setSelectedStepIds([newStepId]);
     setGraphError(autoLinkError);
+  }
+
+  // HEL-778: extract the multi-selected steps into a new saved sub-workflow and
+  // replace them with a single sub_workflow step (graph surgery in
+  // workflowExtract.ts; this is the async orchestration).
+  async function handleExtractSelection() {
+    const selectedIds = [...selectedStepIds];
+    if (selectedIds.length < 1 || extractBusy) return;
+    const childName = `Sub-workflow (${selectedIds.length} steps)`;
+    const subWorkflowStepId = `step-${crypto.randomUUID()}`;
+    const result = extractSelection({
+      template,
+      selectedIds,
+      childWorkflowId: `pending-${crypto.randomUUID()}`,
+      childName,
+      subWorkflowStepId,
+      childTriggerId: `step-${crypto.randomUUID()}`,
+    });
+    if (!result.ok) {
+      setGraphError(result.reason);
+      return;
+    }
+    setExtractBusy(true);
+    setGraphError(null);
+    try {
+      const accessToken = await requireAccessToken();
+      const createdChild = await createCanonicalWorkflow(
+        { name: childName, dag: result.child },
+        accessToken,
+      );
+      // Point the replacement sub_workflow step at the real saved child id.
+      const parentSteps = result.parent.steps.map((s) =>
+        s.id === subWorkflowStepId
+          ? { ...s, config: { ...(s.config ?? {}), workflowId: createdChild.id } }
+          : s,
+      );
+      const nextParent = { ...result.parent, steps: parentSteps };
+      setTemplate(nextParent);
+      setSelectedStepIds([]);
+      // Persist the parent surgery if this workflow is already saved.
+      if (canonicalWorkflowId) {
+        await createCanonicalWorkflowVersion(canonicalWorkflowId, nextParent, accessToken);
+      }
+    } catch (e) {
+      setGraphError(e instanceof Error ? e.message : "Couldn't extract the selected steps.");
+    } finally {
+      setExtractBusy(false);
+    }
   }
 
   function updateStep(id: string, patch: Partial<WorkflowStep>) {
@@ -2179,6 +2230,14 @@ export default function WorkflowBuilder() {
                 <div className="pointer-events-none absolute left-1/2 top-4 z-10 -translate-x-1/2">
                   <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-af2-clay/30 bg-af2-clay-soft/40 px-3 py-1.5 text-xs font-medium text-af2-ink shadow-af2 backdrop-blur">
                     <span>{selectedStepIds.length} steps selected</span>
+                    <button
+                      type="button"
+                      disabled={extractBusy}
+                      className="rounded-full bg-af2-clay px-2.5 py-0.5 text-[11px] font-semibold text-white transition hover:bg-af2-clay/85 disabled:opacity-60"
+                      onClick={() => void handleExtractSelection()}
+                    >
+                      {extractBusy ? "Extracting…" : "Extract to sub-workflow"}
+                    </button>
                     <button
                       type="button"
                       className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-af2-clay transition hover:bg-af2-clay/10"

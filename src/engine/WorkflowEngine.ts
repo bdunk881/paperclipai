@@ -33,6 +33,7 @@ import {
   resolveSpendAmountCents,
 } from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
+import { isDryRun, dryRunOutput, DRY_RUN_KEY } from "./dryRun";
 import { safeEvalCondition } from "./safeConditionEval";
 import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
 import { resolveLoopJump } from "./loopStep";
@@ -881,6 +882,9 @@ export class WorkflowEngine {
       ...this._buildDefaultConfig(childTemplate),
       workspaceId,
       [SUB_WORKFLOW_CHAIN_KEY]: childChain,
+      // HEL-786: propagate dry-run into the child so its side-effecting steps
+      // no-op too (the run-level flag rides on the parent context).
+      ...(isDryRun(parentContext) ? { [DRY_RUN_KEY]: true } : {}),
     };
     const childRunId = randomUUID();
 
@@ -1614,6 +1618,12 @@ export class WorkflowEngine {
             break;
           case "action":
           {
+            // HEL-786: dry-run skips the side-effecting executor (no real
+            // connector / Composio write / email).
+            if (isDryRun(config)) {
+              stepOutput = dryRunOutput(step);
+              break;
+            }
             const governance = await this._evaluateActionGovernance({
               runId,
               template,
@@ -1655,6 +1665,11 @@ export class WorkflowEngine {
             stepOutput = await executeOutput(step, context);
             break;
           case "mcp": {
+            // HEL-786: dry-run skips the external tool call.
+            if (isDryRun(config)) {
+              stepOutput = dryRunOutput(step);
+              break;
+            }
             const mcpResult = await handleMcp(step, context);
             stepOutput = mcpResult.output;
             break;
@@ -1668,6 +1683,12 @@ export class WorkflowEngine {
             stepOutput = await this._runSubWorkflow(step, context, userId);
             break;
           case "agent": {
+            // HEL-786: dry-run skips the agent (it can take arbitrary real
+            // actions); the eval measures the deterministic steps around it.
+            if (isDryRun(config)) {
+              stepOutput = dryRunOutput(step);
+              break;
+            }
             const agentResult = await handleAgent(step, context, runId, userId ?? "");
             stepOutput = agentResult.output;
             agentSlotResults = agentResult.agentSlotResults;

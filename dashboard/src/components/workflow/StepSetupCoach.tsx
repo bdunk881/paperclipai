@@ -843,6 +843,166 @@ export function StepSetupCoach({
         );
       }
 
+      case "form_trigger": {
+        // HEL-782: define the public form. The engine (formTriggerStep.ts) reads
+        // config.formFields [{key,label,type,required,options?}] + config.formTitle
+        // / config.formDescription; the public page (HEL-775) renders them.
+        const cfg = step.config ?? {};
+        const formTitle = typeof cfg["formTitle"] === "string" ? (cfg["formTitle"] as string) : "";
+        const formDescription =
+          typeof cfg["formDescription"] === "string" ? (cfg["formDescription"] as string) : "";
+        const formFields = Array.isArray(cfg["formFields"])
+          ? (cfg["formFields"] as Array<{
+              key?: string;
+              label?: string;
+              type?: string;
+              required?: boolean;
+              options?: string[];
+            }>)
+          : [];
+        const patchForm = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        const updateField = (idx: number, patch: Record<string, unknown>) =>
+          patchForm({
+            formFields: formFields.map((f, i) => (i === idx ? { ...f, ...patch } : f)),
+          });
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="What should the form ask?"
+            hint="Each field becomes a question on your public form."
+          >
+            <label className="block text-xs text-af2-ink-3">
+              Form title <span className="text-af2-ink-4">(optional)</span>
+              <input
+                data-field="formTitle"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                placeholder="e.g. Contact us"
+                value={formTitle}
+                disabled={readonly}
+                onChange={(e) => patchForm({ formTitle: e.target.value || undefined })}
+              />
+            </label>
+            <label className="block text-xs text-af2-ink-3">
+              Description <span className="text-af2-ink-4">(optional)</span>
+              <textarea
+                data-field="formDescription"
+                rows={2}
+                className="mt-1 w-full resize-none rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                placeholder="Shown under the title on the form."
+                value={formDescription}
+                disabled={readonly}
+                onChange={(e) => patchForm({ formDescription: e.target.value || undefined })}
+              />
+            </label>
+            {formFields.length > 0 && (
+              <div className="space-y-2">
+                {formFields.map((field, idx) => {
+                  const fieldType = typeof field.type === "string" ? field.type : "text";
+                  return (
+                    <div key={idx} className="space-y-1.5 rounded-lg border border-af2-line-2 p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-af2-ink-4">
+                          Field {idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={readonly}
+                          className="text-[10px] font-semibold uppercase tracking-wide text-af2-clay"
+                          onClick={() =>
+                            patchForm({ formFields: formFields.filter((_, i) => i !== idx) })
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          data-field={`formFieldKey-${idx}`}
+                          className="w-1/2 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs font-mono"
+                          placeholder="key (e.g. email)"
+                          value={field.key ?? ""}
+                          disabled={readonly}
+                          onChange={(e) => updateField(idx, { key: e.target.value })}
+                        />
+                        <input
+                          data-field={`formFieldLabel-${idx}`}
+                          className="w-1/2 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs"
+                          placeholder="Label (e.g. Your email)"
+                          value={field.label ?? ""}
+                          disabled={readonly}
+                          onChange={(e) => updateField(idx, { label: e.target.value })}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          data-field={`formFieldType-${idx}`}
+                          className="flex-1 rounded-lg border border-af2-line-2 bg-af2-card px-2.5 py-1.5 text-xs"
+                          value={fieldType}
+                          disabled={readonly}
+                          onChange={(e) => updateField(idx, { type: e.target.value })}
+                        >
+                          <option value="text">Text</option>
+                          <option value="textarea">Long text</option>
+                          <option value="number">Number</option>
+                          <option value="email">Email</option>
+                          <option value="select">Dropdown</option>
+                          <option value="checkbox">Checkbox</option>
+                        </select>
+                        <label className="flex items-center gap-1.5 text-[11px] text-af2-ink-3">
+                          <input
+                            type="checkbox"
+                            data-field={`formFieldRequired-${idx}`}
+                            checked={field.required === true}
+                            disabled={readonly}
+                            onChange={(e) => updateField(idx, { required: e.target.checked })}
+                          />
+                          Required
+                        </label>
+                      </div>
+                      {fieldType === "select" && (
+                        <input
+                          data-field={`formFieldOptions-${idx}`}
+                          className="w-full rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs font-mono"
+                          placeholder="Dropdown options, comma-separated"
+                          value={(field.options ?? []).join(", ")}
+                          disabled={readonly}
+                          onChange={(e) =>
+                            updateField(idx, {
+                              options: e.target.value
+                                .split(",")
+                                .map((o) => o.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              type="button"
+              data-field="formAddField"
+              disabled={readonly}
+              className="rounded-lg border border-dashed border-af2-line-2 px-3 py-1.5 text-xs font-medium text-af2-ink-3 transition hover:border-af2-clay/40 hover:text-af2-clay"
+              onClick={() =>
+                patchForm({
+                  formFields: [
+                    ...formFields,
+                    { key: "", label: "", type: "text", required: false },
+                  ],
+                })
+              }
+            >
+              + Add field
+            </button>
+          </SetupCoachCard>
+        );
+      }
+
       case "trigger":
       case "file_trigger":
         return (

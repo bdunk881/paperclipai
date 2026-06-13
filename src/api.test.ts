@@ -2173,6 +2173,102 @@ describe("GET /api/runs/batch/:batchId (HEL-702)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/evals + GET /api/evals/:evalId (HEL-776)
+// ---------------------------------------------------------------------------
+
+describe("POST /api/evals (HEL-776)", () => {
+  it("returns 401 when the Authorization header is missing", async () => {
+    const res = await request(app)
+      .post("/api/evals")
+      .send({ templateId: "tpl-support-bot", dataset: [{ input: {} }] });
+    expect(res.status).toBe(401);
+  });
+
+  it("fans the dataset out as a dry-run batch and returns an eval handle", async () => {
+    const res = await request(app)
+      .post("/api/evals")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-support-bot",
+        dataset: [
+          { input: { ticketId: "A" }, expected: { label: "billing" } },
+          { input: { ticketId: "B" }, expected: { label: "sales" } },
+        ],
+        name: "Routing eval",
+      });
+    expect(res.status).toBe(202);
+    expect(res.body.evalId).toBeDefined();
+    expect(res.body.batchId).toBeDefined();
+    expect(res.body.total).toBe(2);
+    expect(res.body.runIds).toHaveLength(2);
+  });
+
+  it("returns 400 when dataset is empty", async () => {
+    const res = await request(app)
+      .post("/api/evals")
+      .set(asAuth())
+      .send({ templateId: "tpl-support-bot", dataset: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/dataset/i);
+  });
+
+  it("returns 400 when templateId is missing", async () => {
+    const res = await request(app)
+      .post("/api/evals")
+      .set(asAuth())
+      .send({ dataset: [{ input: {} }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/templateId/i);
+  });
+
+  it("returns 404 for an unknown templateId", async () => {
+    const res = await request(app)
+      .post("/api/evals")
+      .set(asAuth())
+      .send({ templateId: "tpl-nonexistent", dataset: [{ input: {} }] });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+describe("GET /api/evals/:evalId (HEL-776)", () => {
+  it("returns per-row scores + an aggregate summary", async () => {
+    const createRes = await request(app)
+      .post("/api/evals")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-support-bot",
+        dataset: [
+          { input: { ticketId: "A" }, expected: { label: "billing" } },
+          { input: { ticketId: "B" } },
+        ],
+      });
+    expect(createRes.status).toBe(202);
+    const { evalId } = createRes.body;
+
+    const res = await request(app).get(`/api/evals/${evalId}`).set(asAuth());
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(evalId);
+    expect(res.body.dryRun).toBe(true);
+    expect(res.body.total).toBe(2);
+    expect(res.body.summary).toMatchObject({ total: 2 });
+    expect(Array.isArray(res.body.rows)).toBe(true);
+    expect(res.body.rows).toHaveLength(2);
+    expect(typeof res.body.done).toBe("boolean");
+    // no Redis in tests → runs stay queued → rows pending (not yet scored)
+    expect(res.body.rows[0].pass).toBeNull();
+    expect(res.body.summary.pending).toBe(2);
+  });
+
+  it("returns 404 for an unknown evalId", async () => {
+    const res = await request(app)
+      .get("/api/evals/00000000-0000-4000-8000-000000000000")
+      .set(asAuth());
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/runs
 // ---------------------------------------------------------------------------
 

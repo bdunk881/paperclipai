@@ -25,6 +25,8 @@ import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoo
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore } from "./engine/runStore";
+import { batchStore } from "./engine/batchStore";
+import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
 import { approvalStore } from "./engine/approvalStore";
 import { approvalNotificationStore } from "./engine/approvalNotificationStore";
 import approvalPolicyRoutes from "./approvals/policyRoutes";
@@ -1719,6 +1721,148 @@ app.get(
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
     const runs = await runStore.listInFlight(req.auth?.sub, req.workspace?.id);
     res.json({ runs, total: runs.length });
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Batch triggering (HEL-702) — fan a workflow out over N inputs.
+//
+// Registered BEFORE GET /api/runs/:id so "/api/runs/batch[/...]" never falls
+// through to the :id route (same hazard the resume routes guard against).
+// ---------------------------------------------------------------------------
+
+/**
+ * Fan a workflow out over N inputs as one durable batch.
+ * Body: { templateId, inputs: object[], config?, dryRun? }
+ * Returns { batchId, runIds, total } (202); each run executes async via the
+ * worker. `dryRun: true` no-ops side-effecting steps in every run (HEL-786).
+ */
+app.post(
+  "/api/runs/batch",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  llmEndpointRateLimiter,
+  requireEntitlement("runsPerMonth", {
+    // v1: confirm the workspace has run-quota headroom for at least one more
+    // run. Exact N-run debit is a follow-up (see HEL-702 plan).
+    getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
+  }),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const { templateId, inputs, config, dryRun } = req.body as {
+      templateId?: string;
+      inputs?: unknown[];
+      config?: Record<string, unknown>;
+      dryRun?: boolean;
+    };
+
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+    if (!templateId) {
+      res.status(400).json({ error: "templateId is required" });
+      return;
+    }
+    if (!Array.isArray(inputs) || inputs.length === 0) {
+      res.status(400).json({ error: "inputs must be a non-empty array" });
+      return;
+    }
+    if (inputs.length > MAX_BATCH_INPUTS) {
+      res.status(400).json({ error: `inputs exceeds the per-batch cap of ${MAX_BATCH_INPUTS}` });
+      return;
+    }
+
+    let template: WorkflowTemplate;
+    try {
+      template = await getTemplate(templateId, workspaceId);
+    } catch {
+      res.status(404).json({ error: `Template not found: ${templateId}` });
+      return;
+    }
+
+    const result = await triggerBatch({
+      template,
+      inputs,
+      runQueue: getRunQueue(),
+      workspaceId,
+      ...(req.auth?.sub !== undefined ? { userId: req.auth.sub } : {}),
+      ...(config !== undefined ? { config } : {}),
+      ...(dryRun !== undefined ? { dryRun } : {}),
+    });
+
+    if (!result.ok) {
+      res.status(400).json({ error: result.reason });
+      return;
+    }
+    res.status(202).json({ batchId: result.batchId, runIds: result.runIds, total: result.total });
+  }),
+);
+
+/** List batches in the active workspace, newest first. */
+app.get(
+  "/api/runs/batch",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.json({ batches: [], total: 0 });
+      return;
+    }
+    const batches = await batchStore.list(workspaceId);
+    res.json({
+      batches: batches.map((b) => ({
+        id: b.id,
+        name: b.name,
+        templateId: b.externalTemplateId,
+        total: b.total,
+        dryRun: b.dryRun,
+        createdAt: b.createdAt,
+      })),
+      total: batches.length,
+    });
+  }),
+);
+
+/**
+ * Batch handle: the batch plus aggregate run status. `done` is true once every
+ * run is terminal — the signal an eval (HEL-776) polls before scoring outputs.
+ */
+app.get(
+  "/api/runs/batch/:batchId",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const batch = await batchStore.get(req.params.batchId, req.workspace?.id);
+    if (!batch) {
+      res.status(404).json({ error: `Batch not found: ${req.params.batchId}` });
+      return;
+    }
+    const runs = await runStore.listByIds(batch.runIds, req.workspace?.id);
+    const statusCounts: Record<string, number> = {};
+    for (const run of runs) {
+      statusCounts[run.status] = (statusCounts[run.status] ?? 0) + 1;
+    }
+    const TERMINAL = new Set(["completed", "failed", "escalated", "canceled"]);
+    const done = runs.length === batch.total && runs.every((r) => TERMINAL.has(r.status));
+    res.json({
+      id: batch.id,
+      name: batch.name,
+      templateId: batch.externalTemplateId,
+      total: batch.total,
+      dryRun: batch.dryRun,
+      createdAt: batch.createdAt,
+      statusCounts,
+      done,
+      runs: runs.map((r) => ({
+        id: r.id,
+        status: r.status,
+        error: r.error,
+        completedAt: r.completedAt,
+      })),
+    });
   }),
 );
 

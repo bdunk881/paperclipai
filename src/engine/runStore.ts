@@ -656,6 +656,75 @@ export const runStore = {
     }
   },
 
+  /**
+   * HEL-702: look up runs by id (a batch's `run_ids`), workspace-scoped. A
+   * lightweight, status-oriented read — skips step_results (like
+   * {@link listForSnapshot}) because the only caller (batch-status aggregation)
+   * needs run-level fields (status / error / completedAt), not per-step output.
+   * Rows come back in Postgres order; callers that need batch order re-map by id.
+   */
+  async listByIds(ids: string[], workspaceId?: string): Promise<WorkflowRun[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    const localRuns = () =>
+      ids
+        .map((id) => memoryStore.get(id))
+        .filter((run): run is WorkflowRun => run !== undefined)
+        // HEL-484 tenancy: drop runs tagged to a different workspace; untagged
+        // (legacy / inline-fallback) runs stay visible so nothing is hidden.
+        .filter((run) => {
+          if (!workspaceId) return true;
+          const ws = resolveWorkspaceId(run);
+          return !ws || ws === workspaceId;
+        })
+        .map((run) => ({ ...cloneRun(run), stepResults: [] }));
+
+    if (!postgresPersistenceAvailable()) {
+      return localRuns();
+    }
+
+    try {
+      const pool = getPostgresPool();
+      const result = await pool.query(
+        `
+          SELECT
+            r.id,
+            r.workspace_id::text,
+            r.routine_id::text,
+            v.workflow_id::text,
+            r.workflow_version_id::text,
+            v.version AS workflow_version,
+            w.external_template_id AS template_id,
+            w.name AS template_name,
+            r.status,
+            r.started_at,
+            r.ended_at,
+            r.input,
+            r.output,
+            r.error,
+            r.failure_reason,
+            r.failed_at,
+            r.user_id
+          FROM runs r
+          JOIN workflow_versions v ON v.id = r.workflow_version_id
+          JOIN workflows w ON w.id = v.workflow_id
+          WHERE r.id = ANY($1::uuid[])
+            AND ($2::text IS NULL OR r.workspace_id = $2 OR r.workspace_id IS NULL)
+        `,
+        [ids, workspaceId ?? null],
+      );
+      return result.rows.map((row) => mapRowToRun(row));
+    } catch (err) {
+      console.error(
+        "[runStore] listByIds Postgres read failed, falling back to in-memory:",
+        (err as Error).message,
+      );
+      return localRuns();
+    }
+  },
+
   async list(
     templateId?: string,
     userId?: string,

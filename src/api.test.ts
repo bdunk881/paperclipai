@@ -2086,6 +2086,93 @@ describe("POST /api/runs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/runs/batch + GET /api/runs/batch/:batchId (HEL-702)
+// ---------------------------------------------------------------------------
+
+describe("POST /api/runs/batch (HEL-702)", () => {
+  it("returns 401 when the Authorization header is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/batch")
+      .send({ templateId: "tpl-support-bot", inputs: [{}] });
+    expect(res.status).toBe(401);
+  });
+
+  it("fans out a run per input and returns a batch handle", async () => {
+    const res = await request(app)
+      .post("/api/runs/batch")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-support-bot",
+        inputs: [{ ticketId: "A" }, { ticketId: "B" }, { ticketId: "C" }],
+      });
+    expect(res.status).toBe(202);
+    expect(res.body.batchId).toBeDefined();
+    expect(Array.isArray(res.body.runIds)).toBe(true);
+    expect(res.body.runIds).toHaveLength(3);
+    expect(res.body.total).toBe(3);
+  });
+
+  it("returns 400 when templateId is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/batch")
+      .set(asAuth())
+      .send({ inputs: [{}] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/templateId/i);
+  });
+
+  it("returns 400 when inputs is empty", async () => {
+    const res = await request(app)
+      .post("/api/runs/batch")
+      .set(asAuth())
+      .send({ templateId: "tpl-support-bot", inputs: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/non-empty/i);
+  });
+
+  it("returns 404 for an unknown templateId", async () => {
+    const res = await request(app)
+      .post("/api/runs/batch")
+      .set(asAuth())
+      .send({ templateId: "tpl-nonexistent", inputs: [{}] });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+});
+
+describe("GET /api/runs/batch/:batchId (HEL-702)", () => {
+  it("returns the batch handle with aggregate run status", async () => {
+    const createRes = await request(app)
+      .post("/api/runs/batch")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-support-bot",
+        inputs: [{ ticketId: "A" }, { ticketId: "B" }],
+        dryRun: true,
+      });
+    expect(createRes.status).toBe(202);
+    const { batchId } = createRes.body;
+
+    const res = await request(app).get(`/api/runs/batch/${batchId}`).set(asAuth());
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(batchId);
+    expect(res.body.total).toBe(2);
+    expect(res.body.dryRun).toBe(true);
+    expect(res.body.statusCounts).toBeDefined();
+    expect(Array.isArray(res.body.runs)).toBe(true);
+    expect(res.body.runs).toHaveLength(2);
+    expect(typeof res.body.done).toBe("boolean");
+  });
+
+  it("returns 404 for an unknown batchId", async () => {
+    const res = await request(app)
+      .get("/api/runs/batch/00000000-0000-4000-8000-000000000000")
+      .set(asAuth());
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/runs
 // ---------------------------------------------------------------------------
 

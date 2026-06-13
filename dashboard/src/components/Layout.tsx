@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Plug,
   BookOpen,
+  FlaskConical,
   Brain,
   Users,
   UserPlus,
@@ -73,6 +74,8 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
       // inline via the "Launch in Studio →" action on a Mine row, not from
       // a standalone sidebar shortcut.
       { to: "/routines", icon: BookOpen, label: "Routines" },
+      // HEL-787: Evals — run a workflow over a dataset and measure output.
+      { to: "/evals", icon: FlaskConical, label: "Evals" },
     ],
   },
 ] as const;

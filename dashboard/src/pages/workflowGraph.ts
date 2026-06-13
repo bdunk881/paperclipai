@@ -2,7 +2,9 @@ import { MarkerType, type Edge } from "@xyflow/react";
 import type { StepKind, WorkflowStep } from "../types/workflow";
 
 export const STEP_POSITION_KEY = "__uiPosition";
-const STEP_NEXT_IDS_KEY = "__uiNextStepIds";
+// HEL-778: exported so the extract-to-sub-workflow surgery can read/write the
+// per-step adjacency (the canvas edge model).
+export const STEP_NEXT_IDS_KEY = "__uiNextStepIds";
 
 type EdgeValidationInput = {
   sourceId: string;

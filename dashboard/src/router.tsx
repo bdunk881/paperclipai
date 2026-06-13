@@ -53,6 +53,7 @@ import MissionDetail from "./pages/MissionDetail";
 import NotificationsSettings from "./pages/NotificationsSettings";
 import OrgStructure from "./pages/OrgStructure";
 import Pricing from "./pages/Pricing";
+import PublicForm from "./pages/PublicForm";
 import ProfileSettings from "./pages/ProfileSettings";
 import SecuritySettings from "./pages/SecuritySettings";
 import MfaEnrollmentWizard from "./pages/MfaEnrollmentWizard";
@@ -245,6 +246,10 @@ const routes: RouteObject[] = [
   },
   { path: "/signup", element: <Navigate to="/login?mode=signup" replace /> },
   { path: "/reset-password", element: <ResetPassword />, errorElement: <RouteErrorBoundary /> },
+  // HEL-775: public hosted form for a form_trigger workflow. Unauthenticated by
+  // design (the workflow UUID is the bearer secret; the backend only resolves
+  // workflows whose head is a form_trigger) — no PrivateRoute/Layout/MFA gate.
+  { path: "/forms/:workflowId", element: <PublicForm />, errorElement: <RouteErrorBoundary /> },
   {
     path: "/onboarding/mfa",
     element: (

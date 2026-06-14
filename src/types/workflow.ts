@@ -60,6 +60,26 @@ export interface ConfigField {
 }
 
 /** One step in a workflow */
+/**
+ * HEL-694: per-step retry policy (mirrors `retryPolicySchema` in portableSchema).
+ * Consumed by `_runSteps` via `stepRetry.ts` to retry a step's throwing executor
+ * with backoff before failing the step.
+ */
+export interface RetryPolicy {
+  /** Backoff curve between attempts. */
+  type: "constant" | "exponential" | "random";
+  /** Total attempts (1 = no retry). */
+  maxAttempts: number;
+  /** Base delay between attempts, ms. */
+  intervalMs?: number;
+  /** Exponential growth factor (default 2). */
+  delayFactor?: number;
+  /** Cap on a single backoff delay, ms. */
+  maxInterval?: number;
+  /** Overall retry budget, ms — stop retrying once exceeded. */
+  maxDuration?: number;
+}
+
 export interface WorkflowStep {
   id: string;
   name: string;
@@ -104,6 +124,8 @@ export interface WorkflowStep {
   action?: string;
   /** Step-level configuration overrides */
   config?: Record<string, unknown>;
+  /** HEL-694: per-step retry policy, consumed by _runSteps via stepRetry. */
+  retry?: RetryPolicy;
   // knowledge step
   knowledgeBaseIds?: string[];
   knowledgeQuery?: string;

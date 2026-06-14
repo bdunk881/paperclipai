@@ -55,6 +55,7 @@ import {
   ReactFlow,
   type Edge,
   type EdgeChange,
+  type IsValidConnection,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -1550,6 +1551,23 @@ export default function WorkflowBuilder() {
     persistEdges([...flowEdges, buildDefaultEdge(sourceId, targetId)]);
   }
 
+  // HEL-681: live connection validation. React Flow calls this during the drag
+  // for each candidate target handle; returning false makes the target reject
+  // the connection before the drop, so the invalid edge is never created and
+  // onConnect never fires for it. It runs the same validateEdgeCandidate rules
+  // as handleConnect, which stays as a post-drop safety net for any
+  // programmatic / non-drag edge additions.
+  const isConnectionValid: IsValidConnection<Edge> = (connection) => {
+    const { source, target } = connection;
+    if (!source || !target) return false;
+    return validateEdgeCandidate({
+      sourceId: source,
+      targetId: target,
+      steps: template.steps,
+      edges: flowEdges,
+    }).valid;
+  };
+
   async function handleSave() {
     const topologyError = validateGraphTopology(template.steps, flowEdges);
     if (topologyError) {
@@ -2193,6 +2211,9 @@ export default function WorkflowBuilder() {
                 }}
                 onPaneClick={() => setSelectedStepIds([])}
                 onConnect={handleConnect}
+                // HEL-681: reject invalid connections live during the drag
+                // (handle won't accept the drop) instead of only post-drop.
+                isValidConnection={isConnectionValid}
                 // HEL-666: wire the node change pipeline. The flow is controlled
                 // and Yjs-synced — `template.steps` is authoritative and flowNodes
                 // is derived from it, so there is no separate RF node state to

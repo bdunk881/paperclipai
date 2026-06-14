@@ -39,7 +39,9 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Send,
+  Download,
 } from "lucide-react";
+import { exportWorkflowPng, exportFileStem } from "./workflowExport";
 import {
   Background,
   BackgroundVariant,
@@ -1476,6 +1478,20 @@ export default function WorkflowBuilder() {
     });
   }
 
+  // HEL-691: export the whole graph as a PNG (fits all nodes regardless of the
+  // current pan/zoom). Errors surface in the canvas error banner.
+  async function handleExportPng() {
+    try {
+      await exportWorkflowPng({
+        nodes: flowNodes,
+        fileName: `${exportFileStem(template.name)}.png`,
+      });
+      setGraphError(null);
+    } catch (err) {
+      setGraphError(err instanceof Error ? err.message : "Export failed");
+    }
+  }
+
   function handleSuggestedNextStep(next: SuggestedNextStep) {
     if (next.action === "link" && next.href) {
       navigate(next.href);
@@ -1965,6 +1981,22 @@ export default function WorkflowBuilder() {
             >
               <Sparkles size={14} />
               Generate with AI
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExportPng()}
+              disabled={template.steps.length === 0}
+              className="af2-btn af2-btn-sm"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: template.steps.length === 0 ? 0.5 : 1,
+              }}
+              aria-label="Export the workflow diagram as a PNG"
+            >
+              <Download size={14} />
+              Export
             </button>
             <button
               type="button"

@@ -54,6 +54,8 @@ import { handleFormTrigger } from "./formTriggerStep";
 import { resolveWaitMs, isWebhookWait, WAIT_MAX_INLINE_MS } from "./waitStep";
 import { getRunQueue } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
+import { deriveIdempotencyKey } from "../queue/withIdempotency";
+import { shouldReuseStepKind, buildPriorResultMap } from "./idempotentReplay";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -548,6 +550,15 @@ export class WorkflowEngine {
     const stepResults: StepResult[] =
       resumeIndex > 0 ? (run.stepResults ?? []).map((sr) => ({ ...sr })) : [];
 
+    // HEL-696: on a replay-from-0 (a BullMQ retry, or the HEL-695 reaper
+    // re-enqueuing a stranded run) reuse already-completed side-effecting steps
+    // by idempotency key so they don't double-fire. Built from the loaded rows
+    // BEFORE the first write (writeStepResults DELETEs + reinserts, wiping
+    // them). Empty on a first run → no skips. Only the replay-from-0 path opts
+    // in; replay-from-step (resumeIndex > 0) deliberately re-runs its tail.
+    const priorResultsByKey =
+      resumeIndex > 0 ? new Map<string, StepResult>() : buildPriorResultMap(run.stepResults);
+
     // Build the memory snapshot BEFORE flipping to `running` so a transient
     // failure here leaves the run `queued` and a BullMQ retry can re-enter
     // cleanly (the idempotency guard only skips post-`running` runs).
@@ -560,7 +571,7 @@ export class WorkflowEngine {
     void this._publishRunLifecycle(runId, "started");
 
     try {
-      await this._runSteps(runId, template, config, context, stepResults, resumeIndex, run.userId);
+      await this._runSteps(runId, template, config, context, stepResults, resumeIndex, run.userId, priorResultsByKey);
     } catch (err) {
       // `_runSteps` marks the run `failed` for per-step failures itself; a
       // throw escaping it is an infra error (store write, memory, etc.).
@@ -1486,7 +1497,8 @@ export class WorkflowEngine {
     context: Record<string, unknown>,
     stepResults: StepResult[],
     startStepIndex: number,
-    userId?: string
+    userId?: string,
+    priorResultsByKey: Map<string, StepResult> = new Map(),
   ): Promise<void> {
 
     for (let currentStepIndex = startStepIndex; currentStepIndex < template.steps.length; currentStepIndex += 1) {
@@ -1515,8 +1527,19 @@ export class WorkflowEngine {
       let pauseForWaitMs: number | undefined;
       let pauseForWebhookToken: string | undefined;
 
+      // HEL-696: idempotent replay — reuse a completed side-effecting / pausing
+      // step's recorded output instead of re-executing it (keyed by execution
+      // ordinal so loop iterations stay unique). The map is empty on a first run
+      // → never reuses; only a replay-from-0 (retry / reaper resume) populates it.
+      const idempotencyKey = deriveIdempotencyKey(runId, resultIndex);
+      const reusedPrior = shouldReuseStepKind(step.kind)
+        ? priorResultsByKey.get(idempotencyKey)
+        : undefined;
+
       try {
-        switch (step.kind) {
+        if (reusedPrior) {
+          stepOutput = { ...reusedPrior.output, idempotentReplay: true };
+        } else switch (step.kind) {
           case "trigger":
             stepOutput = await executeTrigger(step, context);
             break;
@@ -1780,6 +1803,9 @@ export class WorkflowEngine {
         status: stepStatus,
         output: stepOutput,
         durationMs: Date.now() - start,
+        // HEL-696: record the per-execution idempotency key so a future replay
+        // can recognize this step as already-done and reuse its output.
+        idempotencyKey,
         ...(stepError ? { error: stepError } : {}),
         ...(agentSlotResults ? { agentSlotResults } : {}),
         ...(stepCostLog ? { costLog: stepCostLog } : {}),

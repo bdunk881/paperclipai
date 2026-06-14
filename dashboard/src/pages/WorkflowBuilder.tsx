@@ -2354,7 +2354,13 @@ export default function WorkflowBuilder() {
             className="min-w-0 overflow-y-auto border-l border-af2-line bg-af2-card"
           >
             {selectedStep ? (
-              <div data-testid="workflow-inspector-panel" className="h-full">
+              // HEL-689: re-key on the selected step so the inspector content
+              // slide-fades in each time a step is selected (live/reactive feel).
+              <div
+                key={selectedStepId}
+                data-testid="workflow-inspector-panel"
+                className="h-full animate-slide-in-right"
+              >
                 <div className="flex items-center justify-between gap-3 border-b border-af2-line px-5 py-3">
                   <div className="af2-eyebrow">
                     Step setup{proMode ? " · Pro" : ""}

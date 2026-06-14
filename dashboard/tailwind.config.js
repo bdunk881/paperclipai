@@ -90,6 +90,7 @@ export default {
         "gradient-x": "gradient-x 8s ease infinite",
         "fade-in": "fade-in 0.5s ease-out",
         "slide-up": "slide-up 0.5s ease-out",
+        "slide-in-right": "slide-in-right 0.25s ease-out",
         "glow-pulse": "glow-pulse 3s ease-in-out infinite",
       },
       keyframes: {
@@ -104,6 +105,10 @@ export default {
         "slide-up": {
           from: { opacity: "0", transform: "translateY(12px)" },
           to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in-right": {
+          from: { opacity: "0", transform: "translateX(16px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
         },
         "glow-pulse": {
           "0%, 100%": { opacity: "0.5" },

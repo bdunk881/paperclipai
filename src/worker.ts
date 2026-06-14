@@ -47,6 +47,7 @@ import {
   stopPlanApprovalResumeCoordinator,
 } from "./agents/runtime/planApprovalResumeCoordinator";
 import { startDlqDepthMonitor } from "./queue/dlqMonitor";
+import { startStrandedRunReaper, stopStrandedRunReaper } from "./engine/strandedRunReaper";
 
 const redisConnection = getRedisClient();
 if (!redisConnection) {
@@ -471,6 +472,7 @@ if (isPostgresConfigured()) {
 async function shutdownWorker(signal: string): Promise<void> {
   console.log(`[worker] ${signal} received — closing queues`);
   stopPlanApprovalResumeCoordinator();
+  stopStrandedRunReaper();
   await Promise.all([runsWorker.close(), agentPromptWorker.close(), storageDeletionWorker.close()]);
   await connection.quit();
   process.exit(0);
@@ -494,5 +496,10 @@ startPlanApprovalResumeCoordinator();
 // shouldn't auto-replay). Monitor its depth and Sentry-alert when it grows, so
 // an operator drains it via the admin-console manual replay. No-op without Redis.
 startDlqDepthMonitor();
+
+// HEL-695: resurrect runs stranded `running` by a worker crash mid-execution.
+// Advisory-locked sweep; re-enqueues a replay-from-0 that the HEL-696 idempotency
+// makes safe. No-op without Postgres.
+startStrandedRunReaper();
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' + 'storage-deletion' queues");

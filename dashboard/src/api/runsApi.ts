@@ -51,6 +51,39 @@ export async function listInFlightRuns(
   return res.json() as Promise<RunsListResponse>;
 }
 
+/** GET /api/runs?templateId=… — runs for a template, newest first. */
+export async function listRunsByTemplate(
+  accessToken: string,
+  templateId: string,
+): Promise<RunsListResponse> {
+  const url = new URL(`${BASE}/runs`, window.location.origin);
+  url.searchParams.set("templateId", templateId);
+  const res = await fetch(url.toString(), { headers: buildAuthHeaders(accessToken) });
+  if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
+  return res.json() as Promise<RunsListResponse>;
+}
+
+/**
+ * POST /api/runs/from-node (HEL-693) — run the workflow from `fromStepId`,
+ * reusing the cached upstream outputs of `sourceRunId` so unchanged upstream
+ * nodes aren't re-run. Returns the new run id.
+ */
+export async function runFromNode(
+  accessToken: string,
+  body: { templateId: string; fromStepId: string; sourceRunId: string },
+): Promise<{ runId: string }> {
+  const res = await fetch(`${BASE}/runs/from-node`, {
+    method: "POST",
+    headers: { ...buildAuthHeaders(accessToken), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Run-from-node failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ runId: string }>;
+}
+
 /**
  * DELETE /api/runs/:id/cancel — request cancellation. Server flips
  * status to `cancelling`; the worker converges to `canceled` on its

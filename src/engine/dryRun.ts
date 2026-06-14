@@ -45,3 +45,30 @@ export function dryRunOutput(step: WorkflowStep): Record<string, unknown> {
   for (const key of step.outputKeys ?? []) out[key] = null;
   return out;
 }
+
+/**
+ * HEL-789: a `wait` step's no-op output under dry-run. A wait normally *pauses*
+ * the run (duration / until / webhook); in a dry run we never pause — a paused
+ * run never reaches a terminal state, which would stall an eval forever. So the
+ * wait resolves immediately and the run continues.
+ */
+export function dryRunWaitOutput(): Record<string, unknown> {
+  return { [DRY_RUN_KEY]: true, waited: false, skippedWait: true };
+}
+
+/**
+ * HEL-789: an `approval` step's auto-pass output under dry-run. An approval
+ * normally pauses for human resolution (`awaiting_approval`); in a dry run we
+ * auto-approve — the optimistic happy path, which is what an eval measures — so
+ * the run runs to completion instead of stalling on HITL.
+ */
+export function dryRunApprovalOutput(): Record<string, unknown> {
+  return {
+    [DRY_RUN_KEY]: true,
+    approved: true,
+    approvalDecision: "approved",
+    approvalId: null,
+    approverComment: null,
+    autoApproved: true,
+  };
+}

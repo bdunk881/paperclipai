@@ -33,7 +33,7 @@ import {
   resolveSpendAmountCents,
 } from "../approvals/policyTypes";
 import { handleLlm, handleMcp, handleFileTrigger, handleAgent, handleKnowledge } from "./stepHandlers";
-import { isDryRun, dryRunOutput, DRY_RUN_KEY } from "./dryRun";
+import { isDryRun, dryRunOutput, dryRunWaitOutput, dryRunApprovalOutput, DRY_RUN_KEY } from "./dryRun";
 import { safeEvalCondition } from "./safeConditionEval";
 import { parseTransformAssignments, applyFieldAssignments } from "./transformStep";
 import { resolveLoopJump } from "./loopStep";
@@ -1521,6 +1521,12 @@ export class WorkflowEngine {
             stepOutput = await executeTrigger(step, context);
             break;
           case "wait": {
+            // HEL-789: a dry run never pauses — resolve the wait immediately so
+            // an eval run reaches a terminal state instead of stalling forever.
+            if (isDryRun(config)) {
+              stepOutput = dryRunWaitOutput();
+              break;
+            }
             // HEL-774: webhook mode — pause indefinitely behind a one-time
             // resume token; POST /api/runs/resume/:token wakes the run.
             if (isWebhookWait(step)) {
@@ -1696,6 +1702,12 @@ export class WorkflowEngine {
           }
           // approval steps — pause the run and wait for human resolution
           case "approval": {
+            // HEL-789: a dry run auto-approves — skip the awaiting_approval HITL
+            // pause so an eval measures the optimistic happy path to completion.
+            if (isDryRun(config)) {
+              stepOutput = dryRunApprovalOutput();
+              break;
+            }
             const assignee = step.approvalAssignee ?? "unassigned";
             const message = step.approvalMessage ?? "Approval required to continue.";
             const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;

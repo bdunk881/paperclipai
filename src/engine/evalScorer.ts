@@ -46,11 +46,84 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Declarative matcher operators (HEL-790). When an expected field's value is an
+ * object whose keys ALL start with `$`, it is a matcher spec — every operator
+ * must pass — instead of an exact value. This lets an eval assert relationships
+ * ("output contains X", "score ≥ 0.8") that exact-match can't express, which
+ * matters for LLM output that never deep-equals a fixed string.
+ */
+const MATCHER_OPS = new Set([
+  "$eq",
+  "$ne",
+  "$contains",
+  "$regex",
+  "$gt",
+  "$gte",
+  "$lt",
+  "$lte",
+  "$exists",
+  "$oneOf",
+]);
+
+function isMatcherSpec(spec: unknown): spec is Record<string, unknown> {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return false;
+  const keys = Object.keys(spec);
+  return keys.length > 0 && keys.every((k) => k.startsWith("$"));
+}
+
+function applyMatcherOp(op: string, actual: unknown, operand: unknown): boolean {
+  switch (op) {
+    case "$eq":
+      return deepEqual(actual, operand);
+    case "$ne":
+      return !deepEqual(actual, operand);
+    case "$contains":
+      if (typeof actual === "string") return actual.includes(String(operand));
+      if (Array.isArray(actual)) return actual.some((v) => deepEqual(v, operand));
+      return false;
+    case "$regex":
+      try {
+        return typeof actual === "string" && new RegExp(String(operand)).test(actual);
+      } catch {
+        return false; // invalid regex → no match (surfaces the bad spec as a fail)
+      }
+    case "$gt":
+      return typeof actual === "number" && actual > Number(operand);
+    case "$gte":
+      return typeof actual === "number" && actual >= Number(operand);
+    case "$lt":
+      return typeof actual === "number" && actual < Number(operand);
+    case "$lte":
+      return typeof actual === "number" && actual <= Number(operand);
+    case "$exists":
+      return (actual !== undefined && actual !== null) === (operand === true);
+    case "$oneOf":
+      return Array.isArray(operand) && operand.some((v) => deepEqual(actual, v));
+    default:
+      return false;
+  }
+}
+
+/**
+ * Match a single actual value against an expected spec: a matcher spec (all
+ * `$`-ops must pass) or, otherwise, exact deep-equality (scalar / array / plain
+ * object) — the backward-compatible default. An unknown `$`-operator fails, so a
+ * typo (`$contain`) surfaces as a mismatch rather than silently passing.
+ */
+export function matchValue(actual: unknown, spec: unknown): boolean {
+  if (!isMatcherSpec(spec)) {
+    return deepEqual(actual, spec);
+  }
+  return Object.entries(spec).every(
+    ([op, operand]) => MATCHER_OPS.has(op) && applyMatcherOp(op, actual, operand),
+  );
+}
+
+/**
  * Compare a run's actual output against an eval row's expected output. SUBSET
- * semantics: every key in `expected` must be present in `actual` and deeply
- * equal; extra keys in `actual` are ignored, because an eval asserts the fields
- * it cares about, not the entire (often large) output. An empty `expected`
- * passes vacuously.
+ * semantics: every key in `expected` must match `actual` — by exact deep-equality
+ * or, when the expected value is a matcher spec (HEL-790), by its operators.
+ * Extra keys in `actual` are ignored; an empty `expected` passes vacuously.
  */
 export function compareEvalOutput(
   actual: Record<string, unknown> | undefined | null,
@@ -60,7 +133,7 @@ export function compareEvalOutput(
   const act = actual ?? {};
   const mismatches: EvalMismatch[] = [];
   for (const key of Object.keys(exp)) {
-    if (!deepEqual(act[key], exp[key])) {
+    if (!matchValue(act[key], exp[key])) {
       mismatches.push({ key, expected: exp[key], actual: act[key] });
     }
   }

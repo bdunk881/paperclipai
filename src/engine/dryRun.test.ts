@@ -1,4 +1,11 @@
-import { isDryRun, dryRunSkips, dryRunOutput, DRY_RUN_KEY } from "./dryRun";
+import {
+  isDryRun,
+  dryRunSkips,
+  dryRunOutput,
+  dryRunWaitOutput,
+  dryRunApprovalOutput,
+  DRY_RUN_KEY,
+} from "./dryRun";
 import type { WorkflowStep } from "../types/workflow";
 
 function step(kind: WorkflowStep["kind"], outputKeys: string[] = []): WorkflowStep {
@@ -40,5 +47,20 @@ describe("dryRun", () => {
     const out = dryRunOutput(step("mcp"));
     expect(out[DRY_RUN_KEY]).toBe(true);
     expect(Object.keys(out)).toEqual(["__dryRun", "skipped", "skippedKind"]);
+  });
+
+  it("dryRunWaitOutput resolves a wait immediately (no pause)", () => {
+    const out = dryRunWaitOutput();
+    expect(out[DRY_RUN_KEY]).toBe(true);
+    expect(out.waited).toBe(false);
+    expect(out.skippedWait).toBe(true);
+  });
+
+  it("dryRunApprovalOutput auto-approves (no awaiting_approval pause)", () => {
+    const out = dryRunApprovalOutput();
+    expect(out[DRY_RUN_KEY]).toBe(true);
+    expect(out.approved).toBe(true);
+    expect(out.approvalDecision).toBe("approved");
+    expect(out.autoApproved).toBe(true);
   });
 });

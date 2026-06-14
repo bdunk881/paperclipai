@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, memo, type CSSProperties } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Plus,
@@ -1456,7 +1456,10 @@ export default function WorkflowBuilder() {
   const nodeTypes = useMemo(
     () =>
       ({
-        workflowStep: WorkflowStepNode,
+        // HEL-690: memoize the custom node so RF skips re-rendering nodes whose
+        // props are unchanged. Created once (stable nodeTypes ref). Its benefit
+        // is gated on flowNodes data referential stability — see the follow-up.
+        workflowStep: memo(WorkflowStepNode),
       }) satisfies NodeTypes,
     []
   );
@@ -2102,6 +2105,10 @@ export default function WorkflowBuilder() {
             <>
               <ReactFlow
                 fitView
+                // HEL-690: cull off-screen nodes/edges from the DOM so large
+                // graphs (500+ nodes) stay responsive. Node data is unaffected —
+                // this is purely a render optimization on the controlled flow.
+                onlyRenderVisibleElements
                 nodes={flowNodes}
                 edges={flowEdges}
                 nodeTypes={nodeTypes}

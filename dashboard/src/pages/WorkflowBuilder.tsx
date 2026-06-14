@@ -42,6 +42,7 @@ import {
   Download,
 } from "lucide-react";
 import { exportWorkflowPng, exportFileStem } from "./workflowExport";
+import { listRunsByTemplate, runFromNode } from "../api/runsApi";
 import {
   Background,
   BackgroundVariant,
@@ -531,6 +532,7 @@ type FlowNodeData = {
   onMoveDown: (id: string) => void;
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onRunFromHere: (id: string) => void;
   isFirst: boolean;
   isLast: boolean;
   teamAgent?: ControlPlaneAgent;
@@ -1400,6 +1402,7 @@ export default function WorkflowBuilder() {
         onMoveDown: (stepId: string) => moveStep(stepId, 1),
         onRemove: removeStep,
         onDuplicate: duplicateStep,
+        onRunFromHere: handleRunFromNode,
         isFirst: idx === 0,
         isLast: idx === template.steps.length - 1,
         teamAgent,
@@ -1641,6 +1644,31 @@ export default function WorkflowBuilder() {
       navigate("/monitor");
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "Failed to start run");
+    }
+  }
+
+  // HEL-693: run the saved workflow from a node, reusing the latest completed
+  // run's cached upstream outputs (so unchanged upstream isn't re-run).
+  async function handleRunFromNode(stepId: string) {
+    setRunError(null);
+    setGraphError(null);
+    try {
+      const accessToken = (await getAccessToken()) ?? undefined;
+      if (!accessToken) throw new Error("Sign in to run.");
+      const { runs } = await listRunsByTemplate(accessToken, template.id);
+      const source = runs.find((r) => r.status === "completed");
+      if (!source) {
+        setRunError("Run the full workflow to completion once, then you can run from a node.");
+        return;
+      }
+      const { runId } = await runFromNode(accessToken, {
+        templateId: template.id,
+        fromStepId: stepId,
+        sourceRunId: source.id,
+      });
+      navigate(`/runs/${runId}`);
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "Failed to run from node");
     }
   }
 
@@ -3434,6 +3462,7 @@ function StepNodeContextMenu({
   onMoveUp,
   onMoveDown,
   onDuplicate,
+  onRunFromHere,
   onRemove,
 }: {
   children: React.ReactNode;
@@ -3445,6 +3474,7 @@ function StepNodeContextMenu({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onDuplicate: () => void;
+  onRunFromHere: () => void;
   onRemove: () => void;
 }) {
   const copy = async (text: string): Promise<void> => {
@@ -3471,6 +3501,9 @@ function StepNodeContextMenu({
           </ContextMenu.Item>
           <ContextMenu.Item className={itemCls} onSelect={onDuplicate}>
             Duplicate step
+          </ContextMenu.Item>
+          <ContextMenu.Item className={itemCls} onSelect={onRunFromHere}>
+            Run from here
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-af2-line" />
           <ContextMenu.Item
@@ -3531,6 +3564,7 @@ function WorkflowStepNode({
         onMoveUp={() => data.onMoveUp(id)}
         onMoveDown={() => data.onMoveDown(id)}
         onDuplicate={() => data.onDuplicate(id)}
+        onRunFromHere={() => data.onRunFromHere(id)}
         onRemove={() => data.onRemove(id)}
       >
         <StepNode

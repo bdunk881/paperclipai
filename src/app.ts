@@ -2294,6 +2294,108 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
 }));
 
 /**
+ * POST /api/runs/from-node (HEL-693)
+ *
+ * Body: { templateId, fromStepId, sourceRunId }
+ *
+ * Run the current (saved) workflow from `fromStepId`, reusing the cached outputs
+ * of the upstream steps from `sourceRunId` (matched by step id) so unchanged
+ * upstream nodes aren't re-executed — the editor's "run from here". Returns 202
+ * { runId }. Registered before /api/runs/:id... routes don't collide (this is an
+ * exact path).
+ */
+app.post(
+  "/api/runs/from-node",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  llmEndpointRateLimiter,
+  requireEntitlement("runsPerMonth", {
+    getCurrent: (req) => runStore.countByWorkspaceCurrentMonth(req.workspace!.id),
+  }),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const { templateId, fromStepId, sourceRunId } = req.body as {
+      templateId?: string;
+      fromStepId?: string;
+      sourceRunId?: string;
+    };
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(401).json({ error: "Authenticated workspace required" });
+      return;
+    }
+    if (!templateId || !fromStepId || !sourceRunId) {
+      res.status(400).json({ error: "templateId, fromStepId, and sourceRunId are required" });
+      return;
+    }
+
+    // Tenancy: the source run must belong to this workspace + caller.
+    const source = await runStore.get(sourceRunId, workspaceId);
+    if (!source || (source.userId !== undefined && source.userId !== req.auth?.sub)) {
+      res.status(404).json({ error: `Source run not found: ${sourceRunId}` });
+      return;
+    }
+
+    let template: WorkflowTemplate;
+    try {
+      template = await getTemplate(templateId, workspaceId);
+    } catch {
+      res.status(404).json({ error: `Template not found: ${templateId}` });
+      return;
+    }
+
+    const fromStepIndex = template.steps.findIndex((s) => s.id === fromStepId);
+
+    // Route through the queue when Redis is available (worker retry/DLQ/resume);
+    // skipExecution leaves the run `queued` for the worker — mirrors replay.
+    const runQueue = getRunQueue();
+    let run;
+    try {
+      run = await workflowEngine.runFromNode({
+        template,
+        fromStepId,
+        sourceRunId,
+        ...(req.auth?.sub !== undefined ? { userId: req.auth.sub } : {}),
+        skipExecution: Boolean(runQueue),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(/not found/i.test(message) ? 404 : 400).json({ error: message });
+      return;
+    }
+
+    if (runQueue) {
+      const idempotencyKey = `${run.id}:${fromStepIndex}:from-node`;
+      try {
+        await runQueue.add(
+          "run",
+          {
+            runId: run.id,
+            templateId: run.templateId,
+            workflowVersionId: run.workflowVersionId,
+            workspaceId: run.workspaceId ?? "",
+            stepIndex: fromStepIndex,
+            idempotencyKey,
+          },
+          { jobId: run.id, removeOnComplete: 100 },
+        );
+      } catch (enqueueErr) {
+        const message = enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
+        await runStore.update(run.id, {
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error: `Run-from-node enqueue failed: ${message}`,
+        });
+        res.status(503).json({ error: `Failed to enqueue run: ${message}` });
+        return;
+      }
+    }
+
+    res.status(202).json({ runId: run.id });
+  }),
+);
+
+/**
  * POST /api/runs/:runId/replay-from-step (HEL-176)
  *
  * Body: { stepIndex: number }

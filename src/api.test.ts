@@ -2269,6 +2269,41 @@ describe("GET /api/evals/:evalId (HEL-776)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/runs/from-node (HEL-693)
+// ---------------------------------------------------------------------------
+
+describe("POST /api/runs/from-node (HEL-693)", () => {
+  it("returns 401 when the Authorization header is missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/from-node")
+      .send({ templateId: "tpl-support-bot", fromStepId: "x", sourceRunId: "r" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 400 when required fields are missing", async () => {
+    const res = await request(app)
+      .post("/api/runs/from-node")
+      .set(asAuth())
+      .send({ templateId: "tpl-support-bot" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/fromStepId|sourceRunId|required/i);
+  });
+
+  it("returns 404 for an unknown source run", async () => {
+    const res = await request(app)
+      .post("/api/runs/from-node")
+      .set(asAuth())
+      .send({
+        templateId: "tpl-support-bot",
+        fromStepId: "x",
+        sourceRunId: "00000000-0000-4000-8000-000000000000",
+      });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/source run not found/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/runs
 // ---------------------------------------------------------------------------
 

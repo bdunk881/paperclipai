@@ -226,7 +226,8 @@ export default function Evals() {
               />
               <span style={{ fontSize: 11, color: "var(--af2-ink-soft, #6b7280)" }}>
                 Each row’s <code>expected</code> is optional — omit it to compare against the
-                workflow’s default expected output.
+                workflow’s default expected output. A field can be an exact value or a matcher,
+                e.g. <code>{`{ "$contains": "refund" }`}</code> or <code>{`{ "$gte": 0.8 }`}</code>.
               </span>
             </label>
 

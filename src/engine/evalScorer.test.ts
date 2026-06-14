@@ -5,6 +5,7 @@
 import {
   deepEqual,
   compareEvalOutput,
+  matchValue,
   buildEvalRows,
   summarizeEval,
   type ScorableRun,
@@ -139,5 +140,65 @@ describe("summarizeEval", () => {
 
   it("handles an empty row set", () => {
     expect(summarizeEval([])).toEqual({ total: 0, passed: 0, failed: 0, pending: 0, passRate: 0 });
+  });
+});
+
+describe("matchValue (HEL-790 declarative matchers)", () => {
+  it("falls back to deep-equality for non-matcher specs (backward compat)", () => {
+    expect(matchValue("billing", "billing")).toBe(true);
+    expect(matchValue("sales", "billing")).toBe(false);
+    expect(matchValue({ a: 1 }, { a: 1 })).toBe(true); // plain object → deep-equal, not a matcher
+    expect(matchValue([1, 2], [1, 2])).toBe(true);
+  });
+
+  it("$contains matches substrings and array membership", () => {
+    expect(matchValue("please issue a refund", { $contains: "refund" })).toBe(true);
+    expect(matchValue("all good", { $contains: "refund" })).toBe(false);
+    expect(matchValue(["a", "b"], { $contains: "b" })).toBe(true);
+    expect(matchValue(42, { $contains: "x" })).toBe(false);
+  });
+
+  it("$regex matches a pattern; an invalid regex fails", () => {
+    expect(matchValue("TICKET-123", { $regex: "^TICKET-\\d+$" })).toBe(true);
+    expect(matchValue("nope", { $regex: "^TICKET-\\d+$" })).toBe(false);
+    expect(matchValue("x", { $regex: "(" })).toBe(false);
+  });
+
+  it("numeric comparisons (all ops must pass)", () => {
+    expect(matchValue(0.9, { $gte: 0.8 })).toBe(true);
+    expect(matchValue(0.7, { $gte: 0.8 })).toBe(false);
+    expect(matchValue(5, { $gt: 4, $lt: 10 })).toBe(true);
+    expect(matchValue(5, { $gt: 4, $lt: 5 })).toBe(false);
+    expect(matchValue("5", { $gte: 1 })).toBe(false); // non-number → fail
+  });
+
+  it("$exists / $oneOf / $ne / $eq", () => {
+    expect(matchValue("x", { $exists: true })).toBe(true);
+    expect(matchValue(undefined, { $exists: false })).toBe(true);
+    expect(matchValue(null, { $exists: true })).toBe(false);
+    expect(matchValue("billing", { $oneOf: ["billing", "sales"] })).toBe(true);
+    expect(matchValue("other", { $oneOf: ["billing", "sales"] })).toBe(false);
+    expect(matchValue("a", { $ne: "b" })).toBe(true);
+    expect(matchValue("a", { $eq: "a" })).toBe(true);
+  });
+
+  it("an unknown $-operator fails so a typo surfaces", () => {
+    expect(matchValue("refund", { $contain: "refund" })).toBe(false);
+  });
+});
+
+describe("compareEvalOutput with matchers (HEL-790)", () => {
+  it("mixes exact fields and matcher specs in one expected object", () => {
+    const r = compareEvalOutput(
+      { label: "billing", summary: "the customer wants a refund", score: 0.92 },
+      { label: "billing", summary: { $contains: "refund" }, score: { $gte: 0.8 } },
+    );
+    expect(r.pass).toBe(true);
+  });
+
+  it("reports the matcher spec as `expected` on a mismatch", () => {
+    const r = compareEvalOutput({ score: 0.5 }, { score: { $gte: 0.8 } });
+    expect(r.pass).toBe(false);
+    expect(r.mismatches).toEqual([{ key: "score", expected: { $gte: 0.8 }, actual: 0.5 }]);
   });
 });

@@ -32,6 +32,8 @@ import Assignments from "./pages/Assignments";
 import AuthCallback from "./pages/AuthCallback";
 import AuthConfirm from "./pages/AuthConfirm";
 import EnvVars from "./pages/EnvVars";
+import Evals from "./pages/Evals";
+import EvalDetail from "./pages/EvalDetail";
 import BudgetDashboard from "./pages/BudgetDashboard";
 import CheckoutSuccess from "./pages/CheckoutSuccess";
 import AutoTopupSetupSuccess from "./pages/AutoTopupSetupSuccess";
@@ -282,6 +284,10 @@ const routes: RouteObject[] = [
       // alongside it. `/templates` still redirects below for stale links.
       { path: "routines", element: <Routines /> },
       { path: "routines/new-prompt", element: <PromptRoutineNew /> },
+      // HEL-787: Evals — run a workflow over a dataset + measure (on the
+      // HEL-776 eval API). List + create, then a per-row results view.
+      { path: "evals", element: <Evals /> },
+      { path: "evals/:evalId", element: <EvalDetail /> },
 
       // Run pillar
       // HEL-204 PR A: /agents/activity merged into Assignments → Activity tab.

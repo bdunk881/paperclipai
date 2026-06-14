@@ -56,6 +56,7 @@ import { getRunQueue } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { deriveIdempotencyKey } from "../queue/withIdempotency";
 import { shouldReuseStepKind, buildPriorResultMap } from "./idempotentReplay";
+import { resolveRetryPolicy, withStepRetry } from "./stepRetry";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1536,6 +1537,9 @@ export class WorkflowEngine {
         ? priorResultsByKey.get(idempotencyKey)
         : undefined;
 
+      // HEL-694: per-step retry policy for the throwing executors below.
+      const retryPolicy = resolveRetryPolicy(step);
+
       try {
         if (reusedPrior) {
           stepOutput = { ...reusedPrior.output, idempotentReplay: true };
@@ -1585,13 +1589,16 @@ export class WorkflowEngine {
             stepOutput = handleFormTrigger(context);
             break;
           case "llm": {
-            const llmResult = await executeLlm(step, context, userId);
+            const llmResult = await withStepRetry(() => executeLlm(step, context, userId), retryPolicy);
             stepOutput = llmResult.output;
             stepCostLog = llmResult.costLog;
             break;
           }
           case "knowledge": {
-            const knowledgeResult = await handleKnowledge(step, context, userId ?? "");
+            const knowledgeResult = await withStepRetry(
+              () => handleKnowledge(step, context, userId ?? ""),
+              retryPolicy,
+            );
             stepOutput = knowledgeResult.output;
             break;
           }
@@ -1677,7 +1684,10 @@ export class WorkflowEngine {
               break;
             }
 
-            const actionOutput = await executeAction(step, context, config, userId);
+            const actionOutput = await withStepRetry(
+              () => executeAction(step, context, config, userId),
+              retryPolicy,
+            );
             stepOutput = {
               ...actionOutput,
               ...(governance.actionType
@@ -1699,7 +1709,7 @@ export class WorkflowEngine {
               stepOutput = dryRunOutput(step);
               break;
             }
-            const mcpResult = await handleMcp(step, context);
+            const mcpResult = await withStepRetry(() => handleMcp(step, context), retryPolicy);
             stepOutput = mcpResult.output;
             break;
           }
@@ -1718,7 +1728,10 @@ export class WorkflowEngine {
               stepOutput = dryRunOutput(step);
               break;
             }
-            const agentResult = await handleAgent(step, context, runId, userId ?? "");
+            const agentResult = await withStepRetry(
+              () => handleAgent(step, context, runId, userId ?? ""),
+              retryPolicy,
+            );
             stepOutput = agentResult.output;
             agentSlotResults = agentResult.agentSlotResults;
             break;

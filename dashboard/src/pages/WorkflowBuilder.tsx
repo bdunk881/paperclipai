@@ -4,6 +4,7 @@ import {
   Plus,
   Play,
   Trash2,
+  Copy,
   ChevronDown,
   ChevronUp,
   Cpu,
@@ -51,6 +52,7 @@ import {
   Controls,
   Handle,
   MiniMap,
+  NodeToolbar,
   Position,
   ReactFlow,
   type Edge,
@@ -534,6 +536,8 @@ type FlowNodeData = {
   onRemove: (id: string) => void;
   onDuplicate: (id: string) => void;
   onRunFromHere: (id: string) => void;
+  onAskAi: (id: string) => void;
+  isReadonly: boolean;
   isFirst: boolean;
   isLast: boolean;
   teamAgent?: ControlPlaneAgent;
@@ -1404,6 +1408,8 @@ export default function WorkflowBuilder() {
         onRemove: removeStep,
         onDuplicate: duplicateStep,
         onRunFromHere: handleRunFromNode,
+        onAskAi: handleAskAi,
+        isReadonly: isReadonlyBuilder,
         isFirst: idx === 0,
         isLast: idx === template.steps.length - 1,
         teamAgent,
@@ -1688,6 +1694,14 @@ export default function WorkflowBuilder() {
     } catch (e) {
       setRunError(e instanceof Error ? e.message : "Failed to run from node");
     }
+  }
+
+  // HEL-683: open the AI assistant focused on a node. Selecting the step
+  // scopes the Copilot (buildCopilotResponse reads selectedStepId); revealing
+  // the panel then lets a question typed there be about this step.
+  function handleAskAi(stepId: string) {
+    selectStep(stepId);
+    setShowCopilot(true);
   }
 
   async function handleDeployTeam(input: {
@@ -3573,6 +3587,87 @@ function StepNodeContextMenu({
   );
 }
 
+/**
+ * HEL-683: a visible per-node action toolbar (React Flow NodeToolbar), shown
+ * when a node is selected — the n8n-style "live/reactive" affordance that
+ * surfaces the most-used node actions on the canvas instead of only behind the
+ * right-click menu / inspector. Mutating actions respect readonly mode (the top
+ * toolbar gates run/deploy the same way). "Disable node" is a deliberate
+ * follow-up (HEL-696-adjacent) — it needs engine skip-support to not be a dead
+ * toggle, so it is intentionally not surfaced here yet.
+ */
+function NodeActionToolbar({
+  isReadonly,
+  onRunFromHere,
+  onAskAi,
+  onDuplicate,
+  onRemove,
+}: {
+  isReadonly: boolean;
+  onRunFromHere: () => void;
+  onAskAi: () => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const btn =
+    "inline-flex h-7 w-7 items-center justify-center rounded-md text-af2-ink-3 transition hover:bg-af2-paper-2 hover:text-af2-ink disabled:pointer-events-none disabled:opacity-40";
+  return (
+    <div className="flex items-center gap-0.5 rounded-lg border border-af2-line bg-af2-card p-1 shadow-af2-lg">
+      <button
+        type="button"
+        className={btn}
+        disabled={isReadonly}
+        title="Run from here"
+        aria-label="Run from here"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRunFromHere();
+        }}
+      >
+        <Play className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={btn}
+        title="Ask AI about this step"
+        aria-label="Ask AI about this step"
+        onClick={(e) => {
+          e.stopPropagation();
+          onAskAi();
+        }}
+      >
+        <Sparkles className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={btn}
+        disabled={isReadonly}
+        title="Duplicate step"
+        aria-label="Duplicate step"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDuplicate();
+        }}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={clsx(btn, "hover:bg-af2-clay/10 hover:!text-af2-clay")}
+        disabled={isReadonly}
+        title="Delete step"
+        aria-label="Delete step"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function WorkflowStepNode({
   id,
   data,
@@ -3581,6 +3676,15 @@ function WorkflowStepNode({
 }: NodeProps<WorkflowFlowNode>) {
   return (
     <div className="w-[280px]">
+      <NodeToolbar isVisible={selected} position={Position.Top} offset={8}>
+        <NodeActionToolbar
+          isReadonly={data.isReadonly}
+          onRunFromHere={() => data.onRunFromHere(id)}
+          onAskAi={() => data.onAskAi(id)}
+          onDuplicate={() => data.onDuplicate(id)}
+          onRemove={() => data.onRemove(id)}
+        />
+      </NodeToolbar>
       <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-af2-ink-3" />
       <StepNodeContextMenu
         stepId={id}

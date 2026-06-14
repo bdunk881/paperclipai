@@ -733,6 +733,127 @@ export class WorkflowEngine {
   }
 
   /**
+   * HEL-693: run the CURRENT draft `template` starting at `fromStepId`, seeding
+   * the upstream steps' outputs from a prior run (`sourceRunId`) matched by step
+   * id — so unchanged upstream nodes are reused, not re-executed. This is the
+   * editor's "run from here" partial run.
+   *
+   * Unlike {@link replayFromStep} (which replays the source run's OWN template),
+   * this runs the passed draft template — to test the current edits downstream of
+   * the node — while reusing the source run's cached outputs for the upstream
+   * prefix (matched by step id, not ordinal, so reordering/insertion upstream is
+   * tolerated as long as each upstream step has a cached success).
+   *
+   * Validates: `fromStepId` resolves to a step with index in (0, len) (use a full
+   * run for the head); every draft step upstream of it has a `success` result in
+   * the source run. v1 trusts the cached upstream (assumes it's unchanged since
+   * the source run); automatic dirty-detection is a follow-up.
+   */
+  async runFromNode(params: {
+    template: WorkflowTemplate;
+    fromStepId: string;
+    sourceRunId: string;
+    userId?: string;
+    skipExecution?: boolean;
+  }): Promise<WorkflowRun> {
+    const { template, fromStepId, sourceRunId, userId } = params;
+
+    const fromStepIndex = template.steps.findIndex((s) => s.id === fromStepId);
+    if (fromStepIndex < 0) {
+      throw new Error(`Step not found in workflow: ${fromStepId}`);
+    }
+    if (fromStepIndex === 0) {
+      throw new Error("Cannot run from the first step; start a full run instead.");
+    }
+
+    const source = await runStore.get(sourceRunId);
+    if (!source) {
+      throw new Error(`Source run not found: ${sourceRunId}`);
+    }
+
+    // Match the source run's results by step id and require a successful cached
+    // output for every draft step UPSTREAM of the chosen node.
+    const sourceById = new Map(source.stepResults.map((sr) => [sr.stepId, sr]));
+    const newRunId = randomUUID();
+    const clonedStepResults: StepResult[] = [];
+    for (let ordinal = 0; ordinal < fromStepIndex; ordinal += 1) {
+      const draftStep = template.steps[ordinal];
+      const cached = sourceById.get(draftStep.id);
+      if (!cached || cached.status !== "success") {
+        throw new Error(
+          `Upstream step '${draftStep.id}' has no successful cached result in source run ${sourceRunId}; run the full workflow first.`,
+        );
+      }
+      clonedStepResults.push({
+        stepId: cached.stepId,
+        stepName: cached.stepName,
+        status: "success",
+        output: cloneJson(cached.output),
+        durationMs: cached.durationMs,
+        ...(cached.agentSlotResults ? { agentSlotResults: cloneJson(cached.agentSlotResults) } : {}),
+        ...(cached.costLog ? { costLog: cloneJson(cached.costLog) } : {}),
+        idempotencyKey: `${newRunId}:${ordinal}:run-from-node:${Date.now()}`,
+      });
+    }
+
+    // Reconstruct the runtime context: config + the source run's input, then
+    // layer each cached upstream output (mirrors replayFromStep / _executeRun).
+    const config = source.runtimeState?.config
+      ? cloneJson(source.runtimeState.config)
+      : this._buildDefaultConfig(template);
+    const context: Record<string, unknown> = {
+      ...config,
+      ...cloneJson(source.input),
+    };
+    for (const sr of clonedStepResults) {
+      Object.assign(context, sr.output);
+    }
+    context["memory"] = await this._buildMemoryContext(template, userId);
+
+    const newRun = await runStore.create({
+      id: newRunId,
+      templateId: template.id,
+      templateName: template.name,
+      workspaceId: source.workspaceId,
+      status: "pending",
+      startedAt: new Date().toISOString(),
+      input: cloneJson(source.input),
+      workflowDag: cloneJson(template),
+      stepResults: clonedStepResults.map((sr) => ({ ...sr, output: cloneJson(sr.output) })),
+      runtimeState: {
+        config: { ...config },
+        context: stripMemory(context),
+        currentStepIndex: fromStepIndex,
+      },
+      ...(userId !== undefined ? { userId } : {}),
+    });
+
+    // Like replayFromStep: the caller may opt out of inline execution so the
+    // endpoint can route through the BullMQ queue when Redis is available.
+    if (params.skipExecution) {
+      await runStore.update(newRun.id, { status: "queued" });
+      return { ...newRun, status: "queued" };
+    }
+
+    void runStore
+      .update(newRun.id, { status: "running" })
+      .then(() => {
+        void this._publishRunLifecycle(newRun.id, "started");
+        return this._runSteps(newRun.id, template, config, context, clonedStepResults, fromStepIndex, userId);
+      })
+      .catch((err) => {
+        void runStore.update(newRun.id, {
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error: String(err),
+        });
+        void this._publishRunLifecycle(newRun.id, "failed", { error: String(err) });
+      });
+
+    return newRun;
+  }
+
+  /**
    * HEL-176 helper — pulls the {@link WorkflowTemplate} embedded in a run.
    * Throws if the run has no usable DAG (defensive — runs created via
    * the engine always persist `workflowDag`).

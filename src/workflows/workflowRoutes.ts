@@ -162,26 +162,91 @@ export function createWorkflowRoutes(
         async (client) => {
           await client.query("BEGIN");
           try {
-            const workflowId = randomUUID();
-            await client.query(
-              `INSERT INTO workflows (id, workspace_id, name, external_template_id)
-                 VALUES ($1, $2, $3, $4)`,
-              [workflowId, workspaceId, name, externalTemplateId],
+            // HEL-792: idempotent on (workspace_id, external_template_id).
+            // The imported-template save (POST /api/templates →
+            // persistImportedTemplate) may already have created this
+            // workflows row; a bare INSERT then violates
+            // uq_workflows_workspace_external_template and 500s — which the
+            // dashboard dual-write silently swallowed. Resolve-or-create:
+            // upsert the shell, then RETURN the existing latest version
+            // (don't append a redundant second version for the same logical
+            // save) or write v1 for a genuinely new workflow.
+            let workflowId: string;
+            if (externalTemplateId) {
+              const upsert = await client.query<{ id: string }>(
+                `INSERT INTO workflows (id, workspace_id, name, external_template_id)
+                   VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (workspace_id, external_template_id)
+                   WHERE workspace_id IS NOT NULL AND external_template_id IS NOT NULL
+                   DO UPDATE SET name = EXCLUDED.name, updated_at = now()
+                 RETURNING id`,
+                [randomUUID(), workspaceId, name, externalTemplateId],
+              );
+              workflowId = upsert.rows[0]!.id;
+            } else {
+              workflowId = randomUUID();
+              await client.query(
+                `INSERT INTO workflows (id, workspace_id, name, external_template_id)
+                   VALUES ($1, $2, $3, NULL)`,
+                [workflowId, workspaceId, name],
+              );
+            }
+
+            // Reuse the existing latest version if the workflow already has
+            // one (e.g. written by the imported-template save); appending here
+            // would create a redundant second version for the same save.
+            const existing = await client.query<{
+              id: string;
+              version: number;
+              dag: unknown;
+              created_at: Date | string;
+            }>(
+              `SELECT v.id, v.version, v.dag, v.created_at
+                 FROM workflows w
+                 JOIN workflow_versions v ON v.id = w.latest_version_id
+                WHERE w.id = $1
+                LIMIT 1`,
+              [workflowId],
             );
-            const v1 = await insertWorkflowVersion(client, workflowId, 1, dag, userId);
+
+            const existingRow = existing.rows[0];
+            const latestVersion: WorkflowVersionResponse = existingRow
+              ? {
+                  id: existingRow.id,
+                  version: existingRow.version,
+                  dag: existingRow.dag ?? {},
+                  createdAt:
+                    existingRow.created_at instanceof Date
+                      ? existingRow.created_at.toISOString()
+                      : String(existingRow.created_at),
+                }
+              : await (async () => {
+                  const v1 = await insertWorkflowVersion(client, workflowId, 1, dag, userId);
+                  return { id: v1.id, version: 1, dag, createdAt: v1.createdAt };
+                })();
+
+            const meta = await client.query<{ created_at: Date | string; updated_at: Date | string }>(
+              `SELECT created_at, updated_at FROM workflows WHERE id = $1 LIMIT 1`,
+              [workflowId],
+            );
+            const metaRow = meta.rows[0];
+            const createdAt =
+              metaRow?.created_at instanceof Date
+                ? metaRow.created_at.toISOString()
+                : String(metaRow?.created_at ?? latestVersion.createdAt);
+            const updatedAt =
+              metaRow?.updated_at instanceof Date
+                ? metaRow.updated_at.toISOString()
+                : String(metaRow?.updated_at ?? latestVersion.createdAt);
+
             await client.query("COMMIT");
             return {
               id: workflowId,
               name,
               externalTemplateId,
-              latestVersion: {
-                id: v1.id,
-                version: 1,
-                dag,
-                createdAt: v1.createdAt,
-              },
-              createdAt: v1.createdAt,
-              updatedAt: v1.createdAt,
+              latestVersion,
+              createdAt,
+              updatedAt,
             } satisfies WorkflowResponse;
           } catch (err) {
             try {
@@ -238,6 +303,37 @@ export function createWorkflowRoutes(
             if (wf.rows.length === 0) {
               throw new Error("__not_found");
             }
+            // HEL-792: no-op dedup — if the immediate latest version already
+            // holds this exact dag (a re-save with no changes), reuse it
+            // instead of appending a redundant version. Scoped to the LATEST
+            // only, so the restore flow (which re-POSTs an OLDER version's dag)
+            // still creates a new version as intended.
+            const noop = await client.query<{
+              id: string;
+              version: number;
+              created_at: Date | string;
+            }>(
+              `SELECT v.id, v.version, v.created_at
+                 FROM workflows w
+                 JOIN workflow_versions v ON v.id = w.latest_version_id
+                WHERE w.id = $1 AND v.dag = $2::jsonb
+                LIMIT 1`,
+              [workflowId, JSON.stringify(dag ?? {})],
+            );
+            const noopRow = noop.rows[0];
+            if (noopRow) {
+              await client.query("COMMIT");
+              return {
+                id: noopRow.id,
+                version: noopRow.version,
+                dag,
+                createdAt:
+                  noopRow.created_at instanceof Date
+                    ? noopRow.created_at.toISOString()
+                    : String(noopRow.created_at),
+              } satisfies WorkflowVersionResponse;
+            }
+
             // Compute the next version number atomically. The UNIQUE
             // (workflow_id, version) constraint serializes concurrent
             // appends — the loser retries on its next attempt.

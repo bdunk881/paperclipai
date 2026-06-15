@@ -13,6 +13,10 @@ export default defineConfig({
       miniflare: {
         compatibilityDate: "2026-05-20",
         compatibilityFlags: ["nodejs_compat"],
+        // HEL-427 auth-gates the rate-limit routes on this shared secret; the
+        // functional tests authenticate with this fixed test value (prod sets
+        // the real secret via `wrangler secret put`, never in the toml).
+        bindings: { CF_WORKER_SHARED_SECRET: "test-shared-secret" },
       },
     }),
   ],

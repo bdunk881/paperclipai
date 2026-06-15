@@ -14,6 +14,7 @@ import {
   type RateLimiterConsumeRequest,
   type RateLimiterRefundRequest,
 } from "./durable-objects/RateLimiter";
+import { callInternalApi } from "./internalApi";
 
 export { HealthCheckDO, RateLimiterDO };
 
@@ -154,6 +155,42 @@ async function handleRateLimitRefund(request: Request, env: WorkerEnv): Promise<
   return Response.json(result);
 }
 
+/**
+ * HEL-798: secret-gated self-test of the Worker → API internal JWT round-trip.
+ * Mints a token via internalApi and calls the API's /api/internal/__health,
+ * reporting whether requireCfWorker accepted it. Gated on the shared secret
+ * (same as the rate-limit routes) so it can't be an unauthenticated
+ * amplification vector. Used to verify the B1 round-trip on dev:
+ *   curl -H "Authorization: Bearer $CF_WORKER_SHARED_SECRET" \
+ *     https://autoflow-api-worker-dev.<sub>.workers.dev/__internal-selftest
+ */
+async function handleInternalSelftest(request: Request, env: WorkerEnv): Promise<Response> {
+  if (
+    !isWorkerRequestAuthorized(request.headers.get("Authorization"), env.CF_WORKER_SHARED_SECRET)
+  ) {
+    return denyUnauthorized(env);
+  }
+  try {
+    const apiRes = await callInternalApi(env, "__health");
+    const text = await apiRes.text();
+    let apiResponse: unknown = text;
+    try {
+      apiResponse = JSON.parse(text);
+    } catch {
+      // leave as raw text
+    }
+    return Response.json(
+      { ok: apiRes.ok, status: apiRes.status, apiResponse },
+      { status: apiRes.ok ? 200 : 502 },
+    );
+  } catch (err) {
+    return Response.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
+    );
+  }
+}
+
 async function route(request: Request, env: WorkerEnv): Promise<Response> {
   const url = new URL(request.url);
 
@@ -169,6 +206,10 @@ async function route(request: Request, env: WorkerEnv): Promise<Response> {
 
   if (url.pathname === "/rate-limit/refund" && request.method === "POST") {
     return handleRateLimitRefund(request, env);
+  }
+
+  if (url.pathname === "/__internal-selftest" && request.method === "GET") {
+    return handleInternalSelftest(request, env);
   }
 
   return new Response("Not Found", { status: 404 });

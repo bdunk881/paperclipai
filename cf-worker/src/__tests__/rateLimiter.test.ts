@@ -10,7 +10,7 @@ interface RateLimitResponse {
 function consume(key: string, limit: number, windowMs: number): Promise<Response> {
   return SELF.fetch("http://localhost/rate-limit/consume", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", Authorization: "Bearer test-shared-secret" },
     body: JSON.stringify({
       scope: "workspace",
       key,
@@ -52,7 +52,7 @@ describe("RateLimiterDO + worker entry", () => {
 
     const refund = await SELF.fetch("http://localhost/rate-limit/refund", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", Authorization: "Bearer test-shared-secret" },
       body: JSON.stringify({
         scope: "workspace",
         key: "refund-workspace",
@@ -70,7 +70,7 @@ describe("RateLimiterDO + worker entry", () => {
   it("returns 400 for invalid consume payloads", async () => {
     const res = await SELF.fetch("http://localhost/rate-limit/consume", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", Authorization: "Bearer test-shared-secret" },
       body: JSON.stringify({ scope: "workspace", key: "", limit: 0, windowMs: 60_000 }),
     });
     expect(res.status).toBe(400);

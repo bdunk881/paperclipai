@@ -72,3 +72,21 @@ export function getApiBasePath(): string {
   const origin = getConfiguredApiOrigin();
   return origin ? `${origin}/api` : "/api";
 }
+
+/**
+ * Origin of the Cloudflare Worker that hosts the collaborative WorkflowDocDO
+ * (Yjs-on-DO, HEL-803 / Sub-phase B6).
+ *
+ * Empty string (the default) = the workflow Y.Doc stays on the in-process API
+ * room (`/api/workflows/...`). Setting `VITE_WF_DOC_WS_ORIGIN` per environment
+ * cuts the builder over to the DO host — dev
+ * `https://autoflow-api-worker-dev.<sub>.workers.dev`, prod
+ * `https://worker.helloautoflow.com`. The value is baked per-env by the
+ * dashboard Cloudflare Pages build, so the cutover is an atomic per-environment
+ * switch and unsetting it + redeploying rolls straight back to the Node room.
+ */
+export function getWorkflowDocWorkerOrigin(): string {
+  const raw = import.meta.env.VITE_WF_DOC_WS_ORIGIN;
+  if (typeof raw !== "string") return "";
+  return raw.trim().replace(/\/+$/, "");
+}

@@ -13,7 +13,7 @@
  * `workflows.latest_version_id`.
  */
 
-import { getApiBasePath } from "./baseUrl";
+import { getApiBasePath, getWorkflowDocWorkerOrigin } from "./baseUrl";
 import { trackedFetch } from "./trackedFetch";
 
 const BASE = getApiBasePath();
@@ -239,12 +239,23 @@ export function workflowPresenceStreamUrl(
 /**
  * Build the y-websocket server URL for workflow Y.Doc sync (HEL-241C-2b).
  *
- * y-websocket appends `/${roomName}` itself, so this returns the collection
- * base (`/api/workflows`) with the scheme swapped for WebSocket transport.
+ * y-websocket appends `/${roomName}` itself (the room is `${workflowId}/ydoc`),
+ * so this returns the collection base with the scheme swapped for WebSocket
+ * transport. The `access_token` + `workspaceId` query params come from
+ * `useYDoc`, and both backends expect the same room + params:
+ *
+ *   - in-process API room (default): `${BASE}/workflows` → `/api/workflows/<id>/ydoc`
+ *   - WorkflowDocDO host (HEL-803, when `VITE_WF_DOC_WS_ORIGIN` is set):
+ *     `${workerOrigin}/workflows` → `<worker>/workflows/<id>/ydoc`
+ *
+ * So the cutover is purely this origin swap — the room name + auth params are
+ * identical, and the DO's edge gate (HEL-801) reads the same `?access_token=`/
+ * `?workspaceId=`.
  */
 export function workflowYDocWebSocketUrl(): string {
+  const workerOrigin = getWorkflowDocWorkerOrigin();
   const url = new URL(
-    `${BASE}/workflows`,
+    workerOrigin ? `${workerOrigin}/workflows` : `${BASE}/workflows`,
     typeof window === "undefined" ? "http://localhost" : window.location.origin,
   );
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";

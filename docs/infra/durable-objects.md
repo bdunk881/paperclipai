@@ -259,6 +259,19 @@ Sockets are accepted with `ctx.acceptWebSocket` so the DO can shed memory while 
 
 Relayed verbatim to peers, **never persisted**, with **no server-side `Awareness` instance** — a server `Awareness` runs a refresh `setInterval` that would keep the DO from hibernating, and presence is authoritatively carried on SSE. Departed cursors expire via each remaining client's own awareness `outdatedTime` (~30s).
 
+### Client cutover (B6, HEL-803)
+
+The dashboard's `workflowYDocWebSocketUrl()` (`dashboard/src/api/workflowsApi.ts`) picks the doc host:
+
+- **Default (unset):** `${apiOrigin}/api/workflows` → the in-process API room.
+- **Cut over (`VITE_WF_DOC_WS_ORIGIN` set):** `${workerOrigin}/workflows` → the WorkflowDocDO.
+
+Only the **origin + `/api` prefix** differ — the room name (`${workflowId}/ydoc`) and the `?access_token=`/`?workspaceId=` params (from `useYDoc`) are identical, and the DO's B4 edge gate reads the same params. So the cutover is a one-line origin swap.
+
+`VITE_WF_DOC_WS_ORIGIN` is baked per-env by the dashboard Cloudflare Pages build (dev `https://autoflow-api-worker-dev.<sub>.workers.dev`, prod `https://worker.helloautoflow.com`) — an atomic per-environment switch. Unsetting it + redeploying rolls straight back to the Node room. Default OFF, so merging **B6a changes nothing** until a build sets it.
+
+> **B6b (not yet done) is gated on a dev soak.** Flip `VITE_WF_DOC_WS_ORIGIN` on dev, confirm builder collab + undo/redo run through the DO with no split-brain (a given `workflowId` must not be served by both backends — flip during low usage; the dashboard redeploy invalidates the old bundle so clients reconnect to the Worker, and the API redeploy drains Node rooms via `attachYDocUpgradeHandler.detach()`). **Only after the soak** delete `src/workflows/ydoc/workflowYDocRoom.ts` + `attachYDocUpgradeHandler.ts` and remove the upgrade attach from `src/index.ts` — the single most irreversible step.
+
 ### Tests
 
 `cf-worker/src/__tests__/workflowDoc.test.ts` drives the DO with a minimal real-`Y.Doc` y-protocols client. Since the public route now requires a verified token, these connect to the **DO stub directly** with the tenancy params the edge would set, and cover: the two-client bidirectional relay, late-joiner hydration via the handshake, DO-local persistence (rehydrate a doc from the stored bytes), `serializeAttachment` tenancy recovery (`currentTenancy()`), the keepalive alarm tick, and alarm-cleared-on-last-disconnect — plus the **edge-auth route gate** (426 non-WS, 401 missing/garbage token with no socket issued, 400 missing/bad workspaceId). (Gotcha: a test client must set `ws.binaryType = "arraybuffer"` — the real y-websocket client does this; without it binary frames arrive as Blobs and decode to empty arrays.)

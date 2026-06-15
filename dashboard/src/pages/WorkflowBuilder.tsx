@@ -107,6 +107,7 @@ import type { WorkflowRun, WorkflowStep, StepKind, WorkflowTemplate } from "../t
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
+  makeStepId,
   serializeEdgesToSteps,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
@@ -1214,7 +1215,7 @@ export default function WorkflowBuilder() {
   }, [copilotInput, template.steps]);
 
   function addStep(kind: StepKind, dropPosition?: XYPosition) {
-    const newStepId = "step-" + Date.now();
+    const newStepId = makeStepId();
     let autoLinkError: string | null = null;
     setTemplate((t) => {
       const nextIndex = t.steps.length;
@@ -1333,7 +1334,7 @@ export default function WorkflowBuilder() {
   function duplicateStep(id: string) {
     const source = template.steps.find((s) => s.id === id);
     if (!source) return;
-    const newStepId = `step-${Date.now()}`;
+    const newStepId = makeStepId();
     const sourcePos = (source.config?.[STEP_POSITION_KEY] as { x?: number; y?: number } | undefined);
     const newPosition: XYPosition = {
       x: (sourcePos?.x ?? 0) + 48,
@@ -3227,7 +3228,7 @@ function buildTargetedProposal(
 
 function buildStepFromPrompt(prompt: string): WorkflowStep | null {
   const baseStep = {
-    id: `step-${Date.now()}`,
+    id: makeStepId(),
     description: "",
     inputKeys: [],
     outputKeys: [],

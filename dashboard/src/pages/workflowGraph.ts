@@ -58,6 +58,17 @@ export function buildDefaultEdge(source: string, target: string): Edge {
   };
 }
 
+/**
+ * HEL-793: collision-safe step id. `crypto.randomUUID()` avoids the
+ * `Date.now()` collisions that would clobber entries in the stepId-keyed Yjs
+ * graph map (HEL-795) when two collaborators add a step in the same
+ * millisecond. Mirrors the pattern already used by the extract-to-sub-workflow
+ * flow.
+ */
+export function makeStepId(): string {
+  return `step-${crypto.randomUUID()}`;
+}
+
 export function buildEdgesFromSteps(steps: WorkflowStep[]): Edge[] {
   if (steps.length <= 1) return [];
 

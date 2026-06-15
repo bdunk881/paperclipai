@@ -111,6 +111,12 @@ jobs:
             # Belt-and-suspenders fallback for hostnames not in the dashboard's
             # built-in host map (see dashboard/src/api/baseUrl.ts).
             echo "VITE_API_BASE_URL=https://dev-api.helloautoflow.com" >> "$GITHUB_ENV"
+            # HEL-797 (A5): GA the collaborative graph-in-doc + undo/redo on DEV
+            # ONLY. Prod (the else branch) stays OFF until the WorkflowDocDO
+            # host-swap (Sub-phase B) lands + a prod validation pass. Roll back
+            # by removing this line — the builder falls straight back to the
+            # template.steps path (the flag default is OFF).
+            echo "VITE_WF_DOC_GRAPH=true" >> "$GITHUB_ENV"
           else
             echo "VITE_SUPABASE_URL=${PRODUCTION_SUPABASE_URL}" >> "$GITHUB_ENV"
             echo "VITE_SUPABASE_PUBLISHABLE_KEY=${PRODUCTION_SUPABASE_PUBLISHABLE_KEY}" >> "$GITHUB_ENV"

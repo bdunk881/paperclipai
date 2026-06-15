@@ -250,7 +250,10 @@ Sockets are accepted with `ctx.acceptWebSocket` so the DO can shed memory while 
 ### Persistence
 
 - **DO-local (B3):** the full doc state (`Y.encodeStateAsUpdate`) is mirrored to `ctx.storage` after each applied update (coalesced) and rehydrated in the constructor under `blockConcurrencyWhile` — so a hibernation wake / eviction never serves an empty doc that a late message would clobber.
-- **Postgres mirror (B5, HEL-802):** a dirty-gated single-shot alarm will push snapshots to the durable store via the B2 internal API (`POST /api/internal/workflows/:id/ydoc-snapshot`) and cold-start-hydrate from it (`GET`), so state survives DO *deletion*/relocation and feeds other readers.
+- **Postgres mirror (B5, HEL-802):** Postgres (`workflow_ydoc_snapshots`) is the durable system-of-record, written via B2's internal API (`cf-worker/src/ydocSnapshotClient.ts` → B1-minted JWT). State survives DO *deletion*/relocation and stays continuous with the in-process room (which writes the same row).
+  - **Dirty gating + cadence.** A storage flag `pg:dirty` (set on each edit, survives hibernation) gates the flush. The flush **piggybacks the keepalive alarm** rather than scheduling a second one — a DO has a single alarm, and the B3 keepalive already owns it, so the PG mirror rides that ~20s tick (debounce) plus a final flush on last disconnect. When the DO goes fully idle (no clients) the alarm is cleared, so there's no perpetual pending alarm.
+  - **Cold-start hydrate.** The constructor restores DO-local state first (fast same-instance revival). If DO-local is empty, the **first connect** (which carries the tenancy the RLS-scoped `GET` needs) pulls the PG snapshot and applies it **before the socket is accepted** — so a revived/relocated DO can't serve an empty doc a late update would clobber. Attribution `{workspaceId, userId}` comes from the socket's pinned attachment (B4); on last disconnect it's read from the closing socket.
+  - **Best-effort.** A failed PG read/write never throws into the WS path (matches the in-process room's `flush()`); the dirty flag is simply left set for the next tick. Re-flushing the same state is a harmless re-UPSERT (idempotent).
 
 ### Awareness (presence)
 
@@ -261,6 +264,8 @@ Relayed verbatim to peers, **never persisted**, with **no server-side `Awareness
 `cf-worker/src/__tests__/workflowDoc.test.ts` drives the DO with a minimal real-`Y.Doc` y-protocols client. Since the public route now requires a verified token, these connect to the **DO stub directly** with the tenancy params the edge would set, and cover: the two-client bidirectional relay, late-joiner hydration via the handshake, DO-local persistence (rehydrate a doc from the stored bytes), `serializeAttachment` tenancy recovery (`currentTenancy()`), the keepalive alarm tick, and alarm-cleared-on-last-disconnect — plus the **edge-auth route gate** (426 non-WS, 401 missing/garbage token with no socket issued, 400 missing/bad workspaceId). (Gotcha: a test client must set `ws.binaryType = "arraybuffer"` — the real y-websocket client does this; without it binary frames arrive as Blobs and decode to empty arrays.)
 
 `cf-worker/src/__tests__/supabaseEdgeAuth.test.ts` covers the JWT config derivation (issuer/jwksUri/audience, must match the API) and token verification end-to-end with a real ES256 keypair + a local JWKS (valid / wrong issuer / wrong audience / expired / wrong key / no-sub / garbage) — no network.
+
+`cf-worker/src/__tests__/ydocSnapshotClient.test.ts` covers the PG snapshot client: base64 round-trip (incl. a 40 KB chunked buffer) and GET/POST path/method/body + 200/404/500 handling via an **injected** `callInternalApi` (this vitest-pool-workers build exposes no outbound fetch mock). The DO-side B5 behaviour in `workflowDoc.test.ts` asserts `pg:dirty` is flagged after an edit and that an unreachable PG flush is best-effort (no throw, socket keeps relaying, dirty stays set). The full live PG round-trip is the dev smoke.
 
 ## References
 

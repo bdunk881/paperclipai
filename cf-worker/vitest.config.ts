@@ -18,6 +18,12 @@ export default defineConfig({
         // the real secret via `wrangler secret put`, never in the toml).
         // HEL-801 SUPABASE_URL lets the ydoc edge derive its JWT config in tests
         // (a structurally-invalid token is then rejected without any network).
+        // HEL-802: API_BASE_URL is intentionally UNSET here so the DO's Postgres
+        // snapshot client fails fast on the missing-base check (caught, never
+        // throws into the WS path) instead of attempting a real outbound fetch —
+        // exercising the best-effort path without network noise. The PG
+        // request/response logic is covered with an injected caller in
+        // ydocSnapshotClient.test.ts.
         bindings: {
           CF_WORKER_SHARED_SECRET: "test-shared-secret",
           SUPABASE_URL: "https://test-project.supabase.co",

@@ -110,11 +110,14 @@ import type { WorkflowRun, WorkflowStep, StepKind, WorkflowTemplate } from "../t
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
+  extractClipboard,
   makeStepId,
+  pasteClipboard,
   serializeEdgesToSteps,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
   validateGraphTopology,
+  type WorkflowClipboard,
 } from "./workflowGraph";
 import {
   applyStepsToDoc,
@@ -731,6 +734,8 @@ export default function WorkflowBuilder() {
   // on dataTransfer; the canvas wrapper reads it on drop and uses xyflow's
   // screenToFlowPosition() so the new step lands where the cursor released.
   const reactFlowInstanceRef = useRef<ReactFlowInstance<WorkflowFlowNode, Edge> | null>(null);
+  // HEL-686: in-memory copy/paste clipboard (Ctrl+C / Ctrl+V).
+  const clipboardRef = useRef<WorkflowClipboard | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const [paletteDragKind, setPaletteDragKind] = useState<StepKind | null>(null);
   const [canvasDropActive, setCanvasDropActive] = useState(false);
@@ -1018,6 +1023,39 @@ export default function WorkflowBuilder() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // HEL-686: Ctrl/Cmd+C copies the current selection (steps + internal edges) to
+  // an in-memory clipboard; Ctrl/Cmd+V pastes it as a disconnected island (fresh
+  // ids, offset, remapped internal edges) in ONE setTemplate = one undo entry.
+  // Independent of WF_DOC_GRAPH (operates on template.steps). Skips text fields
+  // and an active text selection so native browser copy still works.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || isReadonlyBuilder) return;
+      const key = e.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      if (key === "c") {
+        if (window.getSelection()?.toString()) return; // let native text copy run
+        if (selectedStepIds.length === 0) return;
+        e.preventDefault();
+        clipboardRef.current = extractClipboard(template.steps, selectedStepIds);
+      } else {
+        const clipboard = clipboardRef.current;
+        if (!clipboard || clipboard.steps.length === 0) return;
+        e.preventDefault();
+        const { steps, pastedIds } = pasteClipboard(template.steps, clipboard, makeStepId);
+        setTemplate((t) => ({ ...t, steps }));
+        setSelectedStepIds(pastedIds);
+        setGraphError(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isReadonlyBuilder, selectedStepIds, template]);
 
   const selectedStepNameYText =
     selectedStepNameYTextBinding &&

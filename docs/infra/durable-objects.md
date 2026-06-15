@@ -202,6 +202,21 @@ The server-side helper looks at `process.env.CF_WORKER_BASE_URL`. For local API 
 3. Worker sends `Authorization: Bearer <jwt>` to `https://${API_BASE_URL}/api/internal/<path>`.
 4. `requireCfWorker` verifies the token and attaches `req.cfWorker` for the handler.
 
+## Yjs wire contract (WorkflowDocDO target — HEL-794)
+
+The workflow-builder collaborative doc syncs over the **y-protocols** wire (sync step1/2 + awareness), not the `y-websocket` wrapper version. As of HEL-794 the client (`dashboard/`) and server (`src/`) resolve to an **identical wire stack**, verified from both lockfiles:
+
+| Package | Client (dashboard) | Server (src) | Role |
+|---|---|---|---|
+| `yjs` | 13.6.31 | 13.6.31 | CRDT doc + update encoding |
+| `y-protocols` | 1.0.7 | 1.0.7 | **the wire** (sync + awareness framing) |
+| `lib0` | 0.2.117 | 0.2.117 | varint / encoding primitives |
+| `y-websocket` | 3.0.0 | 2.1.0 | transport wrapper (sits *above* the wire) |
+
+The `y-websocket` **major differs** (3.x client / 2.x server) but is **wire-compatible**: both wrap the same `y-protocols@1.0.7` / `yjs@13.6.31`, and name-collaboration has run on this pairing without sync errors. We deliberately do **not** bump the server's `y-websocket` to 3.x — Sub-phase B (HEL-803) retires the in-process `y-websocket` room entirely in favour of the hand-rolled `WorkflowDocDO`, so the server wrapper version is moot.
+
+**`WorkflowDocDO` (HEL-800) MUST target this wire** — `y-protocols@1.0.7`, `yjs@13.6.31`, `lib0@0.2.117` — so an unmodified `y-websocket@3` `WebsocketProvider` client keeps syncing after the host-swap. Pin these in `cf-worker/package.json`.
+
 ## References
 
 - HEL-271 → HEL-306 — RLS rollout (unrelated; for the workspace isolation story see `docs/infra/...` once that's written)

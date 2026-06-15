@@ -9,6 +9,12 @@
  * the snapshot (if any) is applied BEFORE handing the doc to y-websocket
  * so clients never see an empty doc that will get clobbered seconds
  * later by a load.
+ *
+ * HEL-794 — wire contract: client + server share an identical sync wire
+ * (yjs 13.6.31 / y-protocols 1.0.7 / lib0 0.2.117); only the y-websocket
+ * wrapper major differs (2.x server / 3.x client) and is wire-compatible.
+ * The WorkflowDocDO host-swap (HEL-800) must target the same wire. See
+ * docs/infra/durable-objects.md "Yjs wire contract".
  */
 
 import type { IncomingMessage } from "node:http";

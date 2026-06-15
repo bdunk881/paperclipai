@@ -16,6 +16,7 @@ import {
 } from "./durable-objects/RateLimiter";
 import { WorkflowDocDO } from "./durable-objects/WorkflowDoc";
 import { callInternalApi } from "./internalApi";
+import { deriveSupabaseJwtConfig, verifySupabaseAccessToken } from "./supabaseEdgeAuth";
 
 export { HealthCheckDO, RateLimiterDO, WorkflowDocDO };
 
@@ -28,11 +29,17 @@ export interface WorkerEnv {
   CF_WORKER_INTERNAL_JWT_AUDIENCE: string;
   /** Shared secret for minting JWTs back to the API. Set via `wrangler secret put`. */
   CF_WORKER_SHARED_SECRET?: string;
+  /** Supabase project URL for edge JWT verification (HEL-801). Unset → ydoc edge fails closed. */
+  SUPABASE_URL?: string;
+  /** Optional comma-separated audience override; defaults to "authenticated". */
+  SUPABASE_JWT_AUDIENCES?: string;
 }
 
 /** `/workflows/<uuid>/ydoc` — the collaborative-doc WebSocket route. */
 const WORKFLOW_DOC_PATH =
   /^\/workflows\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/ydoc$/i;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RateLimiterHttpRequest {
   scope: string;
@@ -198,29 +205,88 @@ async function handleInternalSelftest(request: Request, env: WorkerEnv): Promise
 }
 
 /**
- * HEL-800 (B3): forward a collaborative-doc WebSocket upgrade to the per-workflow
- * WorkflowDocDO (`workflow::<id>`).
+ * HEL-800/801 (B3 + B4): authorize a collaborative-doc WebSocket upgrade at the
+ * edge, then forward it to the per-workflow WorkflowDocDO (`workflow::<id>`).
  *
- * ⚠ This route is NOT authenticated yet — edge auth (verify the Supabase token +
- * call /api/internal/ydoc/authorize) lands in B4 (HEL-801), and no client points
- * at it until B6 (HEL-803). Until B4, gate it to non-production so we never expose
- * an unauthenticated doc socket on the prod Worker. Dev has no real customer data
- * and is where the B3 two-client smoke runs.
+ * The gate mirrors the in-process room's `attachYDocUpgradeHandler` exactly:
+ *  1. `?access_token=` (browsers can't set WS headers) verified against Supabase
+ *     JWKS at the edge → user id (`sub`).
+ *  2. `?workspaceId=` + the verified user id → B2's `/api/internal/ydoc/authorize`
+ *     (role allowlist + workflow-exists-in-workspace under RLS), via B1's minted
+ *     JWT. Non-200 propagates as 401/403/404 — the 101 is NEVER issued and no DO
+ *     is touched, so a bad token can't bill a Durable Object.
+ *  3. On 200, forward to the DO with the VERIFIED tenancy (the client-supplied
+ *     query string is dropped) so the DO can `serializeAttachment` it.
+ *
+ * Fails CLOSED: if `SUPABASE_URL` (verification) or the shared secret / API base
+ * (authorize) is unconfigured, the connection is rejected. That is what keeps the
+ * route safe on environments where it isn't fully provisioned (e.g. prod today),
+ * replacing B3's temporary `ENVIRONMENT === "production"` gate.
  */
 async function handleWorkflowDoc(
   request: Request,
   env: WorkerEnv,
   workflowId: string,
 ): Promise<Response> {
-  if (env.ENVIRONMENT === "production") {
-    return new Response("Not Found", { status: 404 });
-  }
   if ((request.headers.get("Upgrade") ?? "").toLowerCase() !== "websocket") {
     return new Response("Expected a WebSocket upgrade", { status: 426 });
   }
-  const id = env.WORKFLOW_DOC.idFromName(`workflow::${workflowId}`);
-  const stub = env.WORKFLOW_DOC.get(id);
-  return stub.fetch(request);
+
+  const url = new URL(request.url);
+  const token = url.searchParams.get("access_token");
+  if (!token) {
+    return new Response("Missing access_token", { status: 401 });
+  }
+  const workspaceId = url.searchParams.get("workspaceId");
+  if (!workspaceId || !UUID_RE.test(workspaceId)) {
+    return new Response("workspaceId required", { status: 400 });
+  }
+
+  const jwtConfig = deriveSupabaseJwtConfig(env.SUPABASE_URL, env.SUPABASE_JWT_AUDIENCES);
+  if (!jwtConfig) {
+    console.warn(JSON.stringify({ evt: "ydoc_auth_misconfigured", reason: "SUPABASE_URL unset" }));
+    return new Response("Auth not configured", { status: 503 });
+  }
+  const verified = await verifySupabaseAccessToken(token, jwtConfig);
+  if (!verified) {
+    return new Response("Invalid or expired token", { status: 401 });
+  }
+
+  // Delegate the workspace-role + cross-tenant workflow check to the API (B2),
+  // which re-runs it under RLS. Propagate its verdict verbatim (403 / 404).
+  let authz: Response;
+  try {
+    authz = await callInternalApi(env, "ydoc/authorize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workflowId, workspaceId, userId: verified.userId }),
+    });
+  } catch (err) {
+    console.warn(
+      JSON.stringify({
+        evt: "ydoc_authorize_unavailable",
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return new Response("Authorization unavailable", { status: 503 });
+  }
+  if (authz.status !== 200) {
+    const status = authz.status === 404 ? 404 : 403;
+    return new Response(status === 404 ? "Workflow not found" : "Forbidden", { status });
+  }
+  const role = ((await authz.json().catch(() => ({}))) as { role?: string }).role ?? "member";
+
+  // Forward with the VERIFIED tenancy; strip the client query string (esp. the
+  // access token) so the DO never sees it. The DO serializeAttachments these.
+  const doUrl = new URL(request.url);
+  doUrl.search = "";
+  doUrl.searchParams.set("wf", workflowId);
+  doUrl.searchParams.set("ws", workspaceId);
+  doUrl.searchParams.set("uid", verified.userId);
+  doUrl.searchParams.set("role", role);
+
+  const stub = env.WORKFLOW_DOC.get(env.WORKFLOW_DOC.idFromName(`workflow::${workflowId}`));
+  return stub.fetch(new Request(doUrl.toString(), request));
 }
 
 async function route(request: Request, env: WorkerEnv): Promise<Response> {

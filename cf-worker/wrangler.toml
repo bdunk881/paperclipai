@@ -50,6 +50,11 @@ name = "autoflow-api-worker-dev"
 ENVIRONMENT = "dev"
 API_BASE_URL = "https://dev.helloautoflow.com"
 CF_WORKER_INTERNAL_JWT_AUDIENCE = "autoflow-api-internal"
+# HEL-801: Supabase project URL for edge JWT verification on the ydoc route.
+# Public value (same as the dashboard's). Not set on production until that env's
+# Supabase project + CF_WORKER_SHARED_SECRET are provisioned — the edge fails
+# closed (503) without it, which keeps the ydoc route shut on prod.
+SUPABASE_URL = "https://pjbpcfmidpxplcrwpcyk.supabase.co"
 
 [[env.dev.durable_objects.bindings]]
 name = "HEALTH_CHECK"
@@ -79,9 +84,10 @@ class_name = "HealthCheckDO"
 name = "RATE_LIMITER"
 class_name = "RateLimiterDO"
 
-# WorkflowDocDO is bound on production so the migration applies uniformly, but
-# the Worker route that exposes it is gated to non-production until B4 (HEL-801)
-# adds edge auth — see cf-worker/src/index.ts handleWorkflowDoc.
+# WorkflowDocDO is bound on production so the migration applies uniformly. The
+# ydoc route's edge auth (HEL-801) fails closed without SUPABASE_URL +
+# CF_WORKER_SHARED_SECRET, neither of which is set on production yet — so the
+# route stays effectively shut on prod until that env is provisioned.
 [[env.production.durable_objects.bindings]]
 name = "WORKFLOW_DOC"
 class_name = "WorkflowDocDO"

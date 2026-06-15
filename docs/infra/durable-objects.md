@@ -223,9 +223,17 @@ The `y-websocket` **major differs** (3.x client / 2.x server) but is **wire-comp
 
 ### Route
 
-`GET /workflows/<uuid>/ydoc` (WebSocket upgrade) → `env.WORKFLOW_DOC.idFromName("workflow::<id>")`. The DO replies `101` with the client socket and runs the y-sync handshake.
+`GET /workflows/<uuid>/ydoc?access_token=<jwt>&workspaceId=<uuid>` (WebSocket upgrade) → edge auth (below) → `env.WORKFLOW_DOC.idFromName("workflow::<id>")`. The DO replies `101` with the client socket and runs the y-sync handshake. No client points at this route until **B6 (HEL-803)** repoints the `WebsocketProvider`.
 
-> ⚠ **Not authenticated yet.** B3 ships the transport only. Edge auth (verify the user's Supabase token + call `POST /api/internal/ydoc/authorize`, from B2) lands in **B4 (HEL-801)**, and no client points at this route until **B6 (HEL-803)**. Until B4 the route is **gated to non-production** (`env.ENVIRONMENT === "production"` → 404) so the prod Worker never exposes an unauthenticated doc socket; the binding + migration still apply on prod so the host-swap is a config-only flip later. Dev has no real customer data and is where the two-client smoke runs.
+### Edge auth + tenancy (B4, HEL-801)
+
+The Worker authorizes **before** issuing the `101`, mirroring the in-process room's `attachYDocUpgradeHandler` exactly:
+
+1. **Verify the Supabase token at the edge.** `?access_token=` (browsers can't set WS headers) is verified with jose against the project JWKS. `cf-worker/src/supabaseEdgeAuth.ts` derives `{issuer, audiences, jwksUri}` from `SUPABASE_URL` the **same way** the API's `src/auth/supabaseAuth.ts` does — it's a runtime-agnostic mirror (pure inputs, no `process.env`/`env`); keep the two in lock-step. `sub` → user id.
+2. **Authorize the workspace.** `?workspaceId=` + the verified user id → B2's `POST /api/internal/ydoc/authorize` (role allowlist + workflow-exists-in-workspace under RLS), called via B1's minted JWT. Non-200 propagates as **403 / 404** — the `101` is never issued and **no DO is touched**, so a bad token can't bill a Durable Object.
+3. **Pin tenancy.** On 200 the Worker forwards to the DO with the *verified* `{wf, ws, uid, role}` on the URL (the client's query string — including the raw token — is dropped). The DO `serializeAttachment`s it so it **survives hibernation**; after a wake `deserializeAttachment` (via `currentTenancy()`) recovers `{workspaceId, userId}` to attribute the RLS-scoped snapshot write (B5).
+
+**Fails closed.** If `SUPABASE_URL` (verification) or `CF_WORKER_SHARED_SECRET` / `API_BASE_URL` (authorize) is unset, the edge returns 503/401 and never connects. That is what keeps the route shut on **production** today — neither is provisioned there — so it needs no separate environment gate (this replaces B3's temporary `ENVIRONMENT === "production"` → 404). `SUPABASE_URL` is a public value set in `[env.dev.vars]`; reconnects re-run the full gate and re-stamp the attachment.
 
 ### Wire framing
 
@@ -250,7 +258,9 @@ Relayed verbatim to peers, **never persisted**, with **no server-side `Awareness
 
 ### Tests
 
-`cf-worker/src/__tests__/workflowDoc.test.ts` drives the DO with a minimal real-`Y.Doc` y-protocols client over an actual `SELF.fetch` WebSocket: 426/404 routing, the two-client bidirectional relay, late-joiner hydration via the handshake, DO-local persistence (rehydrate a doc from the stored bytes), the keepalive alarm tick, and alarm-cleared-on-last-disconnect. (Gotcha: a test client must set `ws.binaryType = "arraybuffer"` — the real y-websocket client does this; without it binary frames arrive as Blobs and decode to empty arrays.)
+`cf-worker/src/__tests__/workflowDoc.test.ts` drives the DO with a minimal real-`Y.Doc` y-protocols client. Since the public route now requires a verified token, these connect to the **DO stub directly** with the tenancy params the edge would set, and cover: the two-client bidirectional relay, late-joiner hydration via the handshake, DO-local persistence (rehydrate a doc from the stored bytes), `serializeAttachment` tenancy recovery (`currentTenancy()`), the keepalive alarm tick, and alarm-cleared-on-last-disconnect — plus the **edge-auth route gate** (426 non-WS, 401 missing/garbage token with no socket issued, 400 missing/bad workspaceId). (Gotcha: a test client must set `ws.binaryType = "arraybuffer"` — the real y-websocket client does this; without it binary frames arrive as Blobs and decode to empty arrays.)
+
+`cf-worker/src/__tests__/supabaseEdgeAuth.test.ts` covers the JWT config derivation (issuer/jwksUri/audience, must match the API) and token verification end-to-end with a real ES256 keypair + a local JWKS (valid / wrong issuer / wrong audience / expired / wrong key / no-sub / garbage) — no network.
 
 ## References
 

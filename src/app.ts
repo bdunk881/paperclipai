@@ -1404,7 +1404,7 @@ app.use("/api/hire", requireAuth, workspaceResolver, requireRole("admin", "devel
 // (cf-worker/) via the requireCfWorker JWT middleware. No user-facing auth
 // applied here; the worker authenticates itself with a short-lived HS256
 // token signed by CF_WORKER_SHARED_SECRET.
-app.use("/api/internal", requireCfWorker, createInternalRoutes(getPostgresPool()));
+app.use("/api/internal", requireCfWorker, createInternalRoutes(() => getPostgresPool()));
 
 // (HEL-118 canonical-reads mounts live in the earlier block alongside their
 // requireRole(...ALL_MEMBER_ROLES) gates; do not re-mount here.)

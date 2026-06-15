@@ -7,6 +7,7 @@
  */
 import express from "express";
 import request from "supertest";
+import type { Pool } from "pg";
 
 let mockRole: string | null = "owner";
 let mockExists = true;
@@ -34,14 +35,18 @@ jest.mock("../workflows/ydoc/ydocSnapshotStore", () => ({
 
 import { createInternalRoutes } from "./routes";
 
-const stubPool = {} as unknown as Parameters<typeof createInternalRoutes>[0];
+// createInternalRoutes takes a lazy `() => Pool` accessor (the real mount
+// passes `() => getPostgresPool()` so the pool is never constructed at import
+// time). The store is mocked, so the pool value itself is never dereferenced.
+const stubPool = {} as Pool;
+const getPool = () => stubPool;
 const WS = "11111111-1111-4111-8111-111111111111";
 const WF = "22222222-2222-4222-8222-222222222222";
 
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
-  app.use("/api/internal", createInternalRoutes(stubPool));
+  app.use("/api/internal", createInternalRoutes(getPool));
   return app;
 }
 

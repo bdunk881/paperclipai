@@ -26,9 +26,16 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value);
 }
 
-export function createInternalRoutes(pool: Pool): express.Router {
+export function createInternalRoutes(getPool: () => Pool): express.Router {
   const router = express.Router();
-  const snapshotStore = createYDocSnapshotStore(pool);
+  // Resolve the pool + snapshot store LAZILY (on the first DB-backed request),
+  // never at mount time: app.ts builds the whole router tree on import, and
+  // getPostgresPool() throws when DATABASE_URL is unset (Jest / in-memory mode).
+  // The /__health route below stays pool-free so the worker-JWT smoke target
+  // works in every mode.
+  let cachedStore: ReturnType<typeof createYDocSnapshotStore> | null = null;
+  const snapshotStore = (): ReturnType<typeof createYDocSnapshotStore> =>
+    (cachedStore ??= createYDocSnapshotStore(getPool()));
 
   // HEL-310: smoke target for the worker→server JWT path.
   router.get("/__health", (req, res) => {
@@ -62,6 +69,7 @@ export function createInternalRoutes(pool: Pool): express.Router {
       const workspaceId = body.workspaceId;
       const userId = body.userId;
 
+      const pool = getPool();
       const role = await resolveWorkspaceRole(pool, workspaceId, userId);
       if (!role || !ALLOWED_ROLES.has(role)) {
         res.status(403).json({ error: "Forbidden" });
@@ -109,7 +117,7 @@ export function createInternalRoutes(pool: Pool): express.Router {
         return;
       }
       const bytes = Buffer.from(body.state, "base64");
-      await snapshotStore.save(workflowId, body.workspaceId, body.userId, new Uint8Array(bytes));
+      await snapshotStore().save(workflowId, body.workspaceId, body.userId, new Uint8Array(bytes));
       res.status(204).end();
     }),
   );
@@ -130,7 +138,7 @@ export function createInternalRoutes(pool: Pool): express.Router {
         res.status(400).json({ error: "workspaceId + userId query params are required" });
         return;
       }
-      const snapshot = await snapshotStore.load(workflowId, workspaceId, userId);
+      const snapshot = await snapshotStore().load(workflowId, workspaceId, userId);
       if (!snapshot) {
         res.status(404).json({ error: "No snapshot for this workflow" });
         return;

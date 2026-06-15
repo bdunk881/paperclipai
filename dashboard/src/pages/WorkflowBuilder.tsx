@@ -41,8 +41,10 @@ import {
   PanelRightClose,
   Send,
   Download,
+  LayoutGrid,
 } from "lucide-react";
 import { exportWorkflowPng, exportFileStem } from "./workflowExport";
+import { tidyLayout, type NodeDims } from "./workflowLayout";
 import { listRunsByTemplate, runFromNode } from "../api/runsApi";
 import {
   Background,
@@ -50,6 +52,7 @@ import {
   applyEdgeChanges,
   type Connection,
   Controls,
+  ControlButton,
   Handle,
   MiniMap,
   NodeToolbar,
@@ -1507,6 +1510,44 @@ export default function WorkflowBuilder() {
     }));
   }
 
+  // HEL-682: "Tidy up" — recompute a clean top-to-bottom DAG layout (dagre) and
+  // rewrite every node's __uiPosition in ONE setTemplate, so the A3 doc mirror
+  // forwards it as a single Yjs transaction = a single undo entry. Node sizes
+  // come from React Flow's measured dimensions via the onInit instance (nodes
+  // are measured by the time the user clicks Tidy up), so variable-height cards
+  // lay out without overlap.
+  function tidyUp() {
+    if (isReadonlyBuilder || template.steps.length < 2) return;
+    const dims = new Map<string, NodeDims>();
+    const instance = reactFlowInstanceRef.current;
+    if (instance) {
+      for (const node of instance.getNodes()) {
+        const width = node.measured?.width ?? node.width;
+        const height = node.measured?.height ?? node.height;
+        if (typeof width === "number" && typeof height === "number") {
+          dims.set(node.id, { width, height });
+        }
+      }
+    }
+    const layout = tidyLayout(template.steps, flowEdges, dims);
+    if (layout.size === 0) return;
+    setTemplate((t) => ({
+      ...t,
+      steps: t.steps.map((s) => {
+        const pos = layout.get(s.id);
+        return pos
+          ? { ...s, config: { ...(s.config ?? {}), [STEP_POSITION_KEY]: pos } }
+          : s;
+      }),
+    }));
+    setSelectedStepIds([]);
+    setGraphError(null);
+    // Re-fit once the repositioned nodes have committed to the canvas.
+    window.requestAnimationFrame(() => {
+      reactFlowInstanceRef.current?.fitView({ padding: 0.2, duration: 300 });
+    });
+  }
+
   function moveStep(id: string, dir: -1 | 1) {
     const idx = template.steps.findIndex((s) => s.id === id);
     if (idx < 0) return;
@@ -2438,7 +2479,18 @@ export default function WorkflowBuilder() {
                   position="bottom-right"
                   showInteractive={false}
                   className="workflow-controls-pill"
-                />
+                >
+                  {/* HEL-682: auto-arrange the graph (dagre top-to-bottom). */}
+                  {!isReadonlyBuilder && (
+                    <ControlButton
+                      onClick={tidyUp}
+                      title="Tidy up — auto-arrange the graph"
+                      aria-label="Tidy up — auto-arrange the graph"
+                    >
+                      <LayoutGrid size={14} />
+                    </ControlButton>
+                  )}
+                </Controls>
                 {/* HEL-170: keep the mini-map away from the right-side
                     node stack and inspector/Copilot sheets at laptop widths.
                     @xyflow/react ships <MiniMap />; the import is

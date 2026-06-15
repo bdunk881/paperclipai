@@ -186,6 +186,22 @@ export interface WorkflowTemplate {
    * the failure context when a run of this workflow fails.
    */
   onErrorWorkflowId?: string;
+  /**
+   * HEL-687: free-floating canvas sticky notes. NOT executable — the engine
+   * ignores them; they only document the graph in the builder.
+   */
+  annotations?: WorkflowAnnotation[];
+}
+
+/** HEL-687: a builder canvas annotation ("sticky note"). Mirrors the dashboard type. */
+export interface WorkflowAnnotation {
+  id: string;
+  text: string;
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 /** A runtime workflow instance (one execution of a template) */

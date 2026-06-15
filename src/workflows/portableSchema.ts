@@ -112,6 +112,18 @@ const workflowStepSchema = z
     }
   });
 
+// HEL-687: canvas sticky notes. Non-executable annotations; preserved through
+// export/import so documentation travels with the workflow.
+const workflowAnnotationSchema = z.object({
+  id: z.string().min(1),
+  text: z.string(),
+  color: z.string().min(1),
+  x: z.number(),
+  y: z.number(),
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
 const workflowTemplateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -126,6 +138,7 @@ const workflowTemplateSchema = z.object({
   sampleInput: z.record(z.string(), z.unknown()),
   expectedOutput: z.record(z.string(), z.unknown()),
   onErrorWorkflowId: z.string().optional(),
+  annotations: z.array(workflowAnnotationSchema).optional(),
 });
 
 export const portableWorkflowBundleSchema = z.object({

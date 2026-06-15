@@ -61,6 +61,20 @@ export interface WorkflowDocEnv {
   ENVIRONMENT?: string;
 }
 
+/**
+ * Per-socket tenancy, established by the edge gate (HEL-801) and pinned with
+ * `serializeAttachment` so it survives hibernation. After a wake the DO recovers
+ * `{workspaceId, userId}` from any socket to attribute the RLS-scoped snapshot
+ * write (the Postgres mirror lands in B5). Tiny (~150 bytes) — far under the
+ * 16,384-byte attachment cap.
+ */
+interface DocTenancy {
+  workflowId: string;
+  workspaceId: string;
+  userId: string;
+  role: string;
+}
+
 export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
   private readonly doc: Y.Doc;
   private loaded = false;
@@ -92,15 +106,46 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
       return new Response("Expected a WebSocket upgrade", { status: 426 });
     }
 
+    // Tenancy is supplied by the edge gate (HEL-801) on the forwarded URL — the
+    // client never reaches the DO directly, and the edge stripped the raw token.
+    const url = new URL(request.url);
+    const tenancy: DocTenancy = {
+      workflowId: url.searchParams.get("wf") ?? "",
+      workspaceId: url.searchParams.get("ws") ?? "",
+      userId: url.searchParams.get("uid") ?? "",
+      role: url.searchParams.get("role") ?? "",
+    };
+
     const { 0: client, 1: server } = new WebSocketPair();
     // Hibernation-managed: the runtime owns the socket and wakes us on message.
     this.ctx.acceptWebSocket(server);
+    // Pin tenancy so it survives hibernation (recovered via deserializeAttachment).
+    server.serializeAttachment(tenancy);
     // Kick off the sync handshake (server → client state vector).
     this.send(server, this.encodeSyncStep1());
     await this.ensureKeepaliveScheduled();
 
-    this.log("connect", { connections: this.ctx.getWebSockets().length });
+    this.log("connect", {
+      connections: this.ctx.getWebSockets().length,
+      workspaceId: tenancy.workspaceId,
+    });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /**
+   * Recover `{workspaceId, userId}` for an RLS-scoped snapshot write from any
+   * connected socket's pinned attachment — survives hibernation, so a post-wake
+   * persist (B5) can still attribute the write. Returns null if no socket carries
+   * usable tenancy.
+   */
+  currentTenancy(): { workspaceId: string; userId: string } | null {
+    for (const ws of this.ctx.getWebSockets()) {
+      const att = ws.deserializeAttachment() as DocTenancy | null;
+      if (att && att.workspaceId && att.userId) {
+        return { workspaceId: att.workspaceId, userId: att.userId };
+      }
+    }
+    return null;
   }
 
   async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> {

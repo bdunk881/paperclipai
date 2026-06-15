@@ -42,11 +42,28 @@ function frameSyncStep1(doc: Y.Doc): Uint8Array {
   return encoding.toUint8Array(enc);
 }
 
-/** Open a real WebSocket to the DO and wire up a minimal y-websocket-style client. */
-async function connectClient(workflowId: string): Promise<TestClient> {
-  const res = await SELF.fetch(`https://example.com/workflows/${workflowId}/ydoc`, {
-    headers: { Upgrade: "websocket" },
-  });
+interface DocCtx {
+  ws: string;
+  uid: string;
+  role: string;
+}
+const DEFAULT_CTX: DocCtx = {
+  ws: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  uid: "user-1",
+  role: "owner",
+};
+
+/**
+ * Open a real WebSocket to the DO and wire up a minimal y-websocket-style client.
+ * Connects to the DO stub DIRECTLY with the tenancy query params the edge gate
+ * (HEL-801) would set — the public Worker route now requires a verified token,
+ * which is covered separately; these tests exercise the DO transport.
+ */
+async function connectClient(workflowId: string, ctx: DocCtx = DEFAULT_CTX): Promise<TestClient> {
+  const doUrl = `https://do/?wf=${workflowId}&ws=${ctx.ws}&uid=${ctx.uid}&role=${ctx.role}`;
+  const res = await stubFor(workflowId).fetch(
+    new Request(doUrl, { headers: { Upgrade: "websocket" } }),
+  );
   expect(res.status).toBe(101);
   const ws = res.webSocket;
   if (!ws) throw new Error("upgrade response had no webSocket");
@@ -176,6 +193,20 @@ describe("WorkflowDocDO (HEL-800 B3)", () => {
     a.ws.close();
   });
 
+  it("pins tenancy via serializeAttachment and recovers it after a wake (HEL-801)", async () => {
+    const wf = "66666666-6666-4666-8666-666666666666";
+    const ctx = { ws: "77777777-7777-4777-8777-777777777777", uid: "user-xyz", role: "developer" };
+    const a = await connectClient(wf, ctx);
+
+    // Recover {workspaceId,userId} the way a post-hibernation snapshot write
+    // would (B5) — from the socket's pinned attachment via a fresh DO entry.
+    const recovered = await runInDurableObject(stubFor(wf), (instance: WorkflowDocDO) =>
+      instance.currentTenancy(),
+    );
+    expect(recovered).toEqual({ workspaceId: ctx.ws, userId: ctx.uid });
+    a.ws.close();
+  });
+
   it("sends a keepalive sync frame on the alarm tick", async () => {
     const wf = "44444444-4444-4444-8444-444444444444";
     const a = await connectClient(wf);
@@ -202,5 +233,43 @@ describe("WorkflowDocDO (HEL-800 B3)", () => {
       });
       return !hasAlarm;
     }, 3000);
+  });
+});
+
+describe("ydoc edge auth (HEL-801) — Worker route gate", () => {
+  const WF = "88888888-8888-4888-8888-888888888888";
+  const WS = "99999999-9999-4999-8999-999999999999";
+
+  it("426s a non-WebSocket request before auth", async () => {
+    const res = await SELF.fetch(`https://example.com/workflows/${WF}/ydoc?access_token=x&workspaceId=${WS}`);
+    expect(res.status).toBe(426);
+  });
+
+  it("401s when access_token is missing", async () => {
+    const res = await SELF.fetch(`https://example.com/workflows/${WF}/ydoc?workspaceId=${WS}`, {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("400s when workspaceId is missing or malformed", async () => {
+    const missing = await SELF.fetch(`https://example.com/workflows/${WF}/ydoc?access_token=x`, {
+      headers: { Upgrade: "websocket" },
+    });
+    expect(missing.status).toBe(400);
+    const bad = await SELF.fetch(
+      `https://example.com/workflows/${WF}/ydoc?access_token=x&workspaceId=not-a-uuid`,
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(bad.status).toBe(400);
+  });
+
+  it("401s a garbage token at the edge (no DO billed, no 101)", async () => {
+    const res = await SELF.fetch(
+      `https://example.com/workflows/${WF}/ydoc?access_token=not-a-jwt&workspaceId=${WS}`,
+      { headers: { Upgrade: "websocket" } },
+    );
+    expect(res.status).toBe(401);
+    expect(res.webSocket).toBeFalsy();
   });
 });

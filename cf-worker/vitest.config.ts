@@ -16,7 +16,12 @@ export default defineConfig({
         // HEL-427 auth-gates the rate-limit routes on this shared secret; the
         // functional tests authenticate with this fixed test value (prod sets
         // the real secret via `wrangler secret put`, never in the toml).
-        bindings: { CF_WORKER_SHARED_SECRET: "test-shared-secret" },
+        // HEL-801 SUPABASE_URL lets the ydoc edge derive its JWT config in tests
+        // (a structurally-invalid token is then rejected without any network).
+        bindings: {
+          CF_WORKER_SHARED_SECRET: "test-shared-secret",
+          SUPABASE_URL: "https://test-project.supabase.co",
+        },
       },
     }),
   ],

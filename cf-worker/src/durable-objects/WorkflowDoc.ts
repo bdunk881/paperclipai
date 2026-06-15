@@ -15,10 +15,16 @@
  *    constructor rebuilds the in-memory Y.Doc from DO-local storage BEFORE any
  *    socket event is delivered (`blockConcurrencyWhile`), so an inbound update
  *    can never race an empty doc (the "no clobber on cold start" guarantee).
- *  - **Persistence (B3 = DO-local).** The full doc state is mirrored to
- *    `ctx.storage` after each applied update so it survives hibernation/eviction.
- *    The durable Postgres mirror (so state survives DO *deletion* + feeds other
- *    readers) is B5 (HEL-802) via the internal ydoc-snapshot API from B2.
+ *  - **Persistence (two tiers).** B3: the full doc state is mirrored to
+ *    `ctx.storage` (DO-local) after each applied update for fast same-instance
+ *    revival. B5 (HEL-802): the durable system-of-record is Postgres, written via
+ *    B2's internal ydoc-snapshot API — debounced by piggybacking the keepalive
+ *    alarm (a storage `pg:dirty` flag survives hibernation) and flushed on last
+ *    disconnect; cold start hydrates DO-local first, else GETs the PG snapshot
+ *    before accepting sockets (host-swap continuity with the in-process room,
+ *    which writes the same `workflow_ydoc_snapshots` row). PG writes are
+ *    best-effort — a failure never throws into the WS path; the dirty flag just
+ *    survives for the next tick.
  *  - **Awareness (presence) is best-effort.** We keep NO server-side `Awareness`
  *    instance — its refresh `setInterval` would keep the DO from hibernating, and
  *    presence is authoritatively carried on SSE. Awareness frames are simply
@@ -32,14 +38,19 @@
  *    still fully evicts. (`setWebSocketAutoResponse('ping','pong')` does NOT help
  *    — y-websocket sends no such application message.)
  *
- * Edge auth + tenancy pinning is B4 (HEL-801); until then the Worker route is
- * dev-only (see cf-worker/src/index.ts).
+ * Edge auth + tenancy pinning is B4 (HEL-801) — the Worker verifies the user and
+ * forwards `{wf,ws,uid,role}` on the URL, which the DO serializeAttachments.
  */
 import { DurableObject } from "cloudflare:workers";
 import * as Y from "yjs";
 import * as syncProtocol from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
+import {
+  loadYDocSnapshot,
+  saveYDocSnapshot,
+  type SnapshotTenancy,
+} from "../ydocSnapshotClient";
 
 /** y-websocket message types (wire-compatible with y-websocket/bin/utils). */
 const MESSAGE_SYNC = 0;
@@ -47,7 +58,9 @@ const MESSAGE_AWARENESS = 1;
 
 /** DO-local storage key holding `Y.encodeStateAsUpdate(doc)` for wake/eviction recovery. */
 const STORAGE_KEY = "ydoc:state";
-/** Transaction origin used while hydrating from storage, so the relay observer ignores the echo. */
+/** DO-local flag: doc has un-mirrored edits the next alarm tick should flush to Postgres. */
+const PG_DIRTY_KEY = "pg:dirty";
+/** Transaction origin used while hydrating from storage/PG, so the relay observer ignores the echo. */
 const STORAGE_ORIGIN = "storage";
 
 /**
@@ -59,6 +72,10 @@ const KEEPALIVE_INTERVAL_MS = 20_000;
 
 export interface WorkflowDocEnv {
   ENVIRONMENT?: string;
+  // For the Postgres snapshot mirror (B5) via B2's internal API + B1's minter.
+  API_BASE_URL?: string;
+  CF_WORKER_SHARED_SECRET?: string;
+  CF_WORKER_INTERNAL_JWT_AUDIENCE?: string;
 }
 
 /**
@@ -80,21 +97,29 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
   private loaded = false;
   private persisting = false;
   private dirty = false;
+  /** True once the constructor restored DO-local state (skip the PG cold-start GET). */
+  private hasLocalState = false;
+  /** One-shot guard for the PG cold-start hydrate (runs on the first connect). */
+  private pgHydratePromise: Promise<void> | null = null;
+  /** In-activation memo so a burst of edits marks pg:dirty in storage only once. */
+  private pgDirtyMemo = false;
 
   constructor(ctx: DurableObjectState, env: WorkflowDocEnv) {
     super(ctx, env);
     this.doc = new Y.Doc({ gc: true });
     // Attach the relay observer up-front; the STORAGE_ORIGIN guard inside it
-    // ignores the single update produced while hydrating below.
+    // ignores updates produced while hydrating (DO-local or PG).
     this.doc.on("update", this.handleDocUpdate);
 
     // Rebuild the doc from DO-local storage before any socket event is handled.
     // blockConcurrencyWhile defers webSocketMessage / alarm delivery until this
-    // resolves, giving us the cold-start "hydrate before accept" ordering.
+    // resolves, giving us the cold-start "hydrate before accept" ordering. The PG
+    // fallback can't run here (no tenancy yet) — it runs on the first connect.
     this.ctx.blockConcurrencyWhile(async () => {
       const stored = toUint8(await this.ctx.storage.get(STORAGE_KEY));
       if (stored && stored.length > 0) {
         Y.applyUpdate(this.doc, stored, STORAGE_ORIGIN);
+        this.hasLocalState = true;
       }
       this.loaded = true;
     });
@@ -115,6 +140,11 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
       userId: url.searchParams.get("uid") ?? "",
       role: url.searchParams.get("role") ?? "",
     };
+
+    // Cold-start PG hydrate (B5): if DO-local was empty, pull the latest snapshot
+    // BEFORE accepting this socket — so the first step1 reflects persisted state
+    // and a late update can't clobber it (mirrors the in-process hydrate-then-attach).
+    await this.ensurePgHydrated(tenancy);
 
     const { 0: client, 1: server } = new WebSocketPair();
     // Hibernation-managed: the runtime owns the socket and wakes us on message.
@@ -140,10 +170,8 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
    */
   currentTenancy(): { workspaceId: string; userId: string } | null {
     for (const ws of this.ctx.getWebSockets()) {
-      const att = ws.deserializeAttachment() as DocTenancy | null;
-      if (att && att.workspaceId && att.userId) {
-        return { workspaceId: att.workspaceId, userId: att.userId };
-      }
+      const t = readDocTenancy(ws);
+      if (t) return { workspaceId: t.workspaceId, userId: t.userId };
     }
     return null;
   }
@@ -205,11 +233,18 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
     await this.handleDisconnect(ws, "error");
   }
 
-  /** Keepalive tick — see KEEPALIVE_INTERVAL_MS. */
+  /**
+   * Keepalive tick (KEEPALIVE_INTERVAL_MS) that doubles as the dirty-gated
+   * Postgres-flush debounce (B5): one alarm per DO, so the PG mirror piggybacks
+   * the keepalive cadence rather than scheduling a second (conflicting) alarm.
+   */
   async alarm(): Promise<void> {
+    // Flush first so a final-edit-then-idle still mirrors before going quiet.
+    await this.flushToPg(this.tenancyForFlush());
+
     const sockets = this.ctx.getWebSockets();
     if (sockets.length === 0) {
-      // Nothing connected; let the DO go fully idle (no reschedule).
+      // Nothing connected; let the DO go fully idle (no reschedule, no alarm).
       return;
     }
     const ping = this.encodeSyncStep1();
@@ -240,6 +275,7 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
     }
 
     void this.persist();
+    void this.markPgDirty();
   };
 
   private encodeSyncStep1(): Uint8Array {
@@ -254,7 +290,10 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
     const remaining = this.ctx.getWebSockets().filter((s) => s !== ws);
     this.log("disconnect", { reason, connections: remaining.length });
     if (remaining.length === 0) {
-      await this.persist(); // final flush
+      await this.persist(); // final DO-local flush
+      // Final PG mirror. The closing socket still carries the tenancy needed to
+      // attribute the write (getWebSockets() is now empty).
+      await this.flushToPg(readDocTenancy(ws) ?? this.tenancyForFlush());
       await this.ctx.storage.deleteAlarm();
     }
   }
@@ -285,6 +324,73 @@ export class WorkflowDocDO extends DurableObject<WorkflowDocEnv> {
     }
   }
 
+  /**
+   * Cold-start hydrate from the Postgres snapshot, once, on the first connect
+   * (the constructor can't — it has no tenancy). Skipped when DO-local state was
+   * already restored. Best-effort: a failed GET leaves an empty doc (acceptable
+   * fallback) and is retried on the next fresh DO.
+   */
+  private async ensurePgHydrated(t: DocTenancy): Promise<void> {
+    if (this.hasLocalState || !isCompleteTenancy(t)) return;
+    if (!this.pgHydratePromise) {
+      this.pgHydratePromise = (async () => {
+        try {
+          const snapshot = await loadYDocSnapshot(this.env, toSnapshotTenancy(t));
+          if (snapshot && snapshot.length > 0) {
+            Y.applyUpdate(this.doc, snapshot, STORAGE_ORIGIN);
+            await this.persist(); // seed DO-local so future revivals take the fast path
+            this.hasLocalState = true;
+            this.log("pg_hydrate", { workspaceId: t.workspaceId });
+          }
+        } catch (err) {
+          this.log("pg_hydrate_error", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
+    }
+    await this.pgHydratePromise;
+  }
+
+  /** Mark the doc as having un-mirrored edits (survives hibernation via storage). */
+  private async markPgDirty(): Promise<void> {
+    if (this.pgDirtyMemo) return; // already flagged since the last flush this activation
+    this.pgDirtyMemo = true;
+    try {
+      await this.ctx.storage.put(PG_DIRTY_KEY, true);
+    } catch {
+      this.pgDirtyMemo = false; // let a later edit retry the mark
+    }
+  }
+
+  /**
+   * Mirror the doc to Postgres if dirty (system-of-record). Best-effort: never
+   * throws into the WS path; on failure the dirty flag is left set for the next
+   * alarm tick. Idempotent — re-flushing the same state is a harmless re-UPSERT.
+   */
+  private async flushToPg(tenancy: SnapshotTenancy | null): Promise<void> {
+    if (!tenancy) return;
+    if ((await this.ctx.storage.get(PG_DIRTY_KEY)) !== true) return;
+    try {
+      await saveYDocSnapshot(this.env, tenancy, Y.encodeStateAsUpdate(this.doc));
+      await this.ctx.storage.put(PG_DIRTY_KEY, false);
+      this.pgDirtyMemo = false;
+    } catch (err) {
+      this.log("pg_flush_error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /** Full snapshot tenancy from any connected socket's pinned attachment. */
+  private tenancyForFlush(): SnapshotTenancy | null {
+    for (const ws of this.ctx.getWebSockets()) {
+      const t = readDocTenancy(ws);
+      if (t) return toSnapshotTenancy(t);
+    }
+    return null;
+  }
+
   private send(ws: WebSocket, message: Uint8Array): void {
     try {
       ws.send(message);
@@ -310,4 +416,22 @@ function toUint8(value: unknown): Uint8Array | null {
   if (value instanceof Uint8Array) return value;
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   return null;
+}
+
+function isCompleteTenancy(t: {
+  workflowId: string;
+  workspaceId: string;
+  userId: string;
+}): boolean {
+  return Boolean(t.workflowId && t.workspaceId && t.userId);
+}
+
+function toSnapshotTenancy(t: DocTenancy): SnapshotTenancy {
+  return { workflowId: t.workflowId, workspaceId: t.workspaceId, userId: t.userId };
+}
+
+/** Read + validate a socket's pinned tenancy; null if absent/incomplete. */
+function readDocTenancy(ws: WebSocket): DocTenancy | null {
+  const att = ws.deserializeAttachment() as DocTenancy | null;
+  return att && isCompleteTenancy(att) ? att : null;
 }

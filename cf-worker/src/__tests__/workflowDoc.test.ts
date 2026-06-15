@@ -236,6 +236,53 @@ describe("WorkflowDocDO (HEL-800 B3)", () => {
   });
 });
 
+describe("WorkflowDocDO Postgres mirror (HEL-802 B5)", () => {
+  // The full PG round-trip (200/204) is unit-tested in ydocSnapshotClient.test.ts
+  // and exercised on dev — this build has no outbound fetch mock, so here we
+  // verify the DO's observable behaviour: the dirty flag, and that an unreachable
+  // PG (the snapshot calls hit the unresolvable API_BASE_URL) never breaks the WS.
+
+  it("flags pg:dirty in DO storage after an edit", async () => {
+    const wf = "a1a1a1a1-1111-4111-8111-a1a1a1a1a1a1";
+    const a = await connectClient(wf);
+    a.doc.getMap("steps").set("x", "1");
+    await waitFor(
+      () =>
+        runInDurableObject(
+          stubFor(wf),
+          async (_i: WorkflowDocDO, state) => (await state.storage.get("pg:dirty")) === true,
+        ),
+      3000,
+    );
+    a.ws.close();
+  });
+
+  it("stays healthy when the PG flush is unreachable (best-effort, leaves dirty set)", async () => {
+    const wf = "b2b2b2b2-2222-4222-8222-b2b2b2b2b2b2";
+    const a = await connectClient(wf);
+    const b = await connectClient(wf);
+    a.doc.getMap("steps").set("x", "1");
+    await waitFor(() => b.doc.getMap("steps").get("x") === "1");
+
+    // Run the alarm → flushToPg attempts a POST to the unresolvable API host and
+    // is caught (best-effort). Must not throw or tear down the sockets.
+    await runDurableObjectAlarm(stubFor(wf));
+
+    // A later edit still relays — the failed flush didn't break the socket.
+    a.doc.getMap("steps").set("y", "2");
+    await waitFor(() => b.doc.getMap("steps").get("y") === "2");
+
+    // The flush failed, so the doc is still marked dirty for a later retry.
+    const dirty = await runInDurableObject(
+      stubFor(wf),
+      async (_i: WorkflowDocDO, state) => (await state.storage.get("pg:dirty")) === true,
+    );
+    expect(dirty).toBe(true);
+    a.ws.close();
+    b.ws.close();
+  });
+});
+
 describe("ydoc edge auth (HEL-801) — Worker route gate", () => {
   const WF = "88888888-8888-4888-8888-888888888888";
   const WS = "99999999-9999-4999-8999-999999999999";

@@ -3,9 +3,11 @@ import type { WorkflowStep } from "../types/workflow";
 import {
   buildEdgesFromSteps,
   extractClipboard,
+  isStepDisabled,
   makeStepId,
   pasteClipboard,
   serializeEdgesToSteps,
+  STEP_DISABLED_KEY,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
   validateGraphTopology,
@@ -195,5 +197,17 @@ describe("copy / paste (HEL-686)", () => {
     const result = pasteClipboard(steps, { steps: [], internalEdges: [] }, deterministicIds());
     expect(result.pastedIds).toEqual([]);
     expect(result.steps).toBe(steps);
+  });
+});
+
+describe("isStepDisabled (HEL-791)", () => {
+  it("is false by default and true only when config.__disabled === true", () => {
+    expect(isStepDisabled(makeStep("a", "llm"))).toBe(false);
+    expect(
+      isStepDisabled({ ...makeStep("a", "llm"), config: { [STEP_DISABLED_KEY]: true } }),
+    ).toBe(true);
+    expect(
+      isStepDisabled({ ...makeStep("a", "llm"), config: { [STEP_DISABLED_KEY]: false } }),
+    ).toBe(false);
   });
 });

@@ -1286,3 +1286,50 @@ describe("WorkflowEngine — default (unknown) step kind", () => {
     expect(completed.stepResults[0].output).toEqual({});
   });
 });
+
+// ---------------------------------------------------------------------------
+// HEL-791 — disabled steps are skipped (transparent no-op)
+// ---------------------------------------------------------------------------
+
+describe("WorkflowEngine — disabled steps (HEL-791)", () => {
+  const input = {
+    ticketId: "DIS-1",
+    subject: "x",
+    body: "y",
+    customerEmail: "a@b.com",
+    channel: "email",
+  };
+
+  it("skips a disabled step (executor bypassed, {} output) while the run completes", async () => {
+    const template = JSON.parse(JSON.stringify(customerSupportBot)) as WorkflowTemplate;
+    const idx = template.steps.findIndex((s, i) => i > 0 && s.kind === "llm");
+    expect(idx).toBeGreaterThan(0);
+    const disabledId = template.steps[idx].id;
+    template.steps[idx].config = {
+      ...(template.steps[idx].config ?? {}),
+      __disabled: true,
+    };
+
+    const run = await engine.startRun(template, input);
+    const completed = await waitForCompletion(run.id);
+
+    expect(completed.status).toBe("completed");
+    const disabledResult = completed.stepResults.find((r) => r.stepId === disabledId);
+    expect(disabledResult?.status).toBe("skipped");
+    expect(disabledResult?.output).toEqual({});
+
+    // A step after the disabled one still executed — the DAG stayed connected.
+    const disabledResultIndex = completed.stepResults.findIndex((r) => r.stepId === disabledId);
+    const downstream = completed.stepResults.slice(disabledResultIndex + 1);
+    expect(downstream.some((r) => r.status === "success")).toBe(true);
+  });
+
+  it("runs the same step normally when not disabled (control)", async () => {
+    const idx = customerSupportBot.steps.findIndex((s, i) => i > 0 && s.kind === "llm");
+    const id = customerSupportBot.steps[idx].id;
+    const run = await engine.startRun(customerSupportBot, input);
+    const completed = await waitForCompletion(run.id);
+    const result = completed.stepResults.find((r) => r.stepId === id);
+    expect(result?.status).toBe("success");
+  });
+});

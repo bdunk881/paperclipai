@@ -2,10 +2,20 @@ import { describe, expect, it } from "vitest";
 import type { WorkflowStep } from "../types/workflow";
 import {
   buildEdgesFromSteps,
+  makeStepId,
   serializeEdgesToSteps,
   validateEdgeCandidate,
   validateGraphTopology,
 } from "./workflowGraph";
+
+describe("makeStepId (HEL-793)", () => {
+  it("mints unique, step-prefixed ids across a tight loop (no Date.now() collisions)", () => {
+    const ids = new Set<string>();
+    for (let i = 0; i < 1000; i++) ids.add(makeStepId());
+    expect(ids.size).toBe(1000);
+    expect([...ids].every((id) => id.startsWith("step-"))).toBe(true);
+  });
+});
 
 function makeStep(
   id: string,

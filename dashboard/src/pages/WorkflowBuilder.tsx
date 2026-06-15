@@ -826,26 +826,54 @@ export default function WorkflowBuilder() {
   // ?externalTemplateId filter finds the match; silent on failure
   // since the panel falls back to the draft state cleanly.
   useEffect(() => {
-    if (!templateId) {
-      return;
-    }
     let cancelled = false;
-    async function resolveCanonicalWorkflow() {
+    async function resolveOrBootstrapCanonicalWorkflow() {
       try {
         const accessToken = await requireAccessToken();
-        const workflows = await listCanonicalWorkflows(accessToken, {
-          externalTemplateId: templateId,
-        });
-        if (cancelled) return;
-        if (workflows.length > 0 && workflows[0]) {
-          setCanonicalWorkflowId(workflows[0].id);
+        if (templateId) {
+          const workflows = await listCanonicalWorkflows(accessToken, {
+            externalTemplateId: templateId,
+          });
+          if (cancelled) return;
+          if (workflows.length > 0 && workflows[0]) {
+            setCanonicalWorkflowId(workflows[0].id);
+          }
+          return;
         }
+        // HEL-796 (A4): a brand-new draft (no templateId) has no canonical id,
+        // so useYDoc has no room and the graph-in-doc + undo don't light up
+        // until first save. With WF_DOC_GRAPH ON, eager-create a standalone
+        // canonical workflows row (+v1, NO external_template_id so each draft
+        // gets its own row via the A0 null-key path) and adopt its id as the
+        // room — so the doc + undo work from the first keystroke. handleSave
+        // then takes the createCanonicalWorkflowVersion branch (canonicalWorkflowId
+        // is set), appending versions to this same row — no divergence.
+        // NOTE: this leaves a throwaway empty row for an abandoned draft; a GC
+        // pass for empty canonical drafts is a tracked follow-up.
+        if (!WF_DOC_GRAPH || cancelled) return;
+        const created = await createCanonicalWorkflow(
+          {
+            name: BLANK_TEMPLATE.name,
+            dag: {
+              name: BLANK_TEMPLATE.name,
+              description: BLANK_TEMPLATE.description ?? "",
+              version: BLANK_TEMPLATE.version ?? "1.0.0",
+              category: BLANK_TEMPLATE.category ?? "custom",
+              configFields: BLANK_TEMPLATE.configFields ?? [],
+              steps: BLANK_TEMPLATE.steps ?? [],
+              sampleInput: BLANK_TEMPLATE.sampleInput ?? {},
+              expectedOutput: BLANK_TEMPLATE.expectedOutput ?? {},
+            },
+          },
+          accessToken,
+        );
+        if (!cancelled) setCanonicalWorkflowId(created.id);
       } catch {
-        // Silent: Versions panel just stays in draft state if the
-        // lookup fails. The save path can still canonicalize later.
+        // Silent: falls back to draft state; the save path can still
+        // canonicalize later.
       }
     }
-    void resolveCanonicalWorkflow();
+    void resolveOrBootstrapCanonicalWorkflow();
     return () => {
       cancelled = true;
     };

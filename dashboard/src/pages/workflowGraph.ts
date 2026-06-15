@@ -274,3 +274,98 @@ export function validateGraphTopology(steps: WorkflowStep[], edges: Edge[]): str
 
   return null;
 }
+
+// --- Copy / paste (HEL-686) -------------------------------------------------
+
+export interface WorkflowClipboard {
+  /** Deep-cloned snapshot of the copied steps. */
+  steps: WorkflowStep[];
+  /** Edges whose BOTH endpoints are in the selection (the internal sub-graph). */
+  internalEdges: Edge[];
+}
+
+function readPosition(step: WorkflowStep): { x: number; y: number } | null {
+  const candidate = step.config?.[STEP_POSITION_KEY];
+  if (
+    candidate &&
+    typeof candidate === "object" &&
+    "x" in candidate &&
+    "y" in candidate &&
+    typeof candidate.x === "number" &&
+    typeof candidate.y === "number"
+  ) {
+    return { x: candidate.x, y: candidate.y };
+  }
+  return null;
+}
+
+/**
+ * Snapshot a selection for the clipboard: the selected steps (deep-cloned so the
+ * clipboard is immune to later edits) plus the edges internal to the selection.
+ * Edges to non-selected steps are intentionally dropped — paste produces a
+ * self-contained island.
+ */
+export function extractClipboard(
+  steps: WorkflowStep[],
+  selectedIds: Iterable<string>,
+): WorkflowClipboard {
+  const selected = new Set(selectedIds);
+  const picked = steps.filter((step) => selected.has(step.id));
+  const internalEdges = buildEdgesFromSteps(steps).filter(
+    (edge) => selected.has(edge.source) && selected.has(edge.target),
+  );
+  return {
+    steps: picked.map((step) => structuredClone(step)),
+    internalEdges,
+  };
+}
+
+/**
+ * Paste the clipboard as a disconnected island: every copied step gets a fresh
+ * id and an offset position, internal edges are remapped to the new ids, and the
+ * result is re-serialized over the WHOLE graph so existing edges are preserved
+ * (an implicit-linear graph is converted to explicit `__uiNextStepIds`, which is
+ * exactly what a normal edge edit already produces — semantically identical).
+ *
+ * `makeId` + `offset` are injected for deterministic testing.
+ */
+export function pasteClipboard(
+  existingSteps: WorkflowStep[],
+  clipboard: WorkflowClipboard,
+  makeId: () => string,
+  offset = 48,
+): { steps: WorkflowStep[]; pastedIds: string[] } {
+  if (clipboard.steps.length === 0) {
+    return { steps: existingSteps, pastedIds: [] };
+  }
+
+  const idMap = new Map<string, string>();
+  for (const step of clipboard.steps) idMap.set(step.id, makeId());
+
+  const pastedSteps: WorkflowStep[] = clipboard.steps.map((step) => {
+    const pos = readPosition(step);
+    return {
+      ...step,
+      id: idMap.get(step.id)!,
+      config: {
+        ...(step.config ?? {}),
+        [STEP_POSITION_KEY]: {
+          x: Math.round((pos?.x ?? 0) + offset),
+          y: Math.round((pos?.y ?? 0) + offset),
+        },
+      },
+    };
+  });
+
+  const pastedEdges = clipboard.internalEdges
+    .filter((edge) => idMap.has(edge.source) && idMap.has(edge.target))
+    .map((edge) => buildDefaultEdge(idMap.get(edge.source)!, idMap.get(edge.target)!));
+
+  const combinedSteps = [...existingSteps, ...pastedSteps];
+  const combinedEdges = [...buildEdgesFromSteps(existingSteps), ...pastedEdges];
+
+  return {
+    steps: serializeEdgesToSteps(combinedSteps, combinedEdges),
+    pastedIds: [...idMap.values()],
+  };
+}

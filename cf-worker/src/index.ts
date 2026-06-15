@@ -14,19 +14,25 @@ import {
   type RateLimiterConsumeRequest,
   type RateLimiterRefundRequest,
 } from "./durable-objects/RateLimiter";
+import { WorkflowDocDO } from "./durable-objects/WorkflowDoc";
 import { callInternalApi } from "./internalApi";
 
-export { HealthCheckDO, RateLimiterDO };
+export { HealthCheckDO, RateLimiterDO, WorkflowDocDO };
 
 export interface WorkerEnv {
   HEALTH_CHECK: DurableObjectNamespace;
   RATE_LIMITER: DurableObjectNamespace<RateLimiterDO>;
+  WORKFLOW_DOC: DurableObjectNamespace<WorkflowDocDO>;
   ENVIRONMENT: string;
   API_BASE_URL: string;
   CF_WORKER_INTERNAL_JWT_AUDIENCE: string;
   /** Shared secret for minting JWTs back to the API. Set via `wrangler secret put`. */
   CF_WORKER_SHARED_SECRET?: string;
 }
+
+/** `/workflows/<uuid>/ydoc` — the collaborative-doc WebSocket route. */
+const WORKFLOW_DOC_PATH =
+  /^\/workflows\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/ydoc$/i;
 
 interface RateLimiterHttpRequest {
   scope: string;
@@ -191,6 +197,32 @@ async function handleInternalSelftest(request: Request, env: WorkerEnv): Promise
   }
 }
 
+/**
+ * HEL-800 (B3): forward a collaborative-doc WebSocket upgrade to the per-workflow
+ * WorkflowDocDO (`workflow::<id>`).
+ *
+ * ⚠ This route is NOT authenticated yet — edge auth (verify the Supabase token +
+ * call /api/internal/ydoc/authorize) lands in B4 (HEL-801), and no client points
+ * at it until B6 (HEL-803). Until B4, gate it to non-production so we never expose
+ * an unauthenticated doc socket on the prod Worker. Dev has no real customer data
+ * and is where the B3 two-client smoke runs.
+ */
+async function handleWorkflowDoc(
+  request: Request,
+  env: WorkerEnv,
+  workflowId: string,
+): Promise<Response> {
+  if (env.ENVIRONMENT === "production") {
+    return new Response("Not Found", { status: 404 });
+  }
+  if ((request.headers.get("Upgrade") ?? "").toLowerCase() !== "websocket") {
+    return new Response("Expected a WebSocket upgrade", { status: 426 });
+  }
+  const id = env.WORKFLOW_DOC.idFromName(`workflow::${workflowId}`);
+  const stub = env.WORKFLOW_DOC.get(id);
+  return stub.fetch(request);
+}
+
 async function route(request: Request, env: WorkerEnv): Promise<Response> {
   const url = new URL(request.url);
 
@@ -198,6 +230,11 @@ async function route(request: Request, env: WorkerEnv): Promise<Response> {
     const id = env.HEALTH_CHECK.idFromName("singleton");
     const stub = env.HEALTH_CHECK.get(id);
     return stub.fetch(request);
+  }
+
+  const ydocMatch = url.pathname.match(WORKFLOW_DOC_PATH);
+  if (ydocMatch && request.method === "GET") {
+    return handleWorkflowDoc(request, env, ydocMatch[1]);
   }
 
   if (url.pathname === "/rate-limit/consume" && request.method === "POST") {

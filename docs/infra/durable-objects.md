@@ -217,6 +217,41 @@ The `y-websocket` **major differs** (3.x client / 2.x server) but is **wire-comp
 
 **`WorkflowDocDO` (HEL-800) MUST target this wire** — `y-protocols@1.0.7`, `yjs@13.6.31`, `lib0@0.2.117` — so an unmodified `y-websocket@3` `WebsocketProvider` client keeps syncing after the host-swap. Pin these in `cf-worker/package.json`.
 
+## WorkflowDocDO (HEL-800, Sub-phase B3)
+
+`WorkflowDocDO` (`cf-worker/src/durable-objects/WorkflowDoc.ts`) is the hibernatable WebSocket host for one workflow's collaborative builder graph — the strangler replacement for the in-process `y-websocket` room (`src/workflows/ydoc/workflowYDocRoom.ts`). One instance per `workflow::<id>`.
+
+### Route
+
+`GET /workflows/<uuid>/ydoc` (WebSocket upgrade) → `env.WORKFLOW_DOC.idFromName("workflow::<id>")`. The DO replies `101` with the client socket and runs the y-sync handshake.
+
+> ⚠ **Not authenticated yet.** B3 ships the transport only. Edge auth (verify the user's Supabase token + call `POST /api/internal/ydoc/authorize`, from B2) lands in **B4 (HEL-801)**, and no client points at this route until **B6 (HEL-803)**. Until B4 the route is **gated to non-production** (`env.ENVIRONMENT === "production"` → 404) so the prod Worker never exposes an unauthenticated doc socket; the binding + migration still apply on prod so the host-swap is a config-only flip later. Dev has no real customer data and is where the two-client smoke runs.
+
+### Wire framing
+
+Hand-rolled from `y-protocols` + `lib0` (the in-process room used `y-websocket/bin/utils`, a Node helper that can't run in a Worker). Message types match y-websocket: `0 = sync` (`readSyncMessage` / `writeSyncStep1` / `writeUpdate`), `1 = awareness`. On connect the DO sends sync step1; inbound updates are applied to the in-memory `Y.Doc` and the resulting delta is fanned out to the other sockets via `ctx.getWebSockets()`.
+
+### Hibernation + the keepalive spike (acceptance gate)
+
+Sockets are accepted with `ctx.acceptWebSocket` so the DO can shed memory while connections stay open. The mandatory spike question was: **does an unmodified `y-websocket` client survive a hibernation cycle without a 1006 idle drop?**
+
+**Finding: no — not on its own.** The `y-websocket` client (`messageReconnectTimeout = 30_000`, checked every 3s) closes + reconnects if it receives **no message for 30s**. Only `onmessage` data resets its timer — WebSocket protocol pings do **not** (verified in `dashboard/node_modules/y-websocket/src/y-websocket.js`; the client's own comment: *"no message received in a long time — not even your own awareness updates"*). And `setWebSocketAutoResponse('ping','pong')` does **not** help, because y-websocket sends no such application-level message. So a hibernated, idle DO that sends nothing would make every client reconnect every ~30s.
+
+**Mitigation (implemented): a keepalive alarm.** A self-rescheduling alarm sends a sync step1 to all `getWebSockets()` every `KEEPALIVE_INTERVAL_MS = 20_000` (≈10s margin under the 30s client timeout) **while clients are connected**, which resets the client timer → no 1006 churn. The alarm is **cleared on last disconnect** (`webSocketClose` → `deleteAlarm`), so an empty DO still goes fully idle/evicts. This is the documented trade-off from "When to use a Durable Object": a recurring keepalive means the DO wakes ~every 20s during an active session (hibernating in the gaps) rather than sleeping deeply — connection stability is worth more than the marginal idle saving here. A future optimization (B6) could raise the client's `messageReconnectTimeout` to widen the keepalive interval and deepen hibernation.
+
+### Persistence
+
+- **DO-local (B3):** the full doc state (`Y.encodeStateAsUpdate`) is mirrored to `ctx.storage` after each applied update (coalesced) and rehydrated in the constructor under `blockConcurrencyWhile` — so a hibernation wake / eviction never serves an empty doc that a late message would clobber.
+- **Postgres mirror (B5, HEL-802):** a dirty-gated single-shot alarm will push snapshots to the durable store via the B2 internal API (`POST /api/internal/workflows/:id/ydoc-snapshot`) and cold-start-hydrate from it (`GET`), so state survives DO *deletion*/relocation and feeds other readers.
+
+### Awareness (presence)
+
+Relayed verbatim to peers, **never persisted**, with **no server-side `Awareness` instance** — a server `Awareness` runs a refresh `setInterval` that would keep the DO from hibernating, and presence is authoritatively carried on SSE. Departed cursors expire via each remaining client's own awareness `outdatedTime` (~30s).
+
+### Tests
+
+`cf-worker/src/__tests__/workflowDoc.test.ts` drives the DO with a minimal real-`Y.Doc` y-protocols client over an actual `SELF.fetch` WebSocket: 426/404 routing, the two-client bidirectional relay, late-joiner hydration via the handshake, DO-local persistence (rehydrate a doc from the stored bytes), the keepalive alarm tick, and alarm-cleared-on-last-disconnect. (Gotcha: a test client must set `ws.binaryType = "arraybuffer"` — the real y-websocket client does this; without it binary frames arrive as Blobs and decode to empty arrays.)
+
 ## References
 
 - HEL-271 → HEL-306 — RLS rollout (unrelated; for the workspace isolation story see `docs/infra/...` once that's written)

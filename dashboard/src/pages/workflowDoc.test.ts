@@ -6,6 +6,7 @@ import {
   applyStepsToDoc,
   getGraphRoot,
   isGraphSeeded,
+  LOCAL_ORIGIN,
   readSteps,
   seedGraphFromSteps,
   STEP_NAME_YMAP_KEY,
@@ -134,5 +135,45 @@ describe("workflowDoc (HEL-795 A3a)", () => {
     // First transaction is the seed, second is the local apply.
     expect(origins[0]).toBe("wf-builder-seed");
     expect((origins[1] as { source?: string } | null)?.source).toBe("wf-builder-local");
+  });
+});
+
+describe("Y.UndoManager over the graph (HEL-795 A3b)", () => {
+  function manager(doc: Y.Doc): Y.UndoManager {
+    return new Y.UndoManager(getGraphRoot(doc), {
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+    });
+  }
+
+  it("undoes and redoes a local graph edit", () => {
+    const doc = new Y.Doc();
+    seedGraphFromSteps(doc, [step("a")]);
+    const um = manager(doc);
+    applyStepsToDoc(doc, [step("a"), step("b")]); // add b under LOCAL_ORIGIN
+    expect(readSteps(doc).map((s) => s.id)).toEqual(["a", "b"]);
+    um.undo();
+    expect(readSteps(doc).map((s) => s.id)).toEqual(["a"]);
+    um.redo();
+    expect(readSteps(doc).map((s) => s.id)).toEqual(["a", "b"]);
+    um.destroy();
+  });
+
+  it("does NOT track the seed (SEED_ORIGIN) — undo can't wipe a freshly seeded graph", () => {
+    const doc = new Y.Doc();
+    const um = manager(doc);
+    seedGraphFromSteps(doc, [step("a"), step("b")]); // SEED_ORIGIN, untracked
+    expect(um.canUndo()).toBe(false);
+    um.undo(); // no-op
+    expect(readSteps(doc).map((s) => s.id)).toEqual(["a", "b"]);
+    um.destroy();
+  });
+
+  it("does NOT track a remote (foreign-origin) edit — never undo a collaborator's change", () => {
+    const doc = new Y.Doc();
+    seedGraphFromSteps(doc, [step("a")]);
+    const um = manager(doc);
+    applyStepsToDoc(doc, [step("a"), step("b")], "remote-peer");
+    expect(um.canUndo()).toBe(false);
+    um.destroy();
   });
 });

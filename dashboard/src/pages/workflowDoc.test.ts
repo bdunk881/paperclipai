@@ -177,3 +177,53 @@ describe("Y.UndoManager over the graph (HEL-795 A3b)", () => {
     um.destroy();
   });
 });
+
+describe("doc <-> dag serializer round-trip (HEL-797 A5)", () => {
+  // handleSave persists readSteps(doc) (the projection); a reload seeds a fresh
+  // doc from the saved dag.steps. These prove that Save -> reload is lossless.
+  it("Save -> reload preserves the full graph (read doc A, seed fresh doc B)", () => {
+    const docA = new Y.Doc();
+    const steps = [
+      withPos(step("s0", { kind: "trigger", outputKeys: ["a"] }), 10, 20, ["s1"]),
+      withPos(
+        step("s1", { kind: "llm", promptTemplate: "x {{a}}", config: { temperature: 0.3 } }),
+        100,
+        200,
+        ["s2"],
+      ),
+      withPos(step("s2", { kind: "output" }), 300, 400, []),
+    ];
+    applyStepsToDoc(docA, steps);
+    const saved = readSteps(docA);
+
+    const docB = new Y.Doc();
+    seedGraphFromSteps(docB, saved);
+    expect(readSteps(docB)).toEqual(saved);
+    expect(readSteps(docB)).toEqual(steps);
+  });
+
+  it("single-step workflow with no edges round-trips without spurious adjacency", () => {
+    const docA = new Y.Doc();
+    const steps = [withPos(step("only", { kind: "trigger" }), 0, 0)]; // no __uiNextStepIds
+    applyStepsToDoc(docA, steps);
+    const saved = readSteps(docA);
+
+    const docB = new Y.Doc();
+    seedGraphFromSteps(docB, saved);
+    const out = readSteps(docB);
+    expect(STEP_NEXT_IDS_KEY in (out[0].config ?? {})).toBe(false);
+    expect(out).toEqual(steps);
+  });
+
+  it("explicit empty-next (e.g. an output node) round-trips as [] not absent", () => {
+    const docA = new Y.Doc();
+    const steps = [withPos(step("out", { kind: "output" }), 0, 0, [])]; // explicit []
+    applyStepsToDoc(docA, steps);
+    const saved = readSteps(docA);
+    expect((saved[0].config as Record<string, unknown>)[STEP_NEXT_IDS_KEY]).toEqual([]);
+
+    const docB = new Y.Doc();
+    seedGraphFromSteps(docB, saved);
+    expect(readSteps(docB)).toEqual(steps);
+  });
+});

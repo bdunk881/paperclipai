@@ -113,6 +113,14 @@ import {
   validateEdgeCandidate,
   validateGraphTopology,
 } from "./workflowGraph";
+import {
+  applyStepsToDoc,
+  getGraphRoot,
+  isGraphSeeded,
+  LOCAL_ORIGIN,
+  readSteps as readDocSteps,
+  seedGraphFromSteps,
+} from "./workflowDoc";
 import { extractSelection } from "./workflowExtract";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/useWorkspace";
@@ -418,6 +426,10 @@ const FLOW_STEP_Y = 64;
 const FLOW_STEP_GAP_Y = 190;
 const STEP_NAME_YMAP_KEY = "stepNames";
 const STEP_NAME_SEED_ORIGIN = "workflowbuilder-step-name-seed";
+// HEL-795: when ON, the workflow graph lives in the Yjs doc (collaborative +
+// undoable via A3b's UndoManager). Default OFF — flag-OFF is byte-for-byte
+// today's behavior (the projection effects below all early-return).
+const WF_DOC_GRAPH = import.meta.env.VITE_WF_DOC_GRAPH === "true";
 const COMMON_TIMEZONES = [
   "UTC",
   "America/New_York",
@@ -882,6 +894,51 @@ export default function WorkflowBuilder() {
       stepNames.unobserve(handleStepNamesChange);
     };
   }, [selectedStep, workflowYDoc, workflowYDocSynced]);
+
+  // HEL-795: graph-in-doc projection (flag-gated, default OFF). template.steps
+  // stays the single source flowNodes/flowEdges derive from; when WF_DOC_GRAPH
+  // is ON it becomes a PROJECTION of the Yjs graph:
+  //   • seed    — populate the doc from the loaded steps once (guarded);
+  //   • observe — project doc → template on any graph change (local, remote
+  //               collab, or A3b undo);
+  //   • mirror  — forward local template.steps edits into the doc as ONE
+  //               transaction (one undo entry for A3b).
+  // The docGraphStepsRef identity guard breaks the observe↔setTemplate echo: a
+  // projection sets the ref to the exact array it pushes into template, so the
+  // mirror sees template.steps === ref and skips. Every mutator / RF handler /
+  // extract / copilot is UNTOUCHED — they keep editing template.steps, which
+  // the mirror forwards to the doc.
+  const templateStepsRef = useRef(template.steps);
+  templateStepsRef.current = template.steps;
+  const docGraphStepsRef = useRef<WorkflowStep[] | null>(null);
+
+  useEffect(() => {
+    if (!WF_DOC_GRAPH || !workflowYDoc || !workflowYDocSynced) return;
+    seedGraphFromSteps(workflowYDoc, templateStepsRef.current);
+    const projected = readDocSteps(workflowYDoc);
+    docGraphStepsRef.current = projected;
+    setTemplate((t) => ({ ...t, steps: projected }));
+  }, [workflowYDoc, workflowYDocSynced]);
+
+  useEffect(() => {
+    if (!WF_DOC_GRAPH || !workflowYDoc) return;
+    const graph = getGraphRoot(workflowYDoc);
+    const onGraphChange = (): void => {
+      if (!isGraphSeeded(workflowYDoc)) return;
+      const projected = readDocSteps(workflowYDoc);
+      docGraphStepsRef.current = projected;
+      setTemplate((t) => ({ ...t, steps: projected }));
+    };
+    graph.observeDeep(onGraphChange);
+    return () => graph.unobserveDeep(onGraphChange);
+  }, [workflowYDoc]);
+
+  useEffect(() => {
+    if (!WF_DOC_GRAPH || !workflowYDoc || !workflowYDocSynced) return;
+    if (!isGraphSeeded(workflowYDoc)) return;
+    if (template.steps === docGraphStepsRef.current) return;
+    applyStepsToDoc(workflowYDoc, template.steps, LOCAL_ORIGIN);
+  }, [template.steps, workflowYDoc, workflowYDocSynced]);
 
   const selectedStepNameYText =
     selectedStepNameYTextBinding &&

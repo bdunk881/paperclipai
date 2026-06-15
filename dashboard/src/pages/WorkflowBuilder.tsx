@@ -42,6 +42,7 @@ import {
   Send,
   Download,
   LayoutGrid,
+  Ban,
 } from "lucide-react";
 import { exportWorkflowPng, exportFileStem } from "./workflowExport";
 import { tidyLayout, type NodeDims } from "./workflowLayout";
@@ -111,9 +112,11 @@ import {
   buildDefaultEdge,
   buildEdgesFromSteps,
   extractClipboard,
+  isStepDisabled,
   makeStepId,
   pasteClipboard,
   serializeEdgesToSteps,
+  STEP_DISABLED_KEY,
   STEP_POSITION_KEY,
   validateEdgeCandidate,
   validateGraphTopology,
@@ -556,6 +559,7 @@ type FlowNodeData = {
   onDuplicate: (id: string) => void;
   onRunFromHere: (id: string) => void;
   onAskAi: (id: string) => void;
+  onToggleDisabled: (id: string) => void;
   isReadonly: boolean;
   isFirst: boolean;
   isLast: boolean;
@@ -1586,6 +1590,25 @@ export default function WorkflowBuilder() {
     });
   }
 
+  // HEL-791: toggle a step's disabled flag (config.__disabled) in one setTemplate
+  // = one undo entry. The engine skips disabled steps (transparent no-op); the
+  // node renders dimmed.
+  function toggleStepDisabled(id: string) {
+    if (isReadonlyBuilder) return;
+    setTemplate((t) => ({
+      ...t,
+      steps: t.steps.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              config: { ...(s.config ?? {}), [STEP_DISABLED_KEY]: !isStepDisabled(s) },
+            }
+          : s,
+      ),
+    }));
+    setGraphError(null);
+  }
+
   function moveStep(id: string, dir: -1 | 1) {
     const idx = template.steps.findIndex((s) => s.id === id);
     if (idx < 0) return;
@@ -1622,6 +1645,7 @@ export default function WorkflowBuilder() {
         onDuplicate: duplicateStep,
         onRunFromHere: handleRunFromNode,
         onAskAi: handleAskAi,
+        onToggleDisabled: toggleStepDisabled,
         isReadonly: isReadonlyBuilder,
         isFirst: idx === 0,
         isLast: idx === template.steps.length - 1,
@@ -3818,21 +3842,25 @@ function StepNodeContextMenu({
  * when a node is selected — the n8n-style "live/reactive" affordance that
  * surfaces the most-used node actions on the canvas instead of only behind the
  * right-click menu / inspector. Mutating actions respect readonly mode (the top
- * toolbar gates run/deploy the same way). "Disable node" is a deliberate
- * follow-up (HEL-696-adjacent) — it needs engine skip-support to not be a dead
- * toggle, so it is intentionally not surfaced here yet.
+ * toolbar gates run/deploy the same way). HEL-791 added the Disable/Enable toggle
+ * now that the engine skips disabled steps (`config.__disabled`) — no longer a
+ * dead control.
  */
 function NodeActionToolbar({
   isReadonly,
+  disabled,
   onRunFromHere,
   onAskAi,
   onDuplicate,
+  onToggleDisabled,
   onRemove,
 }: {
   isReadonly: boolean;
+  disabled: boolean;
   onRunFromHere: () => void;
   onAskAi: () => void;
   onDuplicate: () => void;
+  onToggleDisabled: () => void;
   onRemove: () => void;
 }) {
   const btn =
@@ -3879,6 +3907,20 @@ function NodeActionToolbar({
       </button>
       <button
         type="button"
+        className={clsx(btn, disabled && "!text-af2-clay")}
+        disabled={isReadonly}
+        title={disabled ? "Enable step" : "Disable step"}
+        aria-label={disabled ? "Enable step" : "Disable step"}
+        aria-pressed={disabled}
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleDisabled();
+        }}
+      >
+        <Ban className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
         className={clsx(btn, "hover:bg-af2-clay/10 hover:!text-af2-clay")}
         disabled={isReadonly}
         title="Delete step"
@@ -3900,14 +3942,19 @@ function WorkflowStepNode({
   selected,
   dragging,
 }: NodeProps<WorkflowFlowNode>) {
+  // HEL-791: a disabled step renders dimmed (the NodeToolbar portals out of this
+  // wrapper, so it stays full-opacity for the Enable toggle).
+  const disabled = isStepDisabled(data.step);
   return (
-    <div className="w-[280px]">
+    <div className={clsx("w-[280px]", disabled && "opacity-50")}>
       <NodeToolbar isVisible={selected} position={Position.Top} offset={8}>
         <NodeActionToolbar
           isReadonly={data.isReadonly}
+          disabled={disabled}
           onRunFromHere={() => data.onRunFromHere(id)}
           onAskAi={() => data.onAskAi(id)}
           onDuplicate={() => data.onDuplicate(id)}
+          onToggleDisabled={() => data.onToggleDisabled(id)}
           onRemove={() => data.onRemove(id)}
         />
       </NodeToolbar>

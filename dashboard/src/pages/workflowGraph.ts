@@ -5,6 +5,13 @@ export const STEP_POSITION_KEY = "__uiPosition";
 // HEL-778: exported so the extract-to-sub-workflow surgery can read/write the
 // per-step adjacency (the canvas edge model).
 export const STEP_NEXT_IDS_KEY = "__uiNextStepIds";
+// HEL-791: a disabled step is skipped by the engine (transparent no-op). Mirrors
+// the UI-meta keys above; the engine reads the same `config.__disabled`.
+export const STEP_DISABLED_KEY = "__disabled";
+
+export function isStepDisabled(step: WorkflowStep): boolean {
+  return step.config?.[STEP_DISABLED_KEY] === true;
+}
 
 type EdgeValidationInput = {
   sourceId: string;

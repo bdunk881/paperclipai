@@ -229,6 +229,16 @@ function stripMemory(context: Record<string, unknown>): Record<string, unknown> 
   return cloneJson(out);
 }
 
+/**
+ * HEL-791: a step disabled in the builder (`config.__disabled === true`, mirroring
+ * the UI-meta keys `__uiPosition` / `__uiNextStepIds`) is skipped by the engine —
+ * its executor never runs and it contributes nothing to `context`, so downstream
+ * steps receive the upstream data unchanged (a transparent no-op).
+ */
+function isStepDisabled(step: { config?: Record<string, unknown> | null }): boolean {
+  return step.config?.["__disabled"] === true;
+}
+
 function makeRuntimeState(
   config: Record<string, unknown>,
   context: Record<string, unknown>,
@@ -1662,7 +1672,11 @@ export class WorkflowEngine {
       const retryPolicy = resolveRetryPolicy(step);
 
       try {
-        if (reusedPrior) {
+        if (isStepDisabled(step)) {
+          // HEL-791: skip a disabled step — executor bypassed, stepOutput stays
+          // {} so context flows through unchanged. Recorded as "skipped".
+          stepStatus = "skipped";
+        } else if (reusedPrior) {
           stepOutput = { ...reusedPrior.output, idempotentReplay: true };
         } else switch (step.kind) {
           case "trigger":

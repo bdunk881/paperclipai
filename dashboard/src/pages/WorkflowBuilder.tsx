@@ -911,6 +911,10 @@ export default function WorkflowBuilder() {
   const templateStepsRef = useRef(template.steps);
   templateStepsRef.current = template.steps;
   const docGraphStepsRef = useRef<WorkflowStep[] | null>(null);
+  // HEL-795 A3b: true while a node is being dragged — the mirror skips doc
+  // writes mid-drag so one drag commits as one undo entry (on dragStop).
+  const draggingRef = useRef(false);
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
 
   useEffect(() => {
     if (!WF_DOC_GRAPH || !workflowYDoc || !workflowYDocSynced) return;
@@ -936,9 +940,53 @@ export default function WorkflowBuilder() {
   useEffect(() => {
     if (!WF_DOC_GRAPH || !workflowYDoc || !workflowYDocSynced) return;
     if (!isGraphSeeded(workflowYDoc)) return;
+    // A3b: skip intra-drag frames — onNodeDragStop commits the final position
+    // as one LOCAL_ORIGIN transaction (one undo entry for the whole drag).
+    if (draggingRef.current) return;
     if (template.steps === docGraphStepsRef.current) return;
     applyStepsToDoc(workflowYDoc, template.steps, LOCAL_ORIGIN);
   }, [template.steps, workflowYDoc, workflowYDocSynced]);
+
+  // HEL-795 A3b: undo/redo for the graph via Y.UndoManager, scoped to the graph
+  // map and tracking ONLY LOCAL_ORIGIN — so Ctrl+Z reverts the local user's
+  // graph edits (add/remove/move/connect/position/config) but never a
+  // collaborator's change and never the seed. Step-NAME edits keep native input
+  // undo while focused; folding stepNames in needs YTextInput origin surgery
+  // (its echo-suppression is keyed to a per-instance origin) and is deferred.
+  useEffect(() => {
+    if (!WF_DOC_GRAPH || !workflowYDoc) return;
+    const um = new Y.UndoManager(getGraphRoot(workflowYDoc), {
+      trackedOrigins: new Set([LOCAL_ORIGIN]),
+    });
+    undoManagerRef.current = um;
+    return () => {
+      um.destroy();
+      undoManagerRef.current = null;
+    };
+  }, [workflowYDoc]);
+
+  // Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo. Skipped while a text
+  // field is focused so native input undo keeps working there.
+  useEffect(() => {
+    if (!WF_DOC_GRAPH) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      const isUndo = key === "z" && !e.shiftKey;
+      const isRedo = (key === "z" && e.shiftKey) || key === "y";
+      if (!isUndo && !isRedo) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+      const um = undoManagerRef.current;
+      if (!um) return;
+      e.preventDefault();
+      if (isRedo) um.redo();
+      else um.undo();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const selectedStepNameYText =
     selectedStepNameYTextBinding &&
@@ -2330,9 +2378,11 @@ export default function WorkflowBuilder() {
                   setGraphError(null);
                 }}
                 onNodeDrag={(_: unknown, node: WorkflowFlowNode) => {
+                  draggingRef.current = true;
                   updateStepPosition(node.id, node.position);
                 }}
                 onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
+                  draggingRef.current = false;
                   updateStepPosition(node.id, node.position);
                 }}
                 // HEL-241C v2 — broadcast our cursor in canvas coords so

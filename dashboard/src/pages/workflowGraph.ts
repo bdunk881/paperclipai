@@ -57,7 +57,14 @@ export function buildDefaultEdge(source: string, target: string): Edge {
     id: `${source}-->${target}`,
     source,
     target,
-    type: "bezier",
+    // HEL-684: orthogonal (right-angle) routing. Our nodes flow top→bottom
+    // (source handle Bottom → target handle Top), so `smoothstep` draws clean
+    // vertical-then-horizontal paths — with softly rounded corners by default —
+    // that read far better than `bezier` when condition branches fan out and
+    // would otherwise cross/overlap. A true obstacle-avoiding router
+    // (libavoid-class) is a heavier follow-up; this is the "start with RF
+    // smoothstep" step the ticket calls for.
+    type: "smoothstep",
     animated: false,
     className: "workflow-edge",
     markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 },

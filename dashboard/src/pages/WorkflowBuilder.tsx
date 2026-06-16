@@ -56,6 +56,7 @@ import {
   BackgroundVariant,
   applyEdgeChanges,
   type Connection,
+  ConnectionLineType,
   Controls,
   ControlButton,
   Handle,
@@ -2495,6 +2496,10 @@ export default function WorkflowBuilder() {
                 maxZoom={1.4}
                 snapToGrid
                 snapGrid={[20, 20]}
+                // HEL-684: the live connection preview (the line you drag from a
+                // handle) uses the same orthogonal routing as the committed
+                // edges built by buildDefaultEdge, so the drag matches the drop.
+                connectionLineType={ConnectionLineType.SmoothStep}
                 // HEL-783: additive multi-select on Shift/Cmd/Ctrl-click (so RF
                 // adds to the selection instead of replacing it); box-select via
                 // Shift+drag uses the default selectionKeyCode. Both feed

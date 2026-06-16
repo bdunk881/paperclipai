@@ -73,6 +73,14 @@ jest.mock("./queue/queues", () => ({
   getRunQueue: () => ({ add: async () => undefined, close: async () => undefined }),
   getAgentPromptQueue: () => ({ add: async () => undefined, close: async () => undefined }),
   getDlqQueue: () => ({ add: async () => undefined, close: async () => undefined }),
+  // HEL-700: scheduledWorkflowRun (reached via the cron handler) enqueues
+  // through addRunJob; delegate to the mocked queue's add().
+  addRunJob: (
+    queue: { add: (...args: unknown[]) => unknown },
+    name: string,
+    payload: unknown,
+    opts: unknown,
+  ) => queue.add(name, payload, opts),
 }));
 
 jest.mock("./db/postgres", () => ({

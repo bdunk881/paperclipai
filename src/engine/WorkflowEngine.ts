@@ -52,7 +52,7 @@ import { handleChatTrigger } from "./chatTriggerStep";
 import { handleSubWorkflowTrigger } from "./subWorkflowTriggerStep";
 import { handleFormTrigger } from "./formTriggerStep";
 import { resolveWaitMs, isWebhookWait, WAIT_MAX_INLINE_MS } from "./waitStep";
-import { getRunQueue } from "../queue/queues";
+import { getRunQueue, addRunJob } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { deriveIdempotencyKey } from "../queue/withIdempotency";
 import { shouldReuseStepKind, buildPriorResultMap } from "./idempotentReplay";
@@ -1171,15 +1171,22 @@ export class WorkflowEngine {
     const run = await runStore.get(runId);
     const workspaceId = this._resolveWorkspaceId(context, config) ?? run?.workspaceId ?? "";
 
+    // HEL-700: carry the run's priority across the wait re-enqueue (and keep it
+    // on the persisted runtimeState so a later resume still has it).
+    const waitPriority = run?.runtimeState?.priority;
     await runStore.update(runId, {
       status: "queued",
       stepResults: [...stepResults],
-      runtimeState: makeRuntimeState(config, context, resumeStepIndex),
+      runtimeState: {
+        ...makeRuntimeState(config, context, resumeStepIndex),
+        ...(waitPriority ? { priority: waitPriority } : {}),
+      },
     });
 
     const idempotencyKey = `${runId}:${resumeStepIndex}:wait`;
     try {
-      await runQueue.add(
+      await addRunJob(
+        runQueue,
         "run",
         {
           runId,
@@ -1188,6 +1195,7 @@ export class WorkflowEngine {
           workspaceId,
           stepIndex: resumeStepIndex,
           idempotencyKey,
+          priority: waitPriority,
         },
         { jobId: `${runId}:wait:${resumeStepIndex}`, delay: waitMs, removeOnComplete: 100 },
       );

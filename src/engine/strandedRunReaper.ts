@@ -24,7 +24,7 @@
 import type { Pool } from "pg";
 import type { Queue } from "bullmq";
 import type { RunJobPayload } from "../queue/queues";
-import { getRunQueue } from "../queue/queues";
+import { getRunQueue, addRunJob } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { getPostgresPool, isPostgresConfigured } from "../db/postgres";
 import { runWithAdvisoryLock, CoordinatorLockKey } from "./coordinatorLock";
@@ -133,7 +133,9 @@ export async function reapStrandedRuns(params: {
         idempotencyKey: `${row.id}:0:resume:${attempt}`,
       };
       try {
-        await runQueue.add("run", payload, {
+        // HEL-700: crash-resume re-enqueues at the default `normal` priority
+        // (the reaper works off raw rows that don't carry runtimeState).
+        await addRunJob(runQueue, "run", payload, {
           jobId: `resume:${row.id}:${attempt}`,
           removeOnComplete: 100,
         });

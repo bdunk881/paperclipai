@@ -1,5 +1,34 @@
-import { Queue } from "bullmq";
+import { Job, JobsOptions, Queue } from "bullmq";
 import { getRedisClient } from "./redisClient";
+import type { RunPriority } from "../types/workflow";
+
+/**
+ * HEL-700: run priority. Ordered fastest→slowest; mapped to a BullMQ numeric
+ * priority where a LOWER number is dequeued first. Every run job is assigned a
+ * positive priority (default `normal`) via {@link addRunJob}, so ordering is
+ * fully determined by these values and never depends on BullMQ's mixed
+ * prioritized/un-prioritized behavior. `normal` runs keep FIFO order among
+ * themselves; `critical`/`high` jump ahead, `low` trails.
+ */
+export type { RunPriority };
+
+const RUN_PRIORITY_VALUES: Record<RunPriority, number> = {
+  critical: 1,
+  high: 2,
+  normal: 3,
+  low: 4,
+};
+
+export const DEFAULT_RUN_PRIORITY: RunPriority = "normal";
+
+export function isRunPriority(value: unknown): value is RunPriority {
+  return value === "critical" || value === "high" || value === "normal" || value === "low";
+}
+
+/** Maps a run priority (default `normal`) to its BullMQ numeric priority. */
+export function resolveRunPriority(priority?: RunPriority): number {
+  return RUN_PRIORITY_VALUES[priority ?? DEFAULT_RUN_PRIORITY];
+}
 
 export interface RunJobPayload {
   runId: string;
@@ -8,6 +37,11 @@ export interface RunJobPayload {
   workspaceId: string;
   stepIndex: number;
   idempotencyKey: string;
+  /**
+   * HEL-700: queue priority. Travels on the payload so it survives re-enqueues
+   * (resume after a wait, manual retry, crash-resume). Absent ⇒ `normal`.
+   */
+  priority?: RunPriority;
 }
 
 /**
@@ -75,6 +109,22 @@ export function getRunQueue(): Queue<RunJobPayload> | null {
 
 export function resetRunQueueForTests(): void {
   _runQueue = null;
+}
+
+/**
+ * HEL-700: enqueue a run job with its BullMQ priority derived from
+ * `payload.priority` (default `normal`). Use this everywhere instead of
+ * `runQueue.add(...)` so every run job carries a deterministic priority and
+ * `critical`/`high` runs jump the queue. The caller's `opts` win for every
+ * other option (jobId, delay, removeOnComplete, …); only `priority` is set here.
+ */
+export function addRunJob(
+  queue: Queue<RunJobPayload>,
+  name: string,
+  payload: RunJobPayload,
+  opts: JobsOptions = {},
+): Promise<Job<RunJobPayload>> {
+  return queue.add(name, payload, { ...opts, priority: resolveRunPriority(payload.priority) });
 }
 
 let _dlqQueue: Queue<RunJobPayload> | null = null;

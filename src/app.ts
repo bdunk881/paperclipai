@@ -202,7 +202,7 @@ import publicStatusRoutes from "./landing/publicStatusRoute";
 import { requirePersistence } from "./bootstrap";
 import { randomUUID } from "crypto";
 import { checkRedisConnection, isRedisConfigured } from "./queue/redisClient";
-import { getRunQueue } from "./queue/queues";
+import { getRunQueue, addRunJob, isRunPriority } from "./queue/queues";
 import { verifyHmac } from "./webhooks/verifySignature";
 
 import { deleteImportedTemplate, getImportedTemplate, saveImportedTemplate } from "./templates/importedTemplateStore";
@@ -1610,16 +1610,21 @@ app.post(
     delta: 1,
   }),
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
-  const { templateId, input, config } = req.body as {
+  const { templateId, input, config, priority } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
     config?: Record<string, unknown>;
+    priority?: unknown;
   };
 
   if (!templateId) {
     res.status(400).json({ error: "templateId is required" });
     return;
   }
+
+  // HEL-700: optional run priority (critical/high/normal/low). Invalid values
+  // are ignored (treated as the default `normal`) rather than rejected.
+  const runPriority = isRunPriority(priority) ? priority : undefined;
 
   let template: WorkflowTemplate;
   try {
@@ -1660,12 +1665,15 @@ app.post(
         config: { ...runConfig },
         context: { ...runConfig, ...resolvedInput },
         currentStepIndex: 0,
+        // HEL-700: persist priority so resume/retry/crash-resume preserve it.
+        ...(runPriority ? { priority: runPriority } : {}),
       },
       ...(userId !== undefined ? { userId } : {}),
     });
     const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
     try {
-      await runQueue.add(
+      await addRunJob(
+        runQueue,
         "run",
         {
           runId: run.id,
@@ -1674,6 +1682,7 @@ app.post(
           workspaceId: req.workspaceId ?? "",
           stepIndex: 0,
           idempotencyKey,
+          priority: runPriority,
         },
         { jobId: run.id, removeOnComplete: 100 },
       );
@@ -2169,7 +2178,8 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, requir
     return;
   }
 
-  await runQueue.add(
+  await addRunJob(
+    runQueue,
     "run",
     {
       runId,
@@ -2178,6 +2188,7 @@ app.post("/api/runs/:id/retry", requireAuthOrQaBypass, workspaceResolver, requir
       workspaceId: run.workspaceId ?? "",
       stepIndex: 0,
       idempotencyKey: `${runId}:retry:${Date.now()}`,
+      priority: run.runtimeState?.priority,
     },
     { jobId: runId }
   );
@@ -2255,6 +2266,8 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
       config: run.runtimeState?.config ?? {},
       context: { ...(run.runtimeState?.config ?? {}), ...run.input },
       currentStepIndex: 0,
+      // HEL-700: inherit the source run's priority.
+      ...(run.runtimeState?.priority ? { priority: run.runtimeState.priority } : {}),
     },
     ...(userId !== undefined ? { userId } : {}),
   });
@@ -2263,7 +2276,8 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
   if (runQueue) {
     const idempotencyKey = `${newRun.id}:0:replay-latest:${Date.now()}`;
     try {
-      await runQueue.add(
+      await addRunJob(
+        runQueue,
         "run",
         {
           runId: newRun.id,
@@ -2272,6 +2286,7 @@ app.post("/api/runs/:id/replay-with-latest", requireAuthOrQaBypass, workspaceRes
           workspaceId: run.workspaceId ?? "",
           stepIndex: 0,
           idempotencyKey,
+          priority: newRun.runtimeState?.priority,
         },
         { jobId: newRun.id, removeOnComplete: 100 },
       );
@@ -2367,7 +2382,8 @@ app.post(
     if (runQueue) {
       const idempotencyKey = `${run.id}:${fromStepIndex}:from-node`;
       try {
-        await runQueue.add(
+        await addRunJob(
+          runQueue,
           "run",
           {
             runId: run.id,
@@ -2376,6 +2392,7 @@ app.post(
             workspaceId: run.workspaceId ?? "",
             stepIndex: fromStepIndex,
             idempotencyKey,
+            priority: run.runtimeState?.priority,
           },
           { jobId: run.id, removeOnComplete: 100 },
         );
@@ -2477,7 +2494,8 @@ app.post(
     if (runQueue) {
       const idempotencyKey = `${newRun.id}:${stepIndex}:replay-from-step`;
       try {
-        await runQueue.add(
+        await addRunJob(
+          runQueue,
           "run",
           {
             runId: newRun.id,
@@ -2486,6 +2504,7 @@ app.post(
             workspaceId: newRun.workspaceId ?? "",
             stepIndex,
             idempotencyKey,
+            priority: newRun.runtimeState?.priority,
           },
           { jobId: newRun.id, removeOnComplete: 100 },
         );

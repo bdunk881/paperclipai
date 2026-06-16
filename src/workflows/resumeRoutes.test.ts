@@ -16,6 +16,14 @@ jest.mock("../engine/runStore", () => ({
 }));
 jest.mock("../queue/queues", () => ({
   getRunQueue: jest.fn(() => null),
+  // HEL-700: addRunJob forwards to queue.add (adding a priority option), so the
+  // mock delegates — tests still spy on the queue's own add().
+  addRunJob: (
+    queue: { add: (...args: unknown[]) => unknown },
+    name: string,
+    payload: unknown,
+    opts: unknown,
+  ) => queue.add(name, payload, opts),
 }));
 jest.mock("../engine/WorkflowEngine", () => ({
   workflowEngine: { executeQueuedRun: jest.fn(async () => undefined) },

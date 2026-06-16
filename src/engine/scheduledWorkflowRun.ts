@@ -24,6 +24,7 @@ import { createHash } from "crypto";
 import type { Pool } from "pg";
 import type { Queue } from "bullmq";
 import type { RunJobPayload } from "../queue/queues";
+import { addRunJob } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { parseJsonColumn } from "../db/json";
 import type { WorkflowTemplate } from "../types/workflow";
@@ -196,7 +197,8 @@ export async function dispatchScheduledWorkflowRun(params: {
   //    per-run idempotency guard.
   const idempotencyKey = `${runId}:0:${workflowVersionId ?? templateId}`;
   try {
-    await runQueue.add(
+    await addRunJob(
+      runQueue,
       "run",
       {
         runId,

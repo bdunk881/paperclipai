@@ -20,6 +20,7 @@
 import { randomUUID } from "crypto";
 import type { Queue } from "bullmq";
 import type { RunJobPayload } from "../queue/queues";
+import { addRunJob } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import type { WorkflowTemplate } from "../types/workflow";
 import { runStore } from "./runStore";
@@ -116,7 +117,8 @@ export async function triggerBatch(params: TriggerBatchParams): Promise<TriggerB
     if (runQueue) {
       const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
       try {
-        await runQueue.add(
+        await addRunJob(
+          runQueue,
           "run",
           {
             runId: run.id,

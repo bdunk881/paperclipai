@@ -204,6 +204,13 @@ export interface WorkflowAnnotation {
   height: number;
 }
 
+/**
+ * HEL-700: run queue priority (fastest→slowest). Mapped to a BullMQ numeric
+ * priority in `queue/queues.ts`; `normal` is the default. Stored on the run's
+ * runtimeState so it survives re-enqueues (resume / retry / crash-resume).
+ */
+export type RunPriority = "critical" | "high" | "normal" | "low";
+
 /** A runtime workflow instance (one execution of a template) */
 export interface WorkflowRun {
   id: string;
@@ -234,6 +241,11 @@ export interface WorkflowRun {
      * run is paused on a `wait` step in `mode: "webhook"`; cleared on resume.
      */
     waitingResumeToken?: string;
+    /**
+     * HEL-700: the run's queue priority, persisted so re-enqueues (resume,
+     * retry, crash-resume) preserve it. Absent ⇒ `normal`.
+     */
+    priority?: RunPriority;
   };
   error?: string;
   failureReason?: string;

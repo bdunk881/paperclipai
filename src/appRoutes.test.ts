@@ -16,6 +16,16 @@ jest.mock("./queue/queues", () => ({
   getDlqQueue: jest.fn(() => null),
   resetRunQueueForTests: jest.fn(),
   resetDlqQueueForTests: jest.fn(),
+  // HEL-700: addRunJob forwards to queue.add; isRunPriority guards the request
+  // field. Delegated so the existing add() spy + route paths keep working.
+  addRunJob: (
+    queue: { add: (...args: unknown[]) => unknown },
+    name: string,
+    payload: unknown,
+    opts: unknown,
+  ) => queue.add(name, payload, opts),
+  isRunPriority: (v: unknown) =>
+    v === "critical" || v === "high" || v === "normal" || v === "low",
 }));
 
 // Bypass workspace resolution — set req.workspace with owner role so requireRole() always passes.

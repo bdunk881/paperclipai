@@ -60,3 +60,70 @@ describe("getRunQueue", () => {
     expect(queue).toBeNull();
   });
 });
+
+describe("run priority (HEL-700)", () => {
+  it("maps priorities so faster tiers get a lower BullMQ number, normal is the default", () => {
+    const { resolveRunPriority } = require("./queues") as typeof import("./queues");
+    const critical = resolveRunPriority("critical");
+    const high = resolveRunPriority("high");
+    const normal = resolveRunPriority("normal");
+    const low = resolveRunPriority("low");
+
+    // BullMQ: a LOWER number is dequeued first.
+    expect(critical).toBeLessThan(high);
+    expect(high).toBeLessThan(normal);
+    expect(normal).toBeLessThan(low);
+    // Default (no arg) == normal, so existing callers keep FIFO ordering.
+    expect(resolveRunPriority()).toBe(normal);
+    expect(resolveRunPriority(undefined)).toBe(normal);
+  });
+
+  it("isRunPriority guards the wire/HTTP value", () => {
+    const { isRunPriority } = require("./queues") as typeof import("./queues");
+    expect(isRunPriority("critical")).toBe(true);
+    expect(isRunPriority("normal")).toBe(true);
+    expect(isRunPriority("urgent")).toBe(false);
+    expect(isRunPriority("")).toBe(false);
+    expect(isRunPriority(undefined)).toBe(false);
+    expect(isRunPriority(3)).toBe(false);
+  });
+
+  it("addRunJob injects the resolved priority while preserving caller options", async () => {
+    const { addRunJob, resolveRunPriority } = require("./queues") as typeof import("./queues");
+    const calls: Array<{ name: string; payload: RunJobPayload; opts: Record<string, unknown> }> = [];
+    const fakeQueue = {
+      add: (name: string, payload: RunJobPayload, opts: Record<string, unknown>) => {
+        calls.push({ name, payload, opts });
+        return Promise.resolve({ id: payload.runId });
+      },
+    } as never;
+
+    await addRunJob(
+      fakeQueue,
+      "run",
+      {
+        runId: "r1",
+        templateId: "t1",
+        workspaceId: "w1",
+        stepIndex: 0,
+        idempotencyKey: "r1:0",
+        priority: "critical",
+      },
+      { jobId: "r1", removeOnComplete: 100 },
+    );
+    // No priority on the payload ⇒ default normal.
+    await addRunJob(
+      fakeQueue,
+      "run",
+      { runId: "r2", templateId: "t1", workspaceId: "w1", stepIndex: 0, idempotencyKey: "r2:0" },
+      { jobId: "r2" },
+    );
+
+    expect(calls[0].opts).toEqual({
+      jobId: "r1",
+      removeOnComplete: 100,
+      priority: resolveRunPriority("critical"),
+    });
+    expect(calls[1].opts).toEqual({ jobId: "r2", priority: resolveRunPriority("normal") });
+  });
+});

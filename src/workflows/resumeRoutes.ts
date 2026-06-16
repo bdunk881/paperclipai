@@ -22,7 +22,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../middleware/asyncHandler";
 import { runStore } from "../engine/runStore";
-import { getRunQueue } from "../queue/queues";
+import { getRunQueue, addRunJob } from "../queue/queues";
 import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { mergeResumePayload } from "../engine/waitStep";
 
@@ -63,7 +63,8 @@ export function createResumeRoutes(): Router {
       if (runQueue) {
         const idempotencyKey = `${run.id}:${resumeStepIndex}:webhook-resume`;
         try {
-          await runQueue.add(
+          await addRunJob(
+            runQueue,
             "run",
             {
               runId: run.id,
@@ -72,6 +73,8 @@ export function createResumeRoutes(): Router {
               workspaceId: run.workspaceId ?? "",
               stepIndex: resumeStepIndex,
               idempotencyKey,
+              // HEL-700: preserve the paused run's priority across the resume.
+              priority: runtimeState.priority,
             },
             { jobId: `${run.id}:webhook-resume:${resumeStepIndex}`, removeOnComplete: 100 },
           );

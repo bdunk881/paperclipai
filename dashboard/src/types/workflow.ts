@@ -92,6 +92,22 @@ export interface WorkflowStep {
   acceptedFileTypes?: string[];
 }
 
+/**
+ * HEL-687: a free-floating canvas annotation ("sticky note"). NOT a workflow
+ * step — the engine ignores annotations entirely; they only document the graph.
+ * Persisted on the template and (when the doc-graph is on) synced over Yjs.
+ */
+export interface WorkflowAnnotation {
+  id: string;
+  text: string;
+  /** One of the named sticky-note colors (see workflowAnnotations.ts). */
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface WorkflowTemplate {
   id: string;
   name: string;
@@ -102,6 +118,8 @@ export interface WorkflowTemplate {
   steps: WorkflowStep[];
   sampleInput: Record<string, unknown>;
   expectedOutput: Record<string, unknown>;
+  /** HEL-687: free-floating canvas sticky notes (optional, non-executable). */
+  annotations?: WorkflowAnnotation[];
 }
 
 export interface WorkflowRun {

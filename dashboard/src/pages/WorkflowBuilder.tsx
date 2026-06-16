@@ -43,9 +43,12 @@ import {
   Download,
   LayoutGrid,
   Ban,
+  StickyNote,
 } from "lucide-react";
 import { exportWorkflowPng, exportFileStem } from "./workflowExport";
 import { tidyLayout, type NodeDims } from "./workflowLayout";
+import { createAnnotation } from "./workflowAnnotations";
+import { StickyNotesLayer } from "../components/workflow/StickyNotesLayer";
 import { listRunsByTemplate, runFromNode } from "../api/runsApi";
 import {
   Background,
@@ -107,7 +110,13 @@ import {
 } from "../api/workflowsApi";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
-import type { WorkflowRun, WorkflowStep, StepKind, WorkflowTemplate } from "../types/workflow";
+import type {
+  WorkflowRun,
+  WorkflowStep,
+  StepKind,
+  WorkflowTemplate,
+  WorkflowAnnotation,
+} from "../types/workflow";
 import {
   buildDefaultEdge,
   buildEdgesFromSteps,
@@ -1609,6 +1618,36 @@ export default function WorkflowBuilder() {
     setGraphError(null);
   }
 
+  // HEL-687: sticky-note (annotation) handlers. Annotations live on the template
+  // (non-executable) and persist via the canonical save; they survive the
+  // doc→template projection (which only replaces `steps`).
+  function addAnnotation() {
+    if (isReadonlyBuilder) return;
+    const instance = reactFlowInstanceRef.current;
+    const position = instance
+      ? instance.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
+      : { x: 80, y: 80 };
+    const note = createAnnotation(position);
+    setTemplate((t) => ({ ...t, annotations: [...(t.annotations ?? []), note] }));
+    setGraphError(null);
+  }
+
+  function updateAnnotation(id: string, patch: Partial<WorkflowAnnotation>) {
+    if (isReadonlyBuilder) return;
+    setTemplate((t) => ({
+      ...t,
+      annotations: (t.annotations ?? []).map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    }));
+  }
+
+  function removeAnnotation(id: string) {
+    if (isReadonlyBuilder) return;
+    setTemplate((t) => ({
+      ...t,
+      annotations: (t.annotations ?? []).filter((a) => a.id !== id),
+    }));
+  }
+
   function moveStep(id: string, dir: -1 | 1) {
     const idx = template.steps.findIndex((s) => s.id === id);
     if (idx < 0) return;
@@ -2552,6 +2591,16 @@ export default function WorkflowBuilder() {
                       <LayoutGrid size={14} />
                     </ControlButton>
                   )}
+                  {/* HEL-687: drop a sticky note on the canvas. */}
+                  {!isReadonlyBuilder && (
+                    <ControlButton
+                      onClick={addAnnotation}
+                      title="Add sticky note"
+                      aria-label="Add sticky note"
+                    >
+                      <StickyNote size={14} />
+                    </ControlButton>
+                  )}
                 </Controls>
                 {/* HEL-170: keep the mini-map away from the right-side
                     node stack and inspector/Copilot sheets at laptop widths.
@@ -2575,6 +2624,15 @@ export default function WorkflowBuilder() {
                     the ViewportPortal renders them in flow space,
                     pan + zoom for free. */}
                 <WorkflowCursors peers={presencePeers} />
+                {/* HEL-687: sticky-note overlay (ViewportPortal, outside the
+                    node pipeline). */}
+                <StickyNotesLayer
+                  annotations={template.annotations ?? []}
+                  readonly={isReadonlyBuilder}
+                  getZoom={() => reactFlowInstanceRef.current?.getZoom() ?? 1}
+                  onChange={updateAnnotation}
+                  onDelete={removeAnnotation}
+                />
               </ReactFlow>
               {/* HEL-783: multi-selection indicator. The home for HEL-778's
                   "Extract to sub-workflow" action once it lands. */}

@@ -46,6 +46,16 @@ describe("workflowGraph", () => {
     expect(edges.map((edge) => `${edge.source}->${edge.target}`)).toEqual(["a->b", "b->c"]);
   });
 
+  it("routes edges orthogonally (HEL-684: smoothstep, not bezier)", () => {
+    const steps = [makeStep("a", "trigger"), makeStep("b", "condition"), makeStep("c", "output")];
+    const edges = buildEdgesFromSteps(steps);
+
+    expect(edges.length).toBeGreaterThan(0);
+    for (const edge of edges) {
+      expect(edge.type).toBe("smoothstep");
+    }
+  });
+
   it("round-trips serialized edges from step config", () => {
     const steps = [makeStep("a", "trigger"), makeStep("b", "condition"), makeStep("c", "output")];
     const serialized = serializeEdgesToSteps(steps, [

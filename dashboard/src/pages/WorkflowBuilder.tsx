@@ -49,6 +49,7 @@ import { exportWorkflowPng, exportFileStem } from "./workflowExport";
 import { tidyLayout, type NodeDims } from "./workflowLayout";
 import { createAnnotation } from "./workflowAnnotations";
 import { StickyNotesLayer } from "../components/workflow/StickyNotesLayer";
+import { TriggerPickerModal } from "../components/workflow/TriggerPickerModal";
 import { listRunsByTemplate, runFromNode } from "../api/runsApi";
 import {
   Background,
@@ -751,6 +752,8 @@ export default function WorkflowBuilder() {
   const clipboardRef = useRef<WorkflowClipboard | null>(null);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const [paletteDragKind, setPaletteDragKind] = useState<StepKind | null>(null);
+  // HEL-688: "What triggers this workflow?" picker modal.
+  const [triggerPickerOpen, setTriggerPickerOpen] = useState(false);
   const [canvasDropActive, setCanvasDropActive] = useState(false);
   const workflowStudioStyle = useMemo(
     () =>
@@ -2100,7 +2103,11 @@ export default function WorkflowBuilder() {
               collapsedSize={4}
               className="min-w-0"
             >
-              <StudioPalette onAdd={addStep} onDragKind={setPaletteDragKind} />
+              <StudioPalette
+                onAdd={addStep}
+                onDragKind={setPaletteDragKind}
+                onBrowseTriggers={() => setTriggerPickerOpen(true)}
+              />
             </Panel>
             <PanelResizeHandle className="w-1 bg-transparent transition-colors hover:bg-af2-clay/30 data-[resize-handle-active]:bg-af2-clay/50" />
           </>
@@ -2468,7 +2475,11 @@ export default function WorkflowBuilder() {
           }}
         >
           {template.steps.length === 0 ? (
-            <EmptyCanvas onAdd={addStep} templates={allTemplates} />
+            <EmptyCanvas
+              onAdd={addStep}
+              templates={allTemplates}
+              onBrowseTriggers={() => setTriggerPickerOpen(true)}
+            />
           ) : (
             <>
               <ReactFlow
@@ -3108,6 +3119,17 @@ export default function WorkflowBuilder() {
           }}
         />
       )}
+
+      {/* HEL-688: trigger-picker catalog. */}
+      <TriggerPickerModal
+        open={triggerPickerOpen}
+        onClose={() => setTriggerPickerOpen(false)}
+        onSelect={(kind) => {
+          addStep(kind);
+          setTriggerPickerOpen(false);
+        }}
+        iconFor={(kind) => KIND_META[kind].icon}
+      />
 
       {showHelp && (
         <WorkflowSetupChecklistPanel
@@ -4384,9 +4406,11 @@ function InspectorEmptyState() {
 function StudioPalette({
   onAdd,
   onDragKind,
+  onBrowseTriggers,
 }: {
   onAdd: (kind: StepKind) => void;
   onDragKind: (kind: StepKind | null) => void;
+  onBrowseTriggers: () => void;
 }) {
   return (
     <aside
@@ -4394,6 +4418,15 @@ function StudioPalette({
       aria-label="Node palette"
       className="flex h-full flex-col gap-5 overflow-y-auto border-r border-af2-line bg-af2-paper px-4 py-5"
     >
+      {/* HEL-688: jump into the trigger catalog ("What triggers this workflow?"). */}
+      <button
+        type="button"
+        onClick={onBrowseTriggers}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-af2-clay/30 bg-af2-clay-soft/20 px-3 py-2 text-[13px] font-medium text-af2-clay transition hover:bg-af2-clay-soft/40"
+      >
+        <Zap size={14} />
+        Browse triggers
+      </button>
       {STEP_PALETTE_SECTIONS.map((section) => (
         <div key={section.title}>
           <p
@@ -4523,9 +4556,11 @@ function AddStepMenu({ onAdd }: { onAdd: (k: StepKind) => void }) {
 function EmptyCanvas({
   onAdd,
   templates,
+  onBrowseTriggers,
 }: {
   onAdd: (k: StepKind) => void;
   templates: TemplateSummary[];
+  onBrowseTriggers: () => void;
 }) {
   return (
     <div className="h-full overflow-y-auto px-6 py-10">
@@ -4577,12 +4612,21 @@ function EmptyCanvas({
         <div className="mb-2 text-xs uppercase tracking-[0.18em] text-af2-ink-4">
           Ready to build?
         </div>
-        <div className="mb-2">
+        {/* HEL-688: start with a trigger (n8n's "what triggers this workflow?"). */}
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBrowseTriggers}
+            className="inline-flex items-center gap-2 rounded-lg border border-af2-clay/40 bg-af2-clay px-4 py-2 text-sm font-medium text-white transition hover:bg-af2-clay/90"
+          >
+            <Zap size={15} />
+            Choose a trigger
+          </button>
           <AddStepMenu onAdd={onAdd} />
         </div>
         <p className="mb-8 max-w-xs text-xs text-af2-ink-4">
-          Pick a step type and drop it on the canvas. You can rearrange them
-          later.
+          Start with a trigger, then add steps — or pick any step type and drop
+          it on the canvas. You can rearrange them later.
         </p>
 
         {/* Templates */}

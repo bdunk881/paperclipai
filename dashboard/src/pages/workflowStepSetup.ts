@@ -856,3 +856,19 @@ export function stepStatusLabel(status: StepSetupStatus): string {
       return "Needs setup";
   }
 }
+
+/**
+ * HEL-688: the wired trigger step-kinds offered in the trigger-picker catalog,
+ * in display order. Each has KIND_META + STEP_KIND_COPY. App-event (Composio)
+ * triggers live in the Connections panel, not here.
+ */
+export const TRIGGER_PICKER_KINDS: StepKind[] = [
+  "trigger",
+  "cron_trigger",
+  "interval_trigger",
+  "form_trigger",
+  "chat_trigger",
+  "error_trigger",
+  "sub_workflow_trigger",
+  "file_trigger",
+];

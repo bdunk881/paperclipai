@@ -130,3 +130,77 @@ describe("knowledgeStore", () => {
     errorSpy.mockRestore();
   });
 });
+
+describe("knowledge base visibility — user vs workspace (HEL-309)", () => {
+  it("keeps a user-scoped base private to its creator (default scope)", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({ userId: "owner", name: "Private KB" });
+    expect(base.scope).toBe("user");
+    expect(base.workspaceId).toBeUndefined();
+
+    // Creator sees it.
+    const own = await knowledgeStore.listKnowledgeBases("owner");
+    expect(own.map((b) => b.id)).toContain(base.id);
+
+    // A different user — even when operating inside a workspace — does not.
+    const intruderList = await knowledgeStore.listKnowledgeBases("intruder", "ws-1");
+    expect(intruderList.map((b) => b.id)).not.toContain(base.id);
+    expect(await knowledgeStore.getKnowledgeBase(base.id, "intruder", "ws-1")).toBeUndefined();
+  });
+
+  it("requires a workspaceId for a workspace-scoped base", async () => {
+    await expect(
+      knowledgeStore.createKnowledgeBase({ userId: "owner", name: "WS KB", scope: "workspace" })
+    ).rejects.toThrow(/workspaceId/);
+  });
+
+  it("makes a workspace base + its documents and chunks visible to other members, not outsiders", async () => {
+    const base = await knowledgeStore.createKnowledgeBase({
+      userId: "owner",
+      name: "Team KB",
+      scope: "workspace",
+      workspaceId: "ws-1",
+    });
+    expect(base.scope).toBe("workspace");
+    expect(base.workspaceId).toBe("ws-1");
+
+    const { document } = await knowledgeStore.ingestDocument({
+      userId: "owner",
+      knowledgeBaseId: base.id,
+      filename: "policy.md",
+      mimeType: "text/markdown",
+      content: "Customers can receive a refund within thirty days of purchase.",
+      sourceType: "inline",
+      workspaceId: "ws-1",
+    });
+
+    // A different member of the same workspace sees the base, its docs, chunks, and search hits.
+    const member = "teammate";
+    expect((await knowledgeStore.listKnowledgeBases(member, "ws-1")).map((b) => b.id)).toContain(base.id);
+    expect(await knowledgeStore.getKnowledgeBase(base.id, member, "ws-1")).toBeDefined();
+    expect((await knowledgeStore.listDocuments(base.id, member, "ws-1")).map((d) => d.id)).toContain(
+      document.id
+    );
+    expect((await knowledgeStore.listChunks(document.id, member, "ws-1")).length).toBeGreaterThan(0);
+    const memberSearch = await knowledgeStore.search({
+      userId: member,
+      query: "refund within thirty days",
+      workspaceId: "ws-1",
+    });
+    expect(memberSearch.length).toBeGreaterThan(0);
+
+    // A user in a different workspace sees nothing.
+    const outsider = "outsider";
+    expect((await knowledgeStore.listKnowledgeBases(outsider, "ws-2")).map((b) => b.id)).not.toContain(
+      base.id
+    );
+    expect(await knowledgeStore.getKnowledgeBase(base.id, outsider, "ws-2")).toBeUndefined();
+    expect(await knowledgeStore.listDocuments(base.id, outsider, "ws-2")).toHaveLength(0);
+    expect(await knowledgeStore.listChunks(document.id, outsider, "ws-2")).toHaveLength(0);
+    const outsiderSearch = await knowledgeStore.search({
+      userId: outsider,
+      query: "refund within thirty days",
+      workspaceId: "ws-2",
+    });
+    expect(outsiderSearch).toHaveLength(0);
+  });
+});

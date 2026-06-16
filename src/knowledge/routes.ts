@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { AuthenticatedRequest } from "../auth/authMiddleware";
+import { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { parseFile } from "../engine/fileParser";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
 import { knowledgeStore } from "./knowledgeStore";
@@ -16,6 +17,12 @@ function resolveUserId(req: AuthenticatedRequest): string | null {
   return typeof req.auth?.sub === "string" && req.auth.sub.trim() ? req.auth.sub : null;
 }
 
+// HEL-309: the caller's workspace (set by the workspaceResolver middleware).
+// Threaded into reads so workspace-scoped knowledge bases surface to members.
+function resolveWorkspaceId(req: WorkspaceAwareRequest): string | undefined {
+  return typeof req.workspaceId === "string" && req.workspaceId.trim() ? req.workspaceId : undefined;
+}
+
 async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
   const defaultConfig = llmConfigStore.getDecryptedDefault(userId);
   if (defaultConfig?.config.provider === "openai") {
@@ -24,23 +31,33 @@ async function resolveOpenAiKey(userId: string): Promise<string | undefined> {
   return process.env.OPENAI_API_KEY;
 }
 
-router.post("/bases", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/bases", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const { name, description, tags, metadata, chunkingConfig } = req.body as {
+  const { name, description, tags, metadata, chunkingConfig, scope } = req.body as {
     name?: unknown;
     description?: unknown;
     tags?: unknown;
     metadata?: unknown;
     chunkingConfig?: unknown;
+    scope?: unknown;
   };
 
   if (typeof name !== "string" || !name.trim()) {
     res.status(400).json({ error: "name is required and must be a non-empty string" });
+    return;
+  }
+
+  // HEL-309: `scope: "workspace"` makes the KB visible to the whole workspace;
+  // it requires a resolved workspace. Default `"user"` preserves prior behavior.
+  const requestedScope = scope === "workspace" ? "workspace" : "user";
+  const workspaceId = resolveWorkspaceId(req);
+  if (requestedScope === "workspace" && !workspaceId) {
+    res.status(400).json({ error: "A workspace is required to create a workspace-scoped knowledge base" });
     return;
   }
 
@@ -54,30 +71,32 @@ router.post("/bases", asyncHandler<AuthenticatedRequest>(async (req, res) => {
       typeof chunkingConfig === "object" && chunkingConfig !== null
         ? (chunkingConfig as Record<string, number>)
         : undefined,
+    scope: requestedScope,
+    workspaceId: requestedScope === "workspace" ? workspaceId : undefined,
   });
 
   res.status(201).json(base);
 }));
 
-router.get("/bases", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/bases", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const bases = await knowledgeStore.listKnowledgeBases(userId);
+  const bases = await knowledgeStore.listKnowledgeBases(userId, resolveWorkspaceId(req));
   res.json({ bases, total: bases.length });
 }));
 
-router.get("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/bases/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const base = await knowledgeStore.getKnowledgeBase(req.params.id, userId);
+  const base = await knowledgeStore.getKnowledgeBase(req.params.id, userId, resolveWorkspaceId(req));
   if (!base) {
     res.status(404).json({ error: `Knowledge base not found: ${req.params.id}` });
     return;
@@ -86,14 +105,19 @@ router.get("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => 
   res.json(base);
 }));
 
-router.patch("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.patch("/bases/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const base = await knowledgeStore.updateKnowledgeBase(req.params.id, userId, req.body as Record<string, unknown>);
+  const base = await knowledgeStore.updateKnowledgeBase(
+    req.params.id,
+    userId,
+    req.body as Record<string, unknown>,
+    resolveWorkspaceId(req)
+  );
   if (!base) {
     res.status(404).json({ error: `Knowledge base not found: ${req.params.id}` });
     return;
@@ -102,7 +126,7 @@ router.patch("/bases/:id", asyncHandler<AuthenticatedRequest>(async (req, res) =
   res.json(base);
 }));
 
-router.post("/bases/:id/documents", upload.single("file"), asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/bases/:id/documents", upload.single("file"), asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -174,30 +198,31 @@ router.post("/bases/:id/documents", upload.single("file"), asyncHandler<Authenti
     tags,
     metadata,
     openaiApiKey,
+    workspaceId: resolveWorkspaceId(req),
   });
 
   res.status(201).json(result);
 }));
 
-router.get("/bases/:id/documents", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/bases/:id/documents", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const documents = await knowledgeStore.listDocuments(req.params.id, userId);
+  const documents = await knowledgeStore.listDocuments(req.params.id, userId, resolveWorkspaceId(req));
   res.json({ documents, total: documents.length });
 }));
 
-router.get("/documents/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/documents/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const document = await knowledgeStore.getDocument(req.params.id, userId);
+  const document = await knowledgeStore.getDocument(req.params.id, userId, resolveWorkspaceId(req));
   if (!document) {
     res.status(404).json({ error: `Document not found: ${req.params.id}` });
     return;
@@ -206,18 +231,18 @@ router.get("/documents/:id", asyncHandler<AuthenticatedRequest>(async (req, res)
   res.json(document);
 }));
 
-router.get("/documents/:id/chunks", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.get("/documents/:id/chunks", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
     return;
   }
 
-  const chunks = await knowledgeStore.listChunks(req.params.id, userId);
+  const chunks = await knowledgeStore.listChunks(req.params.id, userId, resolveWorkspaceId(req));
   res.json({ chunks, total: chunks.length });
 }));
 
-router.patch("/chunks/:id", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.patch("/chunks/:id", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -238,7 +263,7 @@ router.patch("/chunks/:id", asyncHandler<AuthenticatedRequest>(async (req, res) 
   res.json(chunk);
 }));
 
-router.post("/chunks/:id/split", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/chunks/:id/split", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -269,7 +294,7 @@ router.post("/chunks/:id/split", asyncHandler<AuthenticatedRequest>(async (req, 
   }
 }));
 
-router.post("/chunks/merge", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/chunks/merge", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -297,7 +322,7 @@ router.post("/chunks/merge", asyncHandler<AuthenticatedRequest>(async (req, res)
   res.json(chunk);
 }));
 
-router.post("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+router.post("/search", asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const userId = resolveUserId(req);
   if (!userId) {
     res.status(401).json({ error: "Authenticated user is required" });
@@ -325,6 +350,7 @@ router.post("/search", asyncHandler<AuthenticatedRequest>(async (req, res) => {
     limit: typeof limit === "number" ? limit : undefined,
     minScore: typeof minScore === "number" ? minScore : undefined,
     openaiApiKey,
+    workspaceId: resolveWorkspaceId(req),
   });
 
   res.json({ results, total: results.length });

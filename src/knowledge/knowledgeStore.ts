@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { parseJsonColumn } from "../db/json";
 import { getPostgresPool, inMemoryAllowed, isPostgresConfigured, queryPostgres } from "../db/postgres";
 import { chunkDocument, ChunkingConfig, DEFAULT_CHUNKING_CONFIG } from "./chunking";
-import { withUserContext } from "../middleware/workspaceContext";
+import { withUserContext, withWorkspaceContext } from "../middleware/workspaceContext";
 import {
   cosineSimilarity,
   embedText,
@@ -13,6 +13,13 @@ import {
 export interface KnowledgeBase {
   id: string;
   userId: string;
+  /**
+   * HEL-309: visibility. `"user"` (default) = only the creating user sees it;
+   * `"workspace"` = readable by every member of, and agent operating in,
+   * `workspaceId`.
+   */
+  scope: "user" | "workspace";
+  workspaceId?: string;
   name: string;
   description?: string;
   tags: string[];
@@ -71,6 +78,10 @@ export interface CreateKnowledgeBaseInput {
   tags?: string[];
   metadata?: Record<string, unknown>;
   chunkingConfig?: Partial<ChunkingConfig>;
+  /** HEL-309: `"workspace"` makes the KB visible to the whole workspace. Defaults to `"user"`. */
+  scope?: "user" | "workspace";
+  /** Required when `scope === "workspace"`; the owning workspace. */
+  workspaceId?: string;
 }
 
 export interface IngestKnowledgeDocumentInput {
@@ -83,6 +94,8 @@ export interface IngestKnowledgeDocumentInput {
   tags?: string[];
   metadata?: Record<string, unknown>;
   openaiApiKey?: string;
+  /** HEL-309: caller's workspace, so ingest can target a workspace-scoped KB. */
+  workspaceId?: string;
 }
 
 export interface KnowledgeSearchInput {
@@ -92,11 +105,15 @@ export interface KnowledgeSearchInput {
   limit?: number;
   minScore?: number;
   openaiApiKey?: string;
+  /** HEL-309: caller's workspace, so search also matches workspace-scoped KBs. */
+  workspaceId?: string;
 }
 
 interface PersistedKnowledgeBaseRow {
   id: string;
   user_id: string;
+  scope: string;
+  workspace_id: string | null;
   name: string;
   description: string | null;
   tags: unknown;
@@ -209,6 +226,8 @@ function mapKnowledgeBase(row: PersistedKnowledgeBaseRow): KnowledgeBase {
   const base: KnowledgeBase = {
     id: row.id,
     userId: row.user_id,
+    scope: row.scope === "workspace" ? "workspace" : "user",
+    workspaceId: row.workspace_id ?? undefined,
     name: row.name,
     description: row.description ?? undefined,
     tags: sanitizeTags(parseJsonColumn(row.tags, [] as string[])),
@@ -264,6 +283,51 @@ function mapKnowledgeChunk(row: PersistedKnowledgeChunkRow): KnowledgeChunk {
   return chunk;
 }
 
+/**
+ * HEL-309: run a knowledge read under the right RLS context. When a workspaceId
+ * is supplied we use `withWorkspaceContext` (sets BOTH the user and workspace
+ * GUCs) so the user-OR-workspace policy resolves; otherwise `withUserContext`
+ * (user GUC only) keeps the read scoped to the caller's own rows.
+ */
+function withKnowledgeContext<T>(
+  userId: string,
+  workspaceId: string | undefined,
+  fn: (client: import("pg").PoolClient) => Promise<T>,
+): Promise<T> {
+  const pool = getPostgresPool();
+  return workspaceId
+    ? withWorkspaceContext(pool, { workspaceId, userId }, fn)
+    : withUserContext(pool, userId, fn);
+}
+
+/**
+ * HEL-309: in-memory-fallback visibility — own user-scoped base, or a
+ * workspace-scoped base in the caller's workspace. Mirrors the SQL dual-path.
+ */
+function knowledgeBaseVisible(
+  base: KnowledgeBase,
+  userId: string,
+  workspaceId: string | undefined,
+): boolean {
+  if (base.userId === userId) return true;
+  return base.scope === "workspace" && !!workspaceId && base.workspaceId === workspaceId;
+}
+
+/**
+ * HEL-309: in-memory-fallback visibility for a child row (document/chunk) — own
+ * row, or a row whose parent KB is workspace-visible to the caller.
+ */
+function knowledgeChildVisible(
+  childUserId: string,
+  knowledgeBaseId: string,
+  userId: string,
+  workspaceId: string | undefined,
+): boolean {
+  if (childUserId === userId) return true;
+  const parent = knowledgeBases.get(knowledgeBaseId);
+  return !!parent && knowledgeBaseVisible(parent, userId, workspaceId) && parent.scope === "workspace";
+}
+
 export async function ensureKnowledgeSchema(): Promise<void> {
   if (!postgresPersistenceAvailable() || schemaEnsured) {
     return;
@@ -274,6 +338,8 @@ export async function ensureKnowledgeSchema(): Promise<void> {
     CREATE TABLE IF NOT EXISTS knowledge_bases (
       id text PRIMARY KEY,
       user_id text NOT NULL,
+      scope text NOT NULL DEFAULT 'user',
+      workspace_id text,
       name text NOT NULL,
       description text,
       tags jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -283,6 +349,13 @@ export async function ensureKnowledgeSchema(): Promise<void> {
       updated_at timestamptz NOT NULL
     )
   `);
+  // HEL-309: ensure the visibility columns exist on tables created before this
+  // migration (the canonical DDL lives in migrations/113_*; these guards keep
+  // fresh in-memory/test databases consistent with it).
+  await queryPostgres(
+    "ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'user'",
+  );
+  await queryPostgres("ALTER TABLE knowledge_bases ADD COLUMN IF NOT EXISTS workspace_id text");
   await queryPostgres(`
     CREATE TABLE IF NOT EXISTS knowledge_documents (
       id text PRIMARY KEY,
@@ -344,12 +417,16 @@ async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
   }
   try {
     await ensureKnowledgeSchema();
-    await withUserContext(getPostgresPool(), base.userId, async (client) => {
+    // HEL-309: a workspace-scoped KB must be written with the workspace GUC set
+    // so the user-OR-workspace RLS WITH CHECK passes; user KBs use the user GUC.
+    await withKnowledgeContext(base.userId, base.scope === "workspace" ? base.workspaceId : undefined, async (client) => {
       await client.query(
         `INSERT INTO knowledge_bases (
-          id, user_id, name, description, tags, metadata, chunking_config, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::timestamptz, $9::timestamptz)
+          id, user_id, scope, workspace_id, name, description, tags, metadata, chunking_config, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb, $10::timestamptz, $11::timestamptz)
         ON CONFLICT (id) DO UPDATE SET
+          scope = EXCLUDED.scope,
+          workspace_id = EXCLUDED.workspace_id,
           name = EXCLUDED.name,
           description = EXCLUDED.description,
           tags = EXCLUDED.tags,
@@ -359,6 +436,8 @@ async function persistKnowledgeBase(base: KnowledgeBase): Promise<void> {
         [
           base.id,
           base.userId,
+          base.scope,
+          base.workspaceId ?? null,
           base.name,
           base.description ?? null,
           JSON.stringify(base.tags),
@@ -486,12 +565,20 @@ async function persistKnowledgeChunk(chunk: KnowledgeChunk, embedding: number[])
   }
 }
 
-async function hydrateKnowledgeBasesFromPostgres(userId: string): Promise<KnowledgeBase[]> {
+async function hydrateKnowledgeBasesFromPostgres(
+  userId: string,
+  workspaceId?: string
+): Promise<KnowledgeBase[]> {
   await ensureKnowledgeSchema();
-  return withUserContext(getPostgresPool(), userId, async (client) => {
+  return withKnowledgeContext(userId, workspaceId, async (client) => {
+    // HEL-309: own user-scoped bases, plus any workspace-scoped base in the
+    // caller's workspace. Without a workspaceId only the user's own rows match.
     const result = await client.query<PersistedKnowledgeBaseRow>(
-      `SELECT * FROM knowledge_bases WHERE user_id = $1 ORDER BY updated_at DESC`,
-      [userId]
+      `SELECT * FROM knowledge_bases
+       WHERE user_id = $1
+          OR (scope = 'workspace' AND workspace_id = $2)
+       ORDER BY updated_at DESC`,
+      [userId, workspaceId ?? null]
     );
     return result.rows.map(mapKnowledgeBase);
   });
@@ -499,13 +586,16 @@ async function hydrateKnowledgeBasesFromPostgres(userId: string): Promise<Knowle
 
 async function hydrateKnowledgeBaseFromPostgres(
   userId: string,
-  id: string
+  id: string,
+  workspaceId?: string
 ): Promise<KnowledgeBase | undefined> {
   await ensureKnowledgeSchema();
-  return withUserContext(getPostgresPool(), userId, async (client) => {
+  return withKnowledgeContext(userId, workspaceId, async (client) => {
     const result = await client.query<PersistedKnowledgeBaseRow>(
-      `SELECT * FROM knowledge_bases WHERE id = $1 AND user_id = $2`,
-      [id, userId]
+      `SELECT * FROM knowledge_bases
+       WHERE id = $1
+         AND (user_id = $2 OR (scope = 'workspace' AND workspace_id = $3))`,
+      [id, userId, workspaceId ?? null]
     );
     const row = result.rows[0];
     return row ? mapKnowledgeBase(row) : undefined;
@@ -514,15 +604,20 @@ async function hydrateKnowledgeBaseFromPostgres(
 
 async function hydrateDocumentsFromPostgres(
   userId: string,
-  knowledgeBaseId: string
+  knowledgeBaseId: string,
+  workspaceId?: string
 ): Promise<KnowledgeDocument[]> {
   await ensureKnowledgeSchema();
-  return withUserContext(getPostgresPool(), userId, async (client) => {
+  return withKnowledgeContext(userId, workspaceId, async (client) => {
+    // HEL-309: documents inherit visibility from the parent KB — own docs, or
+    // any doc whose KB is workspace-scoped in the caller's workspace.
     const result = await client.query<PersistedKnowledgeDocumentRow>(
-      `SELECT * FROM knowledge_documents
-       WHERE user_id = $1 AND knowledge_base_id = $2
-       ORDER BY created_at DESC`,
-      [userId, knowledgeBaseId]
+      `SELECT kd.* FROM knowledge_documents kd
+       JOIN knowledge_bases kb ON kb.id = kd.knowledge_base_id
+       WHERE kd.knowledge_base_id = $2
+         AND (kd.user_id = $1 OR (kb.scope = 'workspace' AND kb.workspace_id = $3))
+       ORDER BY kd.created_at DESC`,
+      [userId, knowledgeBaseId, workspaceId ?? null]
     );
     return result.rows.map(mapKnowledgeDocument);
   });
@@ -530,15 +625,19 @@ async function hydrateDocumentsFromPostgres(
 
 async function hydrateChunksFromPostgres(
   userId: string,
-  documentId: string
+  documentId: string,
+  workspaceId?: string
 ): Promise<KnowledgeChunk[]> {
   await ensureKnowledgeSchema();
-  return withUserContext(getPostgresPool(), userId, async (client) => {
+  return withKnowledgeContext(userId, workspaceId, async (client) => {
+    // HEL-309: chunks inherit visibility from their parent KB.
     const result = await client.query<PersistedKnowledgeChunkRow>(
-      `SELECT * FROM knowledge_chunks
-       WHERE user_id = $1 AND document_id = $2
-       ORDER BY chunk_index ASC`,
-      [userId, documentId]
+      `SELECT kc.* FROM knowledge_chunks kc
+       JOIN knowledge_bases kb ON kb.id = kc.knowledge_base_id
+       WHERE kc.document_id = $2
+         AND (kc.user_id = $1 OR (kb.scope = 'workspace' AND kb.workspace_id = $3))
+       ORDER BY kc.chunk_index ASC`,
+      [userId, documentId, workspaceId ?? null]
     );
     return result.rows.map(mapKnowledgeChunk);
   });
@@ -553,11 +652,13 @@ async function searchPostgres(
   const minScore = Math.max(input.minScore ?? 0, 0);
   const baseIds = input.knowledgeBaseIds?.filter(Boolean) ?? [];
 
-  const filterSql = baseIds.length > 0 ? "AND kc.knowledge_base_id = ANY($4::text[])" : "";
+  // $4 is the caller's workspace (null when absent); baseIds, when present, is $5.
+  const filterSql = baseIds.length > 0 ? "AND kc.knowledge_base_id = ANY($5::text[])" : "";
   const params: unknown[] = [
     input.userId,
     input.query,
     embeddingToVectorLiteral(queryEmbedding),
+    input.workspaceId ?? null,
   ];
   if (baseIds.length > 0) {
     params.push(baseIds);
@@ -573,7 +674,11 @@ async function searchPostgres(
       kb.chunking_config AS base_chunking_config,
       kb.created_at AS base_created_at,
       kb.updated_at AS base_updated_at,
+      kb.user_id AS base_user_id,
+      kb.scope AS base_scope,
+      kb.workspace_id AS base_workspace_id,
       kd.id AS document_id,
+      kd.user_id AS document_user_id,
       kd.filename,
       kd.mime_type,
       kd.source_type,
@@ -595,6 +700,7 @@ async function searchPostgres(
       kc.metadata AS chunk_metadata,
       kc.created_at AS chunk_created_at,
       kc.updated_at AS chunk_updated_at,
+      kc.user_id AS chunk_user_id,
       GREATEST(0, 1 - (ke.embedding <=> $3::vector)) AS semantic_score,
       CASE
         WHEN length(trim($2)) = 0 THEN 0
@@ -607,13 +713,13 @@ async function searchPostgres(
     JOIN knowledge_embeddings ke ON ke.chunk_id = kc.id
     JOIN knowledge_documents kd ON kd.id = kc.document_id
     JOIN knowledge_bases kb ON kb.id = kc.knowledge_base_id
-    WHERE kc.user_id = $1
+    WHERE (kc.user_id = $1 OR (kb.scope = 'workspace' AND kb.workspace_id = $4))
       ${filterSql}
     ORDER BY semantic_score DESC, keyword_score DESC, kc.updated_at DESC
     LIMIT ${limit * 3}
   `;
 
-  return withUserContext(getPostgresPool(), input.userId, async (client) => {
+  return withKnowledgeContext(input.userId, input.workspaceId, async (client) => {
     const result = await client.query<Record<string, unknown>>(sql, params);
     return result.rows
     .map((row) => {
@@ -623,7 +729,9 @@ async function searchPostgres(
       const score = semanticScore * 0.8 + keywordNormalized * 0.2;
       const base: KnowledgeBase = {
         id: String(row["base_id"]),
-        userId: input.userId,
+        userId: String(row["base_user_id"] ?? input.userId),
+        scope: row["base_scope"] === "workspace" ? "workspace" : "user",
+        workspaceId: (row["base_workspace_id"] as string | null) ?? undefined,
         name: String(row["base_name"]),
         description: (row["base_description"] as string | null) ?? undefined,
         tags: sanitizeTags(parseJsonColumn(row["base_tags"], [] as string[])),
@@ -637,7 +745,7 @@ async function searchPostgres(
       const document: KnowledgeDocument = {
         id: String(row["document_id"]),
         knowledgeBaseId: base.id,
-        userId: input.userId,
+        userId: String(row["document_user_id"] ?? input.userId),
         filename: String(row["filename"]),
         mimeType: String(row["mime_type"]),
         sourceType: row["source_type"] === "upload" ? "upload" : "inline",
@@ -659,7 +767,7 @@ async function searchPostgres(
         id: String(row["chunk_id"]),
         documentId: document.id,
         knowledgeBaseId: base.id,
-        userId: input.userId,
+        userId: String(row["chunk_user_id"] ?? input.userId),
         index: Number(row["chunk_index"] ?? 0),
         text: String(row["text_content"]),
         tokenCount: Number(row["token_count"] ?? 0),
@@ -688,9 +796,17 @@ async function searchPostgres(
 export const knowledgeStore = {
   async createKnowledgeBase(input: CreateKnowledgeBaseInput): Promise<KnowledgeBase> {
     const timestamp = nowIso();
+    // HEL-309: workspace scope requires a workspaceId so the KB is anchored to
+    // a workspace; otherwise the base is user-private (the back-compat default).
+    const scope = input.scope === "workspace" ? "workspace" : "user";
+    if (scope === "workspace" && !input.workspaceId) {
+      throw new Error("A workspace-scoped knowledge base requires a workspaceId.");
+    }
     const base: KnowledgeBase = {
       id: randomUUID(),
       userId: input.userId,
+      scope,
+      workspaceId: scope === "workspace" ? input.workspaceId : undefined,
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
       tags: sanitizeTags(input.tags ?? []),
@@ -704,33 +820,37 @@ export const knowledgeStore = {
     return base;
   },
 
-  async listKnowledgeBases(userId: string): Promise<KnowledgeBase[]> {
+  async listKnowledgeBases(userId: string, workspaceId?: string): Promise<KnowledgeBase[]> {
     // Postgres is the source of truth: read it whenever available so a base
     // created on another instance (or before a deploy) is always visible.
     // The in-memory Map is only a dev/test fallback (and a last resort if
     // Postgres is unreachable).
     if (postgresPersistenceAvailable()) {
       try {
-        return await hydrateKnowledgeBasesFromPostgres(userId);
+        return await hydrateKnowledgeBasesFromPostgres(userId, workspaceId);
       } catch (err) {
         console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
       }
     }
     return Array.from(knowledgeBases.values())
-      .filter((base) => base.userId === userId)
+      .filter((base) => knowledgeBaseVisible(base, userId, workspaceId))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   },
 
-  async getKnowledgeBase(id: string, userId: string): Promise<KnowledgeBase | undefined> {
+  async getKnowledgeBase(
+    id: string,
+    userId: string,
+    workspaceId?: string
+  ): Promise<KnowledgeBase | undefined> {
     if (postgresPersistenceAvailable()) {
       try {
-        return await hydrateKnowledgeBaseFromPostgres(userId, id);
+        return await hydrateKnowledgeBaseFromPostgres(userId, id, workspaceId);
       } catch (err) {
         console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
       }
     }
     const local = knowledgeBases.get(id);
-    return local?.userId === userId ? local : undefined;
+    return local && knowledgeBaseVisible(local, userId, workspaceId) ? local : undefined;
   },
 
   async updateKnowledgeBase(
@@ -738,9 +858,10 @@ export const knowledgeStore = {
     userId: string,
     patch: Partial<Pick<KnowledgeBase, "name" | "description" | "tags" | "metadata">> & {
       chunkingConfig?: Partial<ChunkingConfig>;
-    }
+    },
+    workspaceId?: string
   ): Promise<KnowledgeBase | undefined> {
-    const existing = await this.getKnowledgeBase(id, userId);
+    const existing = await this.getKnowledgeBase(id, userId, workspaceId);
     if (!existing) {
       return undefined;
     }
@@ -765,7 +886,7 @@ export const knowledgeStore = {
     document: KnowledgeDocument;
     chunks: KnowledgeChunk[];
   }> {
-    const base = await this.getKnowledgeBase(input.knowledgeBaseId, input.userId);
+    const base = await this.getKnowledgeBase(input.knowledgeBaseId, input.userId, input.workspaceId);
     if (!base) {
       throw new Error(`Knowledge base not found: ${input.knowledgeBaseId}`);
     }
@@ -832,27 +953,43 @@ export const knowledgeStore = {
     return { document: readyDocument, chunks };
   },
 
-  async listDocuments(knowledgeBaseId: string, userId: string): Promise<KnowledgeDocument[]> {
+  async listDocuments(
+    knowledgeBaseId: string,
+    userId: string,
+    workspaceId?: string
+  ): Promise<KnowledgeDocument[]> {
     if (postgresPersistenceAvailable()) {
       try {
-        return await hydrateDocumentsFromPostgres(userId, knowledgeBaseId);
+        return await hydrateDocumentsFromPostgres(userId, knowledgeBaseId, workspaceId);
       } catch (err) {
         console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
       }
     }
     return Array.from(knowledgeDocuments.values())
-      .filter((document) => document.userId === userId && document.knowledgeBaseId === knowledgeBaseId)
+      .filter(
+        (document) =>
+          document.knowledgeBaseId === knowledgeBaseId &&
+          knowledgeChildVisible(document.userId, document.knowledgeBaseId, userId, workspaceId)
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   },
 
-  async getDocument(documentId: string, userId: string): Promise<KnowledgeDocument | undefined> {
+  async getDocument(
+    documentId: string,
+    userId: string,
+    workspaceId?: string
+  ): Promise<KnowledgeDocument | undefined> {
     if (postgresPersistenceAvailable()) {
       try {
         await ensureKnowledgeSchema();
-        return await withUserContext(getPostgresPool(), userId, async (client) => {
+        return await withKnowledgeContext(userId, workspaceId, async (client) => {
+          // HEL-309: own document, or a document whose KB is workspace-visible.
           const result = await client.query<PersistedKnowledgeDocumentRow>(
-            `SELECT * FROM knowledge_documents WHERE id = $1 AND user_id = $2`,
-            [documentId, userId]
+            `SELECT kd.* FROM knowledge_documents kd
+             JOIN knowledge_bases kb ON kb.id = kd.knowledge_base_id
+             WHERE kd.id = $1
+               AND (kd.user_id = $2 OR (kb.scope = 'workspace' AND kb.workspace_id = $3))`,
+            [documentId, userId, workspaceId ?? null]
           );
           const row = result.rows[0];
           return row ? mapKnowledgeDocument(row) : undefined;
@@ -862,19 +999,29 @@ export const knowledgeStore = {
       }
     }
     const local = knowledgeDocuments.get(documentId);
-    return local?.userId === userId ? local : undefined;
+    return local && knowledgeChildVisible(local.userId, local.knowledgeBaseId, userId, workspaceId)
+      ? local
+      : undefined;
   },
 
-  async listChunks(documentId: string, userId: string): Promise<KnowledgeChunk[]> {
+  async listChunks(
+    documentId: string,
+    userId: string,
+    workspaceId?: string
+  ): Promise<KnowledgeChunk[]> {
     if (postgresPersistenceAvailable()) {
       try {
-        return await hydrateChunksFromPostgres(userId, documentId);
+        return await hydrateChunksFromPostgres(userId, documentId, workspaceId);
       } catch (err) {
         console.error("[knowledge] Postgres read failed, falling back to in-memory:", (err as Error).message);
       }
     }
     return Array.from(knowledgeChunks.values())
-      .filter((chunk) => chunk.userId === userId && chunk.documentId === documentId)
+      .filter(
+        (chunk) =>
+          chunk.documentId === documentId &&
+          knowledgeChildVisible(chunk.userId, chunk.knowledgeBaseId, userId, workspaceId)
+      )
       .sort((a, b) => a.index - b.index);
   },
 
@@ -1016,7 +1163,8 @@ export const knowledgeStore = {
     }
 
     const localChunks = Array.from(knowledgeChunks.values()).filter((chunk) => {
-      if (chunk.userId !== input.userId) {
+      // HEL-309: own chunk, or a chunk whose KB is workspace-visible to the caller.
+      if (!knowledgeChildVisible(chunk.userId, chunk.knowledgeBaseId, input.userId, input.workspaceId)) {
         return false;
       }
       if (

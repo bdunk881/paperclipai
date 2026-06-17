@@ -251,6 +251,11 @@ export interface WorkflowRun {
   failureReason?: string;
   failedAt?: string;
   userId?: string;
+  /**
+   * HEL-704: free-form run tags (≤10) for grouping/filtering — set at trigger
+   * time and addable from inside a run. Backed by `runs.tags text[]`.
+   */
+  tags?: string[];
 }
 
 /** Result of one worker slot in a parallel agent step */

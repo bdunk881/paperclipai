@@ -2,7 +2,7 @@
  * Unit tests for the in-memory RunStore.
  */
 
-import { runStore } from "./runStore";
+import { runStore, sanitizeRunTags, MAX_RUN_TAGS } from "./runStore";
 import { WorkflowRun } from "../types/workflow";
 import * as postgres from "../db/postgres";
 
@@ -175,6 +175,51 @@ describe("runStore.list status filter", () => {
     const failed = await runStore.list(undefined, undefined, "failed");
     expect(failed).toHaveLength(2);
     expect(failed.every((r) => r.status === "failed")).toBe(true);
+  });
+});
+
+describe("run tags (HEL-704)", () => {
+  describe("sanitizeRunTags", () => {
+    it("trims, drops blanks, dedupes, and caps at MAX_RUN_TAGS", () => {
+      expect(sanitizeRunTags(["  a ", "b", "a", "", "  ", "b"])).toEqual(["a", "b"]);
+      const many = Array.from({ length: MAX_RUN_TAGS + 5 }, (_, i) => `t${i}`);
+      expect(sanitizeRunTags(many)).toHaveLength(MAX_RUN_TAGS);
+    });
+
+    it("returns [] for non-arrays and non-string entries", () => {
+      expect(sanitizeRunTags(undefined)).toEqual([]);
+      expect(sanitizeRunTags("a,b")).toEqual([]);
+      expect(sanitizeRunTags([1, true, null, "ok"])).toEqual(["ok"]);
+    });
+  });
+
+  it("persists tags on create and returns them via get()", async () => {
+    await runStore.create(makeRun({ id: "run-1", tags: ["customer:acme", "tier:gold"] }));
+    await expect(runStore.get("run-1")).resolves.toMatchObject({
+      tags: ["customer:acme", "tier:gold"],
+    });
+  });
+
+  it("filters the list by AND-containment of tags", async () => {
+    await runStore.create(makeRun({ id: "run-1", tags: ["a", "b"] }));
+    await runStore.create(makeRun({ id: "run-2", tags: ["a"] }));
+    await runStore.create(makeRun({ id: "run-3", tags: ["c"] }));
+
+    const a = await runStore.list(undefined, undefined, undefined, undefined, ["a"]);
+    expect(a.map((r) => r.id).sort()).toEqual(["run-1", "run-2"]);
+
+    const ab = await runStore.list(undefined, undefined, undefined, undefined, ["a", "b"]);
+    expect(ab.map((r) => r.id)).toEqual(["run-1"]);
+
+    const none = await runStore.list(undefined, undefined, undefined, undefined, ["z"]);
+    expect(none).toEqual([]);
+  });
+
+  it("addTags unions with existing tags (sanitized, capped) and is a no-op for unknown runs", async () => {
+    await runStore.create(makeRun({ id: "run-1", tags: ["a"] }));
+    const updated = await runStore.addTags("run-1", ["b", "a", "  c  "]);
+    expect(updated?.tags).toEqual(["a", "b", "c"]);
+    await expect(runStore.addTags("run-nope", ["x"])).resolves.toBeUndefined();
   });
 });
 
@@ -441,8 +486,9 @@ describe("runStore postgres persistence", () => {
         }),
       ],
     });
-    // HEL-484: list() now takes a 4th workspaceId param (null when unscoped).
-    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1", null, null]);
+    // HEL-484: list() takes a workspaceId param (null when unscoped).
+    // HEL-704: + a 5th tag-filter param (null when no tags requested).
+    expect(query.mock.calls[0]?.[1]).toEqual(["tpl-support-bot", "user-1", null, null, null]);
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1]?.[0]).toContain("WHERE run_id = ANY($1::uuid[])");
     expect(query.mock.calls[1]?.[1]).toEqual([["run-pg-1", "run-pg-2"]]);

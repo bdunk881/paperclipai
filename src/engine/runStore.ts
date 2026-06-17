@@ -30,15 +30,17 @@ function cloneRun(run: WorkflowRun): WorkflowRun {
     output: run.output ? { ...run.output } : undefined,
     stepResults: [...run.stepResults],
     workflowDag: run.workflowDag ? cloneJson(run.workflowDag) : undefined,
+    // Spread so every runtimeState field is cloned — including HEL-700
+    // `priority` (the prior field-by-field copy dropped it). deep-copy the
+    // mutable config/context maps.
     runtimeState: run.runtimeState
       ? {
+          ...run.runtimeState,
           config: { ...run.runtimeState.config },
           context: { ...run.runtimeState.context },
-          currentStepIndex: run.runtimeState.currentStepIndex,
-          waitingApprovalId: run.runtimeState.waitingApprovalId,
-          waitingResumeToken: run.runtimeState.waitingResumeToken,
         }
       : undefined,
+    tags: run.tags ? [...run.tags] : undefined,
   };
 }
 
@@ -86,6 +88,30 @@ function costCentsFor(result: WorkflowRun["stepResults"][number]): number {
   return Math.max(0, Math.round(estimatedCostUsd * 100));
 }
 
+/** HEL-704: a run carries at most this many tags. */
+export const MAX_RUN_TAGS = 10;
+
+/**
+ * HEL-704: normalize caller-supplied run tags — coerce to trimmed non-empty
+ * strings, drop blanks, dedupe (first-wins), cap each tag's length and the
+ * total count. Invalid input yields `[]` rather than throwing, so trigger
+ * payloads with a bad `tags` field degrade gracefully.
+ */
+export function sanitizeRunTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const tag = raw.trim().slice(0, 128);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+    if (out.length >= MAX_RUN_TAGS) break;
+  }
+  return out;
+}
+
 function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
   return {
     id: String(row["id"]),
@@ -109,6 +135,8 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
     failureReason: typeof row["failure_reason"] === "string" ? row["failure_reason"] : undefined,
     failedAt: row["failed_at"] ? new Date(String(row["failed_at"])).toISOString() : undefined,
     userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
+    // HEL-704: pg returns a text[] column as a JS string array.
+    tags: Array.isArray(row["tags"]) ? (row["tags"] as unknown[]).map(String) : [],
     stepResults: [],
   };
 }
@@ -352,9 +380,9 @@ export const runStore = {
         `
           INSERT INTO runs (
             id, workspace_id, routine_id, workflow_version_id, status, started_at, ended_at,
-            input, output, runtime_state_json, error, user_id
+            input, output, runtime_state_json, error, user_id, tags
           )
-          VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12)
+          VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13::text[])
         `,
         [
           cloned.id,
@@ -369,6 +397,7 @@ export const runStore = {
           serializeJson(cloned.runtimeState),
           cloned.error ?? null,
           cloned.userId ?? null,
+          cloned.tags ?? [],
         ]
       );
         await writeStepResults(cloned.id, cloned.stepResults, client);
@@ -426,7 +455,8 @@ export const runStore = {
             r.error,
             r.failure_reason,
             r.failed_at,
-            r.user_id
+            r.user_id,
+            r.tags
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -462,15 +492,13 @@ export const runStore = {
       input: patch.input ? { ...patch.input } : existing.input,
       output: patch.output ? { ...patch.output } : existing.output,
       stepResults: patch.stepResults ? [...patch.stepResults] : existing.stepResults,
+      // Spread so every runtimeState field round-trips — including
+      // HEL-700 `priority` and any field added later (the prior field-by-field
+      // copy silently dropped new keys).
       runtimeState: patch.runtimeState
-        ? {
-            config: { ...patch.runtimeState.config },
-            context: { ...patch.runtimeState.context },
-            currentStepIndex: patch.runtimeState.currentStepIndex,
-            waitingApprovalId: patch.runtimeState.waitingApprovalId,
-            waitingResumeToken: patch.runtimeState.waitingResumeToken,
-          }
+        ? { ...patch.runtimeState }
         : existing.runtimeState,
+      tags: patch.tags ? [...patch.tags] : existing.tags,
     };
 
     memoryStore.set(id, updated);
@@ -492,6 +520,7 @@ export const runStore = {
               runtime_state_json = $7::jsonb,
               error = $8,
               user_id = $9,
+              tags = $10::text[],
               updated_at = now()
           WHERE id = $1::uuid
         `,
@@ -505,6 +534,7 @@ export const runStore = {
           serializeJson(updated.runtimeState),
           updated.error ?? null,
           updated.userId ?? null,
+          updated.tags ?? [],
         ]
       );
       await writeStepResults(id, updated.stepResults);
@@ -512,6 +542,25 @@ export const runStore = {
       console.error("[runStore] Postgres persist failed, using in-memory:", (err as Error).message);
     }
     return cloneRun(updated);
+  },
+
+  /**
+   * HEL-704: add tags to a run (set "from inside a run", or by any caller).
+   * Unions with the run's existing tags, sanitized + capped at MAX_RUN_TAGS.
+   * Returns the updated run, or undefined when the run is unknown.
+   */
+  async addTags(
+    runId: string,
+    newTags: unknown,
+    workspaceId?: string,
+  ): Promise<WorkflowRun | undefined> {
+    const run = await this.get(runId, workspaceId);
+    if (!run) return undefined;
+    const merged = sanitizeRunTags([
+      ...(run.tags ?? []),
+      ...(Array.isArray(newTags) ? newTags : []),
+    ]);
+    return this.update(runId, { tags: merged });
   },
 
   /**
@@ -569,7 +618,8 @@ export const runStore = {
             r.error,
             r.failure_reason,
             r.failed_at,
-            r.user_id
+            r.user_id,
+            r.tags
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -636,7 +686,8 @@ export const runStore = {
             r.error,
             r.failure_reason,
             r.failed_at,
-            r.user_id
+            r.user_id,
+            r.tags
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -706,7 +757,8 @@ export const runStore = {
             r.error,
             r.failure_reason,
             r.failed_at,
-            r.user_id
+            r.user_id,
+            r.tags
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -730,13 +782,18 @@ export const runStore = {
     userId?: string,
     status?: string,
     workspaceId?: string,
+    tags?: string[],
   ): Promise<WorkflowRun[]> {
+    // HEL-704: tag filter is AND-containment — a run matches only if it carries
+    // every requested tag. Empty/absent ⇒ no tag filtering.
+    const tagFilter = tags && tags.length > 0 ? tags : null;
     const localRuns = () => {
       const runs = Array.from(memoryStore.values());
       return runs
         .filter((run) => (templateId ? run.templateId === templateId : true))
         .filter((run) => (userId ? run.userId === userId : true))
         .filter((run) => (status ? run.status === status : true))
+        .filter((run) => (tagFilter ? tagFilter.every((t) => (run.tags ?? []).includes(t)) : true))
         // HEL-484: scope to the active workspace (tenant isolation). Untagged
         // runs stay visible so the change is non-breaking; a run tagged to a
         // different workspace is filtered out.
@@ -775,7 +832,8 @@ export const runStore = {
             r.error,
             r.failure_reason,
             r.failed_at,
-            r.user_id
+            r.user_id,
+            r.tags
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -783,9 +841,10 @@ export const runStore = {
             AND ($2::text IS NULL OR r.user_id = $2)
             AND ($3::text IS NULL OR r.status = $3)
             AND ($4::text IS NULL OR r.workspace_id = $4 OR r.workspace_id IS NULL)
+            AND ($5::text[] IS NULL OR r.tags @> $5::text[])
           ORDER BY r.started_at DESC
         `,
-        [templateId ?? null, userId ?? null, status ?? null, workspaceId ?? null]
+        [templateId ?? null, userId ?? null, status ?? null, workspaceId ?? null, tagFilter]
       );
 
       const runs = result.rows.map((row) => mapRowToRun(row));

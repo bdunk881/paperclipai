@@ -22,6 +22,14 @@ const REPLAYABLE = new Set<WorkflowRun["status"]>(["failed", "escalated"]);
 
 const MONO: React.CSSProperties = { fontFamily: "var(--af2-mono)" };
 
+// HEL-706: per-step structured-log level → color.
+const LOG_TONE: Record<string, string> = {
+  debug: "var(--af2-ink-4)",
+  info: "var(--af2-ink-3)",
+  warn: "#d97706",
+  error: "var(--af2-clay)",
+};
+
 function formatCost(usd: number): string {
   if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
   return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
@@ -289,6 +297,32 @@ function StepNode({
           >
             {outputText}
           </pre>
+        </details>
+      ) : null}
+
+      {step.logs && step.logs.length > 0 ? (
+        <details style={{ marginTop: 10 }} data-testid="step-logs">
+          <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--af2-ink-3)" }}>
+            Logs ({step.logs.length})
+          </summary>
+          <div style={{ ...MONO, marginTop: 8, fontSize: 12, display: "grid", gap: 3 }}>
+            {step.logs.map((entry, idx) => (
+              <div key={idx} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <span
+                  style={{
+                    flex: "0 0 42px",
+                    textTransform: "uppercase",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: LOG_TONE[entry.level] ?? "var(--af2-ink-3)",
+                  }}
+                >
+                  {entry.level}
+                </span>
+                <span style={{ flex: 1, whiteSpace: "pre-wrap", color: "var(--af2-ink-2)" }}>{entry.message}</span>
+              </div>
+            ))}
+          </div>
         </details>
       ) : null}
 

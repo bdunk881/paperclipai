@@ -163,7 +163,7 @@ async function loadStepResultsByRunIds(runIds: string[]) {
   const pool = getPostgresPool();
   const result = await pool.query(
     `
-      SELECT run_id, step_id, step_name, status, output, duration_ms, error, agent_slot_results_json, cost_log_json, idempotency_key
+      SELECT run_id, step_id, step_name, status, output, duration_ms, error, agent_slot_results_json, cost_log_json, logs_json, idempotency_key
       FROM step_results
       WHERE run_id = ANY($1::uuid[])
       ORDER BY run_id ASC, ordinal ASC
@@ -187,6 +187,7 @@ async function loadStepResultsByRunIds(runIds: string[]) {
       error: typeof row.error === "string" ? row.error : undefined,
       agentSlotResults: parseJsonValue(row.agent_slot_results_json, undefined),
       costLog: parseJsonValue(row.cost_log_json, undefined),
+      logs: parseJsonValue(row.logs_json, undefined),
       idempotencyKey: typeof row.idempotency_key === "string" ? row.idempotency_key : undefined,
     });
   }
@@ -214,9 +215,9 @@ async function writeStepResults(
         `
           INSERT INTO step_results (
             run_id, step_id, step_name, status, output, cost_cents, duration_ms, error,
-            agent_slot_results_json, cost_log_json, ordinal, idempotency_key
+            agent_slot_results_json, cost_log_json, logs_json, ordinal, idempotency_key
           )
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13)
           ON CONFLICT (run_id, step_id, ordinal) DO UPDATE
           SET step_name = EXCLUDED.step_name,
               status = EXCLUDED.status,
@@ -226,6 +227,7 @@ async function writeStepResults(
               error = EXCLUDED.error,
               agent_slot_results_json = EXCLUDED.agent_slot_results_json,
               cost_log_json = EXCLUDED.cost_log_json,
+              logs_json = EXCLUDED.logs_json,
               idempotency_key = COALESCE(step_results.idempotency_key, EXCLUDED.idempotency_key)
         `,
         [
@@ -239,6 +241,7 @@ async function writeStepResults(
           result.error ?? null,
           serializeJson(result.agentSlotResults),
           serializeJson(result.costLog),
+          serializeJson(result.logs),
           index,
           result.idempotencyKey ?? null,
         ]

@@ -297,4 +297,17 @@ export interface StepResult {
   costLog?: import("../engine/llmRouter").LlmCostLog;
   /** sha256(runId:stepIndex:workflowVersionId) — written at step completion for safe replay */
   idempotencyKey?: string;
+  /** HEL-706: structured log lines emitted during this step's execution. */
+  logs?: StepLogEntry[];
+}
+
+/** HEL-706: a structured per-step log line (surfaced in the run detail view). */
+export type StepLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface StepLogEntry {
+  level: StepLogLevel;
+  message: string;
+  /** ISO-8601 timestamp. */
+  timestamp: string;
+  data?: Record<string, unknown>;
 }

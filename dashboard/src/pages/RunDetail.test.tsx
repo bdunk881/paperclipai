@@ -51,7 +51,7 @@ const failedRun = {
   input: {},
   error: "Slack token expired",
   stepResults: [
-    { stepId: "s1", stepName: "Fetch orders", status: "success" as const, output: { orders: 14 }, durationMs: 1100, costLog: { estimatedCostUsd: 0 } },
+    { stepId: "s1", stepName: "Fetch orders", status: "success" as const, output: { orders: 14 }, durationMs: 1100, costLog: { estimatedCostUsd: 0 }, logs: [{ level: "info" as const, message: "Calling LLM", timestamp: "2026-06-04T09:00:01.000Z" }, { level: "info" as const, message: "step completed", timestamp: "2026-06-04T09:00:02.000Z" }] },
     { stepId: "s2", stepName: "Post to Slack", status: "failure" as const, output: {}, durationMs: 300, error: "401 Unauthorized" },
   ],
 };
@@ -79,6 +79,13 @@ describe("RunDetail (HEL-562)", () => {
     fireEvent.click(replay);
     await waitFor(() => expect(replayMock).toHaveBeenCalledWith("run-1", 1, "tok"));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/runs/run-2"));
+  });
+
+  it("surfaces a step's structured logs (HEL-706)", async () => {
+    renderAt("run-1");
+    await screen.findByRole("heading", { name: /Daily refund triage/i });
+    expect(screen.getByText(/Logs \(2\)/)).toBeInTheDocument();
+    expect(screen.getByText("Calling LLM")).toBeInTheDocument();
   });
 
   it("shows an error state when the run fails to load", async () => {

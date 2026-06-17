@@ -48,6 +48,32 @@ export async function listRuns(
   return res.json() as Promise<RunsListResponse>;
 }
 
+export interface RealtimeTokenResponse {
+  token: string;
+  runId: string;
+  expiresAt: string;
+}
+
+/**
+ * HEL-708: mint a scoped, short-TTL realtime token for a run (POST
+ * /api/runs/:id/realtime-token). The token authorizes the public SSE stream
+ * (EventSource can't send headers, so the token rides in the stream URL).
+ */
+export async function fetchRealtimeRunToken(
+  accessToken: string,
+  runId: string,
+): Promise<RealtimeTokenResponse> {
+  const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/realtime-token`, {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Failed to get realtime token: ${res.status}`);
+  }
+  return res.json() as Promise<RealtimeTokenResponse>;
+}
+
 export async function retryRun(accessToken: string, runId: string): Promise<WorkflowRun> {
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/retry`, {
     method: "POST",

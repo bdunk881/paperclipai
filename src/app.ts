@@ -27,6 +27,14 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore, sanitizeRunTags } from "./engine/runStore";
 import { sanitizeRunMetadata, parseRunMetadataOps, RunMetadataError } from "./engine/runMetadata";
 import { computeRunUsage, rollUpUsage } from "./engine/runUsage";
+import {
+  isRealtimeTokenConfigured,
+  mintRealtimeToken,
+  verifyRealtimeToken,
+  InvalidRealtimeTokenError,
+  DEFAULT_REALTIME_TOKEN_TTL_SECONDS,
+} from "./engine/realtimeToken";
+import { handleStreamSse } from "./engine/agentTrace/streamSseHandler";
 import { batchStore } from "./engine/batchStore";
 import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
 import { evalStore } from "./engine/evalStore";
@@ -2201,6 +2209,78 @@ app.get(
       return;
     }
     res.json(computeRunUsage(run));
+  }),
+);
+
+/**
+ * HEL-708: mint a scoped, short-TTL, read-only realtime token for a run so a
+ * browser can subscribe to its live stream without a full session.
+ * Authenticated + workspace-scoped; verified on the public stream endpoint.
+ */
+app.post(
+  "/api/runs/:id/realtime-token",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    if (!isRealtimeTokenConfigured()) {
+      res.status(503).json({ error: "Realtime tokens are not configured (set REALTIME_TOKEN_SECRET)" });
+      return;
+    }
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(400).json({ error: "workspace is required" });
+      return;
+    }
+    const run = await runStore.get(req.params.id, workspaceId);
+    const userId = req.auth?.sub;
+    if (!run || (run.userId !== undefined && run.userId !== userId)) {
+      res.status(404).json({ error: `Run not found: ${req.params.id}` });
+      return;
+    }
+    const { token, payload } = mintRealtimeToken({ workspaceId, runId: run.id });
+    res.json({ token, runId: run.id, expiresAt: new Date(payload.exp * 1000).toISOString() });
+  }),
+);
+
+/**
+ * HEL-708: public realtime stream for a single run, gated by a scoped token
+ * (NOT a session). Verify the token, confirm it matches the path run id, then
+ * stream that run's lifecycle/activity events + a current-status snapshot. No
+ * requireAuth — the token IS the credential.
+ */
+app.get(
+  "/api/realtime/runs/:id/stream",
+  asyncHandler(async (req, res) => {
+    if (!isRealtimeTokenConfigured()) {
+      res.status(503).json({ error: "Realtime tokens are not configured" });
+      return;
+    }
+    const runId = req.params.id;
+    let payload;
+    try {
+      payload = verifyRealtimeToken(typeof req.query.token === "string" ? req.query.token : "");
+    } catch (err) {
+      const reason = err instanceof InvalidRealtimeTokenError ? err.reason : "invalid";
+      res.status(401).json({ error: `realtime token ${reason}` });
+      return;
+    }
+    if (payload.run_id !== runId) {
+      res.status(403).json({ error: "token does not grant access to this run" });
+      return;
+    }
+    await handleStreamSse(req, res, {
+      workspaceId: payload.workspace_id,
+      filter: (envelope) => {
+        const e = envelope.event as { runId?: string };
+        return typeof e.runId === "string" && e.runId === runId;
+      },
+      snapshot: async () => {
+        const run = await runStore.get(runId, payload.workspace_id);
+        return run
+          ? { id: run.id, status: run.status, tags: run.tags ?? [], metadata: run.metadata ?? {} }
+          : null;
+      },
+    });
   }),
 );
 

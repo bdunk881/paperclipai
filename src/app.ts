@@ -25,6 +25,7 @@ import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoo
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore, sanitizeRunTags } from "./engine/runStore";
+import { sanitizeRunMetadata, parseRunMetadataOps, RunMetadataError } from "./engine/runMetadata";
 import { batchStore } from "./engine/batchStore";
 import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
 import { evalStore } from "./engine/evalStore";
@@ -1610,12 +1611,13 @@ app.post(
     delta: 1,
   }),
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
-  const { templateId, input, config, priority, tags } = req.body as {
+  const { templateId, input, config, priority, tags, metadata } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
     config?: Record<string, unknown>;
     priority?: unknown;
     tags?: unknown;
+    metadata?: unknown;
   };
 
   if (!templateId) {
@@ -1629,6 +1631,16 @@ app.post(
   // HEL-704: optional run tags (≤10) for grouping/filtering. Sanitized; a bad
   // value degrades to no tags rather than failing the run.
   const runTags = sanitizeRunTags(tags);
+  // HEL-705: optional initial run metadata (≤256KB). A bad shape/size is a 400.
+  let runMetadata: Record<string, unknown>;
+  try {
+    runMetadata = sanitizeRunMetadata(metadata);
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof RunMetadataError ? err.message : "invalid metadata",
+    });
+    return;
+  }
 
   let template: WorkflowTemplate;
   try {
@@ -1673,6 +1685,7 @@ app.post(
         ...(runPriority ? { priority: runPriority } : {}),
       },
       tags: runTags,
+      metadata: runMetadata,
       ...(userId !== undefined ? { userId } : {}),
     });
     const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
@@ -2101,6 +2114,36 @@ app.post(
       return;
     }
     res.json({ id: updated.id, tags: updated.tags ?? [] });
+  }),
+);
+
+/**
+ * HEL-705: mutate a run's metadata. Body is `{ ops: [...] }` (set / append /
+ * increment / remove / replace) or `{ metadata: {...} }` (whole-object
+ * replace). Workspace-scoped; 256KB-capped (over-cap / malformed ⇒ 400).
+ */
+app.post(
+  "/api/runs/:id/metadata",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    let updated;
+    try {
+      const ops = parseRunMetadataOps(req.body);
+      updated = await runStore.applyMetadata(req.params.id, ops, req.workspace?.id);
+    } catch (err) {
+      if (err instanceof RunMetadataError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    if (!updated) {
+      res.status(404).json({ error: `Run not found: ${req.params.id}` });
+      return;
+    }
+    res.json({ id: updated.id, metadata: updated.metadata ?? {} });
   }),
 );
 

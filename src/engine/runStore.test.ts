@@ -223,6 +223,34 @@ describe("run tags (HEL-704)", () => {
   });
 });
 
+describe("run metadata (HEL-705)", () => {
+  it("persists metadata on create and returns it via get()", async () => {
+    await runStore.create(makeRun({ id: "run-1", metadata: { customer: "acme", count: 1 } }));
+    await expect(runStore.get("run-1")).resolves.toMatchObject({
+      metadata: { customer: "acme", count: 1 },
+    });
+  });
+
+  it("applyMetadata merges ops into the run's metadata and persists", async () => {
+    await runStore.create(makeRun({ id: "run-1", metadata: { count: 1 } }));
+    const updated = await runStore.applyMetadata("run-1", [
+      { op: "increment", key: "count", amount: 2 },
+      { op: "append", key: "log", value: "started" },
+      { op: "set", key: "stage", value: "fetch" },
+    ]);
+    expect(updated?.metadata).toEqual({ count: 3, log: ["started"], stage: "fetch" });
+    await expect(runStore.get("run-1")).resolves.toMatchObject({
+      metadata: { count: 3, log: ["started"], stage: "fetch" },
+    });
+  });
+
+  it("applyMetadata is a no-op for unknown runs", async () => {
+    await expect(
+      runStore.applyMetadata("run-nope", [{ op: "set", key: "a", value: 1 }]),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe("runStore.markFailed", () => {
   it("sets status to failed and records reason + failedAt", async () => {
     await runStore.create(makeRun({ id: "run-dlq-1" }));

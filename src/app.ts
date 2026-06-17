@@ -24,7 +24,7 @@ import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinat
 import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
-import { runStore } from "./engine/runStore";
+import { runStore, sanitizeRunTags } from "./engine/runStore";
 import { batchStore } from "./engine/batchStore";
 import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
 import { evalStore } from "./engine/evalStore";
@@ -1610,11 +1610,12 @@ app.post(
     delta: 1,
   }),
   asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
-  const { templateId, input, config, priority } = req.body as {
+  const { templateId, input, config, priority, tags } = req.body as {
     templateId?: string;
     input?: Record<string, unknown>;
     config?: Record<string, unknown>;
     priority?: unknown;
+    tags?: unknown;
   };
 
   if (!templateId) {
@@ -1625,6 +1626,9 @@ app.post(
   // HEL-700: optional run priority (critical/high/normal/low). Invalid values
   // are ignored (treated as the default `normal`) rather than rejected.
   const runPriority = isRunPriority(priority) ? priority : undefined;
+  // HEL-704: optional run tags (≤10) for grouping/filtering. Sanitized; a bad
+  // value degrades to no tags rather than failing the run.
+  const runTags = sanitizeRunTags(tags);
 
   let template: WorkflowTemplate;
   try {
@@ -1668,6 +1672,7 @@ app.post(
         // HEL-700: persist priority so resume/retry/crash-resume preserve it.
         ...(runPriority ? { priority: runPriority } : {}),
       },
+      tags: runTags,
       ...(userId !== undefined ? { userId } : {}),
     });
     const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
@@ -1709,11 +1714,22 @@ app.post(
 /** List all runs, optionally filtered by templateId or status */
 app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
   const { templateId, status } = req.query;
+  // HEL-704: optional tag filter — `?tags=a,b` or repeated `?tags=a&tags=b`.
+  // AND-containment (a run must carry every requested tag).
+  const tagsParam = req.query.tags;
+  const requestedTags = sanitizeRunTags(
+    typeof tagsParam === "string"
+      ? tagsParam.split(",")
+      : Array.isArray(tagsParam)
+        ? tagsParam
+        : [],
+  );
   const runs = await runStore.list(
     typeof templateId === "string" ? templateId : undefined,
     req.auth?.sub,
     typeof status === "string" ? status : undefined,
     req.workspace?.id, // HEL-484: scope the list to the active workspace
+    requestedTags.length > 0 ? requestedTags : undefined,
   );
   res.json({ runs, total: runs.length });
 }));
@@ -2067,6 +2083,26 @@ app.get("/api/runs/:id", requireAuthOrQaBypass, workspaceResolver, asyncHandler<
   }
   res.json(run);
 }));
+
+/**
+ * HEL-704: add tags to an existing run (post-trigger / "from inside a run").
+ * Unions with the run's current tags, sanitized + capped; workspace-scoped.
+ */
+app.post(
+  "/api/runs/:id/tags",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const { tags } = req.body as { tags?: unknown };
+    const updated = await runStore.addTags(req.params.id, tags, req.workspace?.id);
+    if (!updated) {
+      res.status(404).json({ error: `Run not found: ${req.params.id}` });
+      return;
+    }
+    res.json({ id: updated.id, tags: updated.tags ?? [] });
+  }),
+);
 
 /**
  * Cancel a run.

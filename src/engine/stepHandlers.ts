@@ -8,6 +8,7 @@
 
 import { WorkflowStep, AgentSlotResult, AgentMessage } from "../types/workflow";
 import { createHash } from "crypto";
+import { stepLog } from "./stepLogger";
 import { assertSafeMcpUrl } from "../mcp/mcpUrlSecurity";
 import { safeEvalCondition } from "./safeConditionEval";
 import { llmConfigStore } from "../llmConfig/llmConfigStore";
@@ -188,6 +189,7 @@ export async function handleLlm(
   if (!step.promptTemplate) {
     throw new Error(`LLM step "${step.id}" is missing a promptTemplate`);
   }
+  stepLog().info("Calling LLM", { tier: step.llmTier ?? "standard" });
 
   const originalFieldCount = Object.keys(ctx).length;
   // Data minimization: strip sensitive CRM fields before they reach the LLM
@@ -380,6 +382,7 @@ export async function handleKnowledge(
   ctx: StepContext,
   userId: string
 ): Promise<StepHandlerResult> {
+  stepLog().info("Retrieving knowledge", step.knowledgeQuery ? { query: step.knowledgeQuery } : undefined);
   const configuredBaseIds = Array.isArray(step.knowledgeBaseIds) ? step.knowledgeBaseIds : [];
   const configBaseIds = Array.isArray(step.config?.["knowledgeBaseIds"])
     ? (step.config["knowledgeBaseIds"] as string[])
@@ -598,6 +601,7 @@ export async function handleMcp(
   if (!toolName) {
     throw new Error(`MCP step "${step.id}" is missing mcpTool`);
   }
+  stepLog().info("Calling tool", { server: serverUrl, tool: toolName });
 
   // Build tool arguments from input keys present in context
   const toolArgs: Record<string, unknown> = {};
@@ -713,6 +717,7 @@ export async function handleAgent(
   const slots = Math.max(1, step.subAgentSlots ?? 1);
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
+  stepLog().info("Running agent", { slots, model });
   const bridgeConfig = getAgentBridgeConfig(step, ctx);
   const workspaceId =
     typeof ctx.workspaceId === "string" && ctx.workspaceId.trim()

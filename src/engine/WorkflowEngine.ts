@@ -22,6 +22,7 @@ import { signOutboundBody } from "../webhooks/verifySignature";
 import { getConnectorAction } from "./connectorActions";
 import { runStore } from "./runStore";
 import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
+import { createStepLogger, runWithStepLogger } from "./stepLogger";
 import { approvalStore } from "./approvalStore";
 import { approvalPolicyStore } from "../approvals/policyStore";
 import {
@@ -1679,6 +1680,12 @@ export class WorkflowEngine {
       // HEL-694: per-step retry policy for the throwing executors below.
       const retryPolicy = resolveRetryPolicy(step);
 
+      // HEL-706: structured per-step logger. The throwing executors below run
+      // inside `runWithStepLogger(stepLogger, …)` so any handler emits lines via
+      // `stepLog()` (carried on AsyncLocalStorage — no handler signature change,
+      // and concurrent runs don't cross-contaminate); entries are attached to
+      // the StepResult after.
+      const stepLogger = createStepLogger();
       try {
         if (isStepDisabled(step)) {
           // HEL-791: skip a disabled step — executor bypassed, stepOutput stays
@@ -1732,15 +1739,16 @@ export class WorkflowEngine {
             stepOutput = handleFormTrigger(context);
             break;
           case "llm": {
-            const llmResult = await withStepRetry(() => executeLlm(step, context, userId), retryPolicy);
+            const llmResult = await runWithStepLogger(stepLogger, () =>
+              withStepRetry(() => executeLlm(step, context, userId), retryPolicy),
+            );
             stepOutput = llmResult.output;
             stepCostLog = llmResult.costLog;
             break;
           }
           case "knowledge": {
-            const knowledgeResult = await withStepRetry(
-              () => handleKnowledge(step, context, userId ?? ""),
-              retryPolicy,
+            const knowledgeResult = await runWithStepLogger(stepLogger, () =>
+              withStepRetry(() => handleKnowledge(step, context, userId ?? ""), retryPolicy),
             );
             stepOutput = knowledgeResult.output;
             break;
@@ -1827,9 +1835,8 @@ export class WorkflowEngine {
               break;
             }
 
-            const actionOutput = await withStepRetry(
-              () => executeAction(step, context, config, userId),
-              retryPolicy,
+            const actionOutput = await runWithStepLogger(stepLogger, () =>
+              withStepRetry(() => executeAction(step, context, config, userId), retryPolicy),
             );
             stepOutput = {
               ...actionOutput,
@@ -1852,7 +1859,9 @@ export class WorkflowEngine {
               stepOutput = dryRunOutput(step);
               break;
             }
-            const mcpResult = await withStepRetry(() => handleMcp(step, context), retryPolicy);
+            const mcpResult = await runWithStepLogger(stepLogger, () =>
+              withStepRetry(() => handleMcp(step, context), retryPolicy),
+            );
             stepOutput = mcpResult.output;
             break;
           }
@@ -1871,9 +1880,8 @@ export class WorkflowEngine {
               stepOutput = dryRunOutput(step);
               break;
             }
-            const agentResult = await withStepRetry(
-              () => handleAgent(step, context, runId, userId ?? ""),
-              retryPolicy,
+            const agentResult = await runWithStepLogger(stepLogger, () =>
+              withStepRetry(() => handleAgent(step, context, runId, userId ?? ""), retryPolicy),
             );
             stepOutput = agentResult.output;
             agentSlotResults = agentResult.agentSlotResults;
@@ -1950,6 +1958,17 @@ export class WorkflowEngine {
         stepError = String(err);
       }
 
+      // HEL-706: record the step's outcome as a final structured log line, so
+      // the run log reads end-to-end even for steps whose handlers stayed quiet.
+      if (stepStatus === "failure") {
+        stepLogger.error(stepError ?? "step failed", { durationMs: Date.now() - start });
+      } else if (stepStatus !== "skipped") {
+        stepLogger.info("step completed", {
+          durationMs: Date.now() - start,
+          ...(stepCostLog ? { costUsd: stepCostLog.estimatedCostUsd } : {}),
+        });
+      }
+
       // Merge step outputs into context for downstream steps
       Object.assign(context, stepOutput);
 
@@ -1965,6 +1984,7 @@ export class WorkflowEngine {
         ...(stepError ? { error: stepError } : {}),
         ...(agentSlotResults ? { agentSlotResults } : {}),
         ...(stepCostLog ? { costLog: stepCostLog } : {}),
+        ...(stepLogger.entries.length > 0 ? { logs: stepLogger.entries } : {}),
       };
 
       stepResults[resultIndex] = result;

@@ -26,6 +26,7 @@ import { startApprovalNotificationCoordinator } from "./engine/approvalNotificat
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
 import { runStore, sanitizeRunTags } from "./engine/runStore";
 import { sanitizeRunMetadata, parseRunMetadataOps, RunMetadataError } from "./engine/runMetadata";
+import { computeRunUsage, rollUpUsage } from "./engine/runUsage";
 import { batchStore } from "./engine/batchStore";
 import { triggerBatch, MAX_BATCH_INPUTS } from "./engine/batchTrigger";
 import { evalStore } from "./engine/evalStore";
@@ -1748,6 +1749,43 @@ app.get("/api/runs", requireAuthOrQaBypass, workspaceResolver, asyncHandler<Work
 }));
 
 /**
+ * HEL-707: workspace usage / cost roll-up over the run history — total cost
+ * (cents), token totals, run count, and a per-tag spend breakdown. Scoped to
+ * the active workspace; optional `?tags=a,b` (AND-containment) and `?from=`/
+ * `?to=` ISO date window. Reads the persisted step costLogs (no new storage).
+ */
+app.get(
+  "/api/usage",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const tagsParam = req.query.tags;
+    const tags = sanitizeRunTags(
+      typeof tagsParam === "string" ? tagsParam.split(",") : Array.isArray(tagsParam) ? tagsParam : [],
+    );
+    const runs = await runStore.list(
+      undefined,
+      undefined,
+      undefined,
+      req.workspace?.id,
+      tags.length > 0 ? tags : undefined,
+    );
+
+    const from = typeof req.query.from === "string" ? Date.parse(req.query.from) : NaN;
+    const to = typeof req.query.to === "string" ? Date.parse(req.query.to) : NaN;
+    const windowed = runs.filter((run) => {
+      const startedAt = Date.parse(run.startedAt);
+      if (!Number.isFinite(startedAt)) return true;
+      if (Number.isFinite(from) && startedAt < from) return false;
+      if (Number.isFinite(to) && startedAt > to) return false;
+      return true;
+    });
+
+    res.json(rollUpUsage(windowed));
+  }),
+);
+
+/**
  * List the caller's in-flight runs across the active workspace.
  *
  * Drives the dashboard's bottom-right RunTray. "In flight" = any non-
@@ -2144,6 +2182,25 @@ app.post(
       return;
     }
     res.json({ id: updated.id, metadata: updated.metadata ?? {} });
+  }),
+);
+
+/**
+ * HEL-707: per-run usage — estimated LLM cost (cents), token totals, wall-clock
+ * duration, and step count, rolled up from the run's persisted step costLogs.
+ */
+app.get(
+  "/api/runs/:id/usage",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    const run = await runStore.get(req.params.id, req.workspace?.id); // workspace-scoped
+    const userId = req.auth?.sub;
+    if (!run || (run.userId !== undefined && run.userId !== userId)) {
+      res.status(404).json({ error: `Run not found: ${req.params.id}` });
+      return;
+    }
+    res.json(computeRunUsage(run));
   }),
 );
 

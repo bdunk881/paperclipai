@@ -256,6 +256,12 @@ export interface WorkflowRun {
    * time and addable from inside a run. Backed by `runs.tags text[]`.
    */
   tags?: string[];
+  /**
+   * HEL-705: free-form structured run metadata (≤256KB) — set at trigger time
+   * and mutated from inside a run (set/append/increment/remove). Backed by
+   * `runs.metadata jsonb`.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /** Result of one worker slot in a parallel agent step */

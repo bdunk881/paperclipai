@@ -9,6 +9,7 @@ import { PoolClient } from "pg";
 import { WorkflowRun } from "../types/workflow";
 import { parseJsonValue, serializeJson } from "../db/json";
 import { getPostgresPool, inMemoryAllowed, isPostgresPersistenceEnabled } from "../db/postgres";
+import { applyRunMetadataOps, type RunMetadataOp } from "./runMetadata";
 
 // allowlist: in-process registry / runtime state (not customer data)
 const memoryStore = new Map<string, WorkflowRun>();
@@ -41,6 +42,7 @@ function cloneRun(run: WorkflowRun): WorkflowRun {
         }
       : undefined,
     tags: run.tags ? [...run.tags] : undefined,
+    metadata: run.metadata ? { ...run.metadata } : undefined,
   };
 }
 
@@ -137,6 +139,8 @@ function mapRowToRun(row: Record<string, unknown>): WorkflowRun {
     userId: typeof row["user_id"] === "string" ? row["user_id"] : undefined,
     // HEL-704: pg returns a text[] column as a JS string array.
     tags: Array.isArray(row["tags"]) ? (row["tags"] as unknown[]).map(String) : [],
+    // HEL-705: run metadata (jsonb).
+    metadata: parseJsonValue<Record<string, unknown>>(row["metadata"], {}),
     stepResults: [],
   };
 }
@@ -380,9 +384,9 @@ export const runStore = {
         `
           INSERT INTO runs (
             id, workspace_id, routine_id, workflow_version_id, status, started_at, ended_at,
-            input, output, runtime_state_json, error, user_id, tags
+            input, output, runtime_state_json, error, user_id, tags, metadata
           )
-          VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13::text[])
+          VALUES ($1, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, $13::text[], $14::jsonb)
         `,
         [
           cloned.id,
@@ -398,6 +402,7 @@ export const runStore = {
           cloned.error ?? null,
           cloned.userId ?? null,
           cloned.tags ?? [],
+          serializeJson(cloned.metadata ?? {}),
         ]
       );
         await writeStepResults(cloned.id, cloned.stepResults, client);
@@ -456,7 +461,8 @@ export const runStore = {
             r.failure_reason,
             r.failed_at,
             r.user_id,
-            r.tags
+            r.tags,
+            r.metadata
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -499,6 +505,7 @@ export const runStore = {
         ? { ...patch.runtimeState }
         : existing.runtimeState,
       tags: patch.tags ? [...patch.tags] : existing.tags,
+      metadata: patch.metadata ? { ...patch.metadata } : existing.metadata,
     };
 
     memoryStore.set(id, updated);
@@ -521,6 +528,7 @@ export const runStore = {
               error = $8,
               user_id = $9,
               tags = $10::text[],
+              metadata = $11::jsonb,
               updated_at = now()
           WHERE id = $1::uuid
         `,
@@ -535,6 +543,7 @@ export const runStore = {
           updated.error ?? null,
           updated.userId ?? null,
           updated.tags ?? [],
+          serializeJson(updated.metadata ?? {}),
         ]
       );
       await writeStepResults(id, updated.stepResults);
@@ -561,6 +570,23 @@ export const runStore = {
       ...(Array.isArray(newTags) ? newTags : []),
     ]);
     return this.update(runId, { tags: merged });
+  },
+
+  /**
+   * HEL-705: apply metadata ops to a run (set "from inside a run", or by any
+   * caller). Merges into the run's current metadata via applyRunMetadataOps,
+   * which enforces the 256KB cap and throws RunMetadataError on a bad op.
+   * Returns the updated run, or undefined when the run is unknown.
+   */
+  async applyMetadata(
+    runId: string,
+    ops: RunMetadataOp[],
+    workspaceId?: string,
+  ): Promise<WorkflowRun | undefined> {
+    const run = await this.get(runId, workspaceId);
+    if (!run) return undefined;
+    const next = applyRunMetadataOps(run.metadata, ops);
+    return this.update(runId, { metadata: next });
   },
 
   /**
@@ -619,7 +645,8 @@ export const runStore = {
             r.failure_reason,
             r.failed_at,
             r.user_id,
-            r.tags
+            r.tags,
+            r.metadata
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -687,7 +714,8 @@ export const runStore = {
             r.failure_reason,
             r.failed_at,
             r.user_id,
-            r.tags
+            r.tags,
+            r.metadata
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -758,7 +786,8 @@ export const runStore = {
             r.failure_reason,
             r.failed_at,
             r.user_id,
-            r.tags
+            r.tags,
+            r.metadata
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id
@@ -833,7 +862,8 @@ export const runStore = {
             r.failure_reason,
             r.failed_at,
             r.user_id,
-            r.tags
+            r.tags,
+            r.metadata
           FROM runs r
           JOIN workflow_versions v ON v.id = r.workflow_version_id
           JOIN workflows w ON w.id = v.workflow_id

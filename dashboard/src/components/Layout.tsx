@@ -8,6 +8,7 @@ import {
   Plug,
   BookOpen,
   FlaskConical,
+  History,
   Brain,
   Users,
   UserPlus,
@@ -76,6 +77,8 @@ const NAV_SECTIONS: Array<{ title: string; items: NavItem[] }> = [
       { to: "/routines", icon: BookOpen, label: "Routines" },
       // HEL-787: Evals — run a workflow over a dataset and measure output.
       { to: "/evals", icon: FlaskConical, label: "Evals" },
+      // HEL-703: Executions — workspace run history with filters + retry.
+      { to: "/runs", icon: History, label: "Executions" },
     ],
   },
 ] as const;

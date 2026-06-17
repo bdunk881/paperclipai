@@ -23,6 +23,31 @@ export async function listRunsByStatus(
   return res.json() as Promise<RunsListResponse>;
 }
 
+export interface RunsListFilters {
+  status?: string;
+  templateId?: string;
+  /** AND-containment: a run must carry every tag (HEL-704). */
+  tags?: string[];
+}
+
+/**
+ * GET /api/runs with optional filters (HEL-703). Status / template / tags are
+ * applied server-side; date-windowing is done client-side in the Executions
+ * view. Newest first.
+ */
+export async function listRuns(
+  accessToken: string,
+  filters: RunsListFilters = {},
+): Promise<RunsListResponse> {
+  const url = new URL(`${BASE}/runs`, window.location.origin);
+  if (filters.status) url.searchParams.set("status", filters.status);
+  if (filters.templateId) url.searchParams.set("templateId", filters.templateId);
+  if (filters.tags && filters.tags.length > 0) url.searchParams.set("tags", filters.tags.join(","));
+  const res = await fetch(url.toString(), { headers: buildAuthHeaders(accessToken) });
+  if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
+  return res.json() as Promise<RunsListResponse>;
+}
+
 export async function retryRun(accessToken: string, runId: string): Promise<WorkflowRun> {
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/retry`, {
     method: "POST",

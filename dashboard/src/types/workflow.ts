@@ -141,6 +141,8 @@ export interface WorkflowRun {
   error?: string;
   failureReason?: string;
   failedAt?: string;
+  /** HEL-704: run tags for grouping/filtering. */
+  tags?: string[];
 }
 
 /** A message exchanged between the manager agent and a worker slot */

@@ -25,6 +25,7 @@ import AgentJobDescription from "./pages/AgentJobDescription";
 import AgentStandingTasks from "./pages/AgentStandingTasks";
 import AgentDetail from "./pages/AgentDetail";
 import RunDetail from "./pages/RunDetail";
+import Executions from "./pages/Executions";
 import AgentOAuthCallback from "./pages/AgentOAuthCallback";
 import ApiKeys from "./pages/ApiKeys";
 import Approvals from "./pages/Approvals";
@@ -294,6 +295,9 @@ const routes: RouteObject[] = [
       // Loader still pre-warms the observability cache so the tab renders
       // instantly when the redirect lands.
       { path: "agents/activity", loader: activityLoader, element: <Navigate to="/assignments?tab=activity" replace /> },
+      // HEL-703: executions list — workspace run history with status/workflow/
+      // tag/date filters, retry, and drill-in to the run timeline below.
+      { path: "runs", element: <Executions /> },
       // HEL-562: run detail / step timeline — makes a run's paper trail visible.
       { path: "runs/:runId", element: <RunDetail /> },
       { path: "agents/team/:teamId", element: <AgentTeamDetail /> },

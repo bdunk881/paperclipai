@@ -23,6 +23,7 @@ import { getConnectorAction } from "./connectorActions";
 import { runStore } from "./runStore";
 import { publishWorkspaceStreamEvent, type RunLifecyclePhase } from "./agentTrace/streamPublisher";
 import { createStepLogger, runWithStepLogger } from "./stepLogger";
+import { runProgressStream } from "./runStreams";
 import { approvalStore } from "./approvalStore";
 import { approvalPolicyStore } from "../approvals/policyStore";
 import {
@@ -1988,6 +1989,16 @@ export class WorkflowEngine {
       };
 
       stepResults[resultIndex] = result;
+
+      // HEL-709: pipe a typed progress chunk to the run's live stream
+      // (best-effort; consumed via useRealtimeStream(runId, "progress")).
+      void runProgressStream.publish(this._resolveWorkspaceId(context, config) ?? "", runId, {
+        index: resultIndex,
+        stepId: step.id,
+        stepName: step.name,
+        status: stepStatus,
+        durationMs: result.durationMs,
+      });
 
       // Update run with latest step results so callers can see incremental progress
       await runStore.update(runId, { stepResults: [...stepResults] });

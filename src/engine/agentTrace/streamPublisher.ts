@@ -83,12 +83,26 @@ export interface TraceForwardEvent {
   envelope: AgentTraceEnvelope;
 }
 
+/**
+ * HEL-709: a chunk on a named, typed per-run stream (trigger.dev streams). The
+ * producer (defineRunStream(...).publish) and the consumer (useRealtimeStream)
+ * agree on `streamName` + the `chunk` shape; the transport stays untyped here.
+ * Carries `runId` so the per-run SSE filter (HEL-708) forwards it as-is.
+ */
+export interface RunStreamChunkEvent {
+  kind: "stream.chunk";
+  runId: string;
+  streamName: string;
+  chunk: unknown;
+}
+
 export type WorkspaceStreamEvent =
   | RunLifecycleEvent
   | TicketUpdateEvent
   | TicketCreatedEvent
   | ActivityEvent
-  | TraceForwardEvent;
+  | TraceForwardEvent
+  | RunStreamChunkEvent;
 
 export interface WorkspaceStreamEnvelope {
   workspaceId: string;

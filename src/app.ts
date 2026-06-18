@@ -30,10 +30,13 @@ import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinato
 import { runStore, sanitizeRunTags } from "./engine/runStore";
 import { sanitizeRunMetadata, parseRunMetadataOps, RunMetadataError } from "./engine/runMetadata";
 import { computeRunUsage, rollUpUsage } from "./engine/runUsage";
+import { startWorkflowRun, RunEnqueueError } from "./engine/startWorkflowRun";
 import {
   isRealtimeTokenConfigured,
   mintRealtimeToken,
   verifyRealtimeToken,
+  mintRunTriggerToken,
+  verifyRunTriggerToken,
   InvalidRealtimeTokenError,
   DEFAULT_REALTIME_TOKEN_TTL_SECONDS,
 } from "./engine/realtimeToken";
@@ -94,7 +97,7 @@ import {
 import { requireAuth, requireAuthOrQaBypass, AuthenticatedRequest } from "./auth/authMiddleware";
 import { requireAAL2, buildAal2AttestationCookieHeader } from "./middleware/requireAAL2";
 import { requireCfAccess } from "./admin/cfAccessAuth";
-import { requireEntitlement } from "./middleware/requireEntitlement";
+import { requireEntitlement, entitlementsFor } from "./middleware/requireEntitlement";
 import { requireRole } from "./middleware/requireRole";
 import { asyncHandler } from "./middleware/asyncHandler";
 import {
@@ -1663,77 +1666,29 @@ app.post(
   }
 
   const userId = req.auth?.sub;
-  const resolvedInput = { ...(input ?? {}) };
-  if (req.workspaceId) {
-    resolvedInput.workspaceId = req.workspaceId;
-  }
-  const resolvedConfig = req.workspaceId ? { ...(config ?? {}), workspaceId: req.workspaceId } : config;
 
-  const runQueue = getRunQueue();
-  if (runQueue) {
-    // BullMQ path: create the run record with status "queued" and enqueue.
-    // The worker (src/worker.ts) picks it up for execution.
-    const defaultConfig: Record<string, unknown> = {};
-    for (const field of template.configFields) {
-      if (field.defaultValue !== undefined) defaultConfig[field.key] = field.defaultValue;
-    }
-    const runConfig = { ...defaultConfig, ...(resolvedConfig ?? {}) };
-    const runId = randomUUID();
-    const run = await runStore.create({
-      id: runId,
-      templateId: template.id,
-      templateName: template.name,
+  // HEL-710: the run-start path (queue vs inline + enqueue-failure handling) is
+  // shared with the browser trigger endpoint via startWorkflowRun().
+  try {
+    const { runId, run, enqueued } = await startWorkflowRun({
+      template,
+      input,
+      config,
+      userId,
       workspaceId: req.workspaceId,
-      status: "queued",
-      startedAt: new Date().toISOString(),
-      input: resolvedInput,
-      workflowDag: template,
-      stepResults: [],
-      runtimeState: {
-        config: { ...runConfig },
-        context: { ...runConfig, ...resolvedInput },
-        currentStepIndex: 0,
-        // HEL-700: persist priority so resume/retry/crash-resume preserve it.
-        ...(runPriority ? { priority: runPriority } : {}),
-      },
+      priority: runPriority,
       tags: runTags,
       metadata: runMetadata,
-      ...(userId !== undefined ? { userId } : {}),
     });
-    const idempotencyKey = `${run.id}:0:${run.workflowVersionId ?? template.id}`;
-    try {
-      await addRunJob(
-        runQueue,
-        "run",
-        {
-          runId: run.id,
-          templateId: template.id,
-          workflowVersionId: run.workflowVersionId,
-          workspaceId: req.workspaceId ?? "",
-          stepIndex: 0,
-          idempotencyKey,
-          priority: runPriority,
-        },
-        { jobId: run.id, removeOnComplete: 100 },
-      );
-    } catch (enqueueErr) {
-      const message =
-        enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr);
-      await runStore.update(run.id, {
-        status: "failed",
-        completedAt: new Date().toISOString(),
-        error: `Run enqueue failed: ${message}`,
-      });
-      res.status(503).json({ error: `Failed to enqueue run: ${message}` });
+    // Preserve the existing response shapes: queue path → { runId }, inline → run.
+    res.status(202).json(enqueued ? { runId } : run);
+  } catch (err) {
+    if (err instanceof RunEnqueueError) {
+      res.status(503).json({ error: `Failed to enqueue run: ${err.message}` });
       return;
     }
-    res.status(202).json({ runId: run.id });
-    return;
+    throw err;
   }
-
-  // Legacy in-process path (used when Redis is not configured).
-  const run = await workflowEngine.startRun(template, resolvedInput, resolvedConfig, userId);
-  res.status(202).json(run);
 }));
 
 /** List all runs, optionally filtered by templateId or status */
@@ -2284,6 +2239,128 @@ app.get(
           : null;
       },
     });
+  }),
+);
+
+/**
+ * HEL-710: mint a scoped, short-TTL trigger token for a template so a browser
+ * can START a run without a full session (the trigger.dev useTaskTrigger
+ * pattern). Authenticated + workspace-scoped + role-gated; verified on the
+ * public trigger endpoint. The run it starts is attributed to the minting user.
+ */
+app.post(
+  "/api/templates/:id/trigger-token",
+  requireAuthOrQaBypass,
+  workspaceResolver,
+  requireRole("admin", "developer", "operator"),
+  asyncHandler<WorkspaceAwareRequest>(async (req, res) => {
+    if (!isRealtimeTokenConfigured()) {
+      res.status(503).json({ error: "Realtime tokens are not configured (set REALTIME_TOKEN_SECRET)" });
+      return;
+    }
+    const workspaceId = req.workspace?.id;
+    if (!workspaceId) {
+      res.status(400).json({ error: "workspace is required" });
+      return;
+    }
+    let template: WorkflowTemplate;
+    try {
+      template = await getTemplate(req.params.id, workspaceId);
+    } catch {
+      res.status(404).json({ error: `Template not found: ${req.params.id}` });
+      return;
+    }
+    const { token, payload } = mintRunTriggerToken({
+      workspaceId,
+      templateId: template.id,
+      userId: req.auth?.sub,
+    });
+    res.json({
+      token,
+      templateId: template.id,
+      expiresAt: new Date(payload.exp * 1000).toISOString(),
+    });
+  }),
+);
+
+/**
+ * HEL-710: public endpoint to START a run from a scoped trigger token (NOT a
+ * session) — the token IS the credential. Verify it, confirm it matches the
+ * path template, enforce the workspace run quota + a per-token rate limit, then
+ * start the run and return its id PLUS a fresh read token so the browser can
+ * immediately subscribe to the run's live stream (useRealtimeRun). No
+ * requireAuth — the trigger token carries the workspace + minting user.
+ */
+app.post(
+  "/api/realtime/trigger/:templateId",
+  llmEndpointRateLimiter,
+  asyncHandler(async (req, res) => {
+    if (!isRealtimeTokenConfigured()) {
+      res.status(503).json({ error: "Realtime tokens are not configured" });
+      return;
+    }
+    const authHeader = req.headers.authorization;
+    const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+    let payload;
+    try {
+      payload = verifyRunTriggerToken(bearer);
+    } catch (err) {
+      const reason = err instanceof InvalidRealtimeTokenError ? err.reason : "invalid";
+      res.status(401).json({ error: `trigger token ${reason}` });
+      return;
+    }
+    if (payload.template_id !== req.params.templateId) {
+      res.status(403).json({ error: "token does not grant access to this template" });
+      return;
+    }
+
+    // Enforce the workspace run quota — mirrors requireEntitlement("runsPerMonth")
+    // on POST /api/runs, since the public path can't run that middleware.
+    const entitlements = await entitlementsFor(payload.workspace_id);
+    const quotaLimit = entitlements.runsPerMonth;
+    if (typeof quotaLimit !== "number" || quotaLimit <= 0) {
+      res.status(402).json({ error: "Plan limit reached: runsPerMonth", code: "entitlement_exceeded" });
+      return;
+    }
+    const currentRuns = await runStore.countByWorkspaceCurrentMonth(payload.workspace_id);
+    if (currentRuns + 1 > quotaLimit) {
+      res.status(402).json({ error: "Plan limit reached: runsPerMonth", code: "entitlement_exceeded" });
+      return;
+    }
+
+    let template: WorkflowTemplate;
+    try {
+      template = await getTemplate(payload.template_id, payload.workspace_id);
+    } catch {
+      res.status(404).json({ error: `Template not found: ${payload.template_id}` });
+      return;
+    }
+
+    const input = (req.body as { input?: Record<string, unknown> } | undefined)?.input;
+    try {
+      const { runId } = await startWorkflowRun({
+        template,
+        input,
+        userId: payload.user_id,
+        workspaceId: payload.workspace_id,
+      });
+      // Read token for the just-started run so the browser can subscribe at once.
+      const { token: readToken, payload: readPayload } = mintRealtimeToken({
+        workspaceId: payload.workspace_id,
+        runId,
+      });
+      res.status(202).json({
+        runId,
+        token: readToken,
+        expiresAt: new Date(readPayload.exp * 1000).toISOString(),
+      });
+    } catch (err) {
+      if (err instanceof RunEnqueueError) {
+        res.status(503).json({ error: `Failed to enqueue run: ${err.message}` });
+        return;
+      }
+      throw err;
+    }
   }),
 );
 

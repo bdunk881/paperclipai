@@ -1,6 +1,8 @@
 import {
   mintRealtimeToken,
   verifyRealtimeToken,
+  mintRunTriggerToken,
+  verifyRunTriggerToken,
   isRealtimeTokenConfigured,
   InvalidRealtimeTokenError,
 } from "./realtimeToken";
@@ -53,5 +55,54 @@ describe("realtime token (HEL-708)", () => {
     expect(isRealtimeTokenConfigured()).toBe(false);
     process.env.REALTIME_TOKEN_SECRET = "too-short";
     expect(isRealtimeTokenConfigured()).toBe(false);
+  });
+});
+
+describe("run trigger token (HEL-710)", () => {
+  const original = process.env.REALTIME_TOKEN_SECRET;
+  beforeEach(() => {
+    process.env.REALTIME_TOKEN_SECRET = SECRET;
+  });
+  afterAll(() => {
+    if (original === undefined) delete process.env.REALTIME_TOKEN_SECRET;
+    else process.env.REALTIME_TOKEN_SECRET = original;
+  });
+
+  it("mints + verifies a template-scoped trigger token", () => {
+    const { token, payload } = mintRunTriggerToken({
+      workspaceId: "ws-1",
+      templateId: "tpl-1",
+      userId: "user-1",
+    });
+    expect(payload).toMatchObject({
+      workspace_id: "ws-1",
+      template_id: "tpl-1",
+      user_id: "user-1",
+      scope: "run_trigger",
+    });
+    const verified = verifyRunTriggerToken(token);
+    expect(verified.template_id).toBe("tpl-1");
+    expect(verified.workspace_id).toBe("ws-1");
+    expect(verified.user_id).toBe("user-1");
+  });
+
+  it("rejects an expired trigger token", () => {
+    const { token } = mintRunTriggerToken({ workspaceId: "ws-1", templateId: "tpl-1", ttlSeconds: -1 });
+    expect(() => verifyRunTriggerToken(token)).toThrow(/expired/);
+  });
+
+  it("rejects a tampered trigger token", () => {
+    const { token } = mintRunTriggerToken({ workspaceId: "ws-1", templateId: "tpl-1" });
+    expect(() => verifyRunTriggerToken(`${token.slice(0, -2)}xy`)).toThrow(InvalidRealtimeTokenError);
+  });
+
+  it("does not accept a read token as a trigger token (scope isolation)", () => {
+    const { token } = mintRealtimeToken({ workspaceId: "ws-1", runId: "run-1" });
+    expect(() => verifyRunTriggerToken(token)).toThrow(/scope/);
+  });
+
+  it("does not accept a trigger token as a read token (scope isolation)", () => {
+    const { token } = mintRunTriggerToken({ workspaceId: "ws-1", templateId: "tpl-1" });
+    expect(() => verifyRealtimeToken(token)).toThrow(/scope/);
   });
 });

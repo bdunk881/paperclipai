@@ -88,7 +88,7 @@ function firstTierThatAllows(
   return null;
 }
 
-async function entitlementsFor(workspaceId: string): Promise<WorkspaceEntitlements> {
+export async function entitlementsFor(workspaceId: string): Promise<WorkspaceEntitlements> {
   // DASH-48: get() is now async and falls back to the canonical
   // `entitlements` Postgres row when the in-memory cache misses. Only
   // when both the cache AND the DB have no row do we default to

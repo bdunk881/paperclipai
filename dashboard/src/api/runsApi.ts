@@ -74,6 +74,61 @@ export async function fetchRealtimeRunToken(
   return res.json() as Promise<RealtimeTokenResponse>;
 }
 
+export interface TriggerTokenResponse {
+  token: string;
+  templateId: string;
+  expiresAt: string;
+}
+
+/**
+ * HEL-710: mint a scoped trigger token for a template (POST
+ * /api/templates/:id/trigger-token). The token lets the browser start a run of
+ * that template via triggerRun() without re-authenticating per trigger.
+ */
+export async function fetchTriggerToken(
+  accessToken: string,
+  templateId: string,
+): Promise<TriggerTokenResponse> {
+  const res = await fetch(`${BASE}/templates/${encodeURIComponent(templateId)}/trigger-token`, {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Failed to get trigger token: ${res.status}`);
+  }
+  return res.json() as Promise<TriggerTokenResponse>;
+}
+
+export interface TriggerRunResponse {
+  runId: string;
+  /** Read token for the started run — feed straight into useRealtimeRun. */
+  token: string;
+  expiresAt: string;
+}
+
+/**
+ * HEL-710: start a run of a template from the browser using a trigger token
+ * (POST /api/realtime/trigger/:templateId). The trigger token rides in the
+ * Authorization header; the response carries the new runId + a read token.
+ */
+export async function triggerRun(
+  triggerToken: string,
+  templateId: string,
+  input?: Record<string, unknown>,
+): Promise<TriggerRunResponse> {
+  const res = await fetch(`${BASE}/realtime/trigger/${encodeURIComponent(templateId)}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${triggerToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ input: input ?? {} }),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? `Failed to trigger run: ${res.status}`);
+  }
+  return res.json() as Promise<TriggerRunResponse>;
+}
+
 export async function retryRun(accessToken: string, runId: string): Promise<WorkflowRun> {
   const res = await fetch(`${BASE}/runs/${encodeURIComponent(runId)}/retry`, {
     method: "POST",

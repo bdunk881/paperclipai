@@ -882,6 +882,10 @@ describe("WorkflowEngine — approval request changes loopback", () => {
 
     expect(firstApprovalId).toBeDefined();
     await approvalStore.resolve(firstApprovalId!, "request_changes", "Please revise and resubmit");
+    // HEL-697: the approval step parks the run and releases its slot — it no
+    // longer blocks inline on the decision — so resume is driven externally
+    // (the approvalResumeCoordinator in prod; explicitly here).
+    await engine.resumeRun(run.id, template);
 
     let secondApprovalId: string | undefined;
     while (Date.now() < deadline) {
@@ -897,6 +901,7 @@ describe("WorkflowEngine — approval request changes loopback", () => {
 
     expect(secondApprovalId).toBeDefined();
     await approvalStore.resolve(secondApprovalId!, "approved", "Looks good now");
+    await engine.resumeRun(run.id, template);
 
     const completed = await waitForCompletion(run.id, 4000);
     expect(completed.status).toBe("completed");
@@ -1127,6 +1132,8 @@ describe("WorkflowEngine — approval step", () => {
     const pending = await approvalStore.list("pending");
     expect(pending.length).toBeGreaterThan(0);
     await approvalStore.resolve(pending[0].id, "approved", "looks good");
+    // HEL-697: parked runs resume externally (coordinator in prod) — drive it here.
+    await engine.resumeRun(run.id, tpl);
 
     const completed = await waitForCompletion(run.id);
     expect(completed.status).toBe("completed");
@@ -1149,6 +1156,8 @@ describe("WorkflowEngine — approval step", () => {
 
     const pending = await approvalStore.list("pending");
     await approvalStore.resolve(pending[0].id, "rejected", "not ready");
+    // HEL-697: parked runs resume externally (coordinator in prod) — drive it here.
+    await engine.resumeRun(run.id, tpl);
 
     const completed = await waitForCompletion(run.id);
     expect(completed.stepResults[0].status).toBe("failure");

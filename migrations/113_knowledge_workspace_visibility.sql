@@ -74,7 +74,7 @@ CREATE POLICY knowledge_bases_user_isolation ON public.knowledge_bases
     OR
     (scope = 'workspace'
       AND app_current_workspace_id() IS NOT NULL
-      AND workspace_id = app_current_workspace_id())
+      AND workspace_id::text = app_current_workspace_id()::text)
   )
   WITH CHECK (
     (scope = 'user'
@@ -83,7 +83,7 @@ CREATE POLICY knowledge_bases_user_isolation ON public.knowledge_bases
     OR
     (scope = 'workspace'
       AND app_current_workspace_id() IS NOT NULL
-      AND workspace_id = app_current_workspace_id())
+      AND workspace_id::text = app_current_workspace_id()::text)
   );
 
 -- admin read (unchanged from 092; recreated idempotently)
@@ -110,7 +110,7 @@ CREATE POLICY knowledge_documents_user_isolation ON public.knowledge_documents
       WHERE kb.id = knowledge_documents.knowledge_base_id
         AND kb.scope = 'workspace'
         AND app_current_workspace_id() IS NOT NULL
-        AND kb.workspace_id = app_current_workspace_id()
+        AND kb.workspace_id::text = app_current_workspace_id()::text
     )
   )
   WITH CHECK (app_current_user_id() IS NOT NULL AND user_id = app_current_user_id());
@@ -126,7 +126,7 @@ CREATE POLICY knowledge_chunks_user_isolation ON public.knowledge_chunks
       WHERE kb.id = knowledge_chunks.knowledge_base_id
         AND kb.scope = 'workspace'
         AND app_current_workspace_id() IS NOT NULL
-        AND kb.workspace_id = app_current_workspace_id()
+        AND kb.workspace_id::text = app_current_workspace_id()::text
     )
   )
   WITH CHECK (app_current_user_id() IS NOT NULL AND user_id = app_current_user_id());
@@ -142,7 +142,7 @@ CREATE POLICY knowledge_embeddings_user_isolation ON public.knowledge_embeddings
       WHERE kb.id = knowledge_embeddings.knowledge_base_id
         AND kb.scope = 'workspace'
         AND app_current_workspace_id() IS NOT NULL
-        AND kb.workspace_id = app_current_workspace_id()
+        AND kb.workspace_id::text = app_current_workspace_id()::text
     )
   )
   WITH CHECK (app_current_user_id() IS NOT NULL AND user_id = app_current_user_id());

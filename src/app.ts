@@ -20,7 +20,10 @@ import {
 } from "./templates";
 import { WorkflowTemplate, WorkflowStep } from "./types/workflow";
 import { workflowEngine } from "./engine/WorkflowEngine";
-import { startApprovalResumeCoordinator } from "./engine/approvalResumeCoordinator";
+import {
+  startApprovalResumeCoordinator,
+  runApprovalResumeSweep,
+} from "./engine/approvalResumeCoordinator";
 import { startPromptRoutineCoordinator } from "./promptRoutines/promptRoutineCoordinator";
 import { startApprovalNotificationCoordinator } from "./engine/approvalNotificationCoordinator";
 import { startTicketNotificationCoordinator } from "./engine/ticketSlaCoordinator";
@@ -3307,6 +3310,16 @@ app.post("/api/approvals/:id/resolve", requireAuth, workspaceResolver, requireRo
     res.status(404).json({ error: "Approval not found or already resolved" });
     return;
   }
+  // HEL-697: the approval step now parks the run (awaiting_approval) and
+  // releases its worker slot instead of blocking on waitForDecision, so a
+  // resolved approval must be driven back to running. Kick the resume sweep
+  // immediately for low latency; the periodic approvalResumeCoordinator sweep
+  // is the durable backstop (and the only resumer if this best-effort call
+  // fails). The sweep is advisory-locked + status-guarded, so this can't
+  // double-resume.
+  void runApprovalResumeSweep().catch((err) => {
+    console.error("[approvals] resume sweep after resolve failed:", (err as Error).message);
+  });
   const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
   if (workspaceId) {
     void invalidateWorkspaceCache(workspaceId, ["approvals", "home"]);

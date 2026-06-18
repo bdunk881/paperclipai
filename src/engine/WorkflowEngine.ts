@@ -1603,14 +1603,25 @@ export class WorkflowEngine {
 
     Object.assign(context, stepOutput);
 
-    stepResults.push({
+    const approvalResult: StepResult = {
       stepId: step.id,
       stepName: step.name,
       status: stepStatus,
       output: stepOutput,
       durationMs: 0,
       ...(stepError ? { error: stepError } : {}),
-    });
+    };
+    // HEL-697: when the approval step parked, the run loop had already recorded
+    // a placeholder result for it (every step it reaches gets one). Overwrite
+    // that trailing placeholder rather than appending, so a resumed approval
+    // doesn't leave a stale duplicate step result. Fall back to push if the
+    // trailing entry isn't this step's (defensive — shouldn't happen).
+    const placeholderIdx = stepResults.length - 1;
+    if (placeholderIdx >= 0 && stepResults[placeholderIdx]?.stepId === step.id) {
+      stepResults[placeholderIdx] = approvalResult;
+    } else {
+      stepResults.push(approvalResult);
+    }
 
     await runStore.update(run.id, {
       stepResults,
@@ -1668,6 +1679,9 @@ export class WorkflowEngine {
       let jumpToStepIndex: number | undefined;
       let pauseForWaitMs: number | undefined;
       let pauseForWebhookToken: string | undefined;
+      // HEL-697: set when an approval step parks the run (awaiting_approval) and
+      // releases the worker slot instead of blocking on waitForDecision.
+      let pauseForApproval = false;
 
       // HEL-696: idempotent replay — reuse a completed side-effecting / pausing
       // step's recorded output instead of re-executing it (keyed by execution
@@ -1896,6 +1910,14 @@ export class WorkflowEngine {
               stepOutput = dryRunApprovalOutput();
               break;
             }
+            // HEL-697: create the approval, persist resumable state, and PARK —
+            // release the worker slot (set status awaiting_approval + runtimeState
+            // with the approvalId at this step's index) instead of blocking on
+            // waitForDecision, which held a concurrency slot for the whole wait
+            // (potentially hours). The approvalResumeCoordinator sweep — and the
+            // POST /api/approvals/:id/resolve fast path — drive resumeRun once a
+            // decision or timeout lands, resuming past this step via
+            // _resumePausedRun.
             const assignee = step.approvalAssignee ?? "unassigned";
             const message = step.approvalMessage ?? "Approval required to continue.";
             const timeoutMinutes = step.approvalTimeoutMinutes ?? 60;
@@ -1919,36 +1941,7 @@ export class WorkflowEngine {
               runtimeState: makeRuntimeState(config, context, currentStepIndex, approvalId),
             });
 
-            const { decision, comment } = await approvalStore.waitForDecision(approvalId, 50);
-
-            await runStore.update(runId, { status: "running" });
-
-            if (decision === "request_changes") {
-              const { targetStepIndex, error } = this._resolveRequestChangesTarget(
-                template,
-                step,
-                currentStepIndex
-              );
-              if (error) {
-                stepStatus = "failure";
-                stepError = error;
-              } else {
-                jumpToStepIndex = targetStepIndex;
-              }
-            } else if (decision !== "approved") {
-              stepStatus = "failure";
-              stepError =
-                decision === "timed_out"
-                  ? `Approval timed out${comment ? `: ${comment}` : ""}`
-                  : `Approval rejected${comment ? `: ${comment}` : ""}`;
-            }
-
-            stepOutput = {
-              approved: decision === "approved",
-              approvalDecision: decision,
-              approvalId,
-              approverComment: comment ?? null,
-            };
+            pauseForApproval = true;
             break;
           }
           default:
@@ -2034,6 +2027,16 @@ export class WorkflowEngine {
           void this._fireErrorWorkflow(template, config, context, runId, step.id, stepError, userId);
           return;
         }
+      }
+
+      // HEL-697: a parked approval already persisted awaiting_approval +
+      // resumable runtimeState (with the approvalId) at this step's index in the
+      // approval case above. Release the worker slot here instead of blocking on
+      // the decision; the approvalResumeCoordinator sweep (and POST
+      // /api/approvals/:id/resolve) drive resumeRun once it's resolved or times
+      // out, resuming past this step via _resumePausedRun.
+      if (pauseForApproval) {
+        return;
       }
 
       // HEL-774: a webhook Wait pauses here indefinitely — persist the run as

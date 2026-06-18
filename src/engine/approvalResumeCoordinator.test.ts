@@ -111,6 +111,124 @@ describe("runApprovalResumeSweep", () => {
     delete TEMPLATE_MAP[template.id];
   });
 
+  it("times out and fails a parked run once its deadline passes (durable backstop)", async () => {
+    // HEL-697: the approval step parks the run and releases its worker slot, so
+    // the only timeout that survives a process restart is this DB-driven
+    // deadline check in the sweep (requestedAt + timeoutMinutes). Drive the
+    // sweep with a `now` past the deadline; the run should resume into failure.
+    const template = {
+      id: "tpl-coordinator-timeout",
+      name: "Coordinator timeout",
+      description: "Times out a parked approval",
+      category: "custom" as const,
+      version: "1",
+      configFields: [],
+      steps: [
+        {
+          id: "trigger-1",
+          name: "Trigger",
+          kind: "trigger" as const,
+          description: "Start",
+          inputKeys: ["message"],
+          outputKeys: ["message"],
+        },
+        {
+          id: "approval-1",
+          name: "Approval",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["message"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+        {
+          id: "output-1",
+          name: "Output",
+          kind: "output" as const,
+          description: "Finish",
+          inputKeys: ["message"],
+          outputKeys: ["message"],
+        },
+      ],
+      sampleInput: { message: "hello" },
+      expectedOutput: { message: "hello" },
+    };
+
+    TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngine.startRun(template, { message: "hello" });
+    await waitForRunStatus(run.id, "awaiting_approval");
+
+    // Approval is still pending; a `now` 10 minutes out is past the 5-minute deadline.
+    const sweep = await runApprovalResumeSweep(Date.now() + 10 * 60_000);
+    expect(sweep.timedOut).toBe(1);
+    expect(sweep.resumed).toBe(1);
+
+    await waitForRunStatus(run.id, "failed");
+    const failed = await runStore.get(run.id);
+    expect(failed?.error ?? "").toMatch(/timed out/i);
+
+    const approval = await approvalStore.findByRunId(run.id);
+    expect(approval?.status).toBe("timed_out");
+
+    delete TEMPLATE_MAP[template.id];
+  });
+
+  it("does not time out a parked run before its deadline", async () => {
+    const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
+      async () => await new Promise(() => {})
+    );
+
+    const template = {
+      id: "tpl-coordinator-not-yet-timed-out",
+      name: "Coordinator pre-deadline",
+      description: "Pending approval before deadline is left alone",
+      category: "custom" as const,
+      version: "1",
+      configFields: [],
+      steps: [
+        {
+          id: "trigger-1",
+          name: "Trigger",
+          kind: "trigger" as const,
+          description: "Start",
+          inputKeys: ["message"],
+          outputKeys: ["message"],
+        },
+        {
+          id: "approval-1",
+          name: "Approval",
+          kind: "approval" as const,
+          description: "Pause",
+          inputKeys: ["message"],
+          outputKeys: ["approved"],
+          approvalAssignee: "manager",
+          approvalMessage: "Please approve",
+          approvalTimeoutMinutes: 5,
+        },
+      ],
+      sampleInput: { message: "hello" },
+      expectedOutput: { message: "hello" },
+    };
+
+    TEMPLATE_MAP[template.id] = template;
+
+    const run = await workflowEngine.startRun(template, { message: "hello" });
+    await waitForRunStatus(run.id, "awaiting_approval");
+
+    // `now` only 1 minute out — well before the 5-minute deadline.
+    const sweep = await runApprovalResumeSweep(Date.now() + 60_000);
+    expect(sweep.timedOut).toBe(0);
+    expect(sweep.resumed).toBe(0);
+    expect(sweep.skippedPending).toBe(1);
+    await expect(runStore.get(run.id)).resolves.toMatchObject({ status: "awaiting_approval" });
+
+    waitSpy.mockRestore();
+    delete TEMPLATE_MAP[template.id];
+  });
+
   it("skips runs whose approval is still pending", async () => {
     const waitSpy = jest.spyOn(approvalStore, "waitForDecision").mockImplementation(
       async () => await new Promise(() => {})
@@ -251,13 +369,13 @@ describe("approval resume coordinator lifecycle", () => {
   it("returns zeroed counters when runStore.list() throws an Error", async () => {
     jest.spyOn(runStore, "list").mockRejectedValueOnce(new Error("table missing"));
     const result = await runApprovalResumeSweep();
-    expect(result).toEqual({ scanned: 0, resumed: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
+    expect(result).toEqual({ scanned: 0, resumed: 0, timedOut: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
   });
 
   it("returns zeroed counters when runStore.list() throws a non-Error", async () => {
     jest.spyOn(runStore, "list").mockRejectedValueOnce("string rejection");
     const result = await runApprovalResumeSweep();
-    expect(result).toEqual({ scanned: 0, resumed: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
+    expect(result).toEqual({ scanned: 0, resumed: 0, timedOut: 0, skippedPending: 0, skippedMissingSnapshot: 0 });
   });
 
   it("starts only one interval and stops cleanly", () => {

@@ -498,12 +498,11 @@ jobs:
           context: .
           file: docker/${{ matrix.service }}/Dockerfile
           push: false
-          # HEL-234: rev cache scope to invalidate the corrupted layer that
-          # was failing every src/**-touching PR in 8-15s. Bumped to v3 on
-          # PR #1098 when the `api` matrix entry failed in 44s with the
-          # same signature (standalone docker-api-build-check.yml workflow
-          # at scope autoflow-api-v2 succeeded simultaneously). Bumped to
-          # v4 on PR #1141 — same 44s failure recurred at scope v3, while
-          # the standalone workflow at autoflow-api-v2 still passed.
-          cache-from: type=gha,scope=${{ matrix.service }}-v4
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}-v4
+          # HEL-808: no GHA cache here. The `api` entry chronically failed on the
+          # cache *export* ("exporting to GitHub Actions Cache: ... not_found" →
+          # "failed to solve: not_found") — the image builds fine, only the export
+          # dies. Scope bumps v2→v3→v4 (HEL-234 / PRs #1098/#1141) never stuck,
+          # while the standalone docker-api-build-check.yml (same Dockerfile)
+          # passed alongside it. This is a smoke build (push:false) that only
+          # needs to prove the image builds, so we drop the flaky cache for a
+          # reliable cold build; the standalone workflow keeps the api cache.

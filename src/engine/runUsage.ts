@@ -9,11 +9,22 @@
  */
 
 import { WorkflowRun } from "../types/workflow";
+import {
+  resolveMachinePreset,
+  machineCostCents,
+  type MachinePresetId,
+} from "./machinePresets";
 
 export interface RunUsage {
   runId: string;
   /** Estimated LLM cost in whole cents (summed over the run's steps). */
   costInCents: number;
+  /** HEL-806: machine/compute cost in whole cents — wall-time × the preset rate. */
+  machineCostInCents: number;
+  /** HEL-806: LLM + machine cost in whole cents. */
+  totalCostInCents: number;
+  /** HEL-806: the machine preset the run is billed at (config.machine, else default). */
+  machine: MachinePresetId;
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
@@ -24,12 +35,18 @@ export interface RunUsage {
 
 export interface UsageRollup {
   totalRuns: number;
+  /** LLM cost only (unchanged meaning for back-compat). */
   totalCostInCents: number;
+  /** HEL-806: machine/compute cost across the runs. */
+  totalMachineCostInCents: number;
   totalPromptTokens: number;
   totalCompletionTokens: number;
   totalTokens: number;
   /** Per-tag spend breakdown — a run contributes to each of its tags. */
-  byTag: Record<string, { runs: number; costInCents: number; totalTokens: number }>;
+  byTag: Record<
+    string,
+    { runs: number; costInCents: number; machineCostInCents: number; totalTokens: number }
+  >;
 }
 
 function costCents(estimatedCostUsd: number | undefined): number {
@@ -61,9 +78,16 @@ export function computeRunUsage(run: WorkflowRun, asOf: number = Date.now()): Ru
   const durationMs =
     Number.isFinite(startMs) && Number.isFinite(endMs) ? Math.max(0, endMs - startMs) : 0;
 
+  // HEL-806: machine cost = wall-time × the run's machine-preset rate.
+  const preset = resolveMachinePreset(run.runtimeState?.config);
+  const machineCostInCents = machineCostCents(preset, durationMs);
+
   return {
     runId: run.id,
     costInCents,
+    machineCostInCents,
+    totalCostInCents: costInCents + machineCostInCents,
+    machine: preset.id,
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
@@ -81,6 +105,7 @@ export function rollUpUsage(runs: WorkflowRun[], asOf: number = Date.now()): Usa
   const rollup: UsageRollup = {
     totalRuns: runs.length,
     totalCostInCents: 0,
+    totalMachineCostInCents: 0,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
     totalTokens: 0,
@@ -90,14 +115,17 @@ export function rollUpUsage(runs: WorkflowRun[], asOf: number = Date.now()): Usa
   for (const run of runs) {
     const usage = computeRunUsage(run, asOf);
     rollup.totalCostInCents += usage.costInCents;
+    rollup.totalMachineCostInCents += usage.machineCostInCents;
     rollup.totalPromptTokens += usage.promptTokens;
     rollup.totalCompletionTokens += usage.completionTokens;
     rollup.totalTokens += usage.totalTokens;
 
     for (const tag of run.tags ?? []) {
-      const bucket = rollup.byTag[tag] ?? { runs: 0, costInCents: 0, totalTokens: 0 };
+      const bucket =
+        rollup.byTag[tag] ?? { runs: 0, costInCents: 0, machineCostInCents: 0, totalTokens: 0 };
       bucket.runs += 1;
       bucket.costInCents += usage.costInCents;
+      bucket.machineCostInCents += usage.machineCostInCents;
       bucket.totalTokens += usage.totalTokens;
       rollup.byTag[tag] = bucket;
     }

@@ -88,9 +88,9 @@ describe("rollUpUsage (HEL-707)", () => {
     expect(rollup.totalRuns).toBe(3);
     expect(rollup.totalCostInCents).toBe(175); // 100 + 50 + 25
     expect(rollup.totalTokens).toBe(1900);
-    // acme spans r1+r2; gold only r1 — overlapping buckets.
-    expect(rollup.byTag["customer:acme"]).toEqual({ runs: 2, costInCents: 150, totalTokens: 1800 });
-    expect(rollup.byTag["tier:gold"]).toEqual({ runs: 1, costInCents: 100, totalTokens: 1500 });
+    // acme spans r1+r2; gold only r1 — overlapping buckets. (5s runs → 0 machine cents.)
+    expect(rollup.byTag["customer:acme"]).toEqual({ runs: 2, costInCents: 150, machineCostInCents: 0, totalTokens: 1800 });
+    expect(rollup.byTag["tier:gold"]).toEqual({ runs: 1, costInCents: 100, machineCostInCents: 0, totalTokens: 1500 });
     expect(rollup.byTag["customer:acme"].costInCents).toBeLessThan(rollup.totalCostInCents);
   });
 
@@ -98,10 +98,52 @@ describe("rollUpUsage (HEL-707)", () => {
     expect(rollUpUsage([])).toEqual({
       totalRuns: 0,
       totalCostInCents: 0,
+      totalMachineCostInCents: 0,
       totalPromptTokens: 0,
       totalCompletionTokens: 0,
       totalTokens: 0,
       byTag: {},
     });
+  });
+});
+
+describe("machine cost (HEL-806)", () => {
+  const hourRun = (overrides: Partial<WorkflowRun> = {}) =>
+    run({
+      startedAt: "2026-06-01T00:00:00.000Z",
+      completedAt: "2026-06-01T01:00:00.000Z", // 1 hour
+      ...overrides,
+    });
+
+  it("bills the default preset (small-1x) when config.machine is unset", () => {
+    const usage = computeRunUsage(hourRun());
+    expect(usage.machine).toBe("small-1x");
+    expect(usage.machineCostInCents).toBe(6); // $0.06/hr × 1h
+    expect(usage.totalCostInCents).toBe(usage.costInCents + usage.machineCostInCents);
+  });
+
+  it("bills the configured preset", () => {
+    const usage = computeRunUsage(
+      hourRun({
+        runtimeState: { config: { machine: "medium-1x" }, context: {}, currentStepIndex: 0 },
+      }),
+    );
+    expect(usage.machine).toBe("medium-1x");
+    expect(usage.machineCostInCents).toBe(12); // $0.12/hr × 1h
+  });
+
+  it("falls back to the default preset for an unknown machine id", () => {
+    const usage = computeRunUsage(
+      hourRun({
+        runtimeState: { config: { machine: "bogus" }, context: {}, currentStepIndex: 0 },
+      }),
+    );
+    expect(usage.machine).toBe("small-1x");
+  });
+
+  it("adds machine cost to the rollup (total + per tag)", () => {
+    const rollup = rollUpUsage([hourRun({ id: "m1", tags: ["t"] })]);
+    expect(rollup.totalMachineCostInCents).toBe(6);
+    expect(rollup.byTag["t"].machineCostInCents).toBe(6);
   });
 });

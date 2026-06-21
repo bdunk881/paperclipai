@@ -1342,3 +1342,48 @@ describe("WorkflowEngine — disabled steps (HEL-791)", () => {
     expect(result?.status).toBe("success");
   });
 });
+
+describe("WorkflowEngine — maxDuration cap (HEL-805)", () => {
+  it("fails a run when a single step exceeds the maxDuration budget", async () => {
+    registerAction("maxdur.slow", async () => {
+      await new Promise((r) => setTimeout(r, 400));
+      return { done: true };
+    });
+    const tpl = makeMinimalTemplate({
+      id: "maxdur-slow",
+      name: "Slow action",
+      kind: "action",
+      description: "overruns the budget",
+      inputKeys: [],
+      outputKeys: ["done"],
+      action: "maxdur.slow",
+    });
+
+    const run = await engine.startRun(tpl, {}, { maxDurationMs: 120 });
+    await waitForStatus(run.id, "failed", 5000);
+    const finished = await runStore.get(run.id);
+    expect(finished?.status).toBe("failed");
+    expect(finished?.error ?? "").toMatch(/max duration/i);
+  });
+
+  it("completes a run whose step finishes within the budget", async () => {
+    registerAction("maxdur.fast", async () => {
+      await new Promise((r) => setTimeout(r, 10));
+      return { done: true };
+    });
+    const tpl = makeMinimalTemplate({
+      id: "maxdur-fast",
+      name: "Fast action",
+      kind: "action",
+      description: "within the budget",
+      inputKeys: [],
+      outputKeys: ["done"],
+      action: "maxdur.fast",
+    });
+
+    const run = await engine.startRun(tpl, {}, { maxDurationMs: 5000 });
+    await waitForStatus(run.id, "completed", 5000);
+    const finished = await runStore.get(run.id);
+    expect(finished?.status).toBe("completed");
+  });
+});

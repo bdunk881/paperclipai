@@ -59,6 +59,7 @@ import { isJobIdAlreadyExists } from "../queue/bullMqJobId";
 import { deriveIdempotencyKey } from "../queue/withIdempotency";
 import { shouldReuseStepKind, buildPriorResultMap } from "./idempotentReplay";
 import { resolveRetryPolicy, withStepRetry } from "./stepRetry";
+import { resolveMaxDurationMs, raceWithDeadline } from "./runMaxDuration";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1653,9 +1654,31 @@ export class WorkflowEngine {
     userId?: string,
     priorResultsByKey: Map<string, StepResult> = new Map(),
   ): Promise<void> {
+    // HEL-805: maxDuration cap. Bound THIS execution leg — measured from leg
+    // entry, NOT run.startedAt, so a run that paused on a wait/approval for a
+    // long time doesn't instantly time out when it resumes.
+    const maxDurationMs = resolveMaxDurationMs(config);
+    const runDeadlineMs = Date.now() + maxDurationMs;
 
     for (let currentStepIndex = startStepIndex; currentStepIndex < template.steps.length; currentStepIndex += 1) {
       const step = template.steps[currentStepIndex];
+
+      // HEL-805: fail the run if the leg blew its budget before starting another
+      // step. Also the backstop for a `continueOnFail` step that swallowed an
+      // in-step maxDuration timeout (the race below).
+      if (Date.now() >= runDeadlineMs) {
+        const error = `Run exceeded its max duration of ${maxDurationMs}ms`;
+        await runStore.update(runId, {
+          status: "failed",
+          completedAt: new Date().toISOString(),
+          error,
+          runtimeState: makeRuntimeState(config, context, currentStepIndex),
+        });
+        void this._publishRunLifecycle(runId, "failed", { error });
+        void this._fireErrorWorkflow(template, config, context, runId, step.id, error, userId);
+        return;
+      }
+
       await runStore.update(runId, {
         runtimeState: makeRuntimeState(config, context, currentStepIndex),
       });
@@ -1755,7 +1778,7 @@ export class WorkflowEngine {
             break;
           case "llm": {
             const llmResult = await runWithStepLogger(stepLogger, () =>
-              withStepRetry(() => executeLlm(step, context, userId), retryPolicy),
+              raceWithDeadline(() => withStepRetry(() => executeLlm(step, context, userId), retryPolicy), runDeadlineMs, maxDurationMs),
             );
             stepOutput = llmResult.output;
             stepCostLog = llmResult.costLog;
@@ -1763,7 +1786,7 @@ export class WorkflowEngine {
           }
           case "knowledge": {
             const knowledgeResult = await runWithStepLogger(stepLogger, () =>
-              withStepRetry(() => handleKnowledge(step, context, userId ?? ""), retryPolicy),
+              raceWithDeadline(() => withStepRetry(() => handleKnowledge(step, context, userId ?? ""), retryPolicy), runDeadlineMs, maxDurationMs),
             );
             stepOutput = knowledgeResult.output;
             break;
@@ -1851,7 +1874,7 @@ export class WorkflowEngine {
             }
 
             const actionOutput = await runWithStepLogger(stepLogger, () =>
-              withStepRetry(() => executeAction(step, context, config, userId), retryPolicy),
+              raceWithDeadline(() => withStepRetry(() => executeAction(step, context, config, userId), retryPolicy), runDeadlineMs, maxDurationMs),
             );
             stepOutput = {
               ...actionOutput,
@@ -1875,7 +1898,7 @@ export class WorkflowEngine {
               break;
             }
             const mcpResult = await runWithStepLogger(stepLogger, () =>
-              withStepRetry(() => handleMcp(step, context), retryPolicy),
+              raceWithDeadline(() => withStepRetry(() => handleMcp(step, context), retryPolicy), runDeadlineMs, maxDurationMs),
             );
             stepOutput = mcpResult.output;
             break;
@@ -1896,7 +1919,7 @@ export class WorkflowEngine {
               break;
             }
             const agentResult = await runWithStepLogger(stepLogger, () =>
-              withStepRetry(() => handleAgent(step, context, runId, userId ?? ""), retryPolicy),
+              raceWithDeadline(() => withStepRetry(() => handleAgent(step, context, runId, userId ?? ""), retryPolicy), runDeadlineMs, maxDurationMs),
             );
             stepOutput = agentResult.output;
             agentSlotResults = agentResult.agentSlotResults;

@@ -15,6 +15,7 @@ function mockClient(overrides: Partial<FlyMachinesClient> = {}): FlyMachinesClie
   return {
     createMachine: jest.fn(async () => ({ id: "m-1", state: "created" })),
     getMachine: jest.fn(async () => ({ id: "m-1", state: "started" })),
+    listMachines: jest.fn(async () => []),
     destroyMachine: jest.fn(async () => undefined),
     waitForState: jest.fn(async () => ({ id: "m-1", state: "started" })),
     ...overrides,

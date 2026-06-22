@@ -33,7 +33,13 @@ import {
 } from "./queue/bullMqJobId";
 import { getRedisClient } from "./queue/redisClient";
 import type { RunJobPayload, AgentPromptJobPayload } from "./queue/queues";
-import { getDlqQueue, getAgentPromptQueue, getRunQueue } from "./queue/queues";
+import { getDlqQueue, getAgentPromptQueue, getRunQueue, addRunJob } from "./queue/queues";
+import {
+  resolveWorkspaceConcurrencyLimit,
+  acquireWorkspaceSlot,
+  releaseWorkspaceSlot,
+  WORKSPACE_DEFER_MS,
+} from "./queue/workspaceConcurrency";
 import type { StorageDeletionPayload } from "./queue/storageQueue";
 import { getStorageAdapter, parseStorageKey } from "./storage";
 import { syncRepeatableJobs } from "./queue/scheduler";
@@ -102,6 +108,36 @@ async function handleRunsJob(data: RunJobPayload, jobId?: string): Promise<void>
     // Deferring the load keeps worker boot — and worker.test.ts's import-time
     // smoke test — off that chain, mirroring the HEL-492 lazy-import fix.
     const { workflowEngine } = await import("./engine/WorkflowEngine");
+
+    // HEL-699: per-workspace concurrency gate (inline path only — isolated runs
+    // above execute off-pool). Caps concurrent runs per workspace so one tenant
+    // can't monopolize the shared worker pool. Default off (RUN_WORKSPACE_CONCURRENCY
+    // unset). At cap → re-enqueue this run with a short jittered delay and free
+    // the slot now; it retries when the workspace frees one (backpressure, not
+    // starvation). A missing queue (shouldn't happen in the worker) falls through
+    // to inline rather than dropping the run.
+    const wsLimit = resolveWorkspaceConcurrencyLimit();
+    if (wsLimit > 0 && data.workspaceId) {
+      const acquired = await acquireWorkspaceSlot(connection, data.workspaceId, wsLimit);
+      if (!acquired) {
+        const runQueue = getRunQueue();
+        if (runQueue) {
+          await addRunJob(runQueue, "run", data, {
+            delay: WORKSPACE_DEFER_MS + Math.floor(Math.random() * 500),
+            removeOnComplete: 100,
+          });
+          return;
+        }
+      } else {
+        try {
+          await workflowEngine.executeQueuedRun(data.runId, data.stepIndex ?? 0);
+        } finally {
+          await releaseWorkspaceSlot(connection, data.workspaceId);
+        }
+        return;
+      }
+    }
+
     await workflowEngine.executeQueuedRun(data.runId, data.stepIndex ?? 0);
     return;
   }

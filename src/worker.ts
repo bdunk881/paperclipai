@@ -48,6 +48,7 @@ import {
 } from "./agents/runtime/planApprovalResumeCoordinator";
 import { startDlqDepthMonitor } from "./queue/dlqMonitor";
 import { startStrandedRunReaper, stopStrandedRunReaper } from "./engine/strandedRunReaper";
+import { startRunMachineReaper, stopRunMachineReaper } from "./engine/runMachineReaper";
 
 const redisConnection = getRedisClient();
 if (!redisConnection) {
@@ -484,6 +485,7 @@ async function shutdownWorker(signal: string): Promise<void> {
   console.log(`[worker] ${signal} received — closing queues`);
   stopPlanApprovalResumeCoordinator();
   stopStrandedRunReaper();
+  stopRunMachineReaper();
   await Promise.all([runsWorker.close(), agentPromptWorker.close(), storageDeletionWorker.close()]);
   await connection.quit();
   process.exit(0);
@@ -512,5 +514,9 @@ startDlqDepthMonitor();
 // Advisory-locked sweep; re-enqueues a replay-from-0 that the HEL-696 idempotency
 // makes safe. No-op without Postgres.
 startStrandedRunReaper();
+
+// HEL-811: reap ephemeral isolated run-machines (orphans, terminal, and the
+// true maxDuration kill for a wedged VM). No-op unless RUN_ISOLATION is enabled.
+startRunMachineReaper();
 
 console.log("[worker] Started, listening on 'runs' + 'agent-prompt' + 'storage-deletion' queues");

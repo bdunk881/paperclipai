@@ -36,6 +36,7 @@ export const CoordinatorLockKey = {
   ticketNotification: 814_730_003,
   promptRoutine: 814_730_004,
   strandedRunReaper: 814_730_005,
+  runMachineReaper: 814_730_006,
 } as const;
 
 /**

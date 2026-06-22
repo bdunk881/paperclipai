@@ -85,6 +85,17 @@ async function handleRunsJob(data: RunJobPayload, jobId?: string): Promise<void>
       );
       return;
     }
+    // HEL-810: isolated execution. When RUN_ISOLATION=fly-machine AND this run
+    // opted in (config.isolation === true), dispatch it to an ephemeral Fly
+    // Machine and return immediately (the worker slot frees). Falls back to
+    // inline when isolation is off, the run didn't opt in, or dispatch fails.
+    const { isRunIsolationEnabled } = await import("./engine/runIsolation");
+    if (isRunIsolationEnabled()) {
+      const { dispatchIsolatedRun } = await import("./engine/isolatedRunDispatcher");
+      const dispatched = await dispatchIsolatedRun(data.runId, data.stepIndex ?? 0);
+      if (dispatched) return;
+    }
+
     // Lazy import: WorkflowEngine statically pulls the llmProviders barrel
     // (→ ESM-only @mistralai/mistralai), which breaks module-eval in jest.
     // Deferring the load keeps worker boot — and worker.test.ts's import-time

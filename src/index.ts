@@ -21,6 +21,23 @@ async function startServer() {
     process.exit(1);
   }
 
+  // HEL-810: run-once mode — when this container was dispatched as an isolated
+  // Fly Machine (AUTOFLOW_RUN_ONCE set), execute exactly that one run and exit
+  // instead of starting the HTTP server / background jobs.
+  const runOnceId = process.env.AUTOFLOW_RUN_ONCE?.trim();
+  if (runOnceId) {
+    const stepIndex = Number(process.env.AUTOFLOW_RUN_STEP_INDEX ?? "0");
+    console.log(`[run-once] executing run ${runOnceId} from step ${stepIndex}`);
+    const { executeRunOnce } = await import("./engine/runOnce");
+    const result = await executeRunOnce(runOnceId, stepIndex);
+    if (result.ok) {
+      console.log(`[run-once] run ${runOnceId} complete`);
+      process.exit(0);
+    }
+    console.error(`[run-once] run ${runOnceId} failed: ${result.error}`);
+    process.exit(1);
+  }
+
   const runtimeEnv = (process.env.NODE_ENV ?? "development").trim().toLowerCase();
 
   // HEL-500: fail fast in production when a required secret is unset (mirrors

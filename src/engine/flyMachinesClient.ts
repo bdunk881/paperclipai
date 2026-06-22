@@ -29,6 +29,7 @@ export interface FlyMachine {
   state: string;
   region?: string;
   instance_id?: string;
+  created_at?: string;
 }
 
 export class FlyMachinesError extends Error {
@@ -51,6 +52,7 @@ export interface FlyMachinesClient {
     config: FlyMachineConfig;
   }): Promise<FlyMachine>;
   getMachine(id: string): Promise<FlyMachine>;
+  listMachines(): Promise<FlyMachine[]>;
   destroyMachine(id: string, force?: boolean): Promise<void>;
   waitForState(id: string, state: string, timeoutSec?: number): Promise<FlyMachine>;
 }
@@ -96,6 +98,10 @@ export function createFlyMachinesClient(
     async getMachine(id) {
       const res = await call(`/${encodeURIComponent(id)}`, { method: "GET" });
       return (await res.json()) as FlyMachine;
+    },
+    async listMachines() {
+      const res = await call("", { method: "GET" });
+      return (await res.json()) as FlyMachine[];
     },
     async destroyMachine(id, force = true) {
       await call(`/${encodeURIComponent(id)}?force=${force ? "true" : "false"}`, {

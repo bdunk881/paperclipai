@@ -1387,3 +1387,21 @@ describe("WorkflowEngine — maxDuration cap (HEL-805)", () => {
     expect(finished?.status).toBe("completed");
   });
 });
+
+describe("WorkflowEngine — ctx.machine (HEL-811)", () => {
+  it("exposes the resolved machine preset on the run context", async () => {
+    const tpl = makeMinimalTemplate({
+      id: "ctx-machine",
+      name: "Output",
+      kind: "output",
+      description: "emit",
+      inputKeys: [],
+      outputKeys: [],
+    });
+    const run = await engine.startRun(tpl, {}, { machine: "medium-1x" });
+    await waitForStatus(run.id, "completed", 4000);
+    const finished = await runStore.get(run.id);
+    const ctxMachine = finished?.runtimeState?.context?.["machine"] as { id?: string } | undefined;
+    expect(ctxMachine?.id).toBe("medium-1x");
+  });
+});

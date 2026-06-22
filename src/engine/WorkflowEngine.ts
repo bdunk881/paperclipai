@@ -60,6 +60,7 @@ import { deriveIdempotencyKey } from "../queue/withIdempotency";
 import { shouldReuseStepKind, buildPriorResultMap } from "./idempotentReplay";
 import { resolveRetryPolicy, withStepRetry } from "./stepRetry";
 import { resolveMaxDurationMs, raceWithDeadline } from "./runMaxDuration";
+import { resolveMachinePreset } from "./machinePresets";
 import { extractStructuredOutput } from "./structuredOutput";
 import { memoryStore } from "./memoryStore";
 import { LlmCostLog } from "./llmRouter";
@@ -1659,6 +1660,10 @@ export class WorkflowEngine {
     // long time doesn't instantly time out when it resumes.
     const maxDurationMs = resolveMaxDurationMs(config);
     const runDeadlineMs = Date.now() + maxDurationMs;
+
+    // HEL-811: expose the resolved machine preset on the run context (ctx.machine,
+    // the trigger.dev pattern) so steps/agents can read their machine sizing.
+    context["machine"] = resolveMachinePreset(config);
 
     for (let currentStepIndex = startStepIndex; currentStepIndex < template.steps.length; currentStepIndex += 1) {
       const step = template.steps[currentStepIndex];

@@ -51,6 +51,17 @@ describe("flyMachinesClient (HEL-809)", () => {
     expect((await client.getMachine("m1")).state).toBe("started");
   });
 
+  it("listMachines GETs the machines collection", async () => {
+    const fetchImpl = async (url: string, _init: RequestInit): Promise<Response> => {
+      expect(url).toBe("https://api.machines.dev/v1/apps/autoflow-api-dev/machines");
+      return jsonResponse([{ id: "m1", name: "run-a", state: "started" }]);
+    };
+    const client = createFlyMachinesClient(target, fetchImpl);
+    const list = await client.listMachines();
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe("run-a");
+  });
+
   it("destroyMachine DELETEs with force=true", async () => {
     let captured = "";
     const fetchImpl = async (url: string, init: RequestInit): Promise<Response> => {

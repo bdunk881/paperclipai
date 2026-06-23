@@ -16,7 +16,8 @@ import type { StepKind, StepResult } from "../types/workflow";
 /**
  * Step kinds whose recorded output is REUSED on replay instead of re-executing.
  * These are the kinds where re-running is harmful or divergent:
- *   - side-effecting: action, mcp, agent (external writes)
+ *   - side-effecting: action, mcp, agent (external writes), data_table (an
+ *     insert appends a NEW row each time — replaying it would double-insert)
  *   - pausing: wait, approval (would re-pause the run)
  *   - child-spawning: sub_workflow (would re-run the child + its side effects)
  *   - expensive / nondeterministic: llm, knowledge (cost + would diverge the
@@ -32,6 +33,7 @@ const REPLAY_REUSE_KINDS: ReadonlySet<StepKind> = new Set<StepKind>([
   "action",
   "mcp",
   "agent",
+  "data_table",
   "llm",
   "knowledge",
   "sub_workflow",

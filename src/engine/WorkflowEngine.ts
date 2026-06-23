@@ -41,6 +41,7 @@ import { parseTransformAssignments, applyFieldAssignments } from "./transformSte
 import { resolveLoopJump } from "./loopStep";
 import { resolveSwitchJump } from "./switchStep";
 import { applyItemFilter } from "./filterStep";
+import { handleDataTable, resolveDataTableOperation } from "./dataTableStep";
 import { resolveStopError } from "./stopErrorStep";
 import { loadLatestWorkflowTemplate } from "./workflowTemplateLoader";
 import {
@@ -1829,6 +1830,26 @@ export class WorkflowEngine {
           case "filter":
             stepOutput = await executeFilter(step, context);
             break;
+          case "data_table": {
+            // HEL-813: built-in per-workspace data tables (insert / upsert /
+            // query). A read (query) is safe under dry-run; a write
+            // (insert/upsert) side-effects, so skip it like the other
+            // side-effecting kinds. Wrapped in the per-step retry + run deadline
+            // like every other I/O step.
+            if (isDryRun(config) && resolveDataTableOperation(step.config) !== "query") {
+              stepOutput = dryRunOutput(step);
+              break;
+            }
+            const dataTableWorkspaceId = this._resolveWorkspaceId(context, config) ?? "";
+            stepOutput = await runWithStepLogger(stepLogger, () =>
+              raceWithDeadline(
+                () => withStepRetry(() => handleDataTable(step, context, dataTableWorkspaceId), retryPolicy),
+                runDeadlineMs,
+                maxDurationMs,
+              ),
+            );
+            break;
+          }
           case "stop_error": {
             // HEL-674: deliberate hard stop. Resolve the author's message +
             // optional type, then fail the step. `stop_error` is exempt from

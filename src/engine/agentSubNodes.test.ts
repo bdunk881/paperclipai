@@ -1,4 +1,11 @@
-import { applyAgentSubNodes, parseAgentSubNodes, type AgentSubNode } from "./agentSubNodes";
+import {
+  applyAgentSubNodes,
+  parseAgentSubNodes,
+  resolveAgentMemoryConfig,
+  buildMemoryRecallBlock,
+  getMemoryReader,
+  type AgentSubNode,
+} from "./agentSubNodes";
 import type { WorkflowStep } from "../types/workflow";
 
 function agentStep(config?: Record<string, unknown>, extra?: Partial<WorkflowStep>): WorkflowStep {
@@ -104,5 +111,63 @@ describe("applyAgentSubNodes (HEL-815)", () => {
     const snapshot = JSON.stringify(step);
     applyAgentSubNodes(step);
     expect(JSON.stringify(step)).toBe(snapshot);
+  });
+});
+
+describe("resolveAgentMemoryConfig (HEL-818)", () => {
+  it("returns undefined without a memory sub-node", () => {
+    expect(resolveAgentMemoryConfig(agentStep())).toBeUndefined();
+    expect(resolveAgentMemoryConfig(agentStep(subNodes({ kind: "tool", config: {} })))).toBeUndefined();
+  });
+
+  it("normalizes query + limit (defaults limit to 10)", () => {
+    expect(resolveAgentMemoryConfig(agentStep(subNodes({ kind: "memory", config: {} })))).toEqual({
+      query: "",
+      limit: 10,
+    });
+    expect(
+      resolveAgentMemoryConfig(
+        agentStep(subNodes({ kind: "memory", config: { query: "refunds", limit: "3" } })),
+      ),
+    ).toEqual({ query: "refunds", limit: 3 });
+    expect(
+      resolveAgentMemoryConfig(agentStep(subNodes({ kind: "memory", config: { limit: -2 } })))?.limit,
+    ).toBe(10);
+  });
+});
+
+describe("buildMemoryRecallBlock (HEL-818)", () => {
+  const read = (entries: Array<{ key: string; text: string }>) => () => entries;
+
+  it("returns '' for no config, empty recall, or a throwing reader", () => {
+    expect(buildMemoryRecallBlock(undefined, read([{ key: "k", text: "v" }]))).toBe("");
+    expect(buildMemoryRecallBlock({ query: "", limit: 5 }, read([]))).toBe("");
+    expect(
+      buildMemoryRecallBlock({ query: "", limit: 5 }, () => {
+        throw new Error("boom");
+      }),
+    ).toBe("");
+  });
+
+  it("formats recalled entries with a header, capped at limit", () => {
+    const block = buildMemoryRecallBlock(
+      { query: "", limit: 2 },
+      read([
+        { key: "a", text: "1" },
+        { key: "b", text: "2" },
+        { key: "c", text: "3" },
+      ]),
+    );
+    expect(block).toBe("Relevant memory (recall from prior runs):\n- a: 1\n- b: 2");
+  });
+});
+
+describe("getMemoryReader (HEL-818)", () => {
+  it("extracts a read function from context.memory, else undefined", () => {
+    const reader = () => [{ key: "k", text: "v" }];
+    expect(getMemoryReader({ memory: { read: reader } })).toBe(reader);
+    expect(getMemoryReader({})).toBeUndefined();
+    expect(getMemoryReader({ memory: { read: "nope" } })).toBeUndefined();
+    expect(getMemoryReader({ memory: null })).toBeUndefined();
   });
 });

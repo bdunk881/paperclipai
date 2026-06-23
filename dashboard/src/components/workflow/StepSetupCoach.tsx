@@ -422,6 +422,137 @@ export function StepSetupCoach({
         );
       }
 
+      case "data_table": {
+        // HEL-814: built-in per-workspace data tables. The engine (dataTableStep.ts)
+        // reads config.operation + table + (rowKey | data | filter | limit), all under
+        // step.config. Values interpolate from the run context with {{key}}; a value
+        // that is exactly {{key}} keeps the raw type (so row data can be a whole object).
+        const cfg = step.config ?? {};
+        const operationRaw = cfg["operation"];
+        const operation =
+          operationRaw === "insert" || operationRaw === "upsert" ? operationRaw : "query";
+        const table = typeof cfg["table"] === "string" ? (cfg["table"] as string) : "";
+        const rowKey = typeof cfg["rowKey"] === "string" ? (cfg["rowKey"] as string) : "";
+        const limitRaw = cfg["limit"];
+        const limit =
+          typeof limitRaw === "number"
+            ? String(limitRaw)
+            : typeof limitRaw === "string"
+              ? limitRaw
+              : "";
+        const objToText = (v: unknown): string =>
+          v === undefined || v === null ? "" : typeof v === "string" ? v : JSON.stringify(v, null, 2);
+        const patchTable = (patch: Record<string, unknown>) =>
+          onUpdateStep({ config: { ...(step.config ?? {}), ...patch } });
+        // Store a parsed object when the text is valid JSON; otherwise keep the raw
+        // string (so a lone "{{lead}}" template survives). Empty clears the key.
+        const patchJson = (field: "data" | "filter", raw: string) => {
+          const trimmed = raw.trim();
+          if (trimmed === "") return patchTable({ [field]: undefined });
+          try {
+            patchTable({ [field]: JSON.parse(trimmed) as unknown });
+          } catch {
+            patchTable({ [field]: raw });
+          }
+        };
+        return (
+          <SetupCoachCard
+            index={1}
+            total={1}
+            title="Read or write a data table"
+            hint="A per-workspace table that persists across runs — no external database."
+          >
+            <label className="block text-xs text-af2-ink-3">
+              Operation
+              <select
+                data-field="dataTableOperation"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 bg-af2-card px-3 py-2 text-sm"
+                value={operation}
+                disabled={readonly}
+                onChange={(e) => patchTable({ operation: e.target.value })}
+              >
+                <option value="query">Query rows</option>
+                <option value="insert">Insert a row</option>
+                <option value="upsert">Upsert a row (by key)</option>
+              </select>
+            </label>
+            <label className="block text-xs text-af2-ink-3">
+              Table name
+              <input
+                data-field="dataTableName"
+                className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                placeholder="e.g. seen_tickets"
+                value={table}
+                disabled={readonly}
+                onChange={(e) => patchTable({ table: e.target.value || undefined })}
+              />
+            </label>
+            {operation === "upsert" && (
+              <label className="block text-xs text-af2-ink-3">
+                Row key
+                <input
+                  data-field="dataTableRowKey"
+                  className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                  placeholder="e.g. {{email}}"
+                  value={rowKey}
+                  disabled={readonly}
+                  onChange={(e) => patchTable({ rowKey: e.target.value || undefined })}
+                />
+              </label>
+            )}
+            {operation === "query" ? (
+              <>
+                <label className="block text-xs text-af2-ink-3">
+                  Filter <span className="text-af2-ink-4">(optional)</span>
+                  <textarea
+                    data-field="dataTableFilter"
+                    rows={3}
+                    className="mt-1 w-full resize-none rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                    placeholder={'{ "status": "open" }'}
+                    value={objToText(cfg["filter"])}
+                    disabled={readonly}
+                    onChange={(e) => patchJson("filter", e.target.value)}
+                  />
+                </label>
+                <label className="block text-xs text-af2-ink-3">
+                  Max rows <span className="text-af2-ink-4">(optional)</span>
+                  <input
+                    data-field="dataTableLimit"
+                    type="number"
+                    min={1}
+                    className="mt-1 w-full rounded-lg border border-af2-line-2 px-3 py-2 text-sm"
+                    placeholder="e.g. 100"
+                    value={limit}
+                    disabled={readonly}
+                    onChange={(e) =>
+                      patchTable({ limit: e.target.value === "" ? undefined : Number(e.target.value) })
+                    }
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="block text-xs text-af2-ink-3">
+                Row data
+                <textarea
+                  data-field="dataTableData"
+                  rows={4}
+                  className="mt-1 w-full resize-none rounded-lg border border-af2-line-2 px-3 py-2 text-sm font-mono"
+                  placeholder={'{ "email": "{{email}}", "status": "open" }'}
+                  value={objToText(cfg["data"])}
+                  disabled={readonly}
+                  onChange={(e) => patchJson("data", e.target.value)}
+                />
+              </label>
+            )}
+            <p className="text-[11px] leading-relaxed text-af2-ink-4">
+              <code>{"{{key}}"}</code> fills from the run context. A value that is exactly{" "}
+              <code>{"{{key}}"}</code> keeps the value's type — so row data can be a whole object.
+              Query results arrive downstream as <code>rows</code> and <code>rowCount</code>.
+            </p>
+          </SetupCoachCard>
+        );
+      }
+
       case "filter": {
         // HEL-779: keep only the array items that pass the predicate. The engine
         // reads config.itemsKey (the array) + config.condition (falls back to

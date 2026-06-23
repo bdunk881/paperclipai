@@ -151,6 +151,13 @@ export const STEP_KIND_COPY: Record<StepKind, StepKindCopy> = {
       "Drops the items in a list that fail the rule and passes the rest on. The rule is evaluated per item with the item's fields in scope.",
     tone: "clay",
   },
+  data_table: {
+    displayLabel: "Data table",
+    subtitle: "Save or look up rows in a built-in table",
+    learnText:
+      "A per-workspace table that persists across runs — no external database. Insert a row, upsert by a key, or query rows by a filter. Use it to remember state between runs (seen IDs, a counter, a small cache).",
+    tone: "blue",
+  },
   stop_error: {
     displayLabel: "Stop & Error",
     subtitle: "Halt the run with an error message you choose",
@@ -236,7 +243,7 @@ export const STEP_PALETTE_SECTIONS: Array<{
   },
   {
     title: "What to do",
-    kinds: ["llm", "knowledge", "transform", "action", "mcp", "agent", "sub_workflow"],
+    kinds: ["llm", "knowledge", "transform", "data_table", "action", "mcp", "agent", "sub_workflow"],
   },
   {
     title: "Control flow",
@@ -445,6 +452,14 @@ export function getStepOutcomeSubtitle(step: WorkflowStep): string {
       return "Hands work to a persistent agent on your team.";
     case "transform":
       return "Reshapes data before the next step.";
+    case "data_table": {
+      const op = typeof step.config?.["operation"] === "string" ? step.config["operation"] : "query";
+      const table =
+        typeof step.config?.["table"] === "string" ? (step.config["table"] as string).trim() : "";
+      const verb =
+        op === "insert" ? "Inserts a row into" : op === "upsert" ? "Upserts a row in" : "Queries rows from";
+      return table ? `${verb} the "${table}" data table.` : "Reads or writes rows in a built-in data table.";
+    }
     default:
       return step.description.trim() || "Part of your routine sequence.";
   }
@@ -587,6 +602,31 @@ export function evaluateStepReadiness(
         fixAction: "focus",
         focusField: "itemsKey",
       });
+      break;
+    }
+    case "data_table": {
+      // HEL-814: the engine needs a table name; an upsert also needs a row key.
+      const cfg = step.config ?? {};
+      const table = typeof cfg["table"] === "string" ? (cfg["table"] as string) : "";
+      items.push({
+        id: "dataTableName",
+        label: "A table is named",
+        passed: table.trim() !== "",
+        fixLabel: "Set",
+        fixAction: "focus",
+        focusField: "dataTableName",
+      });
+      if (cfg["operation"] === "upsert") {
+        const rowKey = typeof cfg["rowKey"] === "string" ? (cfg["rowKey"] as string) : "";
+        items.push({
+          id: "dataTableRowKey",
+          label: "A row key is set for upsert",
+          passed: rowKey.trim() !== "",
+          fixLabel: "Set",
+          fixAction: "focus",
+          focusField: "dataTableRowKey",
+        });
+      }
       break;
     }
     case "wait": {

@@ -44,6 +44,7 @@ import {
   LayoutGrid,
   Ban,
   StickyNote,
+  Table2,
 } from "lucide-react";
 import { exportWorkflowPng, exportFileStem } from "./workflowExport";
 import { tidyLayout, type NodeDims } from "./workflowLayout";
@@ -323,6 +324,15 @@ const KIND_META: Record<
     categoryTint: "rgba(194,80,43,0.12)",
     darkCategoryTint: "rgba(194,80,43,0.18)",
     categoryBorder: "#c2502b",
+  },
+  data_table: {
+    label: "Data Table",
+    icon: <Table2 size={14} />,
+    chipColor: "text-af2-ink-blue",
+    chipBg: "bg-af2-ink-blue/10 border-af2-ink-blue/30",
+    categoryTint: "rgba(31,58,82,0.12)",
+    darkCategoryTint: "rgba(31,58,82,0.18)",
+    categoryBorder: "#1f3a52",
   },
   stop_error: {
     label: "Stop & Error",

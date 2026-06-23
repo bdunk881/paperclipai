@@ -31,6 +31,7 @@ import { logClassificationDecision } from "./classificationLog";
 import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
+import { applyAgentSubNodes } from "./agentSubNodes";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 export type StepContext = Record<string, unknown>;
@@ -714,6 +715,10 @@ export async function handleAgent(
   userId: string
 ): Promise<StepHandlerResult> {
   const startedAt = new Date().toISOString();
+  // HEL-815: fold attached AI sub-nodes (model / tool) into the effective step
+  // before resolving the model + provisioning the bridge agent, so both the
+  // in-process slots and the control-plane bridge see the sub-node config.
+  step = applyAgentSubNodes(step);
   const slots = Math.max(1, step.subAgentSlots ?? 1);
   const instructions = step.agentInstructions ?? "Process the provided input and return a result.";
   const model = step.agentModel ?? "default";
@@ -740,7 +745,12 @@ export async function handleAgent(
   // config exists, route to the hosted free model when the env vars
   // are set; otherwise surface the original "no LLM provider
   // configured" error.
-  let resolved = await llmConfigStore.getDecryptedDefault(userId);
+  // HEL-815: a model sub-node folds into step.llmConfigId — resolve THAT config
+  // so the in-process provider runs the chosen model (a real model change),
+  // mirroring the llm step. Falls back to the workspace default when unset.
+  let resolved = step.llmConfigId
+    ? await llmConfigStore.getDecrypted(step.llmConfigId, userId)
+    : await llmConfigStore.getDecryptedDefault(userId);
   let agentUsedHostedFree = false;
   if (!resolved) {
     const hostedFree = getDefaultHostedFreeProvider();

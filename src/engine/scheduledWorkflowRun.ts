@@ -38,6 +38,12 @@ export interface ScheduledWorkflowRoutine {
   workflow_id: string;
   /** Always set on a routine; attributes the run to an owning user. */
   agent_id: string | null;
+  /**
+   * HEL-821: which environment's deployed version this routine runs. Absent ⇒
+   * 'dev'. Resolution picks that env's current deployment, falling back to the
+   * workflow's latest version when the env has no deployment yet.
+   */
+  environment?: string;
 }
 
 export type DispatchScheduledWorkflowResult =
@@ -88,15 +94,26 @@ export async function dispatchScheduledWorkflowRun(params: {
 }): Promise<DispatchScheduledWorkflowResult> {
   const { pool, runQueue, routine, jobId } = params;
 
-  // 1. Resolve the routine's workflow to its latest-version DAG, scoped to the
+  // 1. Resolve the routine's workflow to the DAG it should run, scoped to the
   //    routine's workspace (tenancy guard even though the worker is sessionless).
+  //    HEL-821: run the version DEPLOYED to the routine's environment — the
+  //    env's most recent deployment — falling back to the workflow's latest
+  //    version when that env has no deployment yet (so undeployed workflows keep
+  //    firing the draft).
+  const environment = routine.environment ?? "dev";
   const dagResult = await pool.query<WorkflowVersionRow>(
     `SELECT v.id::text AS version_id, v.dag,
             w.external_template_id, w.name AS workflow_name
        FROM workflows w
-       JOIN workflow_versions v ON v.id = w.latest_version_id
+       JOIN workflow_versions v ON v.id = COALESCE(
+         (SELECT d.version_id
+            FROM workflow_deployments d
+           WHERE d.workflow_id = w.id AND d.environment = $3
+           ORDER BY d.created_at DESC, d.id DESC
+           LIMIT 1),
+         w.latest_version_id)
       WHERE w.id = $1::uuid AND w.workspace_id = $2::uuid`,
-    [routine.workflow_id, routine.workspace_id],
+    [routine.workflow_id, routine.workspace_id, environment],
   );
   const row = dagResult.rows[0];
   if (!row) {
@@ -150,6 +167,9 @@ export async function dispatchScheduledWorkflowRun(params: {
   const runConfig: Record<string, unknown> = {
     ...defaultConfig,
     workspaceId: routine.workspace_id,
+    // HEL-821: record which environment this run executed (observability); the
+    // version it locked to is already on runs.workflow_version_id.
+    environment,
   };
 
   // A retry of the same scheduler job re-derives the same run id; distinct cron

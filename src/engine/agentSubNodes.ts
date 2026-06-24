@@ -15,8 +15,10 @@
  *    provisioned agent's skill set, which the runtime injects as tools
  *    (real on the bridge path; the in-process single-call slot can't execute
  *    tools — a pre-existing limitation of that fallback).
- *  - memory → carried through unchanged in `config.subNodes`. Its consumption
- *    needs a control-plane agent-metadata field (HEL-818); not folded here.
+ *  - memory → recalled into the agent prompt at run time (HEL-818) via the
+ *    run's `context.memory` helper (the persistent `memoryStore`), scoped by the
+ *    sub-node's query/limit. Not a flat-prop fold — see `resolveAgentMemoryConfig`
+ *    + `buildMemoryRecallBlock`, consumed in `handleAgent`.
  *
  * Pure + side-effect-free: returns a NEW step (or the original when there are no
  * sub-nodes), so callers can fold at the top of `handleAgent` and the
@@ -106,4 +108,64 @@ export function applyAgentSubNodes(step: WorkflowStep): WorkflowStep {
   }
 
   return next;
+}
+
+/** A normalized memory sub-node: what to recall + how many entries. */
+export interface AgentMemoryConfig {
+  /** Relevance query; "" recalls the most recent / all (capped by limit). */
+  query: string;
+  limit: number;
+}
+
+const DEFAULT_MEMORY_RECALL_LIMIT = 10;
+
+/**
+ * The agent's memory sub-node (first one wins), normalized. Returns undefined
+ * when the agent has no memory sub-node — the caller then injects nothing.
+ */
+export function resolveAgentMemoryConfig(step: WorkflowStep): AgentMemoryConfig | undefined {
+  if (step.kind !== "agent") return undefined;
+  const mem = parseAgentSubNodes(step).find((s) => s.kind === "memory");
+  if (!mem) return undefined;
+  const limitRaw = mem.config["limit"];
+  const n =
+    typeof limitRaw === "number" ? limitRaw : typeof limitRaw === "string" ? Number(limitRaw) : NaN;
+  return {
+    query: asString(mem.config["query"]) ?? "",
+    limit: Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MEMORY_RECALL_LIMIT,
+  };
+}
+
+/**
+ * Build the "Relevant memory" prompt block from the run's memory reader
+ * (`context.memory.read`). Returns "" when there's no config, the reader throws,
+ * or nothing is recalled — so the caller can unconditionally concatenate it.
+ */
+export function buildMemoryRecallBlock(
+  config: AgentMemoryConfig | undefined,
+  read: (query: string) => Array<{ key: string; text: string }>,
+): string {
+  if (!config) return "";
+  let entries: Array<{ key: string; text: string }>;
+  try {
+    entries = read(config.query) ?? [];
+  } catch {
+    return "";
+  }
+  const top = entries.slice(0, config.limit).filter((e) => e && typeof e.text === "string");
+  if (top.length === 0) return "";
+  return ["Relevant memory (recall from prior runs):", ...top.map((e) => `- ${e.key}: ${e.text}`)].join(
+    "\n",
+  );
+}
+
+/** Narrow the run context's `memory` helper to its `read(query)` function. */
+export function getMemoryReader(
+  context: Record<string, unknown>,
+): ((query: string) => Array<{ key: string; text: string }>) | undefined {
+  const mem = context["memory"];
+  if (mem && typeof mem === "object" && typeof (mem as { read?: unknown }).read === "function") {
+    return (mem as { read: (query: string) => Array<{ key: string; text: string }> }).read;
+  }
+  return undefined;
 }

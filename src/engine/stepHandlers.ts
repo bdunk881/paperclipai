@@ -31,7 +31,12 @@ import { logClassificationDecision } from "./classificationLog";
 import { knowledgeStore } from "../knowledge/knowledgeStore";
 import { sanitizeContext } from "./crmFieldAllowlist";
 import { auditCrmApiCall } from "./crmAuditLog";
-import { applyAgentSubNodes } from "./agentSubNodes";
+import {
+  applyAgentSubNodes,
+  resolveAgentMemoryConfig,
+  buildMemoryRecallBlock,
+  getMemoryReader,
+} from "./agentSubNodes";
 import { controlPlaneStore } from "../controlPlane/controlPlaneStore";
 
 export type StepContext = Record<string, unknown>;
@@ -880,6 +885,15 @@ export async function handleAgent(
     .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
     .join("\n");
 
+  // HEL-818: a memory sub-node recalls relevant entries from the run's
+  // persistent memory (context.memory, backed by memoryStore) into the agent
+  // prompt — scoped by the sub-node's query/limit. Computed once (shared across
+  // slots); empty string when the agent has no memory sub-node.
+  const memoryReader = getMemoryReader(ctx);
+  const memoryBlock = memoryReader
+    ? buildMemoryRecallBlock(resolveAgentMemoryConfig(step), memoryReader)
+    : "";
+
   // Spawn N worker slots in parallel
   let totalPromptTokens = 0;
   let totalCompletionTokens = 0;
@@ -889,6 +903,7 @@ export async function handleAgent(
       `You are worker agent slot ${i} of ${slots} in a parallel execution.`,
       `Instructions: ${instructions}`,
       `Model preference: ${model}`,
+      ...(memoryBlock ? ["", memoryBlock] : []),
       "",
       "Context:",
       contextSummary || "(no context)",

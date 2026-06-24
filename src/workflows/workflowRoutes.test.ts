@@ -366,3 +366,76 @@ describe("GET /api/workflows/:workflowId/presence/stream", () => {
     expect(body).not.toContain('"userId":"user-1"');
   });
 });
+
+// HEL-820: environments — deploy / rollback / restore. Auth + validation
+// reject-paths (return before any pool query); happy-path persistence is
+// covered by the rls integration suite + deploymentStore unit tests (HEL-819).
+describe("HEL-820 environments — deploy / rollback / restore", () => {
+  const WS = "11111111-1111-4111-8111-111111111111";
+  const WF = "22222222-2222-4222-8222-222222222222";
+  const VER = "33333333-3333-4333-8333-333333333333";
+
+  it("POST /deployments → 401 without auth", async () => {
+    const res = await request(buildApp({ workspaceId: WS }))
+      .post(`/api/workflows/${WF}/deployments`)
+      .send({ environment: "prod", versionId: VER });
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /deployments → 400 on malformed workflow id", async () => {
+    const res = await request(buildApp({ sub: "user-1", workspaceId: WS }))
+      .post(`/api/workflows/not-a-uuid/deployments`)
+      .send({ environment: "prod", versionId: VER });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /deployments → 400 on invalid environment", async () => {
+    const res = await request(buildApp({ sub: "user-1", workspaceId: WS }))
+      .post(`/api/workflows/${WF}/deployments`)
+      .send({ environment: "preview", versionId: VER });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/environment must be/i);
+  });
+
+  it("POST /deployments → 400 on invalid versionId", async () => {
+    const res = await request(buildApp({ sub: "user-1", workspaceId: WS }))
+      .post(`/api/workflows/${WF}/deployments`)
+      .send({ environment: "prod", versionId: "nope" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/versionId/i);
+  });
+
+  it("POST /deployments/rollback → 400 on invalid environment", async () => {
+    const res = await request(buildApp({ sub: "user-1", workspaceId: WS }))
+      .post(`/api/workflows/${WF}/deployments/rollback`)
+      .send({ environment: "x", versionId: VER });
+    expect(res.status).toBe(400);
+  });
+
+  it("GET /deployments → 401 without auth, 400 on malformed id", async () => {
+    expect(
+      (await request(buildApp({ workspaceId: WS })).get(`/api/workflows/${WF}/deployments`)).status,
+    ).toBe(401);
+    expect(
+      (
+        await request(buildApp({ sub: "user-1", workspaceId: WS })).get(
+          `/api/workflows/not-a-uuid/deployments`,
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it("POST /versions/:id/restore → 401 without auth", async () => {
+    const res = await request(buildApp({ workspaceId: WS })).post(
+      `/api/workflows/${WF}/versions/${VER}/restore`,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("POST /versions/:id/restore → 400 on malformed version id", async () => {
+    const res = await request(buildApp({ sub: "user-1", workspaceId: WS })).post(
+      `/api/workflows/${WF}/versions/not-a-uuid/restore`,
+    );
+    expect(res.status).toBe(400);
+  });
+});

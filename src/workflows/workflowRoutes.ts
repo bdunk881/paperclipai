@@ -36,6 +36,11 @@ import { withWorkspaceContext } from "../middleware/workspaceContext";
 import type { WorkspaceAwareRequest } from "../middleware/workspaceResolver";
 import { asyncHandler } from "../middleware/asyncHandler";
 import {
+  deploymentStore,
+  isDeploymentEnvironment,
+  DEPLOYMENT_ENVIRONMENTS,
+} from "../engine/deploymentStore";
+import {
   createPresenceStore,
   colorForUser,
   type PresenceCursor,
@@ -652,6 +657,212 @@ export function createWorkflowRoutes(
       res.status(500).json({ error: "Failed to list workflow versions" });
     }
   }));
+
+  // ---------------------------------------------------------------------
+  // Environments (HEL-820): deploy / rollback a version to an environment,
+  // list deployment history, and atomic version restore.
+  // ---------------------------------------------------------------------
+
+  // Resolve a version's number iff it belongs to this workflow + workspace.
+  async function resolveWorkspaceVersion(
+    workflowId: string,
+    versionId: string,
+    workspaceId: string,
+    userId: string,
+  ): Promise<number | null> {
+    return withWorkspaceContext(pool, { workspaceId, userId }, async (client) => {
+      const r = await client.query<{ version: number }>(
+        `SELECT v.version
+           FROM workflow_versions v
+           JOIN workflows w ON w.id = v.workflow_id
+          WHERE v.id = $1 AND v.workflow_id = $2 AND w.workspace_id = $3
+          LIMIT 1`,
+        [versionId, workflowId, workspaceId],
+      );
+      return r.rows[0]?.version ?? null;
+    });
+  }
+
+  // Shared deploy/rollback handler (rollback = deploy of an older version + a
+  // default note). deploymentStore writes via the BYPASSRLS pool; the explicit
+  // workspace_id + the version-ownership check above are the tenancy guards.
+  const deployHandler = (isRollback: boolean) =>
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+      const workflowId = req.params.workflowId;
+      if (!workflowId || !UUID_RE.test(workflowId)) {
+        res.status(400).json({ error: "Invalid workflow ID format" });
+        return;
+      }
+      const body = req.body as { environment?: unknown; versionId?: unknown; note?: unknown };
+      const environment = body?.environment;
+      if (!isDeploymentEnvironment(environment)) {
+        res.status(400).json({ error: "environment must be one of dev, staging, prod" });
+        return;
+      }
+      const versionId = typeof body?.versionId === "string" ? body.versionId : "";
+      if (!UUID_RE.test(versionId)) {
+        res.status(400).json({ error: "Invalid versionId format" });
+        return;
+      }
+      try {
+        const version = await resolveWorkspaceVersion(workflowId, versionId, workspaceId, userId);
+        if (version === null) {
+          res.status(404).json({ error: "Workflow version not found" });
+          return;
+        }
+        const note =
+          typeof body?.note === "string" && body.note.trim()
+            ? body.note.trim()
+            : isRollback
+              ? `Rolled back to v${version}`
+              : null;
+        const deployment = await deploymentStore.deployVersion({
+          workflowId,
+          workspaceId,
+          environment,
+          versionId,
+          version,
+          note,
+          userId,
+        });
+        res.status(201).json(deployment);
+      } catch (err) {
+        console.error(`[workflows] deploy failed: ${(err as Error).message}`);
+        res.status(500).json({ error: "Failed to deploy workflow version" });
+      }
+    });
+
+  router.post("/:workflowId/deployments", deployHandler(false));
+  router.post("/:workflowId/deployments/rollback", deployHandler(true));
+
+  // GET /api/workflows/:id/deployments[?environment=] — history + current-per-env.
+  router.get("/:workflowId/deployments", asyncHandler<AuthenticatedRequest>(async (req, res) => {
+    const userId = req.auth?.sub;
+    const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+    if (!userId || !workspaceId) {
+      res.status(401).json({ error: "Authenticated user + workspace required" });
+      return;
+    }
+    const workflowId = req.params.workflowId;
+    if (!workflowId || !UUID_RE.test(workflowId)) {
+      res.status(400).json({ error: "Invalid workflow ID format" });
+      return;
+    }
+    const environment = isDeploymentEnvironment(req.query.environment)
+      ? req.query.environment
+      : undefined;
+    try {
+      const ownsWorkflow = await withWorkspaceContext(
+        pool,
+        { workspaceId, userId },
+        async (client) => {
+          const r = await client.query(
+            `SELECT 1 FROM workflows WHERE id = $1 AND workspace_id = $2 LIMIT 1`,
+            [workflowId, workspaceId],
+          );
+          return r.rows.length > 0;
+        },
+      );
+      if (!ownsWorkflow) {
+        res.status(404).json({ error: "Workflow not found" });
+        return;
+      }
+      const deployments = await deploymentStore.listDeployments(workflowId, environment);
+      const current: Record<string, unknown> = {};
+      for (const env of DEPLOYMENT_ENVIRONMENTS) {
+        current[env] = (await deploymentStore.getCurrentDeployment(workflowId, env)) ?? null;
+      }
+      res.json({ workflowId, deployments, current });
+    } catch (err) {
+      console.error(`[workflows] deployments list failed: ${(err as Error).message}`);
+      res.status(500).json({ error: "Failed to list deployments" });
+    }
+  }));
+
+  // POST /api/workflows/:id/versions/:versionId/restore — atomic history-restore:
+  // append a NEW latest version holding the old version's dag (server-side, one
+  // step), replacing the old 2-step client fetch+re-POST flow.
+  router.post(
+    "/:workflowId/versions/:versionId/restore",
+    asyncHandler<AuthenticatedRequest>(async (req, res) => {
+      const userId = req.auth?.sub;
+      const workspaceId = (req as WorkspaceAwareRequest).workspace?.id;
+      if (!userId || !workspaceId) {
+        res.status(401).json({ error: "Authenticated user + workspace required" });
+        return;
+      }
+      const { workflowId, versionId } = req.params;
+      if (!workflowId || !UUID_RE.test(workflowId) || !versionId || !UUID_RE.test(versionId)) {
+        res.status(400).json({ error: "Invalid workflow or version ID format" });
+        return;
+      }
+      try {
+        const result = await withWorkspaceContext(
+          pool,
+          { workspaceId, userId },
+          async (client) => {
+            await client.query("BEGIN");
+            try {
+              const old = await client.query<{ dag: unknown; version: number }>(
+                `SELECT v.dag, v.version
+                   FROM workflow_versions v
+                   JOIN workflows w ON w.id = v.workflow_id
+                  WHERE v.id = $1 AND v.workflow_id = $2 AND w.workspace_id = $3
+                  LIMIT 1`,
+                [versionId, workflowId, workspaceId],
+              );
+              if (old.rows.length === 0) {
+                throw new Error("__not_found");
+              }
+              const oldDag = old.rows[0]!.dag ?? {};
+              const max = await client.query<{ max_version: number | null }>(
+                `SELECT MAX(version) AS max_version FROM workflow_versions WHERE workflow_id = $1`,
+                [workflowId],
+              );
+              const nextVersion = (max.rows[0]?.max_version ?? 0) + 1;
+              const inserted = await insertWorkflowVersion(
+                client,
+                workflowId,
+                nextVersion,
+                oldDag,
+                userId,
+              );
+              await client.query("COMMIT");
+              return {
+                id: inserted.id,
+                version: nextVersion,
+                dag: oldDag,
+                createdAt: inserted.createdAt,
+                restoredFromVersion: old.rows[0]!.version,
+              };
+            } catch (err) {
+              try {
+                await client.query("ROLLBACK");
+              } catch {
+                // preserve original error
+              }
+              throw err;
+            }
+          },
+        );
+        res.status(201).json(result);
+      } catch (err) {
+        const msg = (err as Error).message;
+        if (msg === "__not_found") {
+          res.status(404).json({ error: "Workflow version not found" });
+          return;
+        }
+        console.error(`[workflows] restore failed: ${msg}`);
+        res.status(500).json({ error: "Failed to restore workflow version" });
+      }
+    }),
+  );
 
   // ---------------------------------------------------------------------
   // GET /api/workflows — list newest first (LIMIT 100). Optional

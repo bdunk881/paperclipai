@@ -156,9 +156,10 @@ async function handleRunsJob(data: RunJobPayload, jobId?: string): Promise<void>
     llm_tier: "lite" | "standard" | "power" | null;
     workflow_id: string | null;
     enabled: boolean;
+    environment: string | null;
   }>(
     `SELECT id::text, workspace_id::text, agent_id::text, prompt, system_prompt,
-            llm_tier, workflow_id::text, enabled
+            llm_tier, workflow_id::text, enabled, environment
        FROM routines
       WHERE id = $1::uuid`,
     [routineId],
@@ -262,6 +263,7 @@ async function handleRunsJob(data: RunJobPayload, jobId?: string): Promise<void>
         workspace_id: routine.workspace_id,
         workflow_id: routine.workflow_id,
         agent_id: routine.agent_id,
+        environment: routine.environment ?? "dev",
       },
       jobId,
     });

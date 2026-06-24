@@ -131,6 +131,44 @@ describe("dispatchScheduledWorkflowRun (HEL-665)", () => {
     expect(calls[0]!.opts).toMatchObject({ jobId: runId });
   });
 
+  it("resolves the env-deployed version for the routine's environment (HEL-821)", async () => {
+    const { queue } = makeFakeQueue();
+    const pool = makePool({ dag: [{ version_id: "v-prod", dag: DAG }], owner: [{ user_id: "u" }] });
+
+    const result = await dispatchScheduledWorkflowRun({
+      pool,
+      runQueue: queue,
+      routine: { ...ROUTINE, environment: "prod" },
+      jobId: "job-env",
+    });
+
+    expect(result.status).toBe("enqueued");
+    // The DAG-resolution query received the routine's environment as $3 (so the
+    // COALESCE picks that env's current deployment).
+    const wfCall = (pool.query as jest.Mock).mock.calls.find((c: unknown[]) =>
+      /FROM workflows/i.test(c[0] as string),
+    );
+    expect(wfCall).toBeDefined();
+    expect(wfCall![1]).toEqual([ROUTINE.workflow_id, ROUTINE.workspace_id, "prod"]);
+
+    // The run records which environment it executed.
+    const runId = result.status === "enqueued" ? result.runId : "";
+    const run = await runStore.get(runId);
+    expect(run!.runtimeState?.config).toMatchObject({ environment: "prod" });
+  });
+
+  it("defaults to the 'dev' environment when the routine has none (HEL-821)", async () => {
+    const { queue } = makeFakeQueue();
+    const pool = makePool({ dag: [{ version_id: "v-1", dag: DAG }], owner: [{ user_id: "u" }] });
+
+    await dispatchScheduledWorkflowRun({ pool, runQueue: queue, routine: ROUTINE, jobId: "job-dev" });
+
+    const wfCall = (pool.query as jest.Mock).mock.calls.find((c: unknown[]) =>
+      /FROM workflows/i.test(c[0] as string),
+    );
+    expect((wfCall![1] as unknown[])[2]).toBe("dev");
+  });
+
   it("skips (honest no-op) when the workflow has no latest version", async () => {
     const { queue, calls } = makeFakeQueue();
     const pool = makePool({ dag: [] });

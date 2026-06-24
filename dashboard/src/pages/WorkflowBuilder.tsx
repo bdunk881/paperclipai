@@ -166,6 +166,8 @@ import {
   addAgentSubNode,
   updateAgentSubNode,
   removeAgentSubNode,
+  setAgentSubNodePosition,
+  parseSubNodeElementId,
   SUB_NODE_KIND_META,
   AGENT_SUB_NODE_KINDS,
   type AgentSubNodeKind,
@@ -591,6 +593,8 @@ type FlowNodeData = {
   onRunFromHere: (id: string) => void;
   onAskAi: (id: string) => void;
   onToggleDisabled: (id: string) => void;
+  /** HEL-817: add an AI sub-node from an empty agent port. */
+  onAddSubNode: (agentId: string, kind: AgentSubNodeKind) => void;
   isReadonly: boolean;
   isFirst: boolean;
   isLast: boolean;
@@ -608,6 +612,8 @@ type SubNodeFlowData = {
   kind: AgentSubNodeKind;
   config: Record<string, unknown>;
   agentName: string;
+  agentId: string;
+  subNodeId: string;
 };
 type SubNodeFlowNode = Node<SubNodeFlowData, "agentSubNode">;
 
@@ -1539,6 +1545,35 @@ export default function WorkflowBuilder() {
     }));
   }
 
+  // HEL-817: add an AI sub-node (model/memory/tool) to an agent from an empty
+  // canvas port — mirrors the inspector "+" buttons, writing config.subNodes.
+  function addSubNodeToAgent(agentId: string, kind: AgentSubNodeKind) {
+    const agent = template.steps.find((s) => s.id === agentId);
+    if (!agent) return;
+    updateStep(agentId, {
+      config: { ...(agent.config ?? {}), subNodes: addAgentSubNode(agent, kind) },
+    });
+  }
+
+  // HEL-817: persist a node drag. A projected sub-node writes its position into
+  // its agent's config.subNodes (uiPosition); a regular step writes __uiPosition.
+  function persistNodePosition(node: WorkflowFlowNode) {
+    if (node.type === "agentSubNode") {
+      const { agentId, subNodeId } = node.data;
+      const agent = template.steps.find((s) => s.id === agentId);
+      if (agent) {
+        updateStep(agentId, {
+          config: {
+            ...(agent.config ?? {}),
+            subNodes: setAgentSubNodePosition(agent, subNodeId, node.position),
+          },
+        });
+      }
+      return;
+    }
+    updateStepPosition(node.id, node.position);
+  }
+
   function removeStep(id: string) {
     setTemplate((t) => {
       const nextSteps = t.steps.filter((s) => s.id !== id);
@@ -1722,6 +1757,7 @@ export default function WorkflowBuilder() {
         onRunFromHere: handleRunFromNode,
         onAskAi: handleAskAi,
         onToggleDisabled: toggleStepDisabled,
+        onAddSubNode: addSubNodeToAgent,
         isReadonly: isReadonlyBuilder,
         isFirst: idx === 0,
         isLast: idx === template.steps.length - 1,
@@ -1746,10 +1782,19 @@ export default function WorkflowBuilder() {
         id: p.id,
         type: "agentSubNode",
         position: p.position,
-        draggable: false,
+        // HEL-817: draggable so users can reposition (persisted to uiPosition via
+        // onNodeDragStop). Still non-selectable/deletable — edit/detach is the
+        // inspector's job; that keeps the existing select/delete handlers clean.
+        draggable: true,
         selectable: false,
         deletable: false,
-        data: { kind: p.kind, config: p.config, agentName: p.agentName },
+        data: {
+          kind: p.kind,
+          config: p.config,
+          agentName: p.agentName,
+          agentId: p.agentId,
+          subNodeId: p.subNodeId,
+        },
       }),
     ),
   ];
@@ -1917,8 +1962,18 @@ export default function WorkflowBuilder() {
   // as handleConnect, which stays as a post-drop safety net for any
   // programmatic / non-drag edge additions.
   const isConnectionValid: IsValidConnection<Edge> = (connection) => {
-    const { source, target } = connection;
+    const { source, target, sourceHandle, targetHandle } = connection;
     if (!source || !target) return false;
+    // HEL-817: agent sub-ports + projected sub-nodes are not part of the main
+    // flow — never let a flow edge attach to/from them or via a port handle.
+    if (
+      parseSubNodeElementId(source) ||
+      parseSubNodeElementId(target) ||
+      sourceHandle?.startsWith("port:") ||
+      targetHandle?.startsWith("port:")
+    ) {
+      return false;
+    }
     return validateEdgeCandidate({
       sourceId: source,
       targetId: target,
@@ -2638,11 +2693,11 @@ export default function WorkflowBuilder() {
                 }}
                 onNodeDrag={(_: unknown, node: WorkflowFlowNode) => {
                   draggingRef.current = true;
-                  updateStepPosition(node.id, node.position);
+                  persistNodePosition(node);
                 }}
                 onNodeDragStop={(_: unknown, node: WorkflowFlowNode) => {
                   draggingRef.current = false;
-                  updateStepPosition(node.id, node.position);
+                  persistNodePosition(node);
                 }}
                 // HEL-241C v2 — broadcast our cursor in canvas coords so
                 // peers see it on their overlay. screenToFlowPosition
@@ -4297,23 +4352,49 @@ function WorkflowStepNode({
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-af2-ink-3" />
       {/* HEL-816: AI agent sub-node ports (Model / Memory / Tool). Source handles
           a Chat Model / Memory / Tool sub-node attaches to (projected below). */}
-      {data.step.kind === "agent" && (
-        <div className="pointer-events-none absolute -bottom-3 left-0 right-0 flex justify-around px-5">
-          {AGENT_SUB_NODE_KINDS.map((k) => (
-            <div key={k} className="relative flex flex-col items-center">
-              <Handle
-                id={SUB_NODE_KIND_META[k].port}
-                type="source"
-                position={Position.Bottom}
-                className="!relative !left-0 !h-2 !w-2 !translate-x-0 !border-0 !bg-af2-ink-blue"
-              />
-              <span className="mt-0.5 text-[8px] font-medium uppercase tracking-wide text-af2-ink-4">
-                {SUB_NODE_KIND_META[k].label.split(" ").pop()}
-              </span>
+      {data.step.kind === "agent" &&
+        (() => {
+          // HEL-817: an empty port offers a "+" to attach a sub-node (tool is
+          // repeatable, so its port always offers it). An attached singular port
+          // just labels itself; the sub-node renders below.
+          const attached = new Set(readAgentSubNodes(data.step).map((s) => s.kind));
+          return (
+            <div className="pointer-events-none absolute -bottom-3 left-0 right-0 flex justify-around px-5">
+              {AGENT_SUB_NODE_KINDS.map((k) => {
+                const canAdd = (k === "tool" || !attached.has(k)) && !data.isReadonly;
+                const short = SUB_NODE_KIND_META[k].label.split(" ").pop();
+                return (
+                  <div key={k} className="relative flex flex-col items-center">
+                    <Handle
+                      id={SUB_NODE_KIND_META[k].port}
+                      type="source"
+                      position={Position.Bottom}
+                      className="!relative !left-0 !h-2 !w-2 !translate-x-0 !border-0 !bg-af2-ink-blue"
+                    />
+                    {canAdd ? (
+                      <button
+                        type="button"
+                        title={`Attach ${SUB_NODE_KIND_META[k].label}`}
+                        aria-label={`Attach ${SUB_NODE_KIND_META[k].label}`}
+                        className="pointer-events-auto mt-0.5 text-[8px] font-medium uppercase tracking-wide text-af2-ink-4 transition hover:text-af2-ink-blue"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          data.onAddSubNode(data.step.id, k);
+                        }}
+                      >
+                        + {short}
+                      </button>
+                    ) : (
+                      <span className="mt-0.5 text-[8px] font-medium uppercase tracking-wide text-af2-ink-4">
+                        {short}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })()}
     </div>
   );
 }

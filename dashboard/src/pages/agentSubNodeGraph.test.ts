@@ -4,8 +4,10 @@ import {
   addAgentSubNode,
   updateAgentSubNode,
   removeAgentSubNode,
+  setAgentSubNodePosition,
   projectAgentSubNodes,
   subNodeElementId,
+  parseSubNodeElementId,
 } from "./agentSubNodeGraph";
 import type { WorkflowStep } from "../types/workflow";
 
@@ -64,6 +66,28 @@ describe("add / update / remove", () => {
     const updated = updateAgentSubNode(start, "m", { tier: "power" });
     expect(updated[0]!.config).toEqual({ llmConfigId: "c", tier: "power" });
     expect(removeAgentSubNode(withSubs(updated), "m")).toEqual([]);
+  });
+
+  it("setAgentSubNodePosition stores uiPosition on the matching sub-node only", () => {
+    const start = withSubs([
+      { id: "m", kind: "model", config: {} },
+      { id: "t", kind: "tool", config: {} },
+    ]);
+    const next = setAgentSubNodePosition(start, "m", { x: 12, y: 34 });
+    expect(next[0]!.uiPosition).toEqual({ x: 12, y: 34 });
+    expect(next[1]!.uiPosition).toBeUndefined();
+  });
+});
+
+describe("subNodeElementId / parseSubNodeElementId", () => {
+  it("round-trips agent + sub-node ids (sub-node ids may contain colons)", () => {
+    const id = subNodeElementId("a1", "model-x:y");
+    expect(parseSubNodeElementId(id)).toEqual({ agentId: "a1", subNodeId: "model-x:y" });
+  });
+
+  it("returns null for non-sub-node ids", () => {
+    expect(parseSubNodeElementId("step-123")).toBeNull();
+    expect(parseSubNodeElementId("a1")).toBeNull();
   });
 });
 

@@ -110,15 +110,35 @@ export function removeAgentSubNode(
   return readAgentSubNodes(step).filter((s) => s.id !== subNodeId);
 }
 
+/** HEL-817: persist a dragged sub-node's canvas position into its config. */
+export function setAgentSubNodePosition(
+  step: Pick<WorkflowStep, "config">,
+  subNodeId: string,
+  uiPosition: { x: number; y: number },
+): AgentSubNodeEntry[] {
+  return readAgentSubNodes(step).map((s) =>
+    s.id === subNodeId ? { ...s, uiPosition } : s,
+  );
+}
+
 /** The React-Flow node id for a projected sub-node (stable, agent-scoped). */
 export function subNodeElementId(agentId: string, subNodeId: string): string {
   return `agentsub:${agentId}:${subNodeId}`;
+}
+
+/** Inverse of subNodeElementId — `null` when the id isn't a sub-node id. */
+export function parseSubNodeElementId(
+  elementId: string,
+): { agentId: string; subNodeId: string } | null {
+  const m = /^agentsub:([^:]+):(.+)$/.exec(elementId);
+  return m ? { agentId: m[1]!, subNodeId: m[2]! } : null;
 }
 
 export interface ProjectedSubNode {
   id: string;
   agentId: string;
   agentName: string;
+  subNodeId: string;
   kind: AgentSubNodeKind;
   config: Record<string, unknown>;
   position: { x: number; y: number };
@@ -161,6 +181,7 @@ export function projectAgentSubNodes(
         id: elementId,
         agentId: step.id,
         agentName: step.name,
+        subNodeId: sub.id,
         kind: sub.kind,
         config: sub.config,
         position,

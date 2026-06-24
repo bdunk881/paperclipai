@@ -455,6 +455,23 @@
     animation: workflow-edge-dash 0.9s linear infinite, workflow-edge-glow 1.5s ease-in-out infinite;
   }
 
+  /* HEL-817: agent sub-node attachment edges read distinct from the gray flow
+     edges — ink-blue + fine dots — and don't pick up the clay flow-edge hover. */
+  .workflow-edge.workflow-edge-subnode path {
+    stroke: var(--af2-ink-blue);
+    stroke-width: 1.4px;
+    stroke-dasharray: 2 4;
+    opacity: 0.7;
+  }
+
+  .workflow-edge.workflow-edge-subnode:hover path,
+  .react-flow__edge.selected.workflow-edge.workflow-edge-subnode path {
+    stroke: var(--af2-ink-blue);
+    stroke-width: 1.8px;
+    stroke-dasharray: 2 4;
+    opacity: 1;
+  }
+
   .workflow-node-running {
     animation: workflow-node-pulse 1.6s ease-in-out infinite;
   }

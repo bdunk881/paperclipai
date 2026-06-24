@@ -160,6 +160,16 @@ import {
   STEP_FIELD_MANIFEST,
   type SuggestedNextStep,
 } from "./workflowStepSetup";
+import {
+  projectAgentSubNodes,
+  readAgentSubNodes,
+  addAgentSubNode,
+  updateAgentSubNode,
+  removeAgentSubNode,
+  SUB_NODE_KIND_META,
+  AGENT_SUB_NODE_KINDS,
+  type AgentSubNodeKind,
+} from "./agentSubNodeGraph";
 import { StudioAssistantPanel } from "../components/workflow/StudioAssistantPanel";
 import { NodeConfigForm } from "../components/workflow/NodeConfigForm";
 import { PresenceStack } from "../components/workflow/PresenceStack";
@@ -588,7 +598,20 @@ type FlowNodeData = {
   teamAgentHref?: string;
 };
 
-type WorkflowFlowNode = Node<FlowNodeData>;
+type StepFlowNode = Node<FlowNodeData, "workflowStep">;
+
+// HEL-816: AI agent sub-nodes (Chat Model / Memory / Tool) projected beneath an
+// agent. Display-only here (not selectable/draggable/deletable) — they're
+// authored in the agent inspector and persisted in agent.config.subNodes;
+// canvas-native drag/select/attach is HEL-817.
+type SubNodeFlowData = {
+  kind: AgentSubNodeKind;
+  config: Record<string, unknown>;
+  agentName: string;
+};
+type SubNodeFlowNode = Node<SubNodeFlowData, "agentSubNode">;
+
+type WorkflowFlowNode = StepFlowNode | SubNodeFlowNode;
 
 function readStepPosition(step: WorkflowStep, index: number): XYPosition {
   const candidate = step.config?.[STEP_POSITION_KEY];
@@ -1672,7 +1695,7 @@ export default function WorkflowBuilder() {
     setTemplate((t) => ({ ...t, steps: arr }));
   }
 
-  const flowNodes: WorkflowFlowNode[] = template.steps.map((step, idx) => {
+  const stepFlowNodes: StepFlowNode[] = template.steps.map((step, idx) => {
     const teamAgent = deploymentAgentByStepId.get(step.id);
     const teamAgentHref =
       latestDeployment && teamAgent
@@ -1708,11 +1731,34 @@ export default function WorkflowBuilder() {
     };
   });
 
+  // HEL-816: project agent sub-nodes (Model / Memory / Tool) as display-only
+  // nodes beneath their agent, positioned from the same step positions the step
+  // nodes use. They're authored in the agent inspector + persisted in
+  // agent.config.subNodes; canvas-native drag/select is HEL-817.
+  const stepPositionById = new Map(stepFlowNodes.map((n) => [n.id, n.position]));
+  const projectedSubNodes = projectAgentSubNodes(template.steps, (id) =>
+    stepPositionById.get(id) ?? { x: 0, y: 0 },
+  );
+  const flowNodes: WorkflowFlowNode[] = [
+    ...stepFlowNodes,
+    ...projectedSubNodes.nodes.map(
+      (p): SubNodeFlowNode => ({
+        id: p.id,
+        type: "agentSubNode",
+        position: p.position,
+        draggable: false,
+        selectable: false,
+        deletable: false,
+        data: { kind: p.kind, config: p.config, agentName: p.agentName },
+      }),
+    ),
+  ];
+
   const flowEdges = useMemo(() => {
     const edges = buildEdgesFromSteps(template.steps);
     const stepsById = new Map(template.steps.map((step) => [step.id, step]));
 
-    return edges.map((edge) => {
+    const stepEdges = edges.map((edge) => {
       const sourceStep = stepsById.get(edge.source);
       const sourceState = sourceStep ? readNodeVisualState(sourceStep) : "idle";
       const edgeClass =
@@ -1726,6 +1772,22 @@ export default function WorkflowBuilder() {
         animated: sourceState === "running",
       };
     });
+
+    // HEL-816: derived (non-persisted) attachment edges from an agent's sub-ports
+    // to its projected sub-nodes. Distinct class so they read as attachments.
+    const subNodeEdges = projectAgentSubNodes(template.steps, () => ({ x: 0, y: 0 })).edges.map(
+      (e) => ({
+        id: e.id,
+        source: e.source,
+        sourceHandle: e.sourceHandle,
+        target: e.target,
+        className: "workflow-edge workflow-edge-subnode",
+        selectable: false,
+        deletable: false,
+      }),
+    );
+
+    return [...stepEdges, ...subNodeEdges];
   }, [template.steps]);
 
   const stepSetupContext = useMemo(
@@ -1762,6 +1824,7 @@ export default function WorkflowBuilder() {
         // props are unchanged. Created once (stable nodeTypes ref). Its benefit
         // is gated on flowNodes data referential stability — see the follow-up.
         workflowStep: memo(WorkflowStepNode),
+        agentSubNode: memo(SubNodeNode),
       }) satisfies NodeTypes,
     []
   );
@@ -2953,6 +3016,131 @@ export default function WorkflowBuilder() {
                           }
                         />
                       </Field>
+                      {/* HEL-816: AI sub-nodes (Model / Memory / Tool) — author here,
+                          render beneath the agent on the canvas, drive the run
+                          (HEL-815/818). Persisted in config.subNodes. */}
+                      <Field label="AI sub-nodes (model / memory / tools)">
+                        <div className="space-y-2">
+                          {readAgentSubNodes(selectedStep).map((sub) => {
+                            const writeConfig = (patch: Record<string, unknown>) =>
+                              updateStep(selectedStep.id, {
+                                config: {
+                                  ...(selectedStep.config ?? {}),
+                                  subNodes: updateAgentSubNode(selectedStep, sub.id, patch),
+                                },
+                              });
+                            const cfgStr = (key: string) =>
+                              typeof sub.config[key] === "string" ? (sub.config[key] as string) : "";
+                            return (
+                              <div
+                                key={sub.id}
+                                data-field={`subnode-${sub.kind}`}
+                                className="space-y-1.5 rounded-lg border border-af2-ink-blue/30 bg-af2-ink-blue/5 p-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-af2-ink-blue">
+                                    {SUB_NODE_KIND_META[sub.kind].label}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    disabled={isReadonlyBuilder}
+                                    className="text-[10px] font-semibold uppercase tracking-wide text-af2-clay"
+                                    onClick={() =>
+                                      updateStep(selectedStep.id, {
+                                        config: {
+                                          ...(selectedStep.config ?? {}),
+                                          subNodes: removeAgentSubNode(selectedStep, sub.id),
+                                        },
+                                      })
+                                    }
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                                {sub.kind === "model" && (
+                                  <div className="flex gap-2">
+                                    <select
+                                      className="flex-1 rounded-lg border border-af2-line-2 bg-af2-card px-2.5 py-1.5 text-xs"
+                                      value={cfgStr("llmConfigId")}
+                                      disabled={isReadonlyBuilder}
+                                      onChange={(e) => writeConfig({ llmConfigId: e.target.value || undefined })}
+                                    >
+                                      <option value="">Workspace default</option>
+                                      {llmConfigs.map((c) => (
+                                        <option key={c.id} value={c.id}>
+                                          {c.label} ({c.provider})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <select
+                                      className="w-28 rounded-lg border border-af2-line-2 bg-af2-card px-2.5 py-1.5 text-xs"
+                                      value={cfgStr("tier")}
+                                      disabled={isReadonlyBuilder}
+                                      onChange={(e) => writeConfig({ tier: e.target.value || undefined })}
+                                    >
+                                      <option value="">Auto tier</option>
+                                      <option value="lite">Lite</option>
+                                      <option value="standard">Standard</option>
+                                      <option value="power">Power</option>
+                                    </select>
+                                  </div>
+                                )}
+                                {sub.kind === "memory" && (
+                                  <div className="flex gap-2">
+                                    <input
+                                      className="flex-1 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs"
+                                      placeholder="Recall query (blank = recent)"
+                                      value={cfgStr("query")}
+                                      disabled={isReadonlyBuilder}
+                                      onChange={(e) => writeConfig({ query: e.target.value || undefined })}
+                                    />
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      className="w-20 rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs"
+                                      placeholder="10"
+                                      value={typeof sub.config["limit"] === "number" ? sub.config["limit"] : ""}
+                                      disabled={isReadonlyBuilder}
+                                      onChange={(e) =>
+                                        writeConfig({ limit: e.target.value === "" ? undefined : Number(e.target.value) })
+                                      }
+                                    />
+                                  </div>
+                                )}
+                                {sub.kind === "tool" && (
+                                  <input
+                                    className="w-full rounded-lg border border-af2-line-2 px-2.5 py-1.5 text-xs font-mono"
+                                    placeholder="skill / tool name (e.g. slack)"
+                                    value={cfgStr("skill")}
+                                    disabled={isReadonlyBuilder}
+                                    onChange={(e) => writeConfig({ skill: e.target.value || undefined })}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })}
+                          <div className="flex flex-wrap gap-2">
+                            {AGENT_SUB_NODE_KINDS.map((k) => (
+                              <button
+                                key={k}
+                                type="button"
+                                disabled={isReadonlyBuilder}
+                                className="rounded-lg border border-dashed border-af2-line-2 px-2.5 py-1 text-[11px] font-medium text-af2-ink-3 transition hover:border-af2-ink-blue/50 hover:text-af2-ink-blue"
+                                onClick={() =>
+                                  updateStep(selectedStep.id, {
+                                    config: {
+                                      ...(selectedStep.config ?? {}),
+                                      subNodes: addAgentSubNode(selectedStep, k),
+                                    },
+                                  })
+                                }
+                              >
+                                + {SUB_NODE_KIND_META[k].label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </Field>
                       <Field label="Monthly Budget (USD)">
                         <input
                           type="number"
@@ -3707,8 +3895,33 @@ function formatSlotList(values: string[]): string | null {
 
 function buildAgentSlotDefinitions(step: WorkflowStep): AgentSlotDefinition[] {
   const config = readAgentConfig(step);
-  const modelValue = step.agentModel?.trim() || null;
+  // HEL-816: prefer the sub-node attachments (config.subNodes) so this in-card
+  // panel agrees with the projected canvas sub-nodes + the inspector; fall back
+  // to the legacy labels/keys for agents authored before sub-nodes existed.
+  const subNodes = readAgentSubNodes(step);
+  const modelSub = subNodes.find((s) => s.kind === "model");
+  const memorySub = subNodes.find((s) => s.kind === "memory");
+  const toolSubs = subNodes.filter((s) => s.kind === "tool");
+  const subStr = (cfg: Record<string, unknown>, key: string): string =>
+    typeof cfg[key] === "string" && (cfg[key] as string).trim() ? (cfg[key] as string).trim() : "";
+
+  const subModelLabel = modelSub
+    ? [subStr(modelSub.config, "llmConfigId"), subStr(modelSub.config, "model"), subStr(modelSub.config, "tier")]
+        .filter(Boolean)
+        .join(" · ") || "Model attached"
+    : null;
+  const subMemoryLabel = memorySub
+    ? subStr(memorySub.config, "query")
+      ? `recall "${subStr(memorySub.config, "query")}"`
+      : "Recall on"
+    : null;
+  const subToolsLabel = formatSlotList(
+    toolSubs.map((t) => subStr(t.config, "skill") || subStr(t.config, "tool") || "tool"),
+  );
+
+  const modelValue = subModelLabel || step.agentModel?.trim() || null;
   const memoryValue =
+    subMemoryLabel ||
     (typeof config.agentMemoryLabel === "string" && config.agentMemoryLabel.trim()) ||
     (typeof config.memoryLabel === "string" && config.memoryLabel.trim()) ||
     formatSlotList(
@@ -3718,6 +3931,7 @@ function buildAgentSlotDefinitions(step: WorkflowStep): AgentSlotDefinition[] {
     ) ||
     ((config.memory === true || config.memoryEnabled === true) ? "Connected" : null);
   const toolsValue =
+    subToolsLabel ||
     (typeof config.agentToolsLabel === "string" && config.agentToolsLabel.trim()) ||
     (typeof config.toolsLabel === "string" && config.toolsLabel.trim()) ||
     formatSlotList(readStringList(config.tools).concat(readStringList(config.agentTools)));
@@ -4036,7 +4250,7 @@ function WorkflowStepNode({
   data,
   selected,
   dragging,
-}: NodeProps<WorkflowFlowNode>) {
+}: NodeProps<StepFlowNode>) {
   // HEL-791: a disabled step renders dimmed (the NodeToolbar portals out of this
   // wrapper, so it stays full-opacity for the Enable toggle).
   const disabled = isStepDisabled(data.step);
@@ -4081,8 +4295,69 @@ function WorkflowStepNode({
         />
       </StepNodeContextMenu>
       <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border-0 !bg-af2-ink-3" />
+      {/* HEL-816: AI agent sub-node ports (Model / Memory / Tool). Source handles
+          a Chat Model / Memory / Tool sub-node attaches to (projected below). */}
+      {data.step.kind === "agent" && (
+        <div className="pointer-events-none absolute -bottom-3 left-0 right-0 flex justify-around px-5">
+          {AGENT_SUB_NODE_KINDS.map((k) => (
+            <div key={k} className="relative flex flex-col items-center">
+              <Handle
+                id={SUB_NODE_KIND_META[k].port}
+                type="source"
+                position={Position.Bottom}
+                className="!relative !left-0 !h-2 !w-2 !translate-x-0 !border-0 !bg-af2-ink-blue"
+              />
+              <span className="mt-0.5 text-[8px] font-medium uppercase tracking-wide text-af2-ink-4">
+                {SUB_NODE_KIND_META[k].label.split(" ").pop()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+/**
+ * HEL-816: a projected AI sub-node (Chat Model / Memory / Tool) shown beneath its
+ * agent. Display-only — configured in the agent inspector, persisted in
+ * agent.config.subNodes. One target handle on top for the attachment edge.
+ */
+function SubNodeNode({ data }: NodeProps<SubNodeFlowNode>) {
+  const meta = SUB_NODE_KIND_META[data.kind];
+  const icon =
+    data.kind === "model" ? <Brain size={13} /> : data.kind === "memory" ? <Database size={13} /> : <Wrench size={13} />;
+  const summary = subNodeSummary(data.kind, data.config);
+  return (
+    <div className="w-[180px] rounded-xl border border-af2-ink-blue/30 bg-af2-ink-blue/5 px-3 py-2 shadow-sm">
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border-0 !bg-af2-ink-blue" />
+      <div className="flex items-center gap-1.5 text-af2-ink-blue">
+        {icon}
+        <span className="text-xs font-semibold">{meta.label}</span>
+      </div>
+      <p className="mt-1 truncate text-[11px] text-af2-ink-3" title={summary || meta.blurb}>
+        {summary || meta.blurb}
+      </p>
+    </div>
+  );
+}
+
+/** One-line summary of a sub-node's config for the projected card. */
+function subNodeSummary(kind: AgentSubNodeKind, config: Record<string, unknown>): string {
+  if (kind === "model") {
+    const id = typeof config["llmConfigId"] === "string" ? config["llmConfigId"] : "";
+    const tier = typeof config["tier"] === "string" ? config["tier"] : "";
+    return [id, tier].filter(Boolean).join(" · ");
+  }
+  if (kind === "memory") {
+    const q = typeof config["query"] === "string" && config["query"] ? `"${config["query"]}"` : "all";
+    return `recall ${q}`;
+  }
+  const skill =
+    (typeof config["skill"] === "string" && config["skill"]) ||
+    (typeof config["tool"] === "string" && config["tool"]) ||
+    "";
+  return skill || "";
 }
 
 function StepNode({

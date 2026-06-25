@@ -102,6 +102,16 @@ async function importClientWithMockMode() {
   return import("./client");
 }
 
+// USE_MOCK_API is read once at module load (`=== "true"`). The default test env
+// resolves VITE_USE_MOCK to "true", so withMockApi-wrapped functions short-circuit
+// to their mock and never call fetch. Re-import with the flag forced "false" to
+// exercise the real (network) branch and assert on the outgoing request.
+async function importClientWithRealMode() {
+  vi.resetModules();
+  vi.stubEnv("VITE_USE_MOCK", "false");
+  return import("./client");
+}
+
 const sampleSummary: TemplateSummary = {
   id: "tpl-support-bot",
   name: "Customer Support Bot",
@@ -168,6 +178,17 @@ describe("listTemplates", () => {
     mockFetch({ templates, total: 2 });
     const result = await listTemplates();
     expect(result).toHaveLength(2);
+  });
+
+  it("sends the Authorization header when an access token is provided (HEL-823)", async () => {
+    // Regression: GET /api/templates requires requireAuth. Without the Bearer
+    // token the real backend 401s and the Routines page errors out
+    // ("Routines unavailable"). Force the real branch so the fetch actually fires.
+    const client = await importClientWithRealMode();
+    mockFetch({ templates: [sampleSummary], total: 1 });
+    await client.listTemplates(undefined, ACCESS_TOKEN);
+    const headers = lastFetchOptions().headers as Record<string, string>;
+    expect(headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`);
   });
 
   it("returns mock templates without calling fetch when VITE_USE_MOCK=true", async () => {

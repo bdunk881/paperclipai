@@ -92,7 +92,7 @@ export default function Evals() {
       const token = await requireAccessToken();
       const [evalList, templateList] = await Promise.all([
         listEvals(token),
-        listTemplates().catch(() => [] as TemplateSummary[]),
+        listTemplates(undefined, token).catch(() => [] as TemplateSummary[]),
       ]);
       setEvals(evalList.evals);
       setTemplates(templateList);

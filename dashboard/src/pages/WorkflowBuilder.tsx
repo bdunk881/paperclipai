@@ -829,10 +829,24 @@ export default function WorkflowBuilder() {
   }, [loading, proMode]);
 
   useEffect(() => {
-    listTemplates()
-      .then(setAllTemplates)
-      .catch((e) => setTemplatesError(e instanceof Error ? e.message : "Failed to load templates"));
-  }, [activeWorkspaceId]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        // listTemplates hits requireAuth-gated GET /api/templates — pass the token
+        // or the real backend 401s (HEL-823).
+        const token = (await getAccessToken()) ?? undefined;
+        const templates = await listTemplates(undefined, token);
+        if (!cancelled) setAllTemplates(templates);
+      } catch (e) {
+        if (!cancelled) {
+          setTemplatesError(e instanceof Error ? e.message : "Failed to load templates");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, getAccessToken]);
 
   useEffect(() => {
     if (!templateId) return;

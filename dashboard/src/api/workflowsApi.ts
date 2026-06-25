@@ -166,6 +166,107 @@ export async function getCanonicalWorkflowVersion(
 }
 
 // ---------------------------------------------------------------------------
+// HEL-822 — Environments: deploy / rollback / restore (over the HEL-820 API)
+// ---------------------------------------------------------------------------
+
+export type WorkflowEnvironment = "dev" | "staging" | "prod";
+
+export const WORKFLOW_ENVIRONMENTS: readonly WorkflowEnvironment[] = ["dev", "staging", "prod"];
+
+export interface WorkflowDeployment {
+  id: string;
+  workflowId: string;
+  environment: WorkflowEnvironment;
+  versionId: string;
+  version: number;
+  note: string | null;
+  createdAt: string;
+  createdByUserId: string | null;
+}
+
+export interface WorkflowDeploymentsResponse {
+  workflowId: string;
+  deployments: WorkflowDeployment[];
+  /** Current (most recent) deployment per environment, or null. */
+  current: Record<WorkflowEnvironment, WorkflowDeployment | null>;
+}
+
+/** Deploy a version to an environment (atomic). */
+export async function deployWorkflowVersion(
+  workflowId: string,
+  environment: WorkflowEnvironment,
+  versionId: string,
+  accessToken: string,
+): Promise<WorkflowDeployment> {
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/deployments`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ environment, versionId }),
+    },
+  );
+  return parseJsonOrError<WorkflowDeployment>(
+    response,
+    `Failed to deploy version: ${response.status}`,
+  );
+}
+
+/** Roll an environment back to an earlier version (a deploy with a note). */
+export async function rollbackWorkflowVersion(
+  workflowId: string,
+  environment: WorkflowEnvironment,
+  versionId: string,
+  accessToken: string,
+): Promise<WorkflowDeployment> {
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/deployments/rollback`,
+    {
+      method: "POST",
+      headers: buildHeaders(accessToken, { "Content-Type": "application/json" }),
+      body: JSON.stringify({ environment, versionId }),
+    },
+  );
+  return parseJsonOrError<WorkflowDeployment>(
+    response,
+    `Failed to roll back version: ${response.status}`,
+  );
+}
+
+/** Deployment history + the current deployment per environment. */
+export async function listWorkflowDeployments(
+  workflowId: string,
+  accessToken: string,
+  environment?: WorkflowEnvironment,
+): Promise<WorkflowDeploymentsResponse> {
+  const qs = environment ? `?environment=${encodeURIComponent(environment)}` : "";
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/deployments${qs}`,
+    { headers: buildHeaders(accessToken) },
+  );
+  return parseJsonOrError<WorkflowDeploymentsResponse>(
+    response,
+    `Failed to list deployments: ${response.status}`,
+  );
+}
+
+/** Atomic history-restore: append a new latest version holding the old dag. */
+export async function restoreWorkflowVersion(
+  workflowId: string,
+  versionId: string,
+  accessToken: string,
+): Promise<CanonicalWorkflowVersionDetail & { restoredFromVersion: number }> {
+  const response = await trackedFetch(
+    `${BASE}/workflows/${encodeURIComponent(workflowId)}/versions/${encodeURIComponent(versionId)}/restore`,
+    { method: "POST", headers: buildHeaders(accessToken) },
+  );
+  return parseJsonOrError<CanonicalWorkflowVersionDetail & { restoredFromVersion: number }>(
+    response,
+    `Failed to restore version: ${response.status}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // HEL-241C — Presence (collaborative awareness)
 // ---------------------------------------------------------------------------
 

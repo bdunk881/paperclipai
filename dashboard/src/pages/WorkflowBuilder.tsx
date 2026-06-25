@@ -107,10 +107,12 @@ import {
   getCanonicalWorkflowVersion,
   listCanonicalWorkflowVersions,
   listCanonicalWorkflows,
+  restoreWorkflowVersion,
   type CanonicalWorkflow,
   type CanonicalWorkflowVersionDetail,
   type CanonicalWorkflowVersionSummary,
 } from "../api/workflowsApi";
+import { WorkflowEnvironmentsPanel } from "../components/workflow/WorkflowEnvironmentsPanel";
 import { Tooltip } from "../components/Tooltip";
 import { ErrorState, LoadingState } from "../components/UiStates";
 import type {
@@ -1255,14 +1257,12 @@ export default function WorkflowBuilder() {
       setRestoringVersionId(versionId);
       try {
         const accessToken = await requireAccessToken();
-        const detail = await getCanonicalWorkflowVersion(
+        // HEL-822: atomic server-side restore (HEL-820) — appends a new latest
+        // version holding the old version's dag in one request, replacing the
+        // former 2-step fetch-then-re-POST flow. The response carries that dag.
+        const detail = await restoreWorkflowVersion(
           canonicalWorkflowId,
           versionId,
-          accessToken,
-        );
-        await createCanonicalWorkflowVersion(
-          canonicalWorkflowId,
-          detail.dag,
           accessToken,
         );
         // Apply the restored dag to the in-editor template state. We
@@ -2903,17 +2903,32 @@ export default function WorkflowBuilder() {
                 )}
 
                 {proMode && proInspectorTab === "versions" && (
-                  <VersionsPanel
-                    template={template}
-                    canonicalWorkflowId={canonicalWorkflowId}
-                    versions={workflowVersions}
+                  <>
+                    {/* HEL-822: deploy a version to dev/staging/prod + roll back.
+                        Scheduled/triggered runs execute the env-deployed version. */}
+                    <div className="border-b border-af2-line pb-2">
+                      <p className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-af2-ink-3">
+                        Environments
+                      </p>
+                      <WorkflowEnvironmentsPanel
+                        workflowId={canonicalWorkflowId}
+                        getAccessToken={requireAccessToken}
+                        versions={workflowVersions}
+                        readonly={isReadonlyBuilder}
+                      />
+                    </div>
+                    <VersionsPanel
+                      template={template}
+                      canonicalWorkflowId={canonicalWorkflowId}
+                      versions={workflowVersions}
                     loading={versionsLoading}
                     error={versionsError}
                     actionError={versionsActionError}
                     restoringVersionId={restoringVersionId}
-                    onCompare={(versionId) => setDiffTargetVersionId(versionId)}
-                    onRestore={handleRestoreVersion}
-                  />
+                      onCompare={(versionId) => setDiffTargetVersionId(versionId)}
+                      onRestore={handleRestoreVersion}
+                    />
+                  </>
                 )}
                 {proMode && proInspectorTab === "observability" && (
                   <ObservabilityPanel runs={runHistory} />

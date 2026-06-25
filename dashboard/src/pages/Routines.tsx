@@ -374,7 +374,7 @@ export default function Routines({
       try {
         const token = (await getAccessToken()) ?? undefined;
         const [nextTemplates, nextRoutines] = await Promise.all([
-          listTemplates(),
+          listTemplates(undefined, token),
           // Prompt routines are optional — a 401/404 on a stale dev backend
           // shouldn't block the templates list.
           listPromptRoutines(token).catch(() => [] as PromptRoutine[]),

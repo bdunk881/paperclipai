@@ -1111,11 +1111,15 @@ export interface DeployWorkflowAsTeamInput {
 type CreateTemplateInput = Omit<WorkflowTemplate, "id"> & { id?: string };
 
 /** GET /api/templates */
-export async function listTemplates(category?: string): Promise<TemplateSummary[]> {
+export async function listTemplates(category?: string, accessToken?: string): Promise<TemplateSummary[]> {
   return withMockApi(
     async () => {
       const url = category ? `${BASE}/templates?category=${encodeURIComponent(category)}` : `${BASE}/templates`;
-      const res = await trackedFetch(url);
+      // GET /api/templates requires requireAuth — trackedFetch does NOT inject the
+      // Bearer token (it only adds the workspace header), so pass it explicitly or
+      // the real (non-mock) backend returns 401 "Missing or malformed Authorization
+      // header" and the calling page errors out (HEL-823).
+      const res = await trackedFetch(url, { headers: buildAuthHeaders(accessToken) });
       if (!res.ok) throw new Error(`Failed to fetch templates: ${res.status}`);
       const data = await res.json();
       return data.templates as TemplateSummary[];

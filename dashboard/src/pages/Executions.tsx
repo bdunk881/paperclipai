@@ -94,7 +94,7 @@ export default function Executions() {
           ...(templateId ? { templateId } : {}),
           ...(tags.length > 0 ? { tags } : {}),
         }),
-        listTemplates().catch(() => [] as TemplateSummary[]),
+        listTemplates(undefined, token).catch(() => [] as TemplateSummary[]),
       ]);
       setRuns(runsRes.runs);
       setTemplates(templateList);
